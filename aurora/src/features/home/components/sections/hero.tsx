@@ -96,7 +96,7 @@ export function Hero(props: HeroProps) {
           style={{ animationDelay: '80ms' }}
         >
           {t(
-            'WRouter provides a unified gateway to a vast AI model ecosystem. One API to power your applications, connect your digital assets, and route you to the AI future.'
+            'AccelsRouter provides a unified gateway to a vast AI model ecosystem. One API to power your applications, connect your digital assets, and route you to the AI future.'
           )}
         </p>
 

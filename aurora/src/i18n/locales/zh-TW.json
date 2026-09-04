@@ -1212,7 +1212,7 @@
     "Accept Unpriced Models": "接受未定價模型",
     "Accepts a JSON array of model identifiers that support the Imagine API.": "接受支援 Imagine API 的模型識別符號的 JSON 陣列。",
     "Accepts comma-separated status codes and inclusive ranges.": "接受逗號分隔的狀態碼和包含性範圍。",
-    "WRouter provides a unified gateway to a vast AI model ecosystem. One API to power your applications, connect your digital assets, and route you to the AI future.": "WRouter 提供統一閘道器，接入廣泛 AI 模型生態。一個 API，驅動您的應用，連線數字資產，通往 AI 未來。",
+    "AccelsRouter provides a unified gateway to a vast AI model ecosystem. One API to power your applications, connect your digital assets, and route you to the AI future.": "AccelsRouter 提供統一閘道器，接入廣泛 AI 模型生態。一個 API，驅動您的應用，連線數字資產，通往 AI 未來。",
     "Route to Any Model. Build Anything": "路由萬千模型，構建無限可能",
     "Access Denied Message": "訪問被拒絕訊息",
     "Access Forbidden": "禁止訪問",
