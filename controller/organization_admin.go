@@ -267,3 +267,28 @@ func AdminDetachOrgAccount(c *gin.Context) {
 	model.RecordOrgAudit(orgId, c.GetInt("id"), "account.detach", fmt.Sprintf("user:%d", userId), "")
 	common.ApiSuccess(c, nil)
 }
+
+// AdminListResellerAdmins — GET /api/admin/organizations/:id/reseller-admins
+func AdminListResellerAdmins(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	admins, err := model.ListResellerAdmins(orgId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, admins)
+}
+
+// AdminRevokeResellerAdmin — DELETE /api/admin/organizations/:id/reseller-admins/:user_id
+// Per-admin offboarding / containment lever for a reseller org: severs one
+// admin's access without suspending the whole org or banning the user.
+func AdminRevokeResellerAdmin(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	userId, _ := strconv.Atoi(c.Param("user_id"))
+	if err := model.RemoveResellerAdmin(orgId, userId); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(orgId, c.GetInt("id"), "reseller_admin.revoke", fmt.Sprintf("user:%d", userId), "")
+	common.ApiSuccess(c, nil)
+}

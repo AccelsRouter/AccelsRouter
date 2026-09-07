@@ -202,12 +202,8 @@ type allocateRequest struct {
 // AllocateFromMyOrg — POST /api/organization/allocate
 // Reseller allocates credit to a nested customer org from its own wallet.
 func AllocateFromMyOrg(c *gin.Context) {
-	org, _, ok := callerOrg(c)
+	org, ok := callerReseller(c)
 	if !ok {
-		return
-	}
-	if org.Type != model.OrgTypeReseller {
-		common.ApiErrorMsg(c, "只有代理商组织可以划拨额度")
 		return
 	}
 	var req allocateRequest
@@ -242,12 +238,8 @@ func AllocateFromMyOrg(c *gin.Context) {
 // Reseller pulls back UNCONSUMED credit from a customer org, bounded by its
 // net allocation to that org (no parent link ⇒ can't over-reclaim).
 func RevokeFromMyOrg(c *gin.Context) {
-	org, _, ok := callerOrg(c)
+	org, ok := callerReseller(c)
 	if !ok {
-		return
-	}
-	if org.Type != model.OrgTypeReseller {
-		common.ApiErrorMsg(c, "只有代理商组织可以回收额度")
 		return
 	}
 	var req allocateRequest

@@ -85,8 +85,8 @@ export function AllocationDialog(props: {
       toast.success(
         mode === 'revoke' ? t('Quota revoked') : t('Quota allocated')
       )
-      queryClient.invalidateQueries({ queryKey: ['org-self'] })
-      queryClient.invalidateQueries({ queryKey: ['org-ledger'] })
+      queryClient.invalidateQueries({ queryKey: ['reseller-self'] })
+      queryClient.invalidateQueries({ queryKey: ['reseller-ledger'] })
       queryClient.invalidateQueries({ queryKey: ['org-customers'] })
       setLoadedMode(null)
       props.onClose()

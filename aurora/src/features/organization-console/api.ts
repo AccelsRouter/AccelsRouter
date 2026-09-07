@@ -73,6 +73,35 @@ export async function getOrgSelf(): Promise<OrgSelf | null> {
   }
 }
 
+// Reseller-scoped variants. The reseller admin is decoupled from the paying
+// OrgAccount, so its console reads the reseller org and ledger through
+// dedicated endpoints resolved via the reseller-admin link.
+export async function getResellerSelf(): Promise<OrgSelf | null> {
+  try {
+    const res = await api.get<ApiResp<OrgSelf>>(
+      '/api/organization/reseller/self',
+      { skipErrorHandler: true, skipBusinessError: true }
+    )
+    if (!res.data?.success || !res.data.data) return null
+    return res.data.data
+  } catch {
+    return null
+  }
+}
+
+export async function listResellerLedger(params: {
+  page: number
+  pageSize: number
+}): Promise<PagedResponse<OrgLedgerEntry>> {
+  const qs = new URLSearchParams()
+  qs.set('p', String(params.page))
+  qs.set('page_size', String(params.pageSize))
+  const res = await api.get<ApiResp<PagedResponse<OrgLedgerEntry>>>(
+    `/api/organization/reseller/ledger?${qs.toString()}`
+  )
+  return unwrap(res, 'Failed to load ledger')
+}
+
 export async function listOrgAccounts(): Promise<OrgAccount[]> {
   const res = await api.get<ApiResp<OrgAccount[]>>('/api/organization/accounts')
   return unwrap(res, 'Failed to load accounts')

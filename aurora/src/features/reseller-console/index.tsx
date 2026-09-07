@@ -32,7 +32,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AllocationDialog, type AllocationMode } from '@/features/organization-console/allocation-dialog'
-import { getOrgSelf } from '@/features/organization-console/api'
+import {
+  getResellerSelf,
+  listResellerLedger,
+} from '@/features/organization-console/api'
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
 import { formatQuotaWithCurrency } from '@/lib/currency'
@@ -45,8 +48,8 @@ export function ResellerConsole() {
   )
 
   const { data: self, isLoading } = useQuery({
-    queryKey: ['org-self'],
-    queryFn: getOrgSelf,
+    queryKey: ['reseller-self'],
+    queryFn: getResellerSelf,
     staleTime: 60_000,
   })
 
@@ -122,7 +125,10 @@ export function ResellerConsole() {
                 <CustomersTab walletQuota={self.wallet_quota} />
               </TabsContent>
               <TabsContent value='ledger' className='pt-4'>
-                <LedgerTab />
+                <LedgerTab
+                  fetchLedger={listResellerLedger}
+                  queryKey='reseller-ledger'
+                />
               </TabsContent>
             </Tabs>
           </div>

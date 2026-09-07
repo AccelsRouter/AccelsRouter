@@ -95,7 +95,14 @@ func CreateOrgApplication(app *OrgApplication) error {
 	if app.Type != OrgTypeEnterprise && app.Type != OrgTypeReseller {
 		return errors.New("invalid organization type")
 	}
-	if existing, _ := GetOrgAccountByUser(app.UserId); existing != nil {
+	// The reseller-admin role is decoupled from the single-payer OrgAccount, so
+	// an existing enterprise member MAY apply to become a reseller (and vice
+	// versa). Each role is guarded against duplication on its own table.
+	if app.Type == OrgTypeReseller {
+		if isAdmin, _ := IsResellerAdmin(app.UserId); isAdmin {
+			return errors.New("你已是代理商管理员，无法重复申请")
+		}
+	} else if existing, _ := GetOrgAccountByUser(app.UserId); existing != nil {
 		return errors.New("你已归属某个组织，无法申请开通")
 	}
 	var pending int64
@@ -166,12 +173,25 @@ func ApproveOrgApplication(appId, reviewerId int, priceGroup, note string) (*Org
 		if app.Status != OrgApplicationPending {
 			return errors.New("申请已被处理")
 		}
-		var managed int64
-		if err := tx.Model(&OrgAccount{}).Where("user_id = ?", app.UserId).Count(&managed).Error; err != nil {
-			return err
-		}
-		if managed > 0 {
-			return errors.New("申请人已归属某个组织")
+		// Re-run the type-specific duplication guard inside the transaction.
+		// Reseller admin is decoupled from the paying OrgAccount, so a reseller
+		// approval is NOT blocked by an existing enterprise membership.
+		if app.Type == OrgTypeReseller {
+			var already int64
+			if err := tx.Model(&ResellerAdmin{}).Where("user_id = ?", app.UserId).Count(&already).Error; err != nil {
+				return err
+			}
+			if already > 0 {
+				return errors.New("申请人已是代理商管理员")
+			}
+		} else {
+			var managed int64
+			if err := tx.Model(&OrgAccount{}).Where("user_id = ?", app.UserId).Count(&managed).Error; err != nil {
+				return err
+			}
+			if managed > 0 {
+				return errors.New("申请人已归属某个组织")
+			}
 		}
 		newOrg := &Organization{
 			Name:        app.OrgName,
@@ -185,16 +205,23 @@ func ApproveOrgApplication(appId, reviewerId int, priceGroup, note string) (*Org
 		if err := tx.Create(newOrg).Error; err != nil {
 			return err
 		}
-		relation := OrgRelationMember
 		if newOrg.Type == OrgTypeReseller {
-			relation = OrgRelationCustomer
-		}
-		ownerAcc := &OrgAccount{
-			OrgId: newOrg.Id, UserId: app.UserId, Relation: relation, Role: OrgRoleOwner,
-			Status: OrgStatusActive, PeriodKey: currentPeriodKey(), CreatedTime: common.GetTimestamp(),
-		}
-		if err := tx.Create(ownerAcc).Error; err != nil {
-			return err
+			// A reseller admin is a management role, not a paying OrgAccount:
+			// the applicant keeps its single-payer slot free (so it can also be
+			// an enterprise member). See model/reseller_admin.go.
+			if err := tx.Create(&ResellerAdmin{
+				UserId: app.UserId, ResellerOrgId: newOrg.Id, CreatedTime: common.GetTimestamp(),
+			}).Error; err != nil {
+				return err
+			}
+		} else {
+			ownerAcc := &OrgAccount{
+				OrgId: newOrg.Id, UserId: app.UserId, Relation: OrgRelationMember, Role: OrgRoleOwner,
+				Status: OrgStatusActive, PeriodKey: currentPeriodKey(), CreatedTime: common.GetTimestamp(),
+			}
+			if err := tx.Create(ownerAcc).Error; err != nil {
+				return err
+			}
 		}
 		if err := tx.Model(&OrgApplication{}).Where("id = ?", appId).Updates(map[string]interface{}{
 			"status":       OrgApplicationApproved,

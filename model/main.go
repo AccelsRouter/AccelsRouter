@@ -299,6 +299,7 @@ func migrateDB() error {
 		&OrgSsoDomain{},
 		&OrgAuditLog{},
 		&ResellerCustomerLink{},
+		&ResellerAdmin{},
 		&UserChannel{},
 		&SystemInstance{},
 		&SystemTask{},
@@ -313,6 +314,9 @@ func migrateDB() error {
 		return err
 	}
 	if err := InitializeExternalIdentityClaims(); err != nil {
+		return err
+	}
+	if err := backfillResellerAdmins(); err != nil {
 		return err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
@@ -375,6 +379,7 @@ func migrateDBFast() error {
 		{&OrgSsoDomain{}, "OrgSsoDomain"},
 		{&OrgAuditLog{}, "OrgAuditLog"},
 		{&ResellerCustomerLink{}, "ResellerCustomerLink"},
+		{&ResellerAdmin{}, "ResellerAdmin"},
 		{&UserChannel{}, "UserChannel"},
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
@@ -407,6 +412,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := InitializeExternalIdentityClaims(); err != nil {
+		return err
+	}
+	if err := backfillResellerAdmins(); err != nil {
 		return err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {

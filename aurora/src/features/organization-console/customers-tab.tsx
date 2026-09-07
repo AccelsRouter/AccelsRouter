@@ -221,7 +221,7 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
     onSuccess: () => {
       toast.success(t('Customer created'))
       queryClient.invalidateQueries({ queryKey: ['org-customers'] })
-      queryClient.invalidateQueries({ queryKey: ['org-self'] })
+      queryClient.invalidateQueries({ queryKey: ['reseller-self'] })
       props.onClose()
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),

@@ -175,6 +175,9 @@ func SetApiRouter(router *gin.Engine) {
 			orgAdminRoute.GET("/:id/ledger", controller.AdminListOrgLedger)
 			orgAdminRoute.POST("/accounts", controller.AdminAttachOrgAccount)
 			orgAdminRoute.DELETE("/:id/accounts/:user_id", controller.AdminDetachOrgAccount)
+			// Reseller-admin management (per-admin offboarding / containment).
+			orgAdminRoute.GET("/:id/reseller-admins", controller.AdminListResellerAdmins)
+			orgAdminRoute.DELETE("/:id/reseller-admins/:user_id", controller.AdminRevokeResellerAdmin)
 			orgAdminRoute.GET("/applications", controller.AdminListOrgApplications)
 			orgAdminRoute.POST("/applications/:id/approve", controller.AdminApproveOrgApplication)
 			orgAdminRoute.POST("/applications/:id/reject", controller.AdminRejectOrgApplication)
@@ -197,7 +200,10 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.GET("/ledger", controller.ListMyOrgLedger)
 			orgRoute.POST("/allocate", middleware.CriticalRateLimit(), controller.AllocateFromMyOrg)
 			orgRoute.POST("/revoke", middleware.CriticalRateLimit(), controller.RevokeFromMyOrg)
-			// Reseller customer management (reseller orgs only).
+			// Reseller customer management (reseller orgs only). Resolved via
+			// the reseller-admin link, decoupled from the paying OrgAccount.
+			orgRoute.GET("/reseller/self", controller.GetMyResellerOrg)
+			orgRoute.GET("/reseller/ledger", controller.ListMyResellerLedger)
 			orgRoute.GET("/customers", controller.ListMyCustomers)
 			orgRoute.POST("/customers", middleware.CriticalRateLimit(), controller.CreateMyCustomer)
 			orgRoute.GET("/customers/:id/usage", controller.GetMyCustomerUsage)

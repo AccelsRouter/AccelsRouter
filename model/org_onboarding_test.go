@@ -27,19 +27,29 @@ func TestOrgApplicationApproval(t *testing.T) {
 	assert.Equal(t, "partner-a", org.PriceGroup)
 	assert.Equal(t, 100, org.OwnerUserId)
 
-	// Applicant is now the org owner and resolves as its own payer.
+	// A reseller admin is a management role, NOT a paying OrgAccount: the
+	// applicant administers the reseller org but keeps its single-payer slot
+	// free (GetOrgPayerInfo stays nil).
+	adminOrg, err := GetResellerAdminOrg(100)
+	require.NoError(t, err)
+	require.NotNil(t, adminOrg)
+	assert.Equal(t, org.Id, adminOrg.Id)
+
 	info, err := GetOrgPayerInfo(100)
 	require.NoError(t, err)
-	require.NotNil(t, info)
-	assert.Equal(t, org.Id, info.OrgId)
+	assert.Nil(t, info, "reseller admin must not occupy the single-payer slot")
 
 	// Re-approving the same (now approved) application fails.
 	_, err = ApproveOrgApplication(app.Id, 1, "", "")
 	require.Error(t, err)
 
-	// A user already in an org cannot apply again (valid name, so the failure
-	// is the already-managed guard, not name validation).
-	require.Error(t, CreateOrgApplication(&OrgApplication{UserId: 100, Type: OrgTypeEnterprise, OrgName: "another-org"}))
+	// A reseller admin cannot open a second reseller org.
+	require.Error(t, CreateOrgApplication(&OrgApplication{UserId: 100, Type: OrgTypeReseller, OrgName: "acme-reseller-2"}))
+
+	// But because the reseller role is decoupled from the payer, the SAME user
+	// may also apply for an enterprise org (dual role: reseller admin +
+	// enterprise member).
+	require.NoError(t, CreateOrgApplication(&OrgApplication{UserId: 100, Type: OrgTypeEnterprise, OrgName: "another-org"}))
 }
 
 // Org names must be at least 3 characters and free of special characters.

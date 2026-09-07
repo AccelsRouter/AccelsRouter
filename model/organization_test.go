@@ -14,6 +14,7 @@ func migrateOrgTables(t *testing.T) {
 	require.NoError(t, DB.AutoMigrate(
 		&Organization{}, &OrgAccount{}, &CreditLedger{}, &Workspace{}, &WorkspaceToken{}, &OrgChannel{},
 		&OrgApplication{}, &OrgInvitation{}, &OrgSsoDomain{}, &OrgAuditLog{}, &ResellerCustomerLink{},
+		&ResellerAdmin{},
 	))
 	// isolate between tests
 	DB.Exec("DELETE FROM organizations")
@@ -26,6 +27,7 @@ func migrateOrgTables(t *testing.T) {
 	DB.Exec("DELETE FROM org_sso_domains")
 	DB.Exec("DELETE FROM org_audit_logs")
 	DB.Exec("DELETE FROM reseller_customer_links")
+	DB.Exec("DELETE FROM reseller_admins")
 }
 
 // The audit trail is append-only, scoped per org, and returned newest-first.

@@ -30,16 +30,30 @@ import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { listOrgLedger } from './api'
 import { Td, Th, fmtTime } from './shared'
+import type { OrgLedgerEntry, PagedResponse } from './types'
 
 const PAGE_SIZE = 20
 
-export function LedgerTab() {
+type LedgerFetcher = (params: {
+  page: number
+  pageSize: number
+}) => Promise<PagedResponse<OrgLedgerEntry>>
+
+// The reseller console reuses this tab but reads its own reseller-scoped
+// ledger endpoint; the enterprise console keeps the default org ledger.
+export function LedgerTab({
+  fetchLedger = listOrgLedger,
+  queryKey = 'org-ledger',
+}: {
+  fetchLedger?: LedgerFetcher
+  queryKey?: string
+} = {}) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['org-ledger', page],
-    queryFn: () => listOrgLedger({ page, pageSize: PAGE_SIZE }),
+    queryKey: [queryKey, page],
+    queryFn: () => fetchLedger({ page, pageSize: PAGE_SIZE }),
     placeholderData: keepPreviousData,
   })
 

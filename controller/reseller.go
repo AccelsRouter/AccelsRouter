@@ -16,14 +16,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// callerReseller resolves the caller's org and requires it to be a reseller.
+// callerReseller resolves the caller's reseller org via the reseller-admin
+// link (decoupled from the single-payer OrgAccount, so a reseller admin may
+// also be an enterprise member). Returns false with an error already written
+// when the caller is not a reseller admin or the org is suspended.
 func callerReseller(c *gin.Context) (*model.Organization, bool) {
-	org, _, ok := callerOrg(c)
-	if !ok {
+	org, err := model.GetResellerAdminOrg(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
 		return nil, false
 	}
-	if org.Type != model.OrgTypeReseller {
+	if org == nil {
 		common.ApiErrorMsg(c, "仅代理商组织可访问")
+		return nil, false
+	}
+	if org.Status == model.OrgStatusSuspended {
+		common.ApiErrorMsg(c, "组织已被暂停")
 		return nil, false
 	}
 	return org, true
@@ -108,4 +116,40 @@ func GetMyCustomerUsage(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, report)
+}
+
+// GetMyResellerOrg — GET /api/organization/reseller/self
+// Reseller-scoped org view (wallet, price group). Resolves via the reseller-
+// admin link, so it works for a reseller admin who is not an OrgAccount member.
+func GetMyResellerOrg(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"id":           reseller.Id,
+		"name":         reseller.Name,
+		"type":         reseller.Type,
+		"status":       reseller.Status,
+		"wallet_quota": reseller.WalletQuota,
+		"price_group":  reseller.PriceGroup,
+		"is_owner":     true,
+	})
+}
+
+// ListMyResellerLedger — GET /api/organization/reseller/ledger
+func ListMyResellerLedger(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	rows, total, err := model.ListOrgLedger(reseller.Id, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(rows)
+	common.ApiSuccess(c, page)
 }
