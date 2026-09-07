@@ -36,11 +36,9 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
 import { type NavItem, type SidebarData } from '@/components/layout/types'
-import { getOrgSelf } from '@/features/organization-console/api'
 import { useStatus } from '@/hooks/use-status'
 import { ROLE } from '@/lib/roles'
 
@@ -54,28 +52,23 @@ export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
   const { status } = useStatus()
 
-  // Resellers get the separate "Distributor" console; everyone else (enterprise
-  // owners, members, and users with no org) gets "My Organization" — those
-  // without an org land there on the self-service apply page. The self query is
-  // resilient: a 401/error/no-org falls back to the "My Organization" entry.
-  const { data: orgSelf } = useQuery({
-    queryKey: ['org-self'],
-    queryFn: getOrgSelf,
-    staleTime: 60_000,
-  })
-  const isReseller = orgSelf?.type === 'reseller'
-
-  const orgNavItem: NavItem = isReseller
-    ? {
-        title: t('Distributor'),
-        url: '/reseller',
-        icon: Building2,
-      }
-    : {
-        title: t('My Organization'),
-        url: '/organization',
-        icon: Building2,
-      }
+  // Enterprise and reseller are separate consoles, but BOTH entries are always
+  // shown so either is discoverable — a person may run an enterprise org and a
+  // reseller org. "My Organization" (/organization) is the enterprise console /
+  // self-service apply page; "Distributor" (/reseller) is the reseller console,
+  // which shows a placeholder for non-resellers.
+  const orgNavItems: NavItem[] = [
+    {
+      title: t('My Organization'),
+      url: '/organization',
+      icon: Building2,
+    },
+    {
+      title: t('Distributor'),
+      url: '/reseller',
+      icon: Building2,
+    },
+  ]
 
   const personalItems: NavItem[] = [
     {
@@ -83,7 +76,7 @@ export function useSidebarData(): SidebarData {
       url: '/wallet',
       icon: Wallet,
     },
-    orgNavItem,
+    ...orgNavItems,
     // Personal BYOK is an opt-in platform feature; only surface it when the
     // backend status flag enables it.
     ...(status?.personal_byok_enabled

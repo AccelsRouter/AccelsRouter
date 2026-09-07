@@ -55,3 +55,28 @@ func TestUserChannelOwnership(t *testing.T) {
 	// TokenId is unique: a channel can be owned by at most one user.
 	require.Error(t, AddUserChannel(9, 101), "a channel is owned by exactly one user")
 }
+
+// Transparent BYOK: a user's request (normal key) resolves to the user's own
+// BYOK channel when it serves the model, and never to another user's channel.
+func TestGetUserByokChannelForModel(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&UserChannel{}, &Ability{}))
+	DB.Exec("DELETE FROM user_channels")
+	DB.Exec("DELETE FROM abilities")
+
+	// User 7 owns channel 100 serving gpt-4o-mini in its private group user-7.
+	require.NoError(t, AddUserChannel(7, 100))
+	prio := int64(0)
+	require.NoError(t, DB.Create(&Ability{Group: UserPrivateGroup(7), Model: "gpt-4o-mini", ChannelId: 100, Enabled: true, Priority: &prio}).Error)
+
+	id, ok := GetUserByokChannelForModel(7, "gpt-4o-mini")
+	require.True(t, ok)
+	assert.Equal(t, 100, id)
+
+	// A model the user's BYOK channel does not serve → no match.
+	_, ok = GetUserByokChannelForModel(7, "claude-3")
+	assert.False(t, ok)
+
+	// Another user with no BYOK channels → no match (never reaches user 7's).
+	_, ok = GetUserByokChannelForModel(8, "gpt-4o-mini")
+	assert.False(t, ok, "a user must never resolve to another user's BYOK channel")
+}

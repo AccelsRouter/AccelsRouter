@@ -73,3 +73,24 @@ func CountUserChannels(userId int) (int64, error) {
 	err := DB.Model(&UserChannel{}).Where("user_id = ?", userId).Count(&count).Error
 	return count, err
 }
+
+// GetUserByokChannelForModel returns the id of an enabled BYOK channel the user
+// owns that serves the given model, if any. This is the seam for transparent
+// BYOK: a request made with the user's NORMAL key is routed to the user's own
+// BYOK channel (their upstream key) whenever they have one for the model —
+// matching OpenRouter's one-key experience, no separate BYOK key required. The
+// channel lives in the user's private group, so pricing switches to that
+// group's ratio (the BYOK fee, default 0) once the caller adopts it.
+func GetUserByokChannelForModel(userId int, modelName string) (int, bool) {
+	ids, err := ListUserChannelIds(userId)
+	if err != nil || len(ids) == 0 {
+		return 0, false
+	}
+	group := UserPrivateGroup(userId)
+	for _, id := range ids {
+		if IsChannelEnabledForGroupModel(group, modelName, id) {
+			return id, true
+		}
+	}
+	return 0, false
+}
