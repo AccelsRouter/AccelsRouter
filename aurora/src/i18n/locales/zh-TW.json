@@ -5773,6 +5773,8 @@
     "No OAuth providers are enabled. Enable an SSO/OAuth login method first.": "尚未啟用任何 OAuth 登入方式，請先啟用一個 SSO/OAuth 登入方式。",
     "Personal BYOK": "自帶金鑰",
     "BYOK requests use your own upstream provider credentials. By default they are free on the platform — only your own provider is billed.": "自帶金鑰請求使用您自己的上游服務商憑證。預設在本平台免費——僅由您自己的服務商計費。",
+    "Fall back to platform when BYOK is unavailable": "自帶金鑰不可用時回退到平台",
+    "If your own provider fails, retry on a platform channel and bill at the platform rate. Off by default: a failed BYOK request returns an error instead of spending platform quota.": "當您自己的服務商失敗時，改用平台通道重試，並按平台價格計費。預設關閉：失敗的自帶金鑰請求將返回錯誤，而不會消耗平台額度。",
     "Providers": "服務商",
     "Upstream providers you connect with your own API key.": "使用您自己的 API 金鑰連接的上游服務商。",
     "Add provider": "新增服務商",

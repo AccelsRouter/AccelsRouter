@@ -236,3 +236,52 @@ func ListMyPersonalByokKeys(c *gin.Context) {
 	}
 	common.ApiSuccess(c, out)
 }
+
+// GetMyByokFallback — GET /api/personal_byok/fallback
+// Reports whether the user has opted in to falling back to platform channels
+// (billed at the platform rate) when their own BYOK channel is unavailable.
+func GetMyByokFallback(c *gin.Context) {
+	userId, ok := personalByokUser(c)
+	if !ok {
+		return
+	}
+	s, err := model.GetUserSetting(userId, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"enabled": s.ByokFallbackToPlatform})
+}
+
+// SetMyByokFallback — PUT /api/personal_byok/fallback
+// Toggles the platform-fallback opt-in. Default is off (fail closed): a failing
+// BYOK channel returns an error instead of silently spending platform quota.
+func SetMyByokFallback(c *gin.Context) {
+	userId, ok := personalByokUser(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// Read-modify-write the full setting so unrelated preferences are preserved.
+	s, err := model.GetUserSetting(userId, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	s.ByokFallbackToPlatform = req.Enabled
+	if err := model.UpdateUserSetting(userId, s); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// Invalidate the main user cache so the relay hot path (which reads the
+	// setting from the cached user) picks up the change on the next request —
+	// especially important when DISABLING, so fallback stops promptly.
+	_ = model.InvalidateUserCache(userId)
+	common.ApiSuccess(c, gin.H{"enabled": req.Enabled})
+}

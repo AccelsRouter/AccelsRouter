@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { CHANNEL_TYPES } from '@/features/channels/constants'
 
@@ -52,8 +53,10 @@ import {
   createByokChannel,
   createByokKey,
   deleteByokChannel,
+  getByokFallback,
   listByokChannels,
   listByokKeys,
+  setByokFallback,
 } from './api'
 import type { PersonalByokChannel } from './types'
 
@@ -109,9 +112,49 @@ export function PersonalByok() {
 
           <ProvidersSection />
           <KeysSection />
+          <FallbackSection />
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>
+  )
+}
+
+function FallbackSection() {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+
+  const { data: enabled, isLoading } = useQuery({
+    queryKey: ['personal-byok-fallback'],
+    queryFn: getByokFallback,
+  })
+
+  const mutation = useMutation({
+    mutationFn: (next: boolean) => setByokFallback(next),
+    onSuccess: (_data, next) => {
+      queryClient.setQueryData(['personal-byok-fallback'], next)
+      toast.success(t('Setting saved'))
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
+
+  return (
+    <div className='border-border/60 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4'>
+      <div className='flex flex-col gap-1 pr-4'>
+        <span className='text-sm font-medium'>
+          {t('Fall back to platform when BYOK is unavailable')}
+        </span>
+        <span className='text-muted-foreground text-xs'>
+          {t(
+            'If your own provider fails, retry on a platform channel and bill at the platform rate. Off by default: a failed BYOK request returns an error instead of spending platform quota.'
+          )}
+        </span>
+      </div>
+      <Switch
+        checked={!!enabled}
+        disabled={isLoading || mutation.isPending}
+        onCheckedChange={(next) => mutation.mutate(next)}
+      />
+    </div>
   )
 }
 

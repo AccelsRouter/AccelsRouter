@@ -242,6 +242,8 @@ func SetApiRouter(router *gin.Engine) {
 			personalByokRoute.DELETE("/channels/:channel_id", controller.DeleteMyPersonalByok)
 			personalByokRoute.GET("/keys", controller.ListMyPersonalByokKeys)
 			personalByokRoute.POST("/keys", middleware.CriticalRateLimit(), controller.CreateMyPersonalByokKey)
+			personalByokRoute.GET("/fallback", controller.GetMyByokFallback)
+			personalByokRoute.PUT("/fallback", controller.SetMyByokFallback)
 		}
 
 		// Subscription billing (plans, purchase, admin management)

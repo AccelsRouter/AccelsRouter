@@ -11,10 +11,16 @@ const (
 	ContextKeyRequestStartTime ContextKey = "request_start_time"
 
 	/* token related keys */
-	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"
-	ContextKeyTokenKey               ContextKey = "token_key"
-	ContextKeyTokenId                ContextKey = "token_id"
-	ContextKeyTokenGroup             ContextKey = "token_group"
+	ContextKeyTokenUnlimited ContextKey = "token_unlimited_quota"
+	ContextKeyTokenKey       ContextKey = "token_key"
+	ContextKeyTokenId        ContextKey = "token_id"
+	ContextKeyTokenGroup     ContextKey = "token_group"
+	// ContextKeyByokFallbackGroup carries the user's original (platform) group
+	// when a transparent-BYOK request is allowed to fall back to platform
+	// channels on failover. It is a one-shot signal consumed by the relay retry
+	// loop, which switches routing+billing from the BYOK private group to this
+	// group so the fallback is billed at the platform rate.
+	ContextKeyByokFallbackGroup      ContextKey = "byok_fallback_group"
 	ContextKeyTokenSpecificChannelId ContextKey = "specific_channel_id"
 	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"

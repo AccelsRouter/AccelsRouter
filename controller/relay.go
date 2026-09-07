@@ -193,6 +193,39 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
+		// Transparent-BYOK fallback (opt-in): the first attempt ran on the
+		// user's own BYOK channel in their private group. If it failed and a
+		// fallback group was armed by the distributor, switch routing AND
+		// billing to the platform group for the remaining retries, and re-price
+		// + re-pre-consume at the platform rate — otherwise the platform
+		// fallback would run under the BYOK-rate (often 0) pre-consume. One-shot.
+		// Note: this fires on a retry, so it requires common.RetryTimes >= 1;
+		// with retries disabled a BYOK failure stays fail-closed (never
+		// over-permissive).
+		if retryParam.GetRetry() > 0 {
+			if fbGroup := common.GetContextKeyString(c, constant.ContextKeyByokFallbackGroup); fbGroup != "" {
+				common.SetContextKey(c, constant.ContextKeyByokFallbackGroup, "")
+				relayInfo.UsingGroup = fbGroup
+				relayInfo.TokenGroup = fbGroup
+				retryParam.TokenGroup = fbGroup
+				common.SetContextKey(c, constant.ContextKeyUsingGroup, fbGroup)
+				common.SetContextKey(c, constant.ContextKeyTokenGroup, fbGroup)
+				fbPrice, priceErr := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
+				if priceErr != nil {
+					newAPIError = types.NewError(priceErr, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
+					break
+				}
+				if relayInfo.Billing != nil {
+					relayInfo.Billing.Refund(c)
+					relayInfo.Billing = nil
+				}
+				if !fbPrice.FreeModel {
+					if newAPIError = service.PreConsumeBilling(c, fbPrice.QuotaToPreConsume, relayInfo); newAPIError != nil {
+						break
+					}
+				}
+			}
+		}
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			// Fork: when the request came in as an auto virtual model and the

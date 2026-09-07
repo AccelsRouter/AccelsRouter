@@ -5747,6 +5747,8 @@
     "No OAuth providers are enabled. Enable an SSO/OAuth login method first.": "No OAuth providers are enabled. Enable an SSO/OAuth login method first.",
     "Personal BYOK": "BYOK",
     "BYOK requests use your own upstream provider credentials. By default they are free on the platform — only your own provider is billed.": "BYOK requests use your own upstream provider credentials. By default they are free on the platform — only your own provider is billed.",
+    "Fall back to platform when BYOK is unavailable": "Fall back to platform when BYOK is unavailable",
+    "If your own provider fails, retry on a platform channel and bill at the platform rate. Off by default: a failed BYOK request returns an error instead of spending platform quota.": "If your own provider fails, retry on a platform channel and bill at the platform rate. Off by default: a failed BYOK request returns an error instead of spending platform quota.",
     "Providers": "Providers",
     "Upstream providers you connect with your own API key.": "Upstream providers you connect with your own API key.",
     "Add provider": "Add provider",

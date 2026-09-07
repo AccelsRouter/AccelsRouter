@@ -16,6 +16,7 @@ type UserSetting struct {
 	SidebarModules                   string  `json:"sidebar_modules,omitempty"`                      // SidebarModules 左侧边栏模块配置
 	BillingPreference                string  `json:"billing_preference,omitempty"`                   // BillingPreference 扣费策略（订阅/钱包）
 	Language                         string  `json:"language,omitempty"`                             // Language 用户语言偏好 (zh, en)
+	ByokFallbackToPlatform           bool    `json:"byok_fallback_to_platform,omitempty"`            // BYOK 渠道不可用时是否回退到平台渠道（按平台价计费）
 }
 
 var (

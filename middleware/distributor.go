@@ -133,6 +133,9 @@ func Distribute() func(c *gin.Context) {
 						if bErr == nil && byokCh != nil && byokCh.Status == common.ChannelStatusEnabled &&
 							ratio_setting.ContainsGroupRatio(byokGroup) &&
 							channelSupportsRequestPath(byokCh, c.Request.URL.Path, modelRequest.Model) {
+							// Capture the platform group BEFORE overwriting it, so
+							// an opted-in user can fall back to it on failover.
+							originalGroup := usingGroup
 							channel = byokCh
 							selectGroup = byokGroup
 							usingGroup = byokGroup
@@ -143,6 +146,16 @@ func Distribute() func(c *gin.Context) {
 							// falling back to a PLATFORM channel that would then be
 							// billed at the BYOK ratio. Routing group == billing group.
 							common.SetContextKey(c, constant.ContextKeyTokenGroup, byokGroup)
+							// Opt-in: allow failover to a PLATFORM channel when the
+							// BYOK channel fails. The relay retry loop consumes this
+							// one-shot signal and switches routing+billing back to
+							// the platform group, so the fallback is billed at the
+							// platform rate (never the BYOK ratio). Default off ⇒
+							// fail closed. Never fall back to another private group.
+							if us, ok := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting); ok &&
+								us.ByokFallbackToPlatform && originalGroup != "" && !model.IsOwnByokGroup(c.GetInt("id"), originalGroup) {
+								common.SetContextKey(c, constant.ContextKeyByokFallbackGroup, originalGroup)
+							}
 						}
 					}
 				}

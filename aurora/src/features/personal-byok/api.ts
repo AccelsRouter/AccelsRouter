@@ -85,3 +85,18 @@ export async function createByokKey(payload: {
   )
   return unwrap(res, 'Failed to create key')
 }
+
+export async function getByokFallback(): Promise<boolean> {
+  const res = await api.get<ApiResp<{ enabled: boolean }>>(
+    '/api/personal_byok/fallback'
+  )
+  return unwrap(res, 'Failed to load fallback setting').enabled
+}
+
+export async function setByokFallback(enabled: boolean): Promise<void> {
+  const res = await api.put<ApiResp<{ enabled: boolean }>>(
+    '/api/personal_byok/fallback',
+    { enabled }
+  )
+  assertOk(res, 'Failed to update fallback setting')
+}
