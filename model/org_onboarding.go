@@ -210,7 +210,7 @@ func ApproveOrgApplication(appId, reviewerId int, priceGroup, note string) (*Org
 			// the applicant keeps its single-payer slot free (so it can also be
 			// an enterprise member). See model/reseller_admin.go.
 			if err := tx.Create(&ResellerAdmin{
-				UserId: app.UserId, ResellerOrgId: newOrg.Id, CreatedTime: common.GetTimestamp(),
+				UserId: app.UserId, ResellerOrgId: newOrg.Id, Status: OrgStatusActive, CreatedTime: common.GetTimestamp(),
 			}).Error; err != nil {
 				return err
 			}

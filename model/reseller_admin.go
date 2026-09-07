@@ -19,10 +19,11 @@ import (
 // OrgAccount and never participates in payer resolution (GetOrgPayerInfo), so
 // it does not consume the user's single-payer slot.
 type ResellerAdmin struct {
-	Id            int   `json:"id" gorm:"primarykey"`
-	UserId        int   `json:"user_id" gorm:"uniqueIndex;not null"`
-	ResellerOrgId int   `json:"reseller_org_id" gorm:"index;not null"`
-	CreatedTime   int64 `json:"created_time"`
+	Id            int    `json:"id" gorm:"primarykey"`
+	UserId        int    `json:"user_id" gorm:"uniqueIndex;not null"`
+	ResellerOrgId int    `json:"reseller_org_id" gorm:"index;not null"`
+	Status        string `json:"status" gorm:"type:varchar(16);index"` // active | suspended
+	CreatedTime   int64  `json:"created_time"`
 }
 
 // GetResellerAdminOrg returns the reseller org a user administers, or (nil, nil)
@@ -36,6 +37,12 @@ func GetResellerAdminOrg(userId int) (*Organization, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	// A suspended admin link keeps no authority: suspension is the per-admin
+	// containment lever (offboard/contain one admin without suspending the
+	// whole org or banning the user). Empty status = active (pre-status rows).
+	if link.Status == OrgStatusSuspended {
+		return nil, nil
 	}
 	org, err := GetOrganizationById(link.ResellerOrgId)
 	if err != nil {
@@ -61,6 +68,24 @@ func ListResellerAdmins(resellerOrgId int) ([]ResellerAdmin, error) {
 	var rows []ResellerAdmin
 	err := DB.Where("reseller_org_id = ?", resellerOrgId).Order("id ASC").Find(&rows).Error
 	return rows, err
+}
+
+// SetResellerAdminStatus suspends or reactivates a reseller-admin link. Scoping
+// by both ids prevents touching an admin of a different org.
+func SetResellerAdminStatus(resellerOrgId, userId int, status string) error {
+	if status != OrgStatusActive && status != OrgStatusSuspended {
+		return errors.New("invalid status")
+	}
+	result := DB.Model(&ResellerAdmin{}).
+		Where("reseller_org_id = ? AND user_id = ?", resellerOrgId, userId).
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("该用户不是此代理商的管理员")
+	}
+	return nil
 }
 
 // RemoveResellerAdmin revokes a user's reseller-admin role for a specific
@@ -103,7 +128,7 @@ func backfillResellerAdmins() error {
 		}
 		for _, acc := range accs {
 			if acc.Role == OrgRoleOwner || acc.Role == OrgRoleAdmin {
-				if err := DB.Create(&ResellerAdmin{UserId: acc.UserId, ResellerOrgId: org.Id, CreatedTime: common.GetTimestamp()}).Error; err != nil {
+				if err := DB.Create(&ResellerAdmin{UserId: acc.UserId, ResellerOrgId: org.Id, Status: OrgStatusActive, CreatedTime: common.GetTimestamp()}).Error; err != nil {
 					return err
 				}
 			}

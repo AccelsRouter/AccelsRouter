@@ -48,3 +48,29 @@ func TestBackfillResellerAdmins(t *testing.T) {
 	require.NoError(t, DB.Model(&ResellerAdmin{}).Where("reseller_org_id = ?", reseller.Id).Count(&links).Error)
 	assert.Equal(t, int64(1), links, "backfill must not duplicate links")
 }
+
+// A suspended reseller-admin link loses console authority immediately, and
+// reactivation restores it — the reversible per-admin containment lever.
+func TestResellerAdminSuspension(t *testing.T) {
+	migrateOrgTables(t)
+	reseller := mustCreateOrg(t, "reseller", OrgTypeReseller, 0)
+	require.NoError(t, DB.Create(&ResellerAdmin{UserId: 100, ResellerOrgId: reseller.Id, Status: OrgStatusActive}).Error)
+
+	org, err := GetResellerAdminOrg(100)
+	require.NoError(t, err)
+	require.NotNil(t, org, "active admin has authority")
+
+	require.NoError(t, SetResellerAdminStatus(reseller.Id, 100, OrgStatusSuspended))
+	org, err = GetResellerAdminOrg(100)
+	require.NoError(t, err)
+	assert.Nil(t, org, "suspended admin loses authority")
+
+	require.NoError(t, SetResellerAdminStatus(reseller.Id, 100, OrgStatusActive))
+	org, err = GetResellerAdminOrg(100)
+	require.NoError(t, err)
+	assert.NotNil(t, org, "reactivated admin regains authority")
+
+	// Scoping: cannot flip an admin of a different org / non-admin.
+	require.Error(t, SetResellerAdminStatus(reseller.Id, 999, OrgStatusSuspended))
+	require.Error(t, SetResellerAdminStatus(reseller.Id, 100, "bogus"))
+}

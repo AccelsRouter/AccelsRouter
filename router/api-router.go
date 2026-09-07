@@ -177,6 +177,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgAdminRoute.DELETE("/:id/accounts/:user_id", controller.AdminDetachOrgAccount)
 			// Reseller-admin management (per-admin offboarding / containment).
 			orgAdminRoute.GET("/:id/reseller-admins", controller.AdminListResellerAdmins)
+			orgAdminRoute.PUT("/:id/reseller-admins/:user_id", controller.AdminSetResellerAdminStatus)
 			orgAdminRoute.DELETE("/:id/reseller-admins/:user_id", controller.AdminRevokeResellerAdmin)
 			orgAdminRoute.GET("/applications", controller.AdminListOrgApplications)
 			orgAdminRoute.POST("/applications/:id/approve", controller.AdminApproveOrgApplication)

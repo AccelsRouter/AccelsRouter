@@ -292,3 +292,26 @@ func AdminRevokeResellerAdmin(c *gin.Context) {
 	model.RecordOrgAudit(orgId, c.GetInt("id"), "reseller_admin.revoke", fmt.Sprintf("user:%d", userId), "")
 	common.ApiSuccess(c, nil)
 }
+
+// AdminSetResellerAdminStatus — PUT /api/admin/organizations/:id/reseller-admins/:user_id
+// Suspend or reactivate a single reseller admin. A suspended admin immediately
+// loses console authority (GetResellerAdminOrg returns nil) while the link and
+// the org's other admins are untouched — the reversible containment lever, in
+// contrast to the destructive revoke above.
+func AdminSetResellerAdminStatus(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	userId, _ := strconv.Atoi(c.Param("user_id"))
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.SetResellerAdminStatus(orgId, userId, req.Status); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(orgId, c.GetInt("id"), "reseller_admin.status", fmt.Sprintf("user:%d", userId), req.Status)
+	common.ApiSuccess(c, nil)
+}
