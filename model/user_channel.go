@@ -11,9 +11,40 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 )
+
+// byokOwnerCache short-circuits the transparent-BYOK lookup on the relay hot
+// path: the vast majority of users own zero BYOK channels, and this avoids a
+// per-request DB query for them. Keyed userId -> whether the user owns any BYOK
+// channel, with a short TTL; invalidated on add/remove.
+var (
+	byokOwnerCache sync.Map // int -> byokOwnerEntry
+	byokOwnerTTL   = 60 * time.Second
+)
+
+type byokOwnerEntry struct {
+	has bool
+	exp time.Time
+}
+
+// InvalidateByokOwnerCache drops the cached ownership flag for a user.
+func InvalidateByokOwnerCache(userId int) { byokOwnerCache.Delete(userId) }
+
+func userHasByokChannel(userId int) bool {
+	if v, ok := byokOwnerCache.Load(userId); ok {
+		if e := v.(byokOwnerEntry); time.Now().Before(e.exp) {
+			return e.has
+		}
+	}
+	n, err := CountUserChannels(userId)
+	has := err == nil && n > 0
+	byokOwnerCache.Store(userId, byokOwnerEntry{has: has, exp: time.Now().Add(byokOwnerTTL)})
+	return has
+}
 
 type UserChannel struct {
 	Id          int   `json:"id" gorm:"primarykey"`
@@ -38,7 +69,11 @@ func IsOwnByokGroup(userId int, group string) bool {
 }
 
 func AddUserChannel(userId, channelId int) error {
-	return DB.Create(&UserChannel{UserId: userId, ChannelId: channelId, CreatedTime: common.GetTimestamp()}).Error
+	err := DB.Create(&UserChannel{UserId: userId, ChannelId: channelId, CreatedTime: common.GetTimestamp()}).Error
+	if err == nil {
+		InvalidateByokOwnerCache(userId)
+	}
+	return err
 }
 
 // UserOwnsChannel is the authorization check for every personal-BYOK channel
@@ -63,6 +98,7 @@ func RemoveUserChannel(userId, channelId int) error {
 	if result.RowsAffected == 0 {
 		return errors.New("channel does not belong to this user")
 	}
+	InvalidateByokOwnerCache(userId)
 	return nil
 }
 
@@ -82,6 +118,10 @@ func CountUserChannels(userId int) (int64, error) {
 // channel lives in the user's private group, so pricing switches to that
 // group's ratio (the BYOK fee, default 0) once the caller adopts it.
 func GetUserByokChannelForModel(userId int, modelName string) (int, bool) {
+	// Fast path: skip the DB entirely for the majority who own no BYOK channel.
+	if !userHasByokChannel(userId) {
+		return 0, false
+	}
 	ids, err := ListUserChannelIds(userId)
 	if err != nil || len(ids) == 0 {
 		return 0, false

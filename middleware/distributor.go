@@ -125,14 +125,24 @@ func Distribute() func(c *gin.Context) {
 				// BYOK channel, and only while the feature is enabled.
 				if channel == nil && setting.PersonalByokEnabled {
 					if byokId, ok := model.GetUserByokChannelForModel(c.GetInt("id"), modelRequest.Model); ok {
+						byokGroup := model.UserPrivateGroup(c.GetInt("id"))
 						byokCh, bErr := model.CacheGetChannel(byokId)
+						// Require a ratio entry for the private group: without it
+						// GetGroupRatio falls back to 1.0 and would bill the user
+						// full price for their own key. Missing entry ⇒ don't adopt.
 						if bErr == nil && byokCh != nil && byokCh.Status == common.ChannelStatusEnabled &&
+							ratio_setting.ContainsGroupRatio(byokGroup) &&
 							channelSupportsRequestPath(byokCh, c.Request.URL.Path, modelRequest.Model) {
-							byokGroup := model.UserPrivateGroup(c.GetInt("id"))
 							channel = byokCh
 							selectGroup = byokGroup
 							usingGroup = byokGroup
 							common.SetContextKey(c, constant.ContextKeyUsingGroup, byokGroup)
+							// Lock routing to the user's private group across the
+							// whole request, including retry/failover: a failing
+							// BYOK channel fails closed inside user-<id> instead of
+							// falling back to a PLATFORM channel that would then be
+							// billed at the BYOK ratio. Routing group == billing group.
+							common.SetContextKey(c, constant.ContextKeyTokenGroup, byokGroup)
 						}
 					}
 				}
