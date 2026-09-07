@@ -174,6 +174,25 @@ func ExcludeByokChannels(query *gorm.DB) *gorm.DB {
 		Where("id NOT IN (?)", DB.Model(&OrgChannel{}).Select("channel_id"))
 }
 
+// IsByokChannel reports whether a channel is a user/org-owned private BYOK
+// channel (recorded in the ownership tables). Admin channel operations use this
+// to refuse to touch or reveal a BYOK channel: its upstream credential belongs
+// to the end user and must never be readable through an admin endpoint. A DB
+// error is treated as "is BYOK" (fail safe: never expose on uncertainty).
+func IsByokChannel(channelId int) bool {
+	var n int64
+	if err := DB.Model(&UserChannel{}).Where("channel_id = ?", channelId).Count(&n).Error; err != nil {
+		return true
+	}
+	if n > 0 {
+		return true
+	}
+	if err := DB.Model(&OrgChannel{}).Where("channel_id = ?", channelId).Count(&n).Error; err != nil {
+		return true
+	}
+	return n > 0
+}
+
 // Value implements driver.Valuer interface
 func (c ChannelInfo) Value() (driver.Value, error) {
 	return common.Marshal(&c)

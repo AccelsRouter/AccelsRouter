@@ -840,6 +840,10 @@ func TestChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if model.IsByokChannel(channelId) {
+		common.ApiErrorMsg(c, "该渠道为用户自带密钥（BYOK），管理员不可操作")
+		return
+	}
 	channel, err := model.CacheGetChannel(channelId)
 	if err != nil {
 		channel, err = model.GetChannelById(channelId, true)

@@ -236,6 +236,10 @@ func FetchUpstreamModels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if model.IsByokChannel(id) {
+		common.ApiErrorMsg(c, "该渠道为用户自带密钥（BYOK），管理员不可操作")
+		return
+	}
 
 	channel, err := model.GetChannelById(id, true)
 	if err != nil {
@@ -425,6 +429,17 @@ func GetChannelKey(c *gin.Context) {
 	channelId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiError(c, fmt.Errorf("渠道ID格式错误: %v", err))
+		return
+	}
+
+	// A personal/org BYOK channel's upstream credential belongs to the end
+	// user; it must never be readable through an admin endpoint, even by root.
+	// This is the guarantee behind "the platform admin cannot see your BYOK
+	// key": no product endpoint returns it. (The relay path still uses it to
+	// make the user's own upstream calls — that decryption-at-use is unavoidable
+	// for any server-side BYOK.)
+	if model.IsByokChannel(channelId) {
+		common.ApiErrorMsg(c, "该渠道为用户自带密钥（BYOK），其密钥不可查看")
 		return
 	}
 
@@ -1409,6 +1424,10 @@ func CopyChannel(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid id"})
+		return
+	}
+	if model.IsByokChannel(id) {
+		common.ApiErrorMsg(c, "该渠道为用户自带密钥（BYOK），管理员不可操作")
 		return
 	}
 

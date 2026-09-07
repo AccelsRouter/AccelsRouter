@@ -34,4 +34,10 @@ func TestExcludeByokChannels(t *testing.T) {
 		ids = append(ids, c.Id)
 	}
 	assert.Equal(t, []int{platform.Id}, ids, "only the platform channel survives the admin-list filter")
+
+	// IsByokChannel gates admin key-view / key-use endpoints: BYOK channels are
+	// recognized, platform channels are not.
+	assert.True(t, IsByokChannel(userByok.Id), "user BYOK channel is recognized")
+	assert.True(t, IsByokChannel(orgByok.Id), "org BYOK channel is recognized")
+	assert.False(t, IsByokChannel(platform.Id), "platform channel is not BYOK")
 }
