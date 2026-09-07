@@ -51,17 +51,26 @@ function StatusBadge({ status }: { status: OrgApplicationStatus }) {
   return <Badge variant='secondary'>{t('Pending review')}</Badge>
 }
 
-export function ApplyPanel() {
+// fixedType locks the panel to one organization type (hiding the type picker)
+// so it can be embedded on a type-specific page — e.g. the Distributor page
+// shows a reseller-only apply flow. When set, only an application OF THAT TYPE
+// is treated as the user's status here, so a user who already has an approved
+// enterprise org can still apply to become a reseller (dual-role).
+export function ApplyPanel({ fixedType }: { fixedType?: OrgType } = {}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
-  const { data: application, isLoading } = useQuery({
+  const { data: latestApplication, isLoading } = useQuery({
     queryKey: ['org-application'],
     queryFn: getSelfApplication,
     staleTime: 30_000,
   })
+  const application =
+    fixedType && latestApplication?.type !== fixedType
+      ? null
+      : latestApplication
 
-  const [type, setType] = useState<OrgType>('enterprise')
+  const [type, setType] = useState<OrgType>(fixedType ?? 'enterprise')
   const [orgName, setOrgName] = useState('')
   const [contact, setContact] = useState('')
   const [remark, setRemark] = useState('')
@@ -152,9 +161,19 @@ export function ApplyPanel() {
               <Button
                 size='sm'
                 className='self-start'
-                render={<Link to='/organization' />}
+                render={
+                  <Link
+                    to={
+                      application.type === 'reseller'
+                        ? '/reseller'
+                        : '/organization'
+                    }
+                  />
+                }
               >
-                {t('Open My Organization')}
+                {application.type === 'reseller'
+                  ? t('Open Distributor')
+                  : t('Open My Organization')}
               </Button>
             </div>
           )}
@@ -184,20 +203,22 @@ export function ApplyPanel() {
                   )}
             </p>
           </div>
-          <Field label={t('Organization type')}>
-            <NativeSelect
-              className='w-full'
-              value={type}
-              onChange={(e) => setType(e.target.value as OrgType)}
-            >
-              <NativeSelectOption value='enterprise'>
-                {t('Enterprise')}
-              </NativeSelectOption>
-              <NativeSelectOption value='reseller'>
-                {t('Reseller')}
-              </NativeSelectOption>
-            </NativeSelect>
-          </Field>
+          {!fixedType && (
+            <Field label={t('Organization type')}>
+              <NativeSelect
+                className='w-full'
+                value={type}
+                onChange={(e) => setType(e.target.value as OrgType)}
+              >
+                <NativeSelectOption value='enterprise'>
+                  {t('Enterprise')}
+                </NativeSelectOption>
+                <NativeSelectOption value='reseller'>
+                  {t('Reseller')}
+                </NativeSelectOption>
+              </NativeSelect>
+            </Field>
+          )}
           <Field label={t('Organization name')}>
             <Input
               value={orgName}

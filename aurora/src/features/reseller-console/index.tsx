@@ -32,6 +32,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AllocationDialog, type AllocationMode } from '@/features/organization-console/allocation-dialog'
+import { ApplyPanel } from '@/features/organization-console/apply-panel'
 import {
   getResellerSelf,
   listResellerLedger,
@@ -82,9 +83,9 @@ export function ResellerConsole() {
             <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
           </div>
         ) : !self || !isReseller ? (
-          <p className='text-muted-foreground py-16 text-center text-sm'>
-            {t('This area is for reseller organizations.')}
-          </p>
+          // Not a reseller yet: offer the reseller application flow (reviewed by
+          // an administrator) instead of a dead-end placeholder.
+          <ApplyPanel fixedType='reseller' />
         ) : (
           <div className='flex flex-col gap-5'>
             <div className='border-border/60 bg-muted/30 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4'>
