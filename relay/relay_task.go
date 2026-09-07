@@ -446,7 +446,9 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		return nil
 	}
 
-	resp, err := adaptor.FetchTask(baseURL, channelModel.Key, map[string]any{
+	// BYOK channel keys are encrypted at rest; decrypt for the upstream fetch
+	// (a non-encrypted platform key passes through unchanged).
+	resp, err := adaptor.FetchTask(baseURL, common.DecryptByokSecretOrSelf(channelModel.Key), map[string]any{
 		"task_id": task.GetUpstreamTaskID(),
 		"action":  task.Action,
 	}, proxy)

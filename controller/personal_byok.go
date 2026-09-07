@@ -61,11 +61,19 @@ func CreateMyPersonalByok(c *gin.Context) {
 		common.ApiErrorMsg(c, fmt.Sprintf("已达到 BYOK 渠道数量上限 (%d)", maxPersonalByokChannels))
 		return
 	}
+	// Encrypt the user's upstream credential at rest (AES-GCM). It is decrypted
+	// only in the relay path for this user's own requests; no admin/API path
+	// returns it. See common/crypto_byok.go.
+	encKey, err := common.EncryptByokSecret(strings.TrimSpace(req.Key))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	group := model.UserPrivateGroup(userId)
 	channel := &model.Channel{
 		Type:   req.Type,
 		Name:   "[BYOK] " + req.Name,
-		Key:    req.Key,
+		Key:    encKey,
 		Models: req.Models,
 		Group:  group, // isolated to this user's private group only
 		Status: common.ChannelStatusEnabled,

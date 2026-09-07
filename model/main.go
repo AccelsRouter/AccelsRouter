@@ -319,6 +319,9 @@ func migrateDB() error {
 	if err := backfillResellerAdmins(); err != nil {
 		return err
 	}
+	if err := EncryptExistingByokKeys(); err != nil {
+		return err
+	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -415,6 +418,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := backfillResellerAdmins(); err != nil {
+		return err
+	}
+	if err := EncryptExistingByokKeys(); err != nil {
 		return err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {

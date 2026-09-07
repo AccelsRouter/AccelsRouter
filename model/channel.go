@@ -174,6 +174,44 @@ func ExcludeByokChannels(query *gorm.DB) *gorm.DB {
 		Where("id NOT IN (?)", DB.Model(&OrgChannel{}).Select("channel_id"))
 }
 
+// EncryptExistingByokKeys encrypts at rest any BYOK channel key that is still
+// stored in plaintext (pre-encryption rows). Idempotent: already-encrypted keys
+// are skipped, so it is safe to run on every startup. Only BYOK channels (those
+// in the ownership tables) are touched; platform channel keys are left as-is.
+func EncryptExistingByokKeys() error {
+	var ids []int
+	if err := DB.Model(&UserChannel{}).Pluck("channel_id", &ids).Error; err != nil {
+		return err
+	}
+	var orgIds []int
+	if err := DB.Model(&OrgChannel{}).Pluck("channel_id", &orgIds).Error; err != nil {
+		return err
+	}
+	ids = append(ids, orgIds...)
+	for _, id := range ids {
+		var ch Channel
+		// GORM maps and quotes the reserved `key` column by struct field name.
+		err := DB.Where("id = ?", id).First(&ch).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if ch.Key == "" || common.IsByokSecretEncrypted(ch.Key) {
+			continue
+		}
+		enc, err := common.EncryptByokSecret(ch.Key)
+		if err != nil {
+			return err
+		}
+		if err := DB.Model(&Channel{}).Where("id = ?", id).Update("Key", enc).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // IsByokChannel reports whether a channel is a user/org-owned private BYOK
 // channel (recorded in the ownership tables). Admin channel operations use this
 // to refuse to touch or reveal a BYOK channel: its upstream credential belongs
@@ -218,20 +256,31 @@ func (channel *Channel) GetKeys() []string {
 		if err := common.Unmarshal([]byte(trimmed), &arr); err == nil {
 			res := make([]string, len(arr))
 			for i, v := range arr {
-				res[i] = string(v)
+				res[i] = common.DecryptByokSecretOrSelf(string(v))
 			}
 			return res
 		}
 	}
-	// Otherwise, fall back to splitting by newline
+	// Otherwise, fall back to splitting by newline. BYOK keys are stored
+	// encrypted; decrypt each element (a non-encrypted value is returned as-is,
+	// so multi-key platform channels are unaffected).
 	keys := strings.Split(strings.Trim(channel.Key, "\n"), "\n")
+	for i := range keys {
+		keys[i] = common.DecryptByokSecretOrSelf(keys[i])
+	}
 	return keys
 }
 
 func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 	// If not in multi-key mode, return the original key string directly.
+	// BYOK keys are stored AES-GCM-encrypted; decrypt for use (a non-encrypted
+	// value passes through unchanged, so platform channels are unaffected).
 	if !channel.ChannelInfo.IsMultiKey {
-		return channel.Key, 0, nil
+		key, err := common.DecryptByokSecret(channel.Key)
+		if err != nil {
+			return "", 0, types.NewError(errors.New("failed to decrypt channel key"), types.ErrorCodeChannelNoAvailableKey)
+		}
+		return key, 0, nil
 	}
 
 	// Obtain all keys (split by \n)

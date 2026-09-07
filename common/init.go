@@ -62,6 +62,17 @@ func InitEnv() {
 	} else {
 		CryptoSecret = SessionSecret
 	}
+	// BYOK at-rest encryption needs a secret that is STABLE across restarts. If
+	// neither SESSION_SECRET nor CRYPTO_SECRET is set, CryptoSecret is a fresh
+	// random value each boot (constants.go), which would make previously
+	// encrypted BYOK keys undecryptable after a restart — silent data loss.
+	// Only enable encryption when a persistent secret is configured; otherwise
+	// BYOK keys are stored as-is (as before this feature) with a loud warning.
+	CryptoSecretPersistent = os.Getenv("SESSION_SECRET") != "" || os.Getenv("CRYPTO_SECRET") != ""
+	if !CryptoSecretPersistent {
+		log.Println("WARNING: neither SESSION_SECRET nor CRYPTO_SECRET is set; BYOK keys will NOT be encrypted at rest. Set SESSION_SECRET (or CRYPTO_SECRET) to a stable random string to enable encryption.")
+		log.Println("警告：未设置 SESSION_SECRET 或 CRYPTO_SECRET，BYOK 密钥将不会加密存储。请设置一个稳定的随机 SESSION_SECRET（或 CRYPTO_SECRET）以启用加密。")
+	}
 	if err := InitSessionCookieSettings(); err != nil {
 		log.Fatal(err)
 	}

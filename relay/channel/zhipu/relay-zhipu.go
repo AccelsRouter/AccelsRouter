@@ -41,7 +41,8 @@ func getZhipuToken(apikey string) string {
 
 	split := strings.Split(apikey, ".")
 	if len(split) != 2 {
-		common.SysLog("invalid zhipu key: " + apikey)
+		// Never log the raw credential (may be a user's BYOK key).
+		common.SysLog("invalid zhipu key format")
 		return ""
 	}
 
