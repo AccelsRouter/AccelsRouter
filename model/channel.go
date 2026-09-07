@@ -161,6 +161,19 @@ func ApplyChannelGroupFilter(query *gorm.DB, group string) *gorm.DB {
 	return query.Where(channelGroupFilterCondition(), channelGroupFilterPattern(group))
 }
 
+// ExcludeByokChannels filters out personal/org BYOK channels — those recorded
+// in the user_channels / org_channels ownership tables — from an admin channel
+// query. A BYOK channel is a per-user/-org private upstream that lives in the
+// channels table only to reuse routing/billing; it is owned and managed by the
+// end user via the BYOK console, so it must not clutter (or be editable from)
+// the global admin channel list. Precise by construction: it keys off the
+// ownership tables, not channel-name/group string conventions.
+func ExcludeByokChannels(query *gorm.DB) *gorm.DB {
+	return query.
+		Where("id NOT IN (?)", DB.Model(&UserChannel{}).Select("channel_id")).
+		Where("id NOT IN (?)", DB.Model(&OrgChannel{}).Select("channel_id"))
+}
+
 // Value implements driver.Valuer interface
 func (c ChannelInfo) Value() (driver.Value, error) {
 	return common.Marshal(&c)
@@ -403,8 +416,8 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 
 	order := resolveChannelSortOptions(idSort, sortOptions)
 
-	// 构造基础查询
-	baseQuery := DB.Model(&Channel{}).Omit("key")
+	// 构造基础查询（排除用户/组织私有 BYOK 渠道，不进管理员渠道搜索）
+	baseQuery := ExcludeByokChannels(DB.Model(&Channel{}).Omit("key"))
 
 	// 构造WHERE子句
 	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
@@ -930,8 +943,8 @@ func SearchTags(keyword string, group string, model string, idSort bool) ([]*str
 		order = "id desc"
 	}
 
-	// 构造基础查询
-	baseQuery := DB.Model(&Channel{}).Omit("key")
+	// 构造基础查询（排除用户/组织私有 BYOK 渠道，不进管理员渠道搜索）
+	baseQuery := ExcludeByokChannels(DB.Model(&Channel{}).Omit("key"))
 
 	// 构造WHERE子句
 	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"

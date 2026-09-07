@@ -83,6 +83,9 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 
 func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm.DB {
 	query := model.DB.Model(&model.Channel{})
+	// Personal/org BYOK channels are user-owned private upstreams; keep them out
+	// of the admin channel list (and its counts/tag/type aggregations).
+	query = model.ExcludeByokChannels(query)
 	query = model.ApplyChannelGroupFilter(query, group)
 	query = applyChannelStatusFilter(query, statusFilter)
 	if typeFilter >= 0 {
