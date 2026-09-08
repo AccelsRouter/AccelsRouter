@@ -78,6 +78,23 @@ func Distribute() func(c *gin.Context) {
 				}
 			}
 
+			// Org-level model allow-list: a reseller-provisioned customer may
+			// only use the models it was assigned. nil = unrestricted (the
+			// common case, and non-managed users). Cached in OrgPayerInfo, so
+			// this is a map lookup on the hot path. Fail-open on lookup error —
+			// this is a business restriction, not a security boundary (the
+			// group's abilities already bound what is routable).
+			// Skip when the model name is empty: async task fetch/status routes
+			// (e.g. GET /v1/videos/:id) carry no model and were already checked on
+			// submit — enforcing here would falsely 403 a customer's own polling.
+			if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); modelRequest.Model != "" && perr == nil && payer != nil && payer.AllowedModels != nil {
+				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model)
+				if !payer.AllowedModels[modelRequest.Model] && !payer.AllowedModels[matchName] {
+					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
+					return
+				}
+			}
+
 			if shouldSelectChannel {
 				if modelRequest.Model == "" {
 					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))

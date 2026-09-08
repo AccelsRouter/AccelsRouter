@@ -200,6 +200,91 @@ func RevokeMyCustomerInvitation(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+// resellerOfferableModels is the set of model names a reseller may assign to a
+// customer on the given group: the group's routable models, further narrowed by
+// the reseller's own admin-configured offerable set (empty = unrestricted).
+// Only model NAMES are returned — never any channel/upstream information.
+func resellerOfferableModels(reseller *model.Organization, group string) []string {
+	if group == "" {
+		group = "default"
+	}
+	groupModels := model.GetGroupEnabledModels(group)
+	offer := reseller.AllowedModelSet()
+	if offer == nil {
+		return groupModels
+	}
+	out := make([]string, 0, len(groupModels))
+	for _, m := range groupModels {
+		if offer[m] {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// GetMyCustomerModels — GET /api/reseller/customers/:id/models
+// Returns the customer's current allow-list and the catalog the reseller may
+// assign from (never any channel info).
+func GetMyCustomerModels(c *gin.Context) {
+	reseller, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	customer, err := model.GetOrganizationById(customerId)
+	if err != nil || customer == nil {
+		common.ApiErrorMsg(c, "客户组织不存在")
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"allowed": customer.AllowedModelList(),
+		"catalog": resellerOfferableModels(reseller, customer.PriceGroup),
+	})
+}
+
+// SetMyCustomerModels — PUT /api/reseller/customers/:id/models
+// Assign which models the customer may use. Each must be within the reseller's
+// offerable catalog. An empty list means unrestricted (the group default).
+func SetMyCustomerModels(c *gin.Context) {
+	reseller, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Models []string `json:"models"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	customer, err := model.GetOrganizationById(customerId)
+	if err != nil || customer == nil {
+		common.ApiErrorMsg(c, "客户组织不存在")
+		return
+	}
+	catalog := resellerOfferableModels(reseller, customer.PriceGroup)
+	allowed := make(map[string]bool, len(catalog))
+	for _, m := range catalog {
+		allowed[m] = true
+	}
+	for _, m := range req.Models {
+		if !allowed[strings.TrimSpace(m)] {
+			common.ApiErrorMsg(c, "模型不在可分配范围内: "+m)
+			return
+		}
+	}
+	stored, err := model.MarshalAllowedModels(req.Models)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.SetOrgAllowedModels(customerId, stored); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.models", fmt.Sprintf("org:%d", customerId), fmt.Sprintf("count=%d", len(req.Models)))
+	common.ApiSuccess(c, nil)
+}
+
 // GetMyResellerOrg — GET /api/organization/reseller/self
 // Reseller-scoped org view (wallet, price group). Resolves via the reseller-
 // admin link, so it works for a reseller admin who is not an OrgAccount member.

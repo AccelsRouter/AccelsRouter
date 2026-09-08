@@ -30,6 +30,8 @@ export type Organization = {
   status: OrgStatus
   wallet_quota: number
   price_group: string
+  wholesale_ratio?: number
+  allowed_models?: string
   owner_user_id: number
   remark: string
   created_time: number
@@ -68,6 +70,8 @@ export type UpdateOrgPayload = {
   price_group?: string
   status?: OrgStatus
   remark?: string
+  wholesale_ratio?: number
+  allowed_models?: string[]
 }
 
 export type CreditOrgPayload = {

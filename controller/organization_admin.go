@@ -65,11 +65,12 @@ func AdminCreateOrganization(c *gin.Context) {
 }
 
 type adminUpdateOrgRequest struct {
-	Name           *string  `json:"name"`
-	PriceGroup     *string  `json:"price_group"`
-	Status         *string  `json:"status"`
-	Remark         *string  `json:"remark"`
-	WholesaleRatio *float64 `json:"wholesale_ratio"`
+	Name           *string   `json:"name"`
+	PriceGroup     *string   `json:"price_group"`
+	Status         *string   `json:"status"`
+	Remark         *string   `json:"remark"`
+	WholesaleRatio *float64  `json:"wholesale_ratio"`
+	AllowedModels  *[]string `json:"allowed_models"`
 }
 
 // AdminUpdateOrganization — PUT /api/admin/organizations/:id
@@ -111,6 +112,15 @@ func AdminUpdateOrganization(c *gin.Context) {
 		}
 		fields["wholesale_ratio"] = *req.WholesaleRatio
 	}
+	if req.AllowedModels != nil {
+		// The reseller's offerable model set (names only). Empty = unrestricted.
+		stored, mErr := model.MarshalAllowedModels(*req.AllowedModels)
+		if mErr != nil {
+			common.ApiError(c, mErr)
+			return
+		}
+		fields["allowed_models"] = stored
+	}
 	if len(fields) == 0 {
 		common.ApiSuccess(c, nil)
 		return
@@ -119,8 +129,9 @@ func AdminUpdateOrganization(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	// Suspending an org must reflect on the hot path for its accounts at once.
-	if req.Status != nil {
+	// Suspension and model-allow changes must reflect on the hot path for the
+	// org's accounts at once (both are enforced from the cached OrgPayerInfo).
+	if req.Status != nil || req.AllowedModels != nil {
 		invalidateOrgAccountsCache(id)
 	}
 	model.RecordOrgAudit(id, c.GetInt("id"), "org.update", fmt.Sprintf("org:%d", id), fmt.Sprintf("%v", fields))

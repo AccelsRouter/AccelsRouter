@@ -59,10 +59,16 @@ type Organization struct {
 	// no discount (1.0). Admin-set per negotiated deal; it is the reseller's
 	// margin lever (they resell that credit to customers at their own price).
 	WholesaleRatio float64 `json:"wholesale_ratio"`
-	OwnerUserId    int     `json:"owner_user_id" gorm:"index"`
-	Remark         string  `json:"remark" gorm:"type:varchar(255)"`
-	CreatedTime    int64   `json:"created_time"`
-	UpdatedTime    int64   `json:"updated_time"`
+	// AllowedModels is a JSON array of model names this org may use. Empty =
+	// unrestricted (whatever the org's group can route). On a RESELLER org it is
+	// admin-set and bounds what the reseller may offer; on a CUSTOMER org it is
+	// reseller-set and is the runtime allow-list enforced on that customer's
+	// requests. See AllowedModelSet.
+	AllowedModels string `json:"allowed_models" gorm:"type:text"`
+	OwnerUserId   int    `json:"owner_user_id" gorm:"index"`
+	Remark        string `json:"remark" gorm:"type:varchar(255)"`
+	CreatedTime   int64  `json:"created_time"`
+	UpdatedTime   int64  `json:"updated_time"`
 }
 
 // OrgAccount binds a user to the organization that pays for it. UserId is
@@ -124,6 +130,91 @@ type WorkspaceToken struct {
 // Hot-path lookup with a small TTL cache
 // ---------------------------------------------------------------------------
 
+// parseAllowedModels parses the JSON model-name array stored on an org. An
+// empty/blank/invalid value yields nil = unrestricted.
+func parseAllowedModels(s string) map[string]bool {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "[]" {
+		return nil
+	}
+	var list []string
+	if err := common.Unmarshal([]byte(s), &list); err != nil {
+		return nil
+	}
+	set := make(map[string]bool, len(list))
+	for _, m := range list {
+		if m = strings.TrimSpace(m); m != "" {
+			set[m] = true
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return set
+}
+
+// AllowedModelSet returns the org's allow-list as a set, or nil if unrestricted.
+func (org *Organization) AllowedModelSet() map[string]bool {
+	return parseAllowedModels(org.AllowedModels)
+}
+
+// MarshalAllowedModels serializes a model-name list for storage, de-duplicated
+// and trimmed. An empty result serializes to "" (= unrestricted).
+func MarshalAllowedModels(models []string) (string, error) {
+	cleaned := make([]string, 0, len(models))
+	seen := map[string]bool{}
+	for _, m := range models {
+		if m = strings.TrimSpace(m); m != "" && !seen[m] {
+			seen[m] = true
+			cleaned = append(cleaned, m)
+		}
+	}
+	if len(cleaned) == 0 {
+		return "", nil
+	}
+	b, err := common.Marshal(cleaned)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// AllowedModelList returns the org's allow-list as an ordered slice (empty =
+// unrestricted), for display/editing.
+func (org *Organization) AllowedModelList() []string {
+	s := strings.TrimSpace(org.AllowedModels)
+	if s == "" {
+		return []string{}
+	}
+	var list []string
+	if err := common.Unmarshal([]byte(s), &list); err != nil {
+		return []string{}
+	}
+	out := make([]string, 0, len(list))
+	for _, m := range list {
+		if m = strings.TrimSpace(m); m != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// SetOrgAllowedModels persists an org's model allow-list (already serialized via
+// MarshalAllowedModels) and invalidates the payer cache for the org's members so
+// the distributor enforcement converges immediately instead of after the TTL.
+func SetOrgAllowedModels(orgId int, stored string) error {
+	if err := DB.Model(&Organization{}).Where("id = ?", orgId).Update("AllowedModels", stored).Error; err != nil {
+		return err
+	}
+	var userIds []int
+	if err := DB.Model(&OrgAccount{}).Where("org_id = ?", orgId).Pluck("user_id", &userIds).Error; err == nil {
+		for _, uid := range userIds {
+			InvalidateOrgPayerCache(uid)
+		}
+	}
+	return nil
+}
+
 // OrgPayerInfo is everything the billing path needs to charge an organization
 // for a managed account's request.
 type OrgPayerInfo struct {
@@ -133,6 +224,10 @@ type OrgPayerInfo struct {
 	AccountStatus string
 	MonthlyBudget int
 	Relation      string
+	// AllowedModels is the payer org's runtime model allow-list (nil =
+	// unrestricted). Enforced in the distributor so a reseller-provisioned
+	// customer can only use the models it was assigned.
+	AllowedModels map[string]bool
 }
 
 type orgPayerCacheEntry struct {
@@ -168,9 +263,10 @@ func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
 		AccountStatus string
 		MonthlyBudget int
 		Relation      string
+		AllowedModels string
 	}
 	err := DB.Table("org_accounts").
-		Select("org_accounts.org_id as org_id, organizations.status as org_status, organizations.type as org_type, org_accounts.status as account_status, org_accounts.monthly_budget as monthly_budget, org_accounts.relation as relation").
+		Select("org_accounts.org_id as org_id, organizations.status as org_status, organizations.type as org_type, org_accounts.status as account_status, org_accounts.monthly_budget as monthly_budget, org_accounts.relation as relation, organizations.allowed_models as allowed_models").
 		Joins("join organizations on organizations.id = org_accounts.org_id").
 		Where("org_accounts.user_id = ?", userId).
 		Limit(1).
@@ -187,6 +283,7 @@ func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
 			AccountStatus: row.AccountStatus,
 			MonthlyBudget: row.MonthlyBudget,
 			Relation:      row.Relation,
+			AllowedModels: parseAllowedModels(row.AllowedModels),
 		}
 	}
 	orgPayerCache.Store(userId, orgPayerCacheEntry{info: info, expiresAt: time.Now().Add(orgPayerCacheTTL)})

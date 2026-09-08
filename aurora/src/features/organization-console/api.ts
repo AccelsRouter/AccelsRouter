@@ -138,6 +138,30 @@ export async function listCustomerInvitations(
   return unwrap(res, 'Failed to load invitations') ?? []
 }
 
+export type CustomerModels = { allowed: string[]; catalog: string[] }
+
+export async function getCustomerModels(
+  customerId: number
+): Promise<CustomerModels> {
+  const res = await api.get<ApiResp<CustomerModels>>(
+    `/api/reseller/customers/${customerId}/models`
+  )
+  const data = unwrap(res, 'Failed to load models')
+  return { allowed: data.allowed ?? [], catalog: data.catalog ?? [] }
+}
+
+export async function setCustomerModels(
+  customerId: number,
+  models: string[]
+): Promise<void> {
+  const res = await api.put<ApiResp<unknown>>(
+    `/api/reseller/customers/${customerId}/models`,
+    { models }
+  )
+  if (!res.data?.success)
+    throw new Error(res.data?.message || 'Failed to save models')
+}
+
 export async function revokeCustomerInvitation(
   customerId: number,
   invId: number

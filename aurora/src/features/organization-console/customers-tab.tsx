@@ -51,11 +51,13 @@ import dayjs from '@/lib/dayjs'
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
 import {
   createCustomer,
+  getCustomerModels,
   getCustomerUsage,
   inviteCustomerOwner,
   listCustomerInvitations,
   listCustomers,
   revokeCustomerInvitation,
+  setCustomerModels,
 } from './api'
 import { Field, Td, Th } from './shared'
 import type { ResellerCustomer } from './types'
@@ -78,6 +80,8 @@ export function CustomersTab(props: { walletQuota: number }) {
   const [inviteCustomer, setInviteCustomer] = useState<ResellerCustomer | null>(
     null
   )
+  const [modelsCustomer, setModelsCustomer] =
+    useState<ResellerCustomer | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['org-customers'],
@@ -171,6 +175,13 @@ export function CustomersTab(props: { walletQuota: number }) {
                       <Button
                         size='sm'
                         variant='outline'
+                        onClick={() => setModelsCustomer(c)}
+                      >
+                        {t('Models')}
+                      </Button>
+                      <Button
+                        size='sm'
+                        variant='outline'
                         onClick={() => setInviteCustomer(c)}
                       >
                         {t('Invite owner')}
@@ -212,7 +223,155 @@ export function CustomersTab(props: { walletQuota: number }) {
         customer={inviteCustomer}
         onClose={() => setInviteCustomer(null)}
       />
+
+      <CustomerModelsDialog
+        customer={modelsCustomer}
+        onClose={() => setModelsCustomer(null)}
+      />
     </div>
+  )
+}
+
+// Assign which models a customer may use — a subset of the reseller's catalog
+// (model names only; no channel/upstream info is ever exposed). Empty = the
+// customer can use everything the catalog offers (unrestricted).
+function CustomerModelsDialog(props: {
+  customer: ResellerCustomer | null
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const customer = props.customer
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [filter, setFilter] = useState('')
+  const [loadedId, setLoadedId] = useState<number | null>(null)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['customer-models', customer?.org.id],
+    queryFn: () => getCustomerModels(customer!.org.id),
+    enabled: !!customer,
+  })
+
+  // Seed the selection from the server once per opened customer.
+  if (customer && data && loadedId !== customer.org.id) {
+    setLoadedId(customer.org.id)
+    setSelected(new Set(data.allowed))
+    setFilter('')
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => setCustomerModels(customer!.org.id, [...selected]),
+    onSuccess: () => {
+      toast.success(t('Models updated'))
+      queryClient.invalidateQueries({
+        queryKey: ['customer-models', customer?.org.id],
+      })
+      props.onClose()
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
+
+  const catalog = data?.catalog ?? []
+  const shown = filter.trim()
+    ? catalog.filter((m) =>
+        m.toLowerCase().includes(filter.trim().toLowerCase())
+      )
+    : catalog
+
+  const toggle = (m: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(m)) next.delete(m)
+      else next.add(m)
+      return next
+    })
+  }
+
+  return (
+    <Dialog open={!!customer} onOpenChange={(o) => !o && props.onClose()}>
+      <DialogContent className='max-h-[85vh] overflow-hidden sm:max-w-lg'>
+        <DialogHeader>
+          <DialogTitle>{t('Assign models')}</DialogTitle>
+          <DialogDescription>
+            {t(
+              'Choose which models this customer can use. Leave all unchecked to allow every model in the catalog.'
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className='flex h-40 items-center justify-center'>
+            <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
+          </div>
+        ) : (
+          <div className='flex flex-col gap-3'>
+            <div className='flex items-center justify-between gap-2'>
+              <Input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder={t('Filter models')}
+                className='h-8'
+              />
+              <div className='flex gap-2 whitespace-nowrap'>
+                <Button
+                  size='sm'
+                  variant='ghost'
+                  onClick={() => setSelected(new Set(catalog))}
+                >
+                  {t('All')}
+                </Button>
+                <Button
+                  size='sm'
+                  variant='ghost'
+                  onClick={() => setSelected(new Set())}
+                >
+                  {t('None')}
+                </Button>
+              </div>
+            </div>
+            <div className='text-muted-foreground text-xs'>
+              {t('{{n}} selected', { n: selected.size })} · {catalog.length}{' '}
+              {t('in catalog')}
+            </div>
+            <div className='divide-border/60 max-h-[45vh] divide-y overflow-y-auto rounded-lg border'>
+              {shown.length === 0 ? (
+                <p className='text-muted-foreground p-4 text-center text-sm'>
+                  {catalog.length === 0
+                    ? t('No models available in the catalog.')
+                    : t('No models match the filter.')}
+                </p>
+              ) : (
+                shown.map((m) => (
+                  <label
+                    key={m}
+                    className='hover:bg-muted/30 flex cursor-pointer items-center gap-2 px-3 py-2 text-sm'
+                  >
+                    <input
+                      type='checkbox'
+                      checked={selected.has(m)}
+                      onChange={() => toggle(m)}
+                    />
+                    <span className='truncate'>{m}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+        <DialogFooter className='gap-2'>
+          <Button variant='outline' onClick={props.onClose}>
+            {t('Cancel')}
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || isLoading}
+            className='gap-1.5'
+          >
+            {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
+            {t('Save')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

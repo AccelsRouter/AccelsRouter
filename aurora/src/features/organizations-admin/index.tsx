@@ -433,6 +433,18 @@ function CreateOrgDialog(props: {
   )
 }
 
+// The org's allowed_models is stored as a JSON array string; parse it for the
+// admin editor (empty/invalid → []).
+function parseModelsField(s?: string): string[] {
+  if (!s) return []
+  try {
+    const v: unknown = JSON.parse(s)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 function EditOrgDialog(props: {
   org: Organization | null
   onClose: () => void
@@ -444,7 +456,10 @@ function EditOrgDialog(props: {
   const [priceGroup, setPriceGroup] = useState('')
   const [status, setStatus] = useState<OrgStatus>('active')
   const [remark, setRemark] = useState('')
+  const [wholesaleRatio, setWholesaleRatio] = useState('')
+  const [allowedModels, setAllowedModels] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
+  const isReseller = org?.type === 'reseller'
 
   // Sync local form state when a different org is opened.
   if (org && org.id !== loadedId) {
@@ -453,6 +468,8 @@ function EditOrgDialog(props: {
     setPriceGroup(org.price_group)
     setStatus(org.status)
     setRemark(org.remark)
+    setWholesaleRatio(org.wholesale_ratio ? String(org.wholesale_ratio) : '')
+    setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
   }
 
   const mutation = useMutation({
@@ -462,6 +479,17 @@ function EditOrgDialog(props: {
         price_group: priceGroup.trim(),
         status,
         remark: remark.trim(),
+        ...(isReseller
+          ? {
+              wholesale_ratio: wholesaleRatio.trim()
+                ? Number(wholesaleRatio)
+                : 0,
+              allowed_models: allowedModels
+                .split(/[\n,]/)
+                .map((m) => m.trim())
+                .filter(Boolean),
+            }
+          : {}),
       }),
     onSuccess: () => {
       toast.success(t('Organization updated'))
@@ -508,6 +536,33 @@ function EditOrgDialog(props: {
               rows={2}
             />
           </Field>
+          {isReseller && (
+            <>
+              <Field
+                label={t('Wholesale ratio (0–1, blank = no discount)')}
+              >
+                <Input
+                  type='number'
+                  step='0.01'
+                  min='0'
+                  max='1'
+                  value={wholesaleRatio}
+                  onChange={(e) => setWholesaleRatio(e.target.value)}
+                  placeholder='e.g. 0.85'
+                />
+              </Field>
+              <Field
+                label={t('Offerable models (one per line; blank = all)')}
+              >
+                <Textarea
+                  value={allowedModels}
+                  onChange={(e) => setAllowedModels(e.target.value)}
+                  rows={4}
+                  placeholder={'gpt-4o\nclaude-3-5-sonnet'}
+                />
+              </Field>
+            </>
+          )}
         </div>
         <DialogFooter className='gap-2'>
           <Button

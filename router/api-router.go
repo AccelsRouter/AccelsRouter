@@ -252,6 +252,9 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)
 			resellerRoute.POST("/customers/:id/invitations", middleware.CriticalRateLimit(), controller.InviteMyCustomerOwner)
 			resellerRoute.DELETE("/customers/:id/invitations/:inv_id", controller.RevokeMyCustomerInvitation)
+			// Per-customer model access: assign which models a customer may use.
+			resellerRoute.GET("/customers/:id/models", controller.GetMyCustomerModels)
+			resellerRoute.PUT("/customers/:id/models", controller.SetMyCustomerModels)
 		}
 
 		personalByokRoute := apiRouter.Group("/personal_byok")
