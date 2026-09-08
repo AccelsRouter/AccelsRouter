@@ -118,6 +118,88 @@ func GetMyCustomerUsage(c *gin.Context) {
 	common.ApiSuccess(c, report)
 }
 
+// callerResellerCustomer resolves the caller's reseller org and the customer id
+// in the :id path param, and authorizes that the org is actually this
+// reseller's customer. Writes the error and returns ok=false otherwise.
+func callerResellerCustomer(c *gin.Context) (reseller *model.Organization, customerId int, ok bool) {
+	reseller, ok = callerReseller(c)
+	if !ok {
+		return nil, 0, false
+	}
+	customerId, _ = strconv.Atoi(c.Param("id"))
+	isCustomer, err := model.IsResellerCustomer(reseller.Id, customerId)
+	if err != nil {
+		common.ApiError(c, err)
+		return nil, 0, false
+	}
+	if !isCustomer {
+		common.ApiErrorMsg(c, "该组织不是你的客户")
+		return nil, 0, false
+	}
+	return reseller, customerId, true
+}
+
+// InviteMyCustomerOwner — POST /api/reseller/customers/:id/invitations
+// Deliver a provisioned (ownerless) customer to its operator: invite an email
+// to take over the customer org as its admin. The invitee accepts via the
+// standard /organization/join?code=... flow (email-scoped, consent-gated).
+func InviteMyCustomerOwner(c *gin.Context) {
+	reseller, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// Role must be admin (owner is not invitable); relation customer marks this
+	// as a reseller-provisioned managed org.
+	inv := &model.OrgInvitation{
+		OrgId:        customerId,
+		Relation:     model.OrgRelationCustomer,
+		Role:         model.OrgRoleAdmin,
+		InvitedEmail: strings.TrimSpace(req.Email),
+		CreatedBy:    c.GetInt("id"),
+	}
+	if err := model.CreateOrgInvitation(inv); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
+	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt})
+}
+
+// ListMyCustomerInvitations — GET /api/reseller/customers/:id/invitations
+func ListMyCustomerInvitations(c *gin.Context) {
+	_, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	rows, err := model.ListOrgInvitations(customerId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, rows)
+}
+
+// RevokeMyCustomerInvitation — DELETE /api/reseller/customers/:id/invitations/:inv_id
+func RevokeMyCustomerInvitation(c *gin.Context) {
+	_, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	invId, _ := strconv.Atoi(c.Param("inv_id"))
+	if err := model.RevokeOrgInvitation(customerId, invId); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	common.ApiSuccess(c, nil)
+}
+
 // GetMyResellerOrg — GET /api/organization/reseller/self
 // Reseller-scoped org view (wallet, price group). Resolves via the reseller-
 // admin link, so it works for a reseller admin who is not an OrgAccount member.

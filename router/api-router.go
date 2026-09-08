@@ -248,6 +248,10 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			resellerRoute.GET("/wallet", controller.GetMyResellerWallet)
 			resellerRoute.POST("/wallet/purchase", middleware.CriticalRateLimit(), controller.PurchaseMyResellerCredit)
+			// Customer delivery: invite a customer org's operator (admin).
+			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)
+			resellerRoute.POST("/customers/:id/invitations", middleware.CriticalRateLimit(), controller.InviteMyCustomerOwner)
+			resellerRoute.DELETE("/customers/:id/invitations/:inv_id", controller.RevokeMyCustomerInvitation)
 		}
 
 		personalByokRoute := apiRouter.Group("/personal_byok")

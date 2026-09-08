@@ -109,6 +109,46 @@ export async function purchaseResellerCredit(
   return unwrap(res, 'Failed to purchase credit')
 }
 
+export type CustomerInvitation = {
+  id: number
+  code: string
+  invited_email: string
+  status: string
+  role: string
+  expires_at: number
+  created_time: number
+}
+
+export async function inviteCustomerOwner(
+  customerId: number,
+  email: string
+): Promise<{ code: string; invited_email: string; expires_at: number }> {
+  const res = await api.post<
+    ApiResp<{ code: string; invited_email: string; expires_at: number }>
+  >(`/api/reseller/customers/${customerId}/invitations`, { email })
+  return unwrap(res, 'Failed to send invitation')
+}
+
+export async function listCustomerInvitations(
+  customerId: number
+): Promise<CustomerInvitation[]> {
+  const res = await api.get<ApiResp<CustomerInvitation[]>>(
+    `/api/reseller/customers/${customerId}/invitations`
+  )
+  return unwrap(res, 'Failed to load invitations') ?? []
+}
+
+export async function revokeCustomerInvitation(
+  customerId: number,
+  invId: number
+): Promise<void> {
+  const res = await api.delete<ApiResp<unknown>>(
+    `/api/reseller/customers/${customerId}/invitations/${invId}`
+  )
+  if (!res.data?.success)
+    throw new Error(res.data?.message || 'Failed to revoke invitation')
+}
+
 export async function listResellerLedger(params: {
   page: number
   pageSize: number

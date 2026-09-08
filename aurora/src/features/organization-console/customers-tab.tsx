@@ -49,7 +49,14 @@ import { formatQuotaWithCurrency } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
-import { createCustomer, getCustomerUsage, listCustomers } from './api'
+import {
+  createCustomer,
+  getCustomerUsage,
+  inviteCustomerOwner,
+  listCustomerInvitations,
+  listCustomers,
+  revokeCustomerInvitation,
+} from './api'
 import { Field, Td, Th } from './shared'
 import type { ResellerCustomer } from './types'
 import { UsageReport } from './usage-report'
@@ -66,6 +73,9 @@ export function CustomersTab(props: { walletQuota: number }) {
     customer: ResellerCustomer
   } | null>(null)
   const [usageCustomer, setUsageCustomer] = useState<ResellerCustomer | null>(
+    null
+  )
+  const [inviteCustomer, setInviteCustomer] = useState<ResellerCustomer | null>(
     null
   )
 
@@ -161,6 +171,13 @@ export function CustomersTab(props: { walletQuota: number }) {
                       <Button
                         size='sm'
                         variant='outline'
+                        onClick={() => setInviteCustomer(c)}
+                      >
+                        {t('Invite owner')}
+                      </Button>
+                      <Button
+                        size='sm'
+                        variant='outline'
                         onClick={() => setUsageCustomer(c)}
                       >
                         {t('Usage')}
@@ -190,7 +207,170 @@ export function CustomersTab(props: { walletQuota: number }) {
         customer={usageCustomer}
         onClose={() => setUsageCustomer(null)}
       />
+
+      <CustomerInviteDialog
+        customer={inviteCustomer}
+        onClose={() => setInviteCustomer(null)}
+      />
     </div>
+  )
+}
+
+// Deliver a provisioned customer to its operator: invite an email to take over
+// the customer org as admin, and show the join link to share.
+function CustomerInviteDialog(props: {
+  customer: ResellerCustomer | null
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const customer = props.customer
+  const [email, setEmail] = useState('')
+  const [lastLink, setLastLink] = useState<string | null>(null)
+
+  const { data: invitations } = useQuery({
+    queryKey: ['customer-invitations', customer?.org.id],
+    queryFn: () => listCustomerInvitations(customer!.org.id),
+    enabled: !!customer,
+  })
+
+  const joinLink = (code: string) =>
+    `${window.location.origin}/organization/join?code=${code}`
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({
+      queryKey: ['customer-invitations', customer?.org.id],
+    })
+
+  const inviteMutation = useMutation({
+    mutationFn: () => inviteCustomerOwner(customer!.org.id, email.trim()),
+    onSuccess: (res) => {
+      setLastLink(joinLink(res.code))
+      setEmail('')
+      toast.success(t('Invitation sent'))
+      invalidate()
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
+
+  const revokeMutation = useMutation({
+    mutationFn: (invId: number) =>
+      revokeCustomerInvitation(customer!.org.id, invId),
+    onSuccess: () => {
+      toast.success(t('Invitation revoked'))
+      invalidate()
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
+
+  const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())
+
+  return (
+    <Dialog open={!!customer} onOpenChange={(o) => !o && props.onClose()}>
+      <DialogContent className='sm:max-w-lg'>
+        <DialogHeader>
+          <DialogTitle>{t('Invite owner')}</DialogTitle>
+          <DialogDescription>
+            {t(
+              'Invite the customer’s operator by email to take over this organization as its admin. They accept via the link and must sign in with the invited email.'
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className='flex flex-col gap-3'>
+          <Field label={t('Invited email')}>
+            <div className='flex gap-2'>
+              <Input
+                type='email'
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder='owner@customer.com'
+              />
+              <Button
+                onClick={() => inviteMutation.mutate()}
+                disabled={!emailValid || inviteMutation.isPending}
+                className='gap-1.5 whitespace-nowrap'
+              >
+                {inviteMutation.isPending && (
+                  <Loader2 className='h-4 w-4 animate-spin' />
+                )}
+                {t('Send invite')}
+              </Button>
+            </div>
+          </Field>
+
+          {lastLink && (
+            <div className='border-border/60 bg-muted/30 flex flex-col gap-1.5 rounded-lg border p-3'>
+              <span className='text-muted-foreground text-xs'>
+                {t('Share this join link with the customer')}
+              </span>
+              <div className='flex items-center gap-2'>
+                <code className='bg-background flex-1 truncate rounded px-2 py-1 text-xs'>
+                  {lastLink}
+                </code>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(lastLink)
+                    toast.success(t('Copied'))
+                  }}
+                >
+                  {t('Copy')}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {invitations && invitations.length > 0 && (
+            <div className='flex flex-col gap-2'>
+              <span className='text-muted-foreground text-xs'>
+                {t('Invitations')}
+              </span>
+              {invitations.map((inv) => (
+                <div
+                  key={inv.id}
+                  className='border-border/60 flex items-center justify-between gap-2 rounded-lg border p-2 text-sm'
+                >
+                  <div className='flex min-w-0 flex-col'>
+                    <span className='truncate'>{inv.invited_email}</span>
+                    <span className='text-muted-foreground text-xs'>
+                      {inv.status}
+                    </span>
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <Button
+                      size='sm'
+                      variant='ghost'
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(joinLink(inv.code))
+                        toast.success(t('Copied'))
+                      }}
+                    >
+                      {t('Copy link')}
+                    </Button>
+                    {inv.status === 'pending' && (
+                      <Button
+                        size='sm'
+                        variant='ghost'
+                        onClick={() => revokeMutation.mutate(inv.id)}
+                        disabled={revokeMutation.isPending}
+                      >
+                        {t('Revoke')}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant='outline' onClick={props.onClose}>
+            {t('Close')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
