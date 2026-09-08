@@ -12,7 +12,58 @@ import (
 	"errors"
 
 	"github.com/QuantumNous/new-api/common"
+	"gorm.io/gorm"
 )
+
+// EffectiveWholesaleRatio returns the reseller's wholesale price ratio, clamped
+// to the sane (0,1] range; anything else (unset 0, or a nonsensical >1) means
+// "no discount" = 1.0. personal quota spent = purchased credit × ratio.
+func (org *Organization) EffectiveWholesaleRatio() float64 {
+	if org.WholesaleRatio > 0 && org.WholesaleRatio <= 1 {
+		return org.WholesaleRatio
+	}
+	return 1.0
+}
+
+// PurchaseResellerCredit atomically buys wallet credit for a reseller org by
+// debiting the purchasing user's personal quota. `cost` (personal quota spent)
+// is computed by the caller from `quota` and the reseller's wholesale ratio.
+// Both movements commit together; the user debit is conditional on sufficient
+// balance so it can never drive the balance negative under concurrency.
+func PurchaseResellerCredit(resellerOrgId, userId, quota, cost int, tradeNo, remark string) error {
+	if quota <= 0 || cost <= 0 {
+		return errors.New("购买额度必须为正")
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&User{}).Where("id = ? AND quota >= ?", userId, cost).
+			Update("quota", gorm.Expr("quota - ?", cost))
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errors.New("个人余额不足")
+		}
+		cred := tx.Model(&Organization{}).Where("id = ?", resellerOrgId).
+			Update("wallet_quota", gorm.Expr("wallet_quota + ?", quota))
+		if cred.Error != nil {
+			return cred.Error
+		}
+		// Verify the credit landed (parity with PlatformCreditOrg/TransferOrgCredit):
+		// if the org row is gone, roll back rather than silently debiting the buyer.
+		if cred.RowsAffected != 1 {
+			return errors.New("代理商组织不存在")
+		}
+		return insertLedger(tx, 0, resellerOrgId, quota, userId, LedgerTypePurchase, tradeNo, remark)
+	})
+	if err != nil {
+		return err
+	}
+	// Keep the user-quota cache consistent with the committed DB debit.
+	if cerr := cacheDecrUserQuota(userId, int64(cost)); cerr != nil {
+		common.SysLog("reseller purchase: cache decr failed: " + cerr.Error())
+	}
+	return nil
+}
 
 // ResellerCustomerLink is the explicit reseller⇄customer relationship. It is
 // the AUTHORIZATION record (not the ledger): a reseller may fund/view only an

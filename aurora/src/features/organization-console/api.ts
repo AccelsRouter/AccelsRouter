@@ -89,6 +89,26 @@ export async function getResellerSelf(): Promise<OrgSelf | null> {
   }
 }
 
+export type ResellerWallet = {
+  wallet_quota: number
+  wholesale_ratio: number
+  personal_quota: number
+}
+
+export async function getResellerWallet(): Promise<ResellerWallet> {
+  const res = await api.get<ApiResp<ResellerWallet>>('/api/reseller/wallet')
+  return unwrap(res, 'Failed to load wallet')
+}
+
+export async function purchaseResellerCredit(
+  quota: number
+): Promise<{ quota: number; cost: number; wallet_quota: number }> {
+  const res = await api.post<
+    ApiResp<{ quota: number; cost: number; wallet_quota: number }>
+  >('/api/reseller/wallet/purchase', { quota })
+  return unwrap(res, 'Failed to purchase credit')
+}
+
 export async function listResellerLedger(params: {
   page: number
   pageSize: number

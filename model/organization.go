@@ -54,10 +54,15 @@ type Organization struct {
 	Status      string `json:"status" gorm:"type:varchar(16);index"`        // active | suspended
 	WalletQuota int    `json:"wallet_quota"`
 	PriceGroup  string `json:"price_group" gorm:"type:varchar(64)"` // wholesale / negotiated group
-	OwnerUserId int    `json:"owner_user_id" gorm:"index"`
-	Remark      string `json:"remark" gorm:"type:varchar(255)"`
-	CreatedTime int64  `json:"created_time"`
-	UpdatedTime int64  `json:"updated_time"`
+	// WholesaleRatio is the reseller's wholesale price for buying wallet credit:
+	// personal quota spent = purchased credit × ratio. 0 (or out of (0,1]) means
+	// no discount (1.0). Admin-set per negotiated deal; it is the reseller's
+	// margin lever (they resell that credit to customers at their own price).
+	WholesaleRatio float64 `json:"wholesale_ratio"`
+	OwnerUserId    int     `json:"owner_user_id" gorm:"index"`
+	Remark         string  `json:"remark" gorm:"type:varchar(255)"`
+	CreatedTime    int64   `json:"created_time"`
+	UpdatedTime    int64   `json:"updated_time"`
 }
 
 // OrgAccount binds a user to the organization that pays for it. UserId is

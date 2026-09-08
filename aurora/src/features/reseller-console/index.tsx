@@ -41,9 +41,12 @@ import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 
+import { ResellerTopUpDialog } from './reseller-topup-dialog'
+
 export function ResellerConsole() {
   const { t } = useTranslation()
   const [tab, setTab] = useState('customers')
+  const [topUpOpen, setTopUpOpen] = useState(false)
   const [allocationMode, setAllocationMode] = useState<AllocationMode | null>(
     null
   )
@@ -61,6 +64,9 @@ export function ResellerConsole() {
       <SectionPageLayout.Title>{t('Distributor')}</SectionPageLayout.Title>
       {self && isReseller && (
         <SectionPageLayout.Actions>
+          <Button size='sm' onClick={() => setTopUpOpen(true)}>
+            {t('Buy credit')}
+          </Button>
           <Button
             variant='outline'
             size='sm'
@@ -138,6 +144,10 @@ export function ResellerConsole() {
         <AllocationDialog
           mode={allocationMode}
           onClose={() => setAllocationMode(null)}
+        />
+        <ResellerTopUpDialog
+          open={topUpOpen}
+          onClose={() => setTopUpOpen(false)}
         />
       </SectionPageLayout.Content>
     </SectionPageLayout>

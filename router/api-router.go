@@ -203,6 +203,9 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.POST("/revoke", middleware.CriticalRateLimit(), controller.RevokeFromMyOrg)
 			// Reseller customer management (reseller orgs only). Resolved via
 			// the reseller-admin link, decoupled from the paying OrgAccount.
+			// NOTE: new reseller-specific endpoints go under the /api/reseller
+			// group below (the bounded reseller module); these stay for
+			// backward compatibility with the existing console.
 			orgRoute.GET("/reseller/self", controller.GetMyResellerOrg)
 			orgRoute.GET("/reseller/ledger", controller.ListMyResellerLedger)
 			orgRoute.GET("/customers", controller.ListMyCustomers)
@@ -235,6 +238,18 @@ func SetApiRouter(router *gin.Engine) {
 		// Fork: personal BYOK — an individual user brings its own upstream
 		// provider credentials (channels in the user's private group) and a
 		// BYOK key that routes only to them. Gated by PersonalByokEnabled.
+		// Fork: bounded reseller module (/api/reseller/*). New reseller-
+		// specific capabilities land here rather than under /organization,
+		// so the reseller surface is a clean seam that can be extracted (own
+		// service / partner portal) later. Resolved via the reseller-admin
+		// link. First capability: self-service wholesale wallet top-up.
+		resellerRoute := apiRouter.Group("/reseller")
+		resellerRoute.Use(middleware.UserAuth())
+		{
+			resellerRoute.GET("/wallet", controller.GetMyResellerWallet)
+			resellerRoute.POST("/wallet/purchase", middleware.CriticalRateLimit(), controller.PurchaseMyResellerCredit)
+		}
+
 		personalByokRoute := apiRouter.Group("/personal_byok")
 		personalByokRoute.Use(middleware.UserAuth())
 		{

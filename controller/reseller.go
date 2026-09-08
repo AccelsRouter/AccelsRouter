@@ -137,6 +137,71 @@ func GetMyResellerOrg(c *gin.Context) {
 	})
 }
 
+// maxResellerPurchaseQuota bounds a single self-service credit purchase, so a
+// mistyped amount can't request an absurd wallet movement (the user's personal
+// balance already caps what actually clears).
+const maxResellerPurchaseQuota = 100_000_000
+
+// GetMyResellerWallet — GET /api/reseller/wallet
+// Returns the reseller's wallet, its wholesale ratio, and the caller's personal
+// balance so the top-up dialog can show "cost = credit × ratio".
+func GetMyResellerWallet(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	personal, err := model.GetUserQuota(c.GetInt("id"), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"wallet_quota":    reseller.WalletQuota,
+		"wholesale_ratio": reseller.EffectiveWholesaleRatio(),
+		"personal_quota":  personal,
+	})
+}
+
+// PurchaseMyResellerCredit — POST /api/reseller/wallet/purchase
+// Self-service: buy wallet credit at the reseller's wholesale ratio, paid from
+// the caller's personal balance. This is what unblocks a $0 reseller wallet.
+func PurchaseMyResellerCredit(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Quota int `json:"quota"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if req.Quota <= 0 {
+		common.ApiErrorMsg(c, "购买额度必须为正")
+		return
+	}
+	if req.Quota > maxResellerPurchaseQuota {
+		common.ApiErrorMsg(c, "单次购买额度超过上限")
+		return
+	}
+	// cost (personal quota spent) = credit × wholesale ratio, rounded via the
+	// centralized quota rounding helper. ratio ≤ 1 ⇒ cost ≤ credit.
+	cost := common.QuotaRound(float64(req.Quota) * reseller.EffectiveWholesaleRatio())
+	if cost <= 0 {
+		cost = req.Quota
+	}
+	tradeNo := "rspur-" + common.GetUUID()
+	if err := model.PurchaseResellerCredit(reseller.Id, c.GetInt("id"), req.Quota, cost, tradeNo, "reseller wallet purchase"); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "wallet.purchase", fmt.Sprintf("trade:%s", tradeNo), fmt.Sprintf("credit=%d cost=%d", req.Quota, cost))
+	// The console refetches the wallet after this call, so return only the
+	// purchase result — not an in-memory-derived (possibly stale) balance.
+	common.ApiSuccess(c, gin.H{"quota": req.Quota, "cost": cost})
+}
+
 // ListMyResellerLedger — GET /api/organization/reseller/ledger
 func ListMyResellerLedger(c *gin.Context) {
 	reseller, ok := callerReseller(c)

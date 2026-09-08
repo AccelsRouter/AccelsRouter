@@ -65,10 +65,11 @@ func AdminCreateOrganization(c *gin.Context) {
 }
 
 type adminUpdateOrgRequest struct {
-	Name       *string `json:"name"`
-	PriceGroup *string `json:"price_group"`
-	Status     *string `json:"status"`
-	Remark     *string `json:"remark"`
+	Name           *string  `json:"name"`
+	PriceGroup     *string  `json:"price_group"`
+	Status         *string  `json:"status"`
+	Remark         *string  `json:"remark"`
+	WholesaleRatio *float64 `json:"wholesale_ratio"`
 }
 
 // AdminUpdateOrganization — PUT /api/admin/organizations/:id
@@ -100,6 +101,15 @@ func AdminUpdateOrganization(c *gin.Context) {
 	}
 	if req.Remark != nil {
 		fields["remark"] = *req.Remark
+	}
+	if req.WholesaleRatio != nil {
+		// Wholesale ratio is a reseller's negotiated buy price (personal quota
+		// spent = credit × ratio). Bound to (0,1]; 0 clears it (= no discount).
+		if *req.WholesaleRatio < 0 || *req.WholesaleRatio > 1 {
+			common.ApiErrorMsg(c, "wholesale_ratio must be within (0, 1]")
+			return
+		}
+		fields["wholesale_ratio"] = *req.WholesaleRatio
 	}
 	if len(fields) == 0 {
 		common.ApiSuccess(c, nil)
