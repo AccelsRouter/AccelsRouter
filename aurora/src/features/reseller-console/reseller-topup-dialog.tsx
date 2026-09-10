@@ -25,7 +25,7 @@ import {
   purchaseResellerCredit,
 } from '@/features/organization-console/api'
 import { Field } from '@/features/organization-console/shared'
-import { formatQuotaWithCurrency } from '@/lib/currency'
+import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
 
 export function ResellerTopUpDialog({
   open,
@@ -36,7 +36,7 @@ export function ResellerTopUpDialog({
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [amount, setAmount] = useState('')
+  const [dollars, setDollars] = useState('')
 
   const { data: wallet } = useQuery({
     queryKey: ['reseller-wallet'],
@@ -44,7 +44,9 @@ export function ResellerTopUpDialog({
     enabled: open,
   })
 
-  const credit = Math.floor(Number(amount) || 0)
+  // The user buys in dollars; the API works in raw quota units.
+  const usd = Number(dollars) || 0
+  const credit = quotaFromUSD(usd)
   const ratio = wallet?.wholesale_ratio ?? 1
   const cost = Math.round(credit * ratio)
   const personal = wallet?.personal_quota ?? 0
@@ -58,7 +60,7 @@ export function ResellerTopUpDialog({
       queryClient.invalidateQueries({ queryKey: ['reseller-self'] })
       queryClient.invalidateQueries({ queryKey: ['reseller-wallet'] })
       queryClient.invalidateQueries({ queryKey: ['reseller-ledger'] })
-      setAmount('')
+      setDollars('')
       onClose()
       void res
     },
@@ -77,16 +79,23 @@ export function ResellerTopUpDialog({
           </DialogDescription>
         </DialogHeader>
         <div className='flex flex-col gap-3'>
-          <Field label={t('Credit to buy (raw units)')}>
-            <Input
-              type='number'
-              min={1}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
+          <Field label={t('Amount to buy (USD)')}>
+            <div className='relative'>
+              <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
+                $
+              </span>
+              <Input
+                type='number'
+                min={0}
+                step='0.01'
+                value={dollars}
+                onChange={(e) => setDollars(e.target.value)}
+                className='pl-6'
+              />
+            </div>
             {credit > 0 && (
               <span className='text-muted-foreground text-xs'>
-                = {formatQuotaWithCurrency(credit)}
+                = {credit.toLocaleString()} {t('credit units')}
               </span>
             )}
           </Field>

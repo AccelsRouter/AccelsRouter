@@ -55,6 +55,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   approveApplication,
   listApplications,
+  listGroups,
   rejectApplication,
 } from './api'
 import type {
@@ -280,14 +281,24 @@ function ReviewDialog(props: {
   const queryClient = useQueryClient()
   const review = props.review
   const isApprove = review?.mode === 'approve'
+  const isReseller = review?.app.type === 'reseller'
   const [priceGroup, setPriceGroup] = useState('')
+  const [wholesaleRatio, setWholesaleRatio] = useState('')
   const [note, setNote] = useState('')
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
+
+  const { data: groups } = useQuery({
+    queryKey: ['admin-groups'],
+    queryFn: listGroups,
+    enabled: !!review && isApprove,
+    staleTime: 60_000,
+  })
 
   const key = review ? `${review.app.id}:${review.mode}` : null
   if (review && key !== loadedKey) {
     setLoadedKey(key)
     setPriceGroup('')
+    setWholesaleRatio('')
     setNote('')
   }
 
@@ -296,6 +307,10 @@ function ReviewDialog(props: {
       isApprove
         ? approveApplication(review!.app.id, {
             price_group: priceGroup.trim() || undefined,
+            wholesale_ratio:
+              isReseller && wholesaleRatio.trim() !== ''
+                ? Number(wholesaleRatio)
+                : undefined,
             note: note.trim() || undefined,
           })
         : rejectApplication(review!.app.id, {
@@ -342,10 +357,39 @@ function ReviewDialog(props: {
           {isApprove && (
             <div className='flex flex-col gap-1.5'>
               <Label className='text-xs'>{t('Price Group')}</Label>
-              <Input
+              <NativeSelect
+                className='w-full'
                 value={priceGroup}
                 onChange={(e) => setPriceGroup(e.target.value)}
+              >
+                <NativeSelectOption value=''>
+                  {t('Default')}
+                </NativeSelectOption>
+                {(groups ?? []).map((g) => (
+                  <NativeSelectOption key={g} value={g}>
+                    {g}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
+          {isApprove && isReseller && (
+            <div className='flex flex-col gap-1.5'>
+              <Label className='text-xs'>{t('Wholesale ratio')}</Label>
+              <Input
+                type='number'
+                min={0}
+                max={1}
+                step='0.01'
+                placeholder='1.0'
+                value={wholesaleRatio}
+                onChange={(e) => setWholesaleRatio(e.target.value)}
               />
+              <span className='text-muted-foreground text-xs'>
+                {t(
+                  'The reseller pays this fraction of face value when buying credit (e.g. 0.85 = 15% off). Blank = no discount.'
+                )}
+              </span>
             </div>
           )}
           <div className='flex flex-col gap-1.5'>

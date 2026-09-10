@@ -165,7 +165,11 @@ export async function listApplications(params: {
 
 export async function approveApplication(
   id: number,
-  payload: { price_group?: string; note?: string }
+  payload: {
+    price_group?: string
+    wholesale_ratio?: number
+    note?: string
+  }
 ): Promise<void> {
   const res = await api.post<ApiResp<unknown>>(
     `/api/admin/organizations/applications/${id}/approve`,
@@ -173,6 +177,12 @@ export async function approveApplication(
   )
   if (!res.data?.success)
     throw new Error(res.data?.message || 'Failed to approve application')
+}
+
+// Available price/rate groups (admin) — names only, for the price-group picker.
+export async function listGroups(): Promise<string[]> {
+  const res = await api.get<ApiResp<string[]>>('/api/group/')
+  return res.data?.data ?? []
 }
 
 export async function rejectApplication(

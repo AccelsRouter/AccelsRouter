@@ -21,7 +21,7 @@ Reseller-only allocate / revoke quota dialog. Moves wallet quota to (or back
 from) a downstream organization identified by its org ID.
 */
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -36,9 +36,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 
-import { allocateQuota, revokeQuota } from './api'
+import { allocateQuota, listCustomers, revokeQuota } from './api'
 import { Field } from './shared'
 
 export type AllocationMode = 'allocate' | 'revoke'
@@ -58,6 +62,13 @@ export function AllocationDialog(props: {
   const [toOrgId, setToOrgId] = useState('')
   const [quota, setQuota] = useState('')
   const [remark, setRemark] = useState('')
+  // When no target org is fixed (the top-level Allocate/Revoke buttons), let the
+  // reseller pick a customer from a dropdown instead of typing a raw org id.
+  const { data: customers } = useQuery({
+    queryKey: ['org-customers'],
+    queryFn: listCustomers,
+    enabled: !!mode && fixedOrgId == null,
+  })
   const [loadedMode, setLoadedMode] = useState<AllocationMode | null>(null)
   // Re-key the reset on both mode and target so reopening for a different
   // customer clears the previous entry.
@@ -110,18 +121,24 @@ export function AllocationDialog(props: {
           </DialogDescription>
         </DialogHeader>
         <div className='flex flex-col gap-3'>
-          <Field label={t('Target Organization ID')}>
-            <Input
-              type='number'
-              value={toOrgId}
-              onChange={(e) => setToOrgId(e.target.value)}
-              readOnly={fixedOrgId != null}
-              disabled={fixedOrgId != null}
-            />
-            {props.fixedOrgLabel && (
-              <span className='text-muted-foreground text-xs'>
-                {props.fixedOrgLabel}
-              </span>
+          <Field label={t('Customer')}>
+            {fixedOrgId != null ? (
+              <Input value={props.fixedOrgLabel ?? String(fixedOrgId)} readOnly disabled />
+            ) : (
+              <NativeSelect
+                className='w-full'
+                value={toOrgId}
+                onChange={(e) => setToOrgId(e.target.value)}
+              >
+                <NativeSelectOption value=''>
+                  {t('Select a customer')}
+                </NativeSelectOption>
+                {(customers ?? []).map((c) => (
+                  <NativeSelectOption key={c.org.id} value={String(c.org.id)}>
+                    {c.org.name} (#{c.org.id})
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
             )}
           </Field>
           <Field label={t('Quota (raw units)')}>

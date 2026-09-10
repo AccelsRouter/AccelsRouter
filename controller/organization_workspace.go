@@ -243,6 +243,50 @@ func CreateWorkspaceKey(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"token_id": token.Id, "key": "sk-" + key})
 }
 
+// ListMyWorkspaceKeys — GET /api/organization/workspaces/:id/keys
+// Lists the workspace's keys with the secret MASKED. The full key is shown only
+// once at creation (it is never returned again), so this is how an org sees
+// which keys exist, their names and status, after the fact.
+func ListMyWorkspaceKeys(c *gin.Context) {
+	org, _, ok := callerOrg(c)
+	if !ok {
+		return
+	}
+	ws := ownWorkspace(c, org)
+	if ws == nil {
+		return
+	}
+	wts, err := model.ListWorkspaceTokens(ws.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	tokenIds := make([]int, 0, len(wts))
+	for _, wt := range wts {
+		tokenIds = append(tokenIds, wt.TokenId)
+	}
+	out := make([]gin.H, 0, len(tokenIds))
+	if len(tokenIds) > 0 {
+		var tokens []model.Token
+		if err := model.DB.Where("id IN ?", tokenIds).Order("id DESC").Find(&tokens).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		for _, tk := range tokens {
+			out = append(out, gin.H{
+				"token_id":        tk.Id,
+				"name":            tk.Name,
+				"status":          tk.Status,
+				"key_masked":      "sk-" + maskChannelKey(tk.Key),
+				"unlimited_quota": tk.UnlimitedQuota,
+				"remain_quota":    tk.RemainQuota,
+				"created_time":    tk.CreatedTime,
+			})
+		}
+	}
+	common.ApiSuccess(c, out)
+}
+
 // ---------------------------------------------------------------------------
 // BYOK: an org supplies provider credentials, materialized as a normal channel
 // serving the org's private group. Reuses the whole channel machinery; only

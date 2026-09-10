@@ -406,7 +406,9 @@ function CustomerInviteDialog(props: {
     onSuccess: (res) => {
       setLastLink(joinLink(res.code))
       setEmail('')
-      toast.success(t('Invitation sent'))
+      toast.success(
+        res.emailed ? t('Invitation email sent') : t('Invitation created')
+      )
       invalidate()
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),

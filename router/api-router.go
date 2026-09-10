@@ -217,6 +217,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.DELETE("/workspaces/:id", controller.DeleteMyWorkspace)
 			orgRoute.POST("/workspaces/:id/tokens", controller.BindMyWorkspaceToken)
 			orgRoute.POST("/workspaces/:id/keys", middleware.CriticalRateLimit(), controller.CreateWorkspaceKey)
+			orgRoute.GET("/workspaces/:id/keys", controller.ListMyWorkspaceKeys)
 			orgRoute.GET("/byok", controller.ListMyByokChannels)
 			orgRoute.POST("/byok", controller.CreateMyByokChannel)
 			orgRoute.DELETE("/byok/:channel_id", controller.DeleteMyByokChannel)

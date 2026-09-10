@@ -27,6 +27,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -45,6 +46,7 @@ import {
   createWorkspaceKey,
   deleteOrgWorkspace,
   listOrgWorkspaces,
+  listWorkspaceKeys,
   updateOrgWorkspace,
 } from './api'
 import { Field, Td, Th } from './shared'
@@ -356,6 +358,7 @@ function CreateKeyDialog(props: {
   onSaved: () => void
 }) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const ws = props.workspace
   const [name, setName] = useState('')
   const [createdKey, setCreatedKey] = useState('')
@@ -367,6 +370,12 @@ function CreateKeyDialog(props: {
     setCreatedKey('')
   }
 
+  const { data: keys } = useQuery({
+    queryKey: ['workspace-keys', ws?.id],
+    queryFn: () => listWorkspaceKeys(ws!.id),
+    enabled: !!ws,
+  })
+
   const mutation = useMutation({
     mutationFn: () =>
       createWorkspaceKey(ws!.id, {
@@ -376,6 +385,8 @@ function CreateKeyDialog(props: {
       }),
     onSuccess: (res) => {
       setCreatedKey(res.key)
+      setName('')
+      queryClient.invalidateQueries({ queryKey: ['workspace-keys', ws?.id] })
       props.onSaved()
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
@@ -385,7 +396,7 @@ function CreateKeyDialog(props: {
     <Dialog open={!!ws} onOpenChange={(o) => !o && props.onClose()}>
       <DialogContent className='sm:max-w-md'>
         <DialogHeader>
-          <DialogTitle>{t('Create Key')}</DialogTitle>
+          <DialogTitle>{t('Workspace Keys')}</DialogTitle>
           <DialogDescription>
             {t(
               'Create an API key inside this workspace. Its usage is billed to the organization wallet.'
@@ -418,7 +429,32 @@ function CreateKeyDialog(props: {
           </div>
         ) : (
           <div className='flex flex-col gap-3'>
-            <Field label={t('Name')}>
+            {keys && keys.length > 0 && (
+              <div className='flex flex-col gap-1.5'>
+                <span className='text-muted-foreground text-xs'>
+                  {t('Existing keys')}
+                </span>
+                <div className='divide-border/60 max-h-48 divide-y overflow-y-auto rounded-lg border'>
+                  {keys.map((k) => (
+                    <div
+                      key={k.token_id}
+                      className='flex items-center justify-between gap-2 px-3 py-2 text-sm'
+                    >
+                      <div className='flex min-w-0 flex-col'>
+                        <span className='truncate font-medium'>{k.name}</span>
+                        <code className='text-muted-foreground font-mono text-xs'>
+                          {k.key_masked}
+                        </code>
+                      </div>
+                      <Badge variant={k.status === 1 ? 'outline' : 'destructive'}>
+                        {k.status === 1 ? t('Enabled') : t('Disabled')}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <Field label={t('New key name')}>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
             <DialogFooter className='gap-2'>

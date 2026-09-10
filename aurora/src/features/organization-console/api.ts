@@ -122,9 +122,19 @@ export type CustomerInvitation = {
 export async function inviteCustomerOwner(
   customerId: number,
   email: string
-): Promise<{ code: string; invited_email: string; expires_at: number }> {
+): Promise<{
+  code: string
+  invited_email: string
+  expires_at: number
+  emailed: boolean
+}> {
   const res = await api.post<
-    ApiResp<{ code: string; invited_email: string; expires_at: number }>
+    ApiResp<{
+      code: string
+      invited_email: string
+      expires_at: number
+      emailed: boolean
+    }>
   >(`/api/reseller/customers/${customerId}/invitations`, { email })
   return unwrap(res, 'Failed to send invitation')
 }
@@ -265,6 +275,25 @@ export async function createWorkspaceKey(
     payload
   )
   return unwrap(res, 'Failed to create key')
+}
+
+export type WorkspaceKey = {
+  token_id: number
+  name: string
+  status: number
+  key_masked: string
+  unlimited_quota: boolean
+  remain_quota: number
+  created_time: number
+}
+
+export async function listWorkspaceKeys(
+  id: number
+): Promise<WorkspaceKey[]> {
+  const res = await api.get<ApiResp<WorkspaceKey[]>>(
+    `/api/organization/workspaces/${id}/keys`
+  )
+  return unwrap(res, 'Failed to load keys') ?? []
 }
 
 export async function listOrgByok(): Promise<OrgByokChannel[]> {

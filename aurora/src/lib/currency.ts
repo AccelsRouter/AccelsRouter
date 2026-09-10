@@ -525,6 +525,17 @@ export function formatQuotaWithCurrency(
 }
 
 /**
+ * Convert a USD amount to raw quota units — the inverse of
+ * formatQuotaWithCurrency. Use where the user inputs dollars but the API
+ * expects raw quota (e.g. reseller wallet top-up).
+ */
+export function quotaFromUSD(usd: number): number {
+  if (!Number.isFinite(usd) || usd <= 0) return 0
+  const { config } = getCurrencyDisplay()
+  return Math.round(usd * config.quotaPerUnit)
+}
+
+/**
  * Get the current currency label for UI display.
  *
  * Returns a simple string label representing the current display currency.

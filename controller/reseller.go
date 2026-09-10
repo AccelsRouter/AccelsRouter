@@ -168,8 +168,13 @@ func InviteMyCustomerOwner(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
+	orgName := fmt.Sprintf("#%d", customerId)
+	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
+		orgName = customer.Name
+	}
+	emailed := sendOrgInvitationEmail(inv.InvitedEmail, orgName, inv.Code)
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
-	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt})
+	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed})
 }
 
 // ListMyCustomerInvitations — GET /api/reseller/customers/:id/invitations
