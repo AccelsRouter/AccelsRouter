@@ -47,6 +47,40 @@ type logUsageRow struct {
 	CompletionTokens int64
 }
 
+// ListOrgLogs returns the org's individual consume call records (newest first,
+// paginated) for [from, to]. Cross-DB safe: the org's token ids are resolved
+// from the main DB, and the logs are read from LOG_DB by token_id (no join),
+// mirroring GetOrgUsage.
+func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, error) {
+	var bindings []WorkspaceToken
+	if err := DB.Where("org_id = ?", orgId).Find(&bindings).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(bindings) == 0 {
+		return []*Log{}, 0, nil
+	}
+	tokenIds := make([]int, 0, len(bindings))
+	for _, b := range bindings {
+		tokenIds = append(tokenIds, b.TokenId)
+	}
+	tx := LOG_DB.Model(&Log{}).Where("token_id IN ?", tokenIds).Where("type = ?", LogTypeConsume)
+	if from > 0 {
+		tx = tx.Where("created_at >= ?", from)
+	}
+	if to > 0 {
+		tx = tx.Where("created_at <= ?", to)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var logs []*Log
+	if err := tx.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+	return logs, total, nil
+}
+
 // GetOrgUsage aggregates the org's billed usage between [from, to] (unix
 // seconds; a zero bound is treated as open). The result is deterministic:
 // each breakdown is sorted by descending quota then key.

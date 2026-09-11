@@ -48,6 +48,13 @@ import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/com
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
+
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
 import {
   createCustomer,
@@ -55,10 +62,12 @@ import {
   getCustomerUsage,
   inviteCustomerOwner,
   listCustomerInvitations,
+  listCustomerLogs,
   listCustomers,
   revokeCustomerInvitation,
   setCustomerModels,
 } from './api'
+import { CallRecords } from './call-records'
 import { Field, Td, Th } from './shared'
 import type { ResellerCustomer } from './types'
 import { UsageReport } from './usage-report'
@@ -654,16 +663,32 @@ function CustomerUsageDialog(props: {
             )}
           </DialogTitle>
         </DialogHeader>
-        <div className='flex flex-col gap-4'>
-          <div className='w-full sm:w-auto sm:min-w-[280px]'>
-            <CompactDateTimeRangePicker
-              start={range.start}
-              end={range.end}
-              onChange={setRange}
-            />
-          </div>
-          <UsageReport report={data} isLoading={isLoading} />
-        </div>
+        <Tabs defaultValue='usage'>
+          <TabsList>
+            <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
+            <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value='usage' className='pt-4'>
+            <div className='flex flex-col gap-4'>
+              <div className='w-full sm:w-auto sm:min-w-[280px]'>
+                <CompactDateTimeRangePicker
+                  start={range.start}
+                  end={range.end}
+                  onChange={setRange}
+                />
+              </div>
+              <UsageReport report={data} isLoading={isLoading} />
+            </div>
+          </TabsContent>
+          <TabsContent value='records' className='pt-4'>
+            {customer && (
+              <CallRecords
+                fetchLogs={(p) => listCustomerLogs(customer.org.id, p)}
+                queryKey={`customer-logs-${customer.org.id}`}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
         <DialogFooter>
           <Button variant='outline' onClick={props.onClose}>
             {t('Close')}

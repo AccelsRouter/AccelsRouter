@@ -38,7 +38,10 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { useQuery } from '@tanstack/react-query'
+
 import { type NavItem, type SidebarData } from '@/components/layout/types'
+import { getOrgContext } from '@/features/organization-console/api'
 import { useStatus } from '@/hooks/use-status'
 import { ROLE } from '@/lib/roles'
 
@@ -51,6 +54,51 @@ import { ROLE } from '@/lib/roles'
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
   const { status } = useStatus()
+
+  // A reseller-provisioned customer is a client of the reseller, not of the
+  // platform: it gets a scoped "customer console" (usage, call records, keys,
+  // read-only balance) — no Playground/Chat, no platform top-up/subscriptions,
+  // no reseller/admin surfaces.
+  const { data: orgContext } = useQuery({
+    queryKey: ['org-context'],
+    queryFn: getOrgContext,
+    staleTime: 60_000,
+  })
+  const isResellerCustomer = orgContext?.is_reseller_customer ?? false
+
+  if (isResellerCustomer) {
+    return {
+      navGroups: [
+        {
+          id: 'general',
+          title: t('General'),
+          items: [
+            { title: t('Overview'), url: '/dashboard/overview', icon: Activity },
+            {
+              title: t('Dashboard'),
+              url: '/dashboard/models',
+              icon: LayoutDashboard,
+            },
+            { title: t('API Keys'), url: '/keys', icon: Key },
+            {
+              title: t('Usage Logs'),
+              url: '/usage-logs/common',
+              icon: FileText,
+            },
+          ],
+        },
+        {
+          id: 'personal',
+          title: t('Personal'),
+          items: [
+            { title: t('Wallet'), url: '/wallet', icon: Wallet },
+            { title: t('My Organization'), url: '/organization', icon: Building2 },
+            { title: t('Profile'), url: '/profile', icon: User },
+          ],
+        },
+      ],
+    }
+  }
 
   // Enterprise and reseller are separate consoles, but BOTH entries are always
   // shown so either is discoverable — a person may run an enterprise org and a

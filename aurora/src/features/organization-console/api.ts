@@ -76,6 +76,37 @@ export async function getOrgSelf(): Promise<OrgSelf | null> {
 // Reseller-scoped variants. The reseller admin is decoupled from the paying
 // OrgAccount, so its console reads the reseller org and ledger through
 // dedicated endpoints resolved via the reseller-admin link.
+export type OrgContext = {
+  is_org_member: boolean
+  is_reseller_admin: boolean
+  is_reseller_customer: boolean
+  org_type: string
+}
+
+export async function getOrgContext(): Promise<OrgContext> {
+  try {
+    const res = await api.get<ApiResp<OrgContext>>('/api/organization/context', {
+      skipErrorHandler: true,
+      skipBusinessError: true,
+    })
+    return (
+      res.data?.data ?? {
+        is_org_member: false,
+        is_reseller_admin: false,
+        is_reseller_customer: false,
+        org_type: '',
+      }
+    )
+  } catch {
+    return {
+      is_org_member: false,
+      is_reseller_admin: false,
+      is_reseller_customer: false,
+      org_type: '',
+    }
+  }
+}
+
 export async function getResellerSelf(): Promise<OrgSelf | null> {
   try {
     const res = await api.get<ApiResp<OrgSelf>>(
@@ -117,6 +148,45 @@ export type CustomerInvitation = {
   role: string
   expires_at: number
   created_time: number
+}
+
+export type OrgLog = {
+  id: number
+  created_at: number
+  model_name: string
+  token_name: string
+  username: string
+  prompt_tokens: number
+  completion_tokens: number
+  quota: number
+  content: string
+}
+
+function orgLogsQuery(page: number, pageSize: number): string {
+  const qs = new URLSearchParams()
+  qs.set('p', String(page))
+  qs.set('page_size', String(pageSize))
+  return qs.toString()
+}
+
+export async function listOrgLogs(params: {
+  page: number
+  pageSize: number
+}): Promise<PagedResponse<OrgLog>> {
+  const res = await api.get<ApiResp<PagedResponse<OrgLog>>>(
+    `/api/organization/logs?${orgLogsQuery(params.page, params.pageSize)}`
+  )
+  return unwrap(res, 'Failed to load call records')
+}
+
+export async function listCustomerLogs(
+  customerId: number,
+  params: { page: number; pageSize: number }
+): Promise<PagedResponse<OrgLog>> {
+  const res = await api.get<ApiResp<PagedResponse<OrgLog>>>(
+    `/api/reseller/customers/${customerId}/logs?${orgLogsQuery(params.page, params.pageSize)}`
+  )
+  return unwrap(res, 'Failed to load call records')
 }
 
 export async function inviteCustomerOwner(

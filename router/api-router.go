@@ -207,6 +207,7 @@ func SetApiRouter(router *gin.Engine) {
 			// group below (the bounded reseller module); these stay for
 			// backward compatibility with the existing console.
 			orgRoute.GET("/reseller/self", controller.GetMyResellerOrg)
+			orgRoute.GET("/context", controller.GetMyOrgContext)
 			orgRoute.GET("/reseller/ledger", controller.ListMyResellerLedger)
 			orgRoute.GET("/customers", controller.ListMyCustomers)
 			orgRoute.POST("/customers", middleware.CriticalRateLimit(), controller.CreateMyCustomer)
@@ -232,6 +233,7 @@ func SetApiRouter(router *gin.Engine) {
 			// SSO domains (read-only) + usage reporting / invoice export.
 			orgRoute.GET("/sso-domains", controller.ListMyOrgSsoDomains)
 			orgRoute.GET("/usage", controller.GetMyOrgUsage)
+			orgRoute.GET("/logs", controller.GetMyOrgLogs)
 			orgRoute.GET("/usage/export", controller.ExportMyOrgUsage)
 			orgRoute.GET("/audit", controller.ListMyOrgAudit)
 		}
@@ -250,6 +252,7 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.GET("/wallet", controller.GetMyResellerWallet)
 			resellerRoute.POST("/wallet/purchase", middleware.CriticalRateLimit(), controller.PurchaseMyResellerCredit)
 			// Customer delivery: invite a customer org's operator (admin).
+			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)
 			resellerRoute.POST("/customers/:id/invitations", middleware.CriticalRateLimit(), controller.InviteMyCustomerOwner)
 			resellerRoute.DELETE("/customers/:id/invitations/:inv_id", controller.RevokeMyCustomerInvitation)

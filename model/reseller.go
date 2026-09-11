@@ -165,3 +165,29 @@ func IsResellerCustomer(resellerOrgId, customerOrgId int) (bool, error) {
 		Count(&count).Error
 	return count > 0, err
 }
+
+// IsCustomerOrg reports whether an org is any reseller's downstream customer
+// (it appears as a customer in the link table). This is the marker that
+// separates a reseller-provisioned customer from a B2B enterprise direct
+// client, even though both are stored as enterprise-type organizations.
+func IsCustomerOrg(orgId int) bool {
+	var count int64
+	if err := DB.Model(&ResellerCustomerLink{}).Where("customer_org_id = ?", orgId).Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
+}
+
+// CustomerOrgIdSet returns the set of all customer org ids (for admin list
+// separation: enterprise-direct = enterprise orgs NOT in this set).
+func CustomerOrgIdSet() (map[int]bool, error) {
+	var ids []int
+	if err := DB.Model(&ResellerCustomerLink{}).Pluck("customer_org_id", &ids).Error; err != nil {
+		return nil, err
+	}
+	set := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set, nil
+}

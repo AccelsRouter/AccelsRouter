@@ -177,6 +177,30 @@ func DetachMyOrgAccount(c *gin.Context) {
 }
 
 // ListMyOrgLedger — GET /api/organization/ledger
+// GetMyOrgLogs — GET /api/organization/logs
+// The org's own individual call records (consume logs), paginated — so a
+// reseller customer (and any org admin) can see every call under its org, not
+// just its own key.
+func GetMyOrgLogs(c *gin.Context) {
+	org, _, ok := callerOrg(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	logs, total, err := model.ListOrgLogs(org.Id, from, to, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(logs)
+	common.ApiSuccess(c, page)
+}
+
 func ListMyOrgLedger(c *gin.Context) {
 	org, _, ok := callerOrg(c)
 	if !ok {

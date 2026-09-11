@@ -290,6 +290,60 @@ func SetMyCustomerModels(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+// GetMyOrgContext — GET /api/organization/context
+// One lightweight call the UI uses to decide what to show: whether the caller
+// is a reseller admin, a reseller-provisioned customer, or a plain enterprise
+// member. Drives the scoped "customer console" sidebar.
+func GetMyOrgContext(c *gin.Context) {
+	userId := c.GetInt("id")
+
+	isResellerAdmin := false
+	if org, err := model.GetResellerAdminOrg(userId); err == nil && org != nil {
+		isResellerAdmin = true
+	}
+
+	isOrgMember := false
+	isResellerCustomer := false
+	orgType := ""
+	if acc, err := model.GetOrgAccountByUser(userId); err == nil && acc != nil {
+		isOrgMember = true
+		if org, err := model.GetOrganizationById(acc.OrgId); err == nil && org != nil {
+			orgType = org.Type
+			isResellerCustomer = model.IsCustomerOrg(org.Id)
+		}
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"is_org_member":        isOrgMember,
+		"is_reseller_admin":    isResellerAdmin,
+		"is_reseller_customer": isResellerCustomer,
+		"org_type":             orgType,
+	})
+}
+
+// GetMyCustomerLogs — GET /api/reseller/customers/:id/logs
+// Individual call records (consume logs) for one of the reseller's customers,
+// paginated, newest first.
+func GetMyCustomerLogs(c *gin.Context) {
+	_, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	logs, total, err := model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(logs)
+	common.ApiSuccess(c, page)
+}
+
 // GetMyResellerOrg — GET /api/organization/reseller/self
 // Reseller-scoped org view (wallet, price group). Resolves via the reseller-
 // admin link, so it works for a reseller admin who is not an OrgAccount member.

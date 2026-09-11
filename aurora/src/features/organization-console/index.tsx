@@ -38,6 +38,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { AccountsTab } from './accounts-tab'
+import { listOrgLogs } from './api'
+import { CallRecords } from './call-records'
 import { getOrgSelf } from './api'
 import { AuditTab } from './audit-tab'
 import { ApplyPanel } from './apply-panel'
@@ -116,6 +118,7 @@ export function OrganizationConsole() {
                 <TabsTrigger value='workspaces'>{t('Workspaces')}</TabsTrigger>
                 <TabsTrigger value='byok'>{t('BYOK')}</TabsTrigger>
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
+                <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
                 <TabsTrigger value='sso'>{t('SSO')}</TabsTrigger>
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
                 <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
@@ -134,6 +137,9 @@ export function OrganizationConsole() {
               </TabsContent>
               <TabsContent value='usage' className='pt-4'>
                 <UsageTab />
+              </TabsContent>
+              <TabsContent value='records' className='pt-4'>
+                <CallRecords fetchLogs={listOrgLogs} queryKey='org-logs' />
               </TabsContent>
               <TabsContent value='sso' className='pt-4'>
                 <SsoTab />
