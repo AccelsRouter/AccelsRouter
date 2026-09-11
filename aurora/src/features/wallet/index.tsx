@@ -21,8 +21,10 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { useStatus } from '@/hooks/use-status'
+import { useQuery } from '@tanstack/react-query'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { toast } from 'sonner'
+import { getOrgContext } from '@/features/organization-console/api'
 import { getSelf } from '@/lib/api'
 import { requestWonderGatePayment } from './api'
 import { useTopupGuard } from './hooks/use-topup-guard'
@@ -63,6 +65,14 @@ interface WalletProps {
 
 export function Wallet(props: WalletProps) {
   const { t } = useTranslation()
+  // A reseller-provisioned customer cannot self-top-up (its credit comes from
+  // the reseller); show a read-only balance and hide the platform top-up.
+  const { data: orgContext } = useQuery({
+    queryKey: ['org-context'],
+    queryFn: getOrgContext,
+    staleTime: 60_000,
+  })
+  const isResellerCustomer = orgContext?.is_reseller_customer ?? false
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
   const [topupAmount, setTopupAmount] = useState(0)
@@ -304,6 +314,15 @@ export function Wallet(props: WalletProps) {
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
             <WalletStatsCard user={user} loading={userLoading} />
 
+            {isResellerCustomer && (
+              <div className='border-border/60 bg-muted/30 text-muted-foreground rounded-lg border p-4 text-sm'>
+                {t(
+                  'Your credit is provided by your distributor. To add credit, please contact your distributor.'
+                )}
+              </div>
+            )}
+
+            {!isResellerCustomer && (
             <div
               className={
                 showSubscriptionPanel
@@ -355,17 +374,20 @@ export function Wallet(props: WalletProps) {
                 onPurchaseSuccess={fetchUser}
               />
             </div>
+            )}
 
-            <AffiliateRewardsCard
-              user={user}
-              affiliateLink={affiliateLink}
-              onTransfer={() => setTransferDialogOpen(true)}
-              onViewInvitees={() => setInviteesOpen(true)}
-              complianceConfirmed={
-                topupInfo?.payment_compliance_confirmed !== false
-              }
-              loading={affiliateLoading}
-            />
+            {!isResellerCustomer && (
+              <AffiliateRewardsCard
+                user={user}
+                affiliateLink={affiliateLink}
+                onTransfer={() => setTransferDialogOpen(true)}
+                onViewInvitees={() => setInviteesOpen(true)}
+                complianceConfirmed={
+                  topupInfo?.payment_compliance_confirmed !== false
+                }
+                loading={affiliateLoading}
+              />
+            )}
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>

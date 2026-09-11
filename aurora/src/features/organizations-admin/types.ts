@@ -31,6 +31,7 @@ export type Organization = {
   wallet_quota: number
   price_group: string
   wholesale_ratio?: number
+  is_customer?: boolean
   allowed_models?: string
   owner_user_id: number
   remark: string

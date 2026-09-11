@@ -85,6 +85,9 @@ export function OrganizationsAdmin() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [view, setView] = useState<'orgs' | 'applications'>('orgs')
+  const [category, setCategory] = useState<'all' | 'enterprise' | 'customer'>(
+    'all'
+  )
   const [page, setPage] = useState(1)
   const [createOpen, setCreateOpen] = useState(false)
   const [editOrg, setEditOrg] = useState<Organization | null>(null)
@@ -96,8 +99,13 @@ export function OrganizationsAdmin() {
   const [usageOrg, setUsageOrg] = useState<Organization | null>(null)
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['admin-organizations', page],
-    queryFn: () => listOrganizations({ page, pageSize: PAGE_SIZE }),
+    queryKey: ['admin-organizations', page, category],
+    queryFn: () =>
+      listOrganizations({
+        page,
+        pageSize: PAGE_SIZE,
+        category: category === 'all' ? undefined : category,
+      }),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
@@ -114,6 +122,25 @@ export function OrganizationsAdmin() {
       <SectionPageLayout.Title>{t('Organizations')}</SectionPageLayout.Title>
       {view === 'orgs' && (
         <SectionPageLayout.Actions>
+          <NativeSelect
+            value={category}
+            onChange={(e) => {
+              setCategory(
+                e.target.value as 'all' | 'enterprise' | 'customer'
+              )
+              setPage(1)
+            }}
+          >
+            <NativeSelectOption value='all'>
+              {t('All organizations')}
+            </NativeSelectOption>
+            <NativeSelectOption value='enterprise'>
+              {t('Enterprise direct')}
+            </NativeSelectOption>
+            <NativeSelectOption value='customer'>
+              {t('Reseller customers')}
+            </NativeSelectOption>
+          </NativeSelect>
           <Button
             variant='outline'
             size='sm'

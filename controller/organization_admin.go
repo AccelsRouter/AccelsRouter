@@ -18,10 +18,17 @@ import (
 // AdminListOrganizations — GET /api/admin/organizations
 func AdminListOrganizations(c *gin.Context) {
 	page := common.GetPageQuery(c)
-	orgs, total, err := model.ListOrganizations(page.GetStartIdx(), page.GetPageSize())
+	orgs, total, err := model.ListOrganizations(page.GetStartIdx(), page.GetPageSize(), c.Query("category"))
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	// Mark reseller-provisioned customers so the admin UI can separate them from
+	// enterprise direct clients.
+	if customers, cErr := model.CustomerOrgIdSet(); cErr == nil {
+		for _, o := range orgs {
+			o.IsCustomer = customers[o.Id]
+		}
 	}
 	page.SetTotal(int(total))
 	page.SetItems(orgs)

@@ -46,10 +46,12 @@ type ApiResp<T> = {
 export async function listOrganizations(params: {
   page: number
   pageSize: number
+  category?: 'enterprise' | 'customer'
 }): Promise<PagedResponse<Organization>> {
   const qs = new URLSearchParams()
   qs.set('p', String(params.page))
   qs.set('page_size', String(params.pageSize))
+  if (params.category) qs.set('category', params.category)
   const res = await api.get<ApiResp<PagedResponse<Organization>>>(
     `/api/admin/organizations?${qs.toString()}`
   )

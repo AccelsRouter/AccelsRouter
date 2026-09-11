@@ -69,6 +69,10 @@ type Organization struct {
 	Remark        string `json:"remark" gorm:"type:varchar(255)"`
 	CreatedTime   int64  `json:"created_time"`
 	UpdatedTime   int64  `json:"updated_time"`
+	// IsCustomer is a computed, non-persisted flag: true when this org is a
+	// reseller-provisioned customer (in ResellerCustomerLink). Lets the admin UI
+	// separate enterprise direct clients from reseller customers.
+	IsCustomer bool `json:"is_customer" gorm:"-"`
 }
 
 // OrgAccount binds a user to the organization that pays for it. UserId is
@@ -658,13 +662,25 @@ func GetOrganizationById(id int) (*Organization, error) {
 	return &org, err
 }
 
-func ListOrganizations(offset, limit int) ([]*Organization, int64, error) {
-	var orgs []*Organization
+// ListOrganizations lists orgs, optionally narrowed by category: "customer"
+// (reseller-provisioned, in the link table), "enterprise" (direct clients, NOT
+// in the link table), or "" / "all" (everything). This is the hard separation
+// between the two user groups in the admin UI.
+func ListOrganizations(offset, limit int, category string) ([]*Organization, int64, error) {
+	q := DB.Model(&Organization{})
+	sub := DB.Model(&ResellerCustomerLink{}).Select("customer_org_id")
+	switch category {
+	case "customer":
+		q = q.Where("id IN (?)", sub)
+	case "enterprise":
+		q = q.Where("id NOT IN (?)", sub)
+	}
 	var total int64
-	if err := DB.Model(&Organization{}).Count(&total).Error; err != nil {
+	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := DB.Order("id DESC").Offset(offset).Limit(limit).Find(&orgs).Error
+	var orgs []*Organization
+	err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&orgs).Error
 	return orgs, total, err
 }
 
