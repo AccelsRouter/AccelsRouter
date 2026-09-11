@@ -392,6 +392,11 @@ func GetMyCustomerLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// Cross-org privacy: don't expose the customer's end-user client IPs to the
+	// reseller (the customer sees its own IPs via GET /organization/logs).
+	for _, l := range logs {
+		l.Ip = ""
+	}
 	page.SetTotal(int(total))
 	page.SetItems(logs)
 	common.ApiSuccess(c, page)

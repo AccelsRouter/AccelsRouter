@@ -104,6 +104,9 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 	if err := tx.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
+	// Strip admin-only fields (Other.admin_info/audit_info, ChannelName) — these
+	// viewers (reseller admin, org owner/admin) are not platform admins.
+	formatUserLogs(logs, startIdx)
 	return logs, total, nil
 }
 
