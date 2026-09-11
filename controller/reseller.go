@@ -115,7 +115,60 @@ func GetMyCustomerUsage(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// Overlay the reseller's retail discount so the statement shows what the
+	// customer owes (standard × per-model-series ratio). Reporting only.
+	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
+		report.ApplyRetailDiscounts(model.ParseRetailDiscounts(customer.RetailDiscounts))
+	}
 	common.ApiSuccess(c, report)
+}
+
+// GetMyCustomerPricing — GET /api/reseller/customers/:id/pricing
+func GetMyCustomerPricing(c *gin.Context) {
+	_, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	customer, err := model.GetOrganizationById(customerId)
+	if err != nil || customer == nil {
+		common.ApiErrorMsg(c, "客户组织不存在")
+		return
+	}
+	common.ApiSuccess(c, gin.H{"discounts": model.ParseRetailDiscounts(customer.RetailDiscounts)})
+}
+
+// SetMyCustomerPricing — PUT /api/reseller/customers/:id/pricing
+// Set the customer's per-model-series retail discount (reporting overlay; the
+// platform still bills the customer at standard price). Ratios in (0,1].
+func SetMyCustomerPricing(c *gin.Context) {
+	reseller, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Discounts map[string]float64 `json:"discounts"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	for token, ratio := range req.Discounts {
+		if ratio <= 0 || ratio > 1 {
+			common.ApiErrorMsg(c, "折扣比例必须在 (0,1] 之间: "+token)
+			return
+		}
+	}
+	stored, err := model.MarshalRetailDiscounts(req.Discounts)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.UpdateOrganizationFields(customerId, map[string]interface{}{"retail_discounts": stored}); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.pricing", fmt.Sprintf("org:%d", customerId), fmt.Sprintf("count=%d", len(req.Discounts)))
+	common.ApiSuccess(c, nil)
 }
 
 // callerResellerCustomer resolves the caller's reseller org and the customer id

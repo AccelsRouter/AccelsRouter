@@ -10,10 +10,71 @@ package model
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
 )
+
+// ParseRetailDiscounts parses a customer org's retail discount map {token ->
+// ratio}. Invalid/empty yields an empty map (no discount).
+func ParseRetailDiscounts(s string) map[string]float64 {
+	s = strings.TrimSpace(s)
+	out := map[string]float64{}
+	if s == "" {
+		return out
+	}
+	var raw map[string]float64
+	if err := common.Unmarshal([]byte(s), &raw); err != nil {
+		return out
+	}
+	for token, ratio := range raw {
+		token = strings.ToLower(strings.TrimSpace(token))
+		if token != "" && ratio > 0 && ratio <= 1 {
+			out[token] = ratio
+		}
+	}
+	return out
+}
+
+// MarshalRetailDiscounts serializes a validated discount map for storage. An
+// empty map serializes to "".
+func MarshalRetailDiscounts(m map[string]float64) (string, error) {
+	clean := map[string]float64{}
+	for token, ratio := range m {
+		token = strings.ToLower(strings.TrimSpace(token))
+		if token != "" && ratio > 0 && ratio <= 1 {
+			clean[token] = ratio
+		}
+	}
+	if len(clean) == 0 {
+		return "", nil
+	}
+	b, err := common.Marshal(clean)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// RetailDiscountFor returns the ratio to apply to a model, matching the longest
+// series token that is a substring of the (lowercased) model name; 1.0 (no
+// discount) when nothing matches.
+func RetailDiscountFor(modelName string, discounts map[string]float64) float64 {
+	if len(discounts) == 0 {
+		return 1.0
+	}
+	name := strings.ToLower(modelName)
+	best := 1.0
+	bestLen := -1
+	for token, ratio := range discounts {
+		if strings.Contains(name, token) && len(token) > bestLen {
+			best = ratio
+			bestLen = len(token)
+		}
+	}
+	return best
+}
 
 // EffectiveWholesaleRatio returns the reseller's wholesale price ratio, clamped
 // to the sane (0,1] range; anything else (unset 0, or a nonsensical >1) means

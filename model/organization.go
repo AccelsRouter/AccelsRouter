@@ -65,10 +65,16 @@ type Organization struct {
 	// reseller-set and is the runtime allow-list enforced on that customer's
 	// requests. See AllowedModelSet.
 	AllowedModels string `json:"allowed_models" gorm:"type:text"`
-	OwnerUserId   int    `json:"owner_user_id" gorm:"index"`
-	Remark        string `json:"remark" gorm:"type:varchar(255)"`
-	CreatedTime   int64  `json:"created_time"`
-	UpdatedTime   int64  `json:"updated_time"`
+	// RetailDiscounts is a reseller-set JSON map {model-series token -> ratio in
+	// (0,1]} on a CUSTOMER org. It is a RETAIL/reporting overlay only (the
+	// platform still bills the customer at standard price): the reseller's
+	// customer statement multiplies standard cost by the matched ratio to get
+	// what the customer owes the reseller. Never touches the billing hot path.
+	RetailDiscounts string `json:"retail_discounts" gorm:"type:text"`
+	OwnerUserId     int    `json:"owner_user_id" gorm:"index"`
+	Remark          string `json:"remark" gorm:"type:varchar(255)"`
+	CreatedTime     int64  `json:"created_time"`
+	UpdatedTime     int64  `json:"updated_time"`
 	// IsCustomer is a computed, non-persisted flag: true when this org is a
 	// reseller-provisioned customer (in ResellerCustomerLink). Lets the admin UI
 	// separate enterprise direct clients from reseller customers.

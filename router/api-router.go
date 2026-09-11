@@ -259,6 +259,9 @@ func SetApiRouter(router *gin.Engine) {
 			// Per-customer model access: assign which models a customer may use.
 			resellerRoute.GET("/customers/:id/models", controller.GetMyCustomerModels)
 			resellerRoute.PUT("/customers/:id/models", controller.SetMyCustomerModels)
+			// Per-customer retail discount pricing (reporting overlay).
+			resellerRoute.GET("/customers/:id/pricing", controller.GetMyCustomerPricing)
+			resellerRoute.PUT("/customers/:id/pricing", controller.SetMyCustomerPricing)
 		}
 
 		personalByokRoute := apiRouter.Group("/personal_byok")

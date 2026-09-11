@@ -68,6 +68,7 @@ import {
   setCustomerModels,
 } from './api'
 import { CallRecords } from './call-records'
+import { CustomerPricingDialog } from './customer-pricing-dialog'
 import { Field, Td, Th } from './shared'
 import type { ResellerCustomer } from './types'
 import { UsageReport } from './usage-report'
@@ -90,6 +91,8 @@ export function CustomersTab(props: { walletQuota: number }) {
     null
   )
   const [modelsCustomer, setModelsCustomer] =
+    useState<ResellerCustomer | null>(null)
+  const [pricingCustomer, setPricingCustomer] =
     useState<ResellerCustomer | null>(null)
 
   const { data, isLoading } = useQuery({
@@ -191,6 +194,13 @@ export function CustomersTab(props: { walletQuota: number }) {
                       <Button
                         size='sm'
                         variant='outline'
+                        onClick={() => setPricingCustomer(c)}
+                      >
+                        {t('Pricing')}
+                      </Button>
+                      <Button
+                        size='sm'
+                        variant='outline'
                         onClick={() => setInviteCustomer(c)}
                       >
                         {t('Invite owner')}
@@ -236,6 +246,11 @@ export function CustomersTab(props: { walletQuota: number }) {
       <CustomerModelsDialog
         customer={modelsCustomer}
         onClose={() => setModelsCustomer(null)}
+      />
+
+      <CustomerPricingDialog
+        customer={pricingCustomer}
+        onClose={() => setPricingCustomer(null)}
       />
     </div>
   )

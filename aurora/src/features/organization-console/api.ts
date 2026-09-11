@@ -230,6 +230,27 @@ export async function getCustomerModels(
   return { allowed: data.allowed ?? [], catalog: data.catalog ?? [] }
 }
 
+export async function getCustomerPricing(
+  customerId: number
+): Promise<Record<string, number>> {
+  const res = await api.get<ApiResp<{ discounts: Record<string, number> }>>(
+    `/api/reseller/customers/${customerId}/pricing`
+  )
+  return unwrap(res, 'Failed to load pricing').discounts ?? {}
+}
+
+export async function setCustomerPricing(
+  customerId: number,
+  discounts: Record<string, number>
+): Promise<void> {
+  const res = await api.put<ApiResp<unknown>>(
+    `/api/reseller/customers/${customerId}/pricing`,
+    { discounts }
+  )
+  if (!res.data?.success)
+    throw new Error(res.data?.message || 'Failed to save pricing')
+}
+
 export async function setCustomerModels(
   customerId: number,
   models: string[]

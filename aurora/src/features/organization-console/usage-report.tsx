@@ -43,8 +43,10 @@ function BucketTable(props: {
   title: string
   keyLabel: string
   buckets: UsageBucket[]
+  showRetail?: boolean
 }) {
   const { t } = useTranslation()
+  const cols = props.showRetail ? 6 : 5
   return (
     <div className='flex flex-col gap-2'>
       <span className='text-sm font-medium'>{props.title}</span>
@@ -54,6 +56,9 @@ function BucketTable(props: {
             <tr>
               <Th>{props.keyLabel}</Th>
               <Th className='text-right'>{t('Quota')}</Th>
+              {props.showRetail && (
+                <Th className='text-right'>{t('Retail')}</Th>
+              )}
               <Th className='text-right'>{t('Requests')}</Th>
               <Th className='text-right'>{t('Prompt Tokens')}</Th>
               <Th className='text-right'>{t('Completion Tokens')}</Th>
@@ -63,7 +68,7 @@ function BucketTable(props: {
             {props.buckets.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={cols}
                   className='text-muted-foreground px-3 py-4 text-center text-xs'
                 >
                   {t('No data.')}
@@ -76,6 +81,11 @@ function BucketTable(props: {
                   <Td className='text-right tabular-nums'>
                     {formatQuotaWithCurrency(b.quota)}
                   </Td>
+                  {props.showRetail && (
+                    <Td className='text-right tabular-nums'>
+                      {formatQuotaWithCurrency(b.retail_quota ?? b.quota)}
+                    </Td>
+                  )}
                   <Td className='text-right tabular-nums'>
                     {formatNumber(b.requests)}
                   </Td>
@@ -137,6 +147,12 @@ export function UsageReport(props: {
           label={t('Completion Tokens')}
           value={formatNumber(report.total_completion_tokens)}
         />
+        {report.total_retail_quota != null && (
+          <StatCard
+            label={t('Total Retail')}
+            value={formatQuotaWithCurrency(report.total_retail_quota)}
+          />
+        )}
       </div>
 
       <BucketTable
@@ -148,6 +164,7 @@ export function UsageReport(props: {
         title={t('By Model')}
         keyLabel={t('Model')}
         buckets={report.by_model}
+        showRetail={report.total_retail_quota != null}
       />
       <BucketTable
         title={t('By Member')}

@@ -148,6 +148,7 @@ export type UsageBucket = {
   requests: number
   prompt_tokens: number
   completion_tokens: number
+  retail_quota?: number
 }
 
 // Aggregated usage report for an organization over a time window. Mirrors
@@ -163,6 +164,7 @@ export type OrgUsageReport = {
   by_workspace: UsageBucket[]
   by_model: UsageBucket[]
   by_member: UsageBucket[]
+  total_retail_quota?: number
 }
 
 // A downstream customer organization managed by a reseller. `org` is the

@@ -21,6 +21,10 @@ type OrgUsageBucket struct {
 	Requests         int64  `json:"requests"`
 	PromptTokens     int64  `json:"prompt_tokens"`
 	CompletionTokens int64  `json:"completion_tokens"`
+	// RetailQuota is the reseller's retail amount for this line = Quota × the
+	// customer's matched model-series discount. Populated only on the reseller's
+	// customer statement (see ApplyRetailDiscounts); 0/omitted otherwise.
+	RetailQuota int64 `json:"retail_quota,omitempty"`
 }
 
 // OrgUsageReport is the full breakdown over a time window.
@@ -35,6 +39,28 @@ type OrgUsageReport struct {
 	ByWorkspace     []OrgUsageBucket `json:"by_workspace"`
 	ByModel         []OrgUsageBucket `json:"by_model"`
 	ByMember        []OrgUsageBucket `json:"by_member"`
+	// TotalRetailQuota is the reseller's retail total = sum of per-model retail
+	// (each model's standard quota × its matched discount). Populated only on a
+	// reseller customer statement.
+	TotalRetailQuota int64 `json:"total_retail_quota,omitempty"`
+}
+
+// ApplyRetailDiscounts overlays a reseller's per-model-series retail discount
+// onto a usage report: for each model line it computes RetailQuota = Quota ×
+// matched ratio, and sums TotalRetailQuota. Pure reporting — it never changes
+// what the platform billed. A model line's Key is the model name.
+func (r *OrgUsageReport) ApplyRetailDiscounts(discounts map[string]float64) {
+	if len(discounts) == 0 {
+		return
+	}
+	var total int64
+	for i := range r.ByModel {
+		ratio := RetailDiscountFor(r.ByModel[i].Key, discounts)
+		retail := int64(float64(r.ByModel[i].Quota) * ratio)
+		r.ByModel[i].RetailQuota = retail
+		total += retail
+	}
+	r.TotalRetailQuota = total
 }
 
 // logUsageRow is one grouped row from LOG_DB.
