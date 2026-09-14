@@ -113,8 +113,45 @@ type User struct {
 	StripeCustomer   string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	CreatedAt        int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	LastLoginIp      string                     `json:"last_login_ip" gorm:"type:varchar(64);column:last_login_ip"`
 	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	// TokenCount is the number of API keys (tokens) the user has created. It is
+	// not a stored column; it is populated for admin user listings via
+	// attachTokenCounts.
+	TokenCount int `json:"token_count" gorm:"-"`
+}
+
+// attachTokenCounts fills each user's TokenCount with the number of tokens they
+// own, using a single grouped query over the page's user ids.
+func attachTokenCounts(users []*User) {
+	if len(users) == 0 {
+		return
+	}
+	ids := make([]int, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.Id)
+	}
+	type tokenCountRow struct {
+		UserId int
+		Count  int
+	}
+	var rows []tokenCountRow
+	if err := DB.Model(&Token{}).
+		Select("user_id, count(*) as count").
+		Where("user_id IN ?", ids).
+		Group("user_id").
+		Scan(&rows).Error; err != nil {
+		common.SysError("failed to count user tokens: " + err.Error())
+		return
+	}
+	counts := make(map[int]int, len(rows))
+	for _, r := range rows {
+		counts[r.UserId] = r.Count
+	}
+	for _, u := range users {
+		u.TokenCount = counts[u.Id]
+	}
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -424,7 +461,22 @@ func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (use
 		return nil, 0, err
 	}
 
+	attachTokenCounts(users)
 	return users, total, nil
+}
+
+// GetUsersForExport returns all non-deleted users (sensitive fields omitted)
+// with their token counts, ordered by id, for the admin CSV export.
+func GetUsersForExport() ([]*User, error) {
+	var users []*User
+	if err := DB.Model(&User{}).
+		Omit("password", "access_token").
+		Order("id asc").
+		Find(&users).Error; err != nil {
+		return nil, err
+	}
+	attachTokenCounts(users)
+	return users, nil
 }
 
 func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
@@ -493,6 +545,7 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 		return nil, 0, err
 	}
 
+	attachTokenCounts(users)
 	return users, total, nil
 }
 
@@ -1345,8 +1398,14 @@ func GetRootUser() (user *User) {
 	return user
 }
 
-func UpdateUserLastLoginAt(id int) {
-	if err := DB.Model(&User{}).Where("id = ?", id).Update("last_login_at", common.GetTimestamp()).Error; err != nil {
+func UpdateUserLastLoginAt(id int, ip string) {
+	updates := map[string]interface{}{
+		"last_login_at": common.GetTimestamp(),
+	}
+	if ip != "" {
+		updates["last_login_ip"] = ip
+	}
+	if err := DB.Model(&User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		common.SysLog("failed to update user last_login_at: " + err.Error())
 	}
 }

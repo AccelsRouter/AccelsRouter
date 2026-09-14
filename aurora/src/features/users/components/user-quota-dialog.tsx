@@ -24,6 +24,7 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -43,6 +44,7 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
   const { t } = useTranslation()
   const [mode, setMode] = useState<QuotaAdjustMode>('add')
   const [amount, setAmount] = useState('')
+  const [remark, setRemark] = useState('')
   const [loading, setLoading] = useState(false)
 
   const { meta: currencyMeta } = getCurrencyDisplay()
@@ -76,16 +78,18 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
     setLoading(true)
     try {
       const value =
-        mode === 'override' ? parseQuotaFromDollars(amountValue) : quotaValue
+          mode === 'override' ? parseQuotaFromDollars(amountValue) : quotaValue
       const result = await adjustUserQuota({
         id: props.userId,
         action: 'add_quota',
         mode,
         value: mode === 'override' ? value : Math.abs(value),
+        remark: remark.trim() || undefined,
       })
       if (result.success) {
         toast.success(t('Quota adjusted successfully'))
         setAmount('')
+        setRemark('')
         setMode('add')
         props.onOpenChange(false)
         props.onSuccess()
@@ -101,81 +105,96 @@ export function UserQuotaDialog(props: UserQuotaDialogProps) {
 
   const handleCancel = () => {
     setAmount('')
+    setRemark('')
     setMode('add')
     props.onOpenChange(false)
   }
 
   const placeholder = tokensOnly
-    ? t('Enter amount in tokens')
-    : t('Enter amount in {{currency}}', { currency: currencyLabel })
+      ? t('Enter amount in tokens')
+      : t('Enter amount in {{currency}}', { currency: currencyLabel })
 
   return (
-    <Dialog
-      open={props.open}
-      onOpenChange={props.onOpenChange}
-      title={t('Adjust Quota')}
-      description={t('Select an operation mode and enter the amount')}
-      contentHeight='auto'
-      bodyClassName='space-y-4'
-      footer={
-        <>
-          <Button variant='outline' onClick={handleCancel}>
-            {t('Cancel')}
-          </Button>
-          <Button onClick={handleConfirm} disabled={loading}>
-            {loading ? t('Processing...') : t('Confirm')}
-          </Button>
-        </>
-      }
-    >
-      <div className='space-y-4'>
-        <div className='text-muted-foreground text-sm'>{getPreviewText()}</div>
-
-        <div className='space-y-2'>
-          <Label>{t('Mode')}</Label>
-          <div className='flex gap-1'>
-            {(['add', 'subtract', 'override'] as const).map((m) => (
-              <Button
-                key={m}
-                type='button'
-                variant='outline'
-                size='sm'
-                className={cn(
-                  mode === m &&
-                    'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
-                )}
-                onClick={() => {
-                  setMode(m)
-                  setAmount('')
-                }}
-              >
-                {m === 'add'
-                  ? t('Add')
-                  : m === 'subtract'
-                    ? t('Subtract')
-                    : t('Override')}
+      <Dialog
+          open={props.open}
+          onOpenChange={props.onOpenChange}
+          title={t('Adjust Quota')}
+          description={t('Select an operation mode and enter the amount')}
+          contentHeight='auto'
+          bodyClassName='space-y-4'
+          footer={
+            <>
+              <Button variant='outline' onClick={handleCancel}>
+                {t('Cancel')}
               </Button>
-            ))}
+              <Button onClick={handleConfirm} disabled={loading}>
+                {loading ? t('Processing...') : t('Confirm')}
+              </Button>
+            </>
+          }
+      >
+        <div className='space-y-4'>
+          <div className='text-muted-foreground text-sm'>{getPreviewText()}</div>
+
+          <div className='space-y-2'>
+            <Label>{t('Mode')}</Label>
+            <div className='flex gap-1'>
+              {(['add', 'subtract', 'override'] as const).map((m) => (
+                  <Button
+                      key={m}
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className={cn(
+                          mode === m &&
+                          'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+                      )}
+                      onClick={() => {
+                        setMode(m)
+                        setAmount('')
+                      }}
+                  >
+                    {m === 'add'
+                        ? t('Add')
+                        : m === 'subtract'
+                            ? t('Subtract')
+                            : t('Override')}
+                  </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className='space-y-2'>
+            <Label>
+              {t('Amount')} ({currencyLabel})
+            </Label>
+            <Input
+                type='number'
+                step={tokensOnly ? 1 : 0.000001}
+                min={mode === 'override' ? undefined : 0}
+                placeholder={placeholder}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleConfirm()
+                }}
+            />
+          </div>
+
+          <div className='space-y-2'>
+            <Label>
+              {t('Note')} ({t('optional')})
+            </Label>
+            <Textarea
+                rows={2}
+                placeholder={t(
+                    'e.g. "June 2026 monthly authorized credit" — shown to the user in their top-up history'
+                )}
+                value={remark}
+                onChange={(e) => setRemark(e.target.value)}
+            />
           </div>
         </div>
-
-        <div className='space-y-2'>
-          <Label>
-            {t('Amount')} ({currencyLabel})
-          </Label>
-          <Input
-            type='number'
-            step={tokensOnly ? 1 : 0.000001}
-            min={mode === 'override' ? undefined : 0}
-            placeholder={placeholder}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleConfirm()
-            }}
-          />
-        </div>
-      </div>
-    </Dialog>
+      </Dialog>
   )
 }

@@ -62,9 +62,12 @@ export const userSchema = z.object({
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
   daily_token_limit: z.number().optional(),
+  // Monthly postpaid credit limit, in quota units (0 = not set, falls back
+  // to the global default trust threshold).
+  credit_limit: z.number().optional(),
   admin_permissions: z
-    .record(z.string(), z.record(z.string(), z.boolean()))
-    .optional(),
+      .record(z.string(), z.record(z.string(), z.boolean()))
+      .optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -117,16 +120,19 @@ export interface UserFormData {
   // Daily token quota (prompt+completion, resets at 00:00 UTC). 0/unset =
   // unlimited. Only used when updating user.
   daily_token_limit?: number
+  // Monthly postpaid credit limit, in quota units. 0/unset = not set (falls
+  // back to the global default trust threshold). Only used when updating user.
+  credit_limit?: number
   admin_permissions?: AdminPermissionMatrix
 }
 
 export type ManageUserAction =
-  | 'promote'
-  | 'demote'
-  | 'enable'
-  | 'disable'
-  | 'delete'
-  | 'add_quota'
+    | 'promote'
+    | 'demote'
+    | 'enable'
+    | 'disable'
+    | 'delete'
+    | 'add_quota'
 
 export type QuotaAdjustMode = 'add' | 'subtract' | 'override'
 
@@ -135,6 +141,10 @@ export interface ManageUserQuotaPayload {
   action: 'add_quota'
   mode: QuotaAdjustMode
   value: number
+  // Optional free-text note attached to the credit-grant/credit-deduction
+  // top-up record created for mode 'add'/'subtract'. Ignored for
+  // 'override'.
+  remark?: string
 }
 
 // ============================================================================

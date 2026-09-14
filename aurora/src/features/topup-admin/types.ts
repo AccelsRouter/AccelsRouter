@@ -13,6 +13,7 @@ export type TopUpOrder = {
   create_time: number // unix seconds
   complete_time: number // unix seconds, 0 if not completed
   status: string // pending | success | ...
+  remark: string
 }
 
 export type TopUpListResponse = {

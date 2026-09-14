@@ -63,14 +63,16 @@ export const PAYMENT_METHOD_NAMES: Record<string, string> = {
   alipay: 'Alipay',
   wxpay: 'WeChat Pay',
   waffo: 'Waffo',
+  credit_grant: 'Credit Grant',
+  credit_deduction: 'Credit Deduction',
 }
 
 /**
  * Get payment method display name
  */
 export function getPaymentMethodName(
-  method: string,
-  t?: (key: string) => string
+    method: string,
+    t?: (key: string) => string
 ): string {
   const name = PAYMENT_METHOD_NAMES[method] || method
   return t ? t(name) : name

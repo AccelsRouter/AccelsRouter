@@ -5863,6 +5863,12 @@
     "Max tokens (prompt+completion) this channel may process per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires channel-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit; an over-budget channel is automatically skipped in favor of the next available channel.": "這個渠道每個日曆日（UTC 0 點重置）最多能處理的 Token 數（輸入+輸出）。0 = 不限制。需要先在系統設定 -> 安全 -> 每日 Token 限額裡開啟渠道限流開關；超額的渠道會被自動跳過，換成下一個可用渠道。",
     "Unlike the request-count rate limiting above, this tracks actual tokens (prompt+completion) consumed per calendar day, reset at 00:00 UTC. The actual budgets are set per-user (Users -> edit user) and per-channel (see the channel edit form); these two switches only turn each side of the enforcement on or off.": "和上面按請求次數的限流不同，這裡按日曆日累計的實際 Token 數（輸入+輸出）計算，UTC 每日 0 點重置。實際額度是分別在「使用者」（使用者管理 -> 編輯使用者）和「渠道」（見渠道編輯表單）裡各自設定的，這兩個開關只是分別控制要不要啟用這兩邊的限制。",
     "Reject a request with 429 before dispatch if the user has already exhausted their own daily token budget (set on the user record; see Users -> edit user).": "如果使用者自己的每日 Token 額度（在使用者資料裡設定，見使用者管理 -> 編輯使用者）已經用完，請求會在派送前直接回傳 429。",
-    "Max tokens (prompt+completion) this user may consume per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires user-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit.": "這個使用者每個日曆日（UTC 0 點重置）最多能使用的 Token 數（輸入+輸出）。0 = 不限制。需要先在系統設定 -> 安全 -> 每日 Token 限額裡開啟使用者限流開關。"
+    "Max tokens (prompt+completion) this user may consume per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires user-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit.": "這個使用者每個日曆日（UTC 0 點重置）最多能使用的 Token 數（輸入+輸出）。0 = 不限制。需要先在系統設定 -> 安全 -> 每日 Token 限額裡開啟使用者限流開關。",
+    "Monthly Credit Limit": "每月信用額度",
+    "How far this user’s wallet balance is allowed to go negative before new requests are blocked (postpaid, billed manually). 0 = not set, falls back to the small global default (used purely to skip per-request pre-deduction when balance is healthy, not a credit line).": "這個使用者的錢包餘額最多可以欠款到多少，超過這個額度新請求就會被擋下（後付費，人工月結）。0 = 未設定，會退回一個很小的全域預設值（純粹用來在餘額充足時跳過逐筆預扣，不是信用額度）。",
+    "Credit Grant": "信用授予",
+    "Credit Deduction": "信用扣減",
+    "optional": "選填",
+    "e.g. \"June 2026 monthly authorized credit\" — shown to the user in their top-up history": "例如「2026年6月授信額度」— 使用者會在自己的充值記錄裡看到這段說明"
   }
 }

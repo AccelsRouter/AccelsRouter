@@ -22,6 +22,10 @@ type TopUp struct {
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
 	Status          string  `json:"status"`
+	// Remark is an optional free-text note, mainly used for
+	// PaymentMethodCreditGrant records to explain why the quota was
+	// granted (e.g. "June 2026 monthly authorized credit").
+	Remark string `json:"remark,omitempty" gorm:"type:varchar(255)"`
 }
 
 const (
@@ -31,6 +35,15 @@ const (
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodBalance      = "balance"
 	PaymentMethodWonderGate   = "wondergate"
+	// PaymentMethodCreditGrant marks a TopUp record created by an admin
+	// manually granting quota (e.g. a monthly authorized credit amount)
+	// rather than the user paying real money through a payment gateway.
+	// Money is always 0 for these records.
+	PaymentMethodCreditGrant = "credit_grant"
+	// PaymentMethodCreditDeduction marks a TopUp record created by an admin
+	// manually deducting quota (the mirror of PaymentMethodCreditGrant).
+	// Amount is negative for these records; Money is always 0.
+	PaymentMethodCreditDeduction = "credit_deduction"
 )
 
 const (
@@ -55,6 +68,58 @@ func (topUp *TopUp) Insert() error {
 	var err error
 	err = DB.Create(topUp).Error
 	return err
+}
+
+// RecordCreditGrantTopUp writes a TopUp record for an admin-granted quota
+// increase (no real money changed hands) so it shows up in the user's own
+// top-up history, distinguishable from real payments via PaymentMethod =
+// PaymentMethodCreditGrant. quotaAmount is in quota units (same unit as
+// User.Quota); remark is an optional free-text note (e.g. "June 2026
+// monthly authorized credit") — pass "" to omit it.
+func RecordCreditGrantTopUp(userId int, quotaAmount int, remark string) error {
+	if quotaAmount <= 0 {
+		return nil
+	}
+	return recordCreditAdjustmentTopUp(userId, int64(quotaAmount), PaymentMethodCreditGrant, "CREDIT", remark)
+}
+
+// RecordCreditDeductionTopUp writes a TopUp record for an admin-initiated
+// quota deduction (the mirror of RecordCreditGrantTopUp): Amount is
+// negative, PaymentMethod = PaymentMethodCreditDeduction, Money is always 0.
+// quotaAmount should be positive (the amount removed); remark is an
+// optional free-text note.
+func RecordCreditDeductionTopUp(userId int, quotaAmount int, remark string) error {
+	if quotaAmount <= 0 {
+		return nil
+	}
+	return recordCreditAdjustmentTopUp(userId, -int64(quotaAmount), PaymentMethodCreditDeduction, "DEBIT", remark)
+}
+
+func recordCreditAdjustmentTopUp(userId int, signedAmount int64, paymentMethod string, tradeNoPrefix string, remark string) error {
+	now := common.GetTimestamp()
+	tradeNo := fmt.Sprintf("%s%s%d", tradeNoPrefix, common.GetRandomString(6), now)
+
+	// TopUp.Amount is stored as a whole-dollar figure (matching how every
+	// other payment channel in this file records it), not raw internal
+	// quota units — convert before saving. Truncates toward zero, same as
+	// the epay "tokens display mode" conversion above.
+	dAmount := decimal.NewFromInt(signedAmount)
+	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	dollarAmount := dAmount.Div(dQuotaPerUnit).IntPart()
+
+	topUp := &TopUp{
+		UserId:          userId,
+		Amount:          dollarAmount,
+		Money:           0,
+		TradeNo:         tradeNo,
+		PaymentMethod:   paymentMethod,
+		PaymentProvider: paymentMethod,
+		CreateTime:      now,
+		CompleteTime:    now,
+		Status:          common.TopUpStatusSuccess,
+		Remark:          remark,
+	}
+	return topUp.Insert()
 }
 
 func topUpQuotaMaxCurrent(creditedQuota int) (int, error) {
@@ -848,4 +913,3 @@ func ReverseWonderGateTopUp(tradeNo string, callerIp string) (err error) {
 		callerIp, topUp.PaymentMethod, PaymentMethodWonderGate)
 	return nil
 }
-
