@@ -237,8 +237,9 @@ const (
 
 // Rate limit related messages
 const (
-	MsgRateLimitReached      = "rate_limit.reached"
-	MsgRateLimitTotalReached = "rate_limit.total_reached"
+	MsgRateLimitReached           = "rate_limit.reached"
+	MsgRateLimitTotalReached      = "rate_limit.total_reached"
+	MsgRateLimitDailyTokenReached = "rate_limit.daily_token_reached"
 )
 
 // Setting related messages

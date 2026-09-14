@@ -61,6 +61,7 @@ export const userSchema = z.object({
   last_login_at: z.number().optional(),
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
+  daily_token_limit: z.number().optional(),
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
@@ -113,6 +114,9 @@ export interface UserFormData {
   quota?: number // Only used when updating user
   group?: string // Only used when updating user
   remark?: string // Only used when updating user
+  // Daily token quota (prompt+completion, resets at 00:00 UTC). 0/unset =
+  // unlimited. Only used when updating user.
+  daily_token_limit?: number
   admin_permissions?: AdminPermissionMatrix
 }
 

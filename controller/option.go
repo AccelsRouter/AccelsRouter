@@ -220,10 +220,10 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "theme.frontend":
-		if option.Value != "default" && option.Value != "aurora" {
+		if option.Value != "default" {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "无效的主题值，可选值：default（新版前端）、aurora（极光主题）",
+				"message": "Classic 前端已移除，主题只能设置为 default",
 			})
 			return
 		}

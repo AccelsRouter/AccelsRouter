@@ -66,7 +66,7 @@
     "Your application was approved.": "您的申請已通過。",
     "Your organization is ready.": "您的組織已就緒。",
     "Organizations": "組織",
-    "All organizations": "所有組織",
+    "All organizations": "全部組織",
     "New Organization": "新增組織",
     "Edit Organization": "編輯組織",
     "Create an enterprise or reseller organization.": "建立企業或經銷商組織。",
@@ -88,7 +88,6 @@
     "Pricing saved": "定價已儲存",
     "Retail": "零售",
     "Total Retail": "零售合計",
-    "All organizations": "全部組織",
     "Enterprise direct": "企業直客",
     "Reseller customers": "經銷商客戶",
     "Your credit is provided by your distributor. To add credit, please contact your distributor.": "您的額度由代理商儲值。如需增加額度，請聯繫您的代理商。",
@@ -2879,7 +2878,7 @@
     "footer.columns.related.links.oneApi": "One API",
     "footer.columns.related.title": "相關專案",
     "footer.defaultCopyright": "版權所有。",
-    "footer.new\u0061pi.projectAttributionSuffix": "版權所有，由專案貢獻者設計與開發。",
+    "footer.newapi.projectAttributionSuffix": "版權所有，由專案貢獻者設計與開發。",
     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "對於 2025 年 5 月 10 日之後新增的渠道，在部署時無需從模型名稱中移除 \".\"",
     "For private deployments, format: https://fastgpt.run/api/openapi": "對於私有部署，格式為：https://fastgpt.run/api/openapi",
     "Force a syntactically valid JSON response": "強制返回語法合法的 JSON",
@@ -5854,6 +5853,16 @@
     "Customer created": "客戶已建立",
     "Customer Usage": "客戶用量",
     "Distributor": "分銷商",
-    "This area is for reseller organizations.": "此區域僅供經銷商組織使用。"
+    "This area is for reseller organizations.": "此區域僅供經銷商組織使用。",
+    "Daily Token Limit": "每日 Token 限額",
+    "Enable user daily token limit": "啟用使用者每日 Token 限額",
+    "Enable channel daily token limit": "啟用渠道每日 Token 限額",
+    "A channel that has exhausted its own daily token budget (set on the channel itself, resets at 00:00 UTC) is skipped in favor of the next available channel, instead of erroring or getting rate limited by the upstream provider.": "渠道自己的每日 Token 額度用完後（在渠道本身設定，UTC 0 點重置），會被自動跳過，換成下一個可用渠道，而不是回報錯誤或被上游供應商限流。",
+    "Save daily token limits": "儲存每日 Token 限額",
+    "tokens/day": "tokens/天",
+    "Max tokens (prompt+completion) this channel may process per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires channel-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit; an over-budget channel is automatically skipped in favor of the next available channel.": "這個渠道每個日曆日（UTC 0 點重置）最多能處理的 Token 數（輸入+輸出）。0 = 不限制。需要先在系統設定 -> 安全 -> 每日 Token 限額裡開啟渠道限流開關；超額的渠道會被自動跳過，換成下一個可用渠道。",
+    "Unlike the request-count rate limiting above, this tracks actual tokens (prompt+completion) consumed per calendar day, reset at 00:00 UTC. The actual budgets are set per-user (Users -> edit user) and per-channel (see the channel edit form); these two switches only turn each side of the enforcement on or off.": "和上面按請求次數的限流不同，這裡按日曆日累計的實際 Token 數（輸入+輸出）計算，UTC 每日 0 點重置。實際額度是分別在「使用者」（使用者管理 -> 編輯使用者）和「渠道」（見渠道編輯表單）裡各自設定的，這兩個開關只是分別控制要不要啟用這兩邊的限制。",
+    "Reject a request with 429 before dispatch if the user has already exhausted their own daily token budget (set on the user record; see Users -> edit user).": "如果使用者自己的每日 Token 額度（在使用者資料裡設定，見使用者管理 -> 編輯使用者）已經用完，請求會在派送前直接回傳 429。",
+    "Max tokens (prompt+completion) this user may consume per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires user-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit.": "這個使用者每個日曆日（UTC 0 點重置）最多能使用的 Token 數（輸入+輸出）。0 = 不限制。需要先在系統設定 -> 安全 -> 每日 Token 限額裡開啟使用者限流開關。"
   }
 }

@@ -285,6 +285,7 @@ const SENSITIVE_FORM_FIELDS = [
   'pass_through_body_enabled',
   'system_prompt',
   'system_prompt_override',
+  'daily_token_limit',
   'allow_service_tier',
   'disable_store',
   'allow_safety_identifier',
@@ -337,6 +338,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
     values.system_prompt_override ||
+    (values.daily_token_limit != null && values.daily_token_limit > 0) ||
     (values.http_protocol && values.http_protocol !== 'auto') ||
     (values.http2_connection_shards != null &&
       values.http2_connection_shards > 1) ||
@@ -4239,6 +4241,41 @@ export function ChannelMutateDrawer({
                                       onCheckedChange={field.onChange}
                                     />
                                   </FormControl>
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name='daily_token_limit'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t('Daily Token Limit')}</FormLabel>
+                                  <FormControl>
+                                    <div className='flex items-center gap-2'>
+                                      <Input
+                                        type='number'
+                                        min={0}
+                                        step={1}
+                                        placeholder='0'
+                                        {...field}
+                                        onChange={(e) =>
+                                          field.onChange(
+                                            parseInt(e.target.value) || 0
+                                          )
+                                        }
+                                      />
+                                      <span className='text-muted-foreground text-sm'>
+                                        {t('tokens/day')}
+                                      </span>
+                                    </div>
+                                  </FormControl>
+                                  <FormDescription>
+                                    {t(
+                                      'Max tokens (prompt+completion) this channel may process per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires channel-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit; an over-budget channel is automatically skipped in favor of the next available channel.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
                                 </FormItem>
                               )}
                             />

@@ -77,24 +77,29 @@ func resolveUserSortOptions(sortOptions []UserSortOptions) UserSortOptions {
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
-	Id               int                        `json:"id"`
-	Username         string                     `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password         string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
-	OriginalPassword string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
-	DisplayName      string                     `json:"display_name" gorm:"index" validate:"max=20"`
-	Role             int                        `json:"role" gorm:"type:int;default:1"`   // admin, common
-	Status           int                        `json:"status" gorm:"type:int;default:1"` // enabled, disabled
-	Email            string                     `json:"email" gorm:"index" validate:"max=50"`
-	GitHubId         string                     `json:"github_id" gorm:"column:github_id;index"`
-	DiscordId        string                     `json:"discord_id" gorm:"column:discord_id;index"`
-	OidcId           string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
-	WeChatId         string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
-	TelegramId       string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
-	AccessToken      *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota            int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota        int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount     int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	Id               int     `json:"id"`
+	Username         string  `json:"username" gorm:"unique;index" validate:"max=20"`
+	Password         string  `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	OriginalPassword string  `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	DisplayName      string  `json:"display_name" gorm:"index" validate:"max=20"`
+	Role             int     `json:"role" gorm:"type:int;default:1"`   // admin, common
+	Status           int     `json:"status" gorm:"type:int;default:1"` // enabled, disabled
+	Email            string  `json:"email" gorm:"index" validate:"max=50"`
+	GitHubId         string  `json:"github_id" gorm:"column:github_id;index"`
+	DiscordId        string  `json:"discord_id" gorm:"column:discord_id;index"`
+	OidcId           string  `json:"oidc_id" gorm:"column:oidc_id;index"`
+	WeChatId         string  `json:"wechat_id" gorm:"column:wechat_id;index"`
+	TelegramId       string  `json:"telegram_id" gorm:"column:telegram_id;index"`
+	VerificationCode string  `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	AccessToken      *string `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
+	Quota            int     `json:"quota" gorm:"type:int;default:0"`
+	UsedQuota        int     `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	RequestCount     int     `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	// DailyTokenLimit caps the tokens (prompt+completion) this user may
+	// consume per calendar day, reset at 00:00 UTC. 0 = unlimited. Set by an
+	// admin; see setting.UserDailyTokenLimitEnabled for the feature's global
+	// on/off switch.
+	DailyTokenLimit  int64                      `json:"daily_token_limit" gorm:"type:bigint;default:0;column:daily_token_limit"`
 	Group            string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
 	AffCode          string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount         int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
@@ -108,59 +113,23 @@ type User struct {
 	StripeCustomer   string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	CreatedAt        int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
-	LastLoginIp      string                     `json:"last_login_ip" gorm:"type:varchar(64);column:last_login_ip"`
 	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
-	// TokenCount is the number of API keys (tokens) the user has created. It is
-	// not a stored column; it is populated for admin user listings via
-	// attachTokenCounts.
-	TokenCount int `json:"token_count" gorm:"-"`
-}
-
-// attachTokenCounts fills each user's TokenCount with the number of tokens they
-// own, using a single grouped query over the page's user ids.
-func attachTokenCounts(users []*User) {
-	if len(users) == 0 {
-		return
-	}
-	ids := make([]int, 0, len(users))
-	for _, u := range users {
-		ids = append(ids, u.Id)
-	}
-	type tokenCountRow struct {
-		UserId int
-		Count  int
-	}
-	var rows []tokenCountRow
-	if err := DB.Model(&Token{}).
-		Select("user_id, count(*) as count").
-		Where("user_id IN ?", ids).
-		Group("user_id").
-		Scan(&rows).Error; err != nil {
-		common.SysError("failed to count user tokens: " + err.Error())
-		return
-	}
-	counts := make(map[int]int, len(rows))
-	for _, r := range rows {
-		counts[r.UserId] = r.Count
-	}
-	for _, u := range users {
-		u.TokenCount = counts[u.Id]
-	}
 }
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:          user.Id,
-		Group:       user.Group,
-		Quota:       user.Quota,
-		Status:      user.Status,
-		Role:        user.Role,
-		Username:    user.Username,
-		Setting:     user.Setting,
-		Email:       user.Email,
-		AuthVersion: user.AuthVersion,
-		CacheSchema: userCacheSchemaVersion,
+		Id:              user.Id,
+		Group:           user.Group,
+		Quota:           user.Quota,
+		Status:          user.Status,
+		Role:            user.Role,
+		Username:        user.Username,
+		Setting:         user.Setting,
+		Email:           user.Email,
+		DailyTokenLimit: user.DailyTokenLimit,
+		AuthVersion:     user.AuthVersion,
+		CacheSchema:     userCacheSchemaVersion,
 	}
 	return cache
 }
@@ -455,22 +424,7 @@ func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (use
 		return nil, 0, err
 	}
 
-	attachTokenCounts(users)
 	return users, total, nil
-}
-
-// GetUsersForExport returns all non-deleted users (sensitive fields omitted)
-// with their token counts, ordered by id, for the admin CSV export.
-func GetUsersForExport() ([]*User, error) {
-	var users []*User
-	if err := DB.Model(&User{}).
-		Omit("password", "access_token").
-		Order("id asc").
-		Find(&users).Error; err != nil {
-		return nil, err
-	}
-	attachTokenCounts(users)
-	return users, nil
 }
 
 func SearchUsers(keyword string, group string, role *int, status *int, startIdx int, num int, sortOptions ...UserSortOptions) ([]*User, int64, error) {
@@ -539,7 +493,6 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 		return nil, 0, err
 	}
 
-	attachTokenCounts(users)
 	return users, total, nil
 }
 
@@ -891,10 +844,11 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 
 	newUser := *user
 	updates := map[string]interface{}{
-		"username":     newUser.Username,
-		"display_name": newUser.DisplayName,
-		"group":        newUser.Group,
-		"remark":       newUser.Remark,
+		"username":          newUser.Username,
+		"display_name":      newUser.DisplayName,
+		"group":             newUser.Group,
+		"remark":            newUser.Remark,
+		"daily_token_limit": newUser.DailyTokenLimit,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password
@@ -1391,14 +1345,8 @@ func GetRootUser() (user *User) {
 	return user
 }
 
-func UpdateUserLastLoginAt(id int, ip string) {
-	updates := map[string]interface{}{
-		"last_login_at": common.GetTimestamp(),
-	}
-	if ip != "" {
-		updates["last_login_ip"] = ip
-	}
-	if err := DB.Model(&User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+func UpdateUserLastLoginAt(id int) {
+	if err := DB.Model(&User{}).Where("id = ?", id).Update("last_login_at", common.GetTimestamp()).Error; err != nil {
 		common.SysLog("failed to update user last_login_at: " + err.Error())
 	}
 }

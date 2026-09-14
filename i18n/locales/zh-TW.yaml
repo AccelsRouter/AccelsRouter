@@ -204,6 +204,7 @@ twofa.code_invalid: "驗證碼或備用碼不正確"
 # Rate limit messages
 rate_limit.reached: "您已達到請求數限制：{{.Minutes}}分鐘內最多請求{{.Max}}次"
 rate_limit.total_reached: "您已達到總請求數限制：{{.Minutes}}分鐘內最多請求{{.Max}}次，包括失敗次數"
+rate_limit.daily_token_reached: "您已達到今日 Token 用量限制：每天最多消耗 {{.Max}} tokens（UTC 0點重置）"
 
 # Setting messages
 setting.invalid_type: "無效的預警類型"

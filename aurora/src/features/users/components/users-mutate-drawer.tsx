@@ -447,6 +447,41 @@ export function UsersMutateDrawer({
                       </FormItem>
                     )}
                   />
+
+                  <FormField
+                    control={form.control}
+                    name='daily_token_limit'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Daily Token Limit')}</FormLabel>
+                        <FormControl>
+                          <div className='flex items-center gap-2'>
+                            <Input
+                              type='number'
+                              min={0}
+                              step={1}
+                              placeholder='0'
+                              {...field}
+                              onChange={(e) =>
+                                field.onChange(
+                                  parseInt(e.target.value) || 0
+                                )
+                              }
+                            />
+                            <span className='text-muted-foreground text-sm'>
+                              {t('tokens/day')}
+                            </span>
+                          </div>
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Max tokens (prompt+completion) this user may consume per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires user-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </SideDrawerSection>
               )}
 

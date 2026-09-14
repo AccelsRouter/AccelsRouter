@@ -116,26 +116,6 @@ func InitOptionMap() {
 	common.OptionMap["WaffoPancakeMinTopUp"] = strconv.Itoa(setting.WaffoPancakeMinTopUp)
 	common.OptionMap["WaffoPancakeStoreID"] = setting.WaffoPancakeStoreID
 	common.OptionMap["WaffoPancakeProductID"] = setting.WaffoPancakeProductID
-	// WonderGate (card / local payment) options. See setting/payment_wondergate.go.
-	// Auto virtual models (fork). See setting/auto_model.go.
-	common.OptionMap["AutoModelConfigs"] = setting.AutoModelConfigsJSON()
-	common.OptionMap["OrgEnterpriseAutoApprove"] = strconv.FormatBool(OrgEnterpriseAutoApprove)
-	common.OptionMap["OrgResellerAutoApprove"] = strconv.FormatBool(OrgResellerAutoApprove)
-	common.OptionMap["OrgDefaultPriceGroup"] = OrgDefaultPriceGroup
-	common.OptionMap["PersonalByokEnabled"] = strconv.FormatBool(setting.PersonalByokEnabled)
-	common.OptionMap["ByokFeeRatio"] = strconv.FormatFloat(setting.ByokFeeRatio, 'f', -1, 64)
-	common.OptionMap["WonderGateEnabled"] = strconv.FormatBool(setting.WonderGateEnabled)
-	common.OptionMap["WonderGateSandbox"] = strconv.FormatBool(setting.WonderGateSandbox)
-	common.OptionMap["WonderGateMerchantId"] = setting.WonderGateMerchantId
-	common.OptionMap["WonderGateSecretKey"] = setting.WonderGateSecretKey
-	common.OptionMap["WonderGateAppId"] = setting.WonderGateAppId
-	common.OptionMap["WonderGateSandboxMerchantId"] = setting.WonderGateSandboxMerchantId
-	common.OptionMap["WonderGateSandboxSecretKey"] = setting.WonderGateSandboxSecretKey
-	common.OptionMap["WonderGateSandboxAppId"] = setting.WonderGateSandboxAppId
-	common.OptionMap["WonderGateUnitPrice"] = strconv.FormatFloat(setting.WonderGateUnitPrice, 'f', -1, 64)
-	common.OptionMap["WonderGateMinTopUp"] = strconv.Itoa(setting.WonderGateMinTopUp)
-	common.OptionMap["WonderGateBillingCountry"] = setting.WonderGateBillingCountry
-	common.OptionMap["WonderGateCurrency"] = setting.WonderGateCurrency
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -188,6 +168,8 @@ func InitOptionMap() {
 	common.OptionMap["DemoSiteEnabled"] = strconv.FormatBool(operation_setting.DemoSiteEnabled)
 	common.OptionMap["SelfUseModeEnabled"] = strconv.FormatBool(operation_setting.SelfUseModeEnabled)
 	common.OptionMap["ModelRequestRateLimitEnabled"] = strconv.FormatBool(setting.ModelRequestRateLimitEnabled)
+	common.OptionMap["UserDailyTokenLimitEnabled"] = strconv.FormatBool(setting.UserDailyTokenLimitEnabled)
+	common.OptionMap["ChannelDailyTokenLimitEnabled"] = strconv.FormatBool(setting.ChannelDailyTokenLimitEnabled)
 	common.OptionMap["CheckSensitiveOnPromptEnabled"] = strconv.FormatBool(setting.CheckSensitiveOnPromptEnabled)
 	common.OptionMap["StopOnSensitiveEnabled"] = strconv.FormatBool(setting.StopOnSensitiveEnabled)
 	common.OptionMap["SensitiveWords"] = setting.SensitiveWordsToString()
@@ -215,9 +197,6 @@ func loadOptionsFromDatabase() {
 			common.SysLog("failed to update option map: " + err.Error())
 		}
 	}
-	// Apply the persisted frontend theme to the runtime after the DB load so
-	// the correct embedded assets (aurora vs default) are served.
-	system_setting.UpdateAndSyncTheme()
 }
 
 func SyncOptions(frequency int) {
@@ -399,6 +378,10 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.CheckSensitiveOnPromptEnabled = boolValue
 		case "ModelRequestRateLimitEnabled":
 			setting.ModelRequestRateLimitEnabled = boolValue
+		case "UserDailyTokenLimitEnabled":
+			setting.UserDailyTokenLimitEnabled = boolValue
+		case "ChannelDailyTokenLimitEnabled":
+			setting.ChannelDailyTokenLimitEnabled = boolValue
 		case "StopOnSensitiveEnabled":
 			setting.StopOnSensitiveEnabled = boolValue
 		case "SMTPSSLEnabled":
@@ -521,42 +504,6 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.WaffoPancakeUnitPrice, _ = strconv.ParseFloat(value, 64)
 	case "WaffoPancakeMinTopUp":
 		setting.WaffoPancakeMinTopUp, _ = strconv.Atoi(value)
-	case "OrgEnterpriseAutoApprove":
-		OrgEnterpriseAutoApprove = value == "true"
-	case "OrgResellerAutoApprove":
-		OrgResellerAutoApprove = value == "true"
-	case "OrgDefaultPriceGroup":
-		OrgDefaultPriceGroup = value
-	case "AutoModelConfigs":
-		err = setting.UpdateAutoModelConfigs(value)
-	case "PersonalByokEnabled":
-		setting.PersonalByokEnabled = value == "true"
-	case "ByokFeeRatio":
-		setting.ByokFeeRatio, _ = strconv.ParseFloat(value, 64)
-	case "WonderGateEnabled":
-		setting.WonderGateEnabled = value == "true"
-	case "WonderGateSandbox":
-		setting.WonderGateSandbox = value == "true"
-	case "WonderGateMerchantId":
-		setting.WonderGateMerchantId = value
-	case "WonderGateSecretKey":
-		setting.WonderGateSecretKey = value
-	case "WonderGateAppId":
-		setting.WonderGateAppId = value
-	case "WonderGateSandboxMerchantId":
-		setting.WonderGateSandboxMerchantId = value
-	case "WonderGateSandboxSecretKey":
-		setting.WonderGateSandboxSecretKey = value
-	case "WonderGateSandboxAppId":
-		setting.WonderGateSandboxAppId = value
-	case "WonderGateUnitPrice":
-		setting.WonderGateUnitPrice, _ = strconv.ParseFloat(value, 64)
-	case "WonderGateMinTopUp":
-		setting.WonderGateMinTopUp, _ = strconv.Atoi(value)
-	case "WonderGateBillingCountry":
-		setting.WonderGateBillingCountry = value
-	case "WonderGateCurrency":
-		setting.WonderGateCurrency = value
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
 	case "GitHubClientId":

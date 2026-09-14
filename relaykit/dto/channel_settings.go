@@ -23,6 +23,13 @@ type ChannelSettings struct {
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
 	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
+	// DailyTokenLimit caps the tokens (prompt+completion) this channel may
+	// process per calendar day (resets at 00:00 UTC; see
+	// setting.ChannelDailyTokenLimitEnabled). 0/unset means unlimited. A
+	// channel over budget is transparently skipped by
+	// model.GetRandomSatisfiedChannel in favor of the next channel (and, for
+	// "auto" group combinations, the next group) instead of erroring.
+	DailyTokenLimit int64 `json:"daily_token_limit,omitempty"`
 }
 
 const (

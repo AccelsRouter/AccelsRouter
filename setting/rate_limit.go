@@ -67,3 +67,42 @@ func CheckModelRequestRateLimitGroup(jsonStr string) error {
 
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Daily token quota limiting.
+//
+// Unlike ModelRequestRateLimit* above (which counts REQUESTS per minute
+// window), this counts actual TOKENS (prompt+completion) consumed per
+// calendar day, reset at 00:00 UTC (see common/limiter.AddDailyTokens /
+// PeekDailyTokens):
+//
+//   - User side: each user has their own daily token budget
+//     (model.User.DailyTokenLimit, set by an admin on the user record; 0 =
+//     unlimited). Checked by middleware.UserTokenRateLimit BEFORE a request
+//     is dispatched; over budget -> reject with 429 immediately.
+//   - Channel side: a per-channel daily token budget set on the channel
+//     itself (dto.ChannelSettings.DailyTokenLimit). Checked by
+//     model.GetRandomSatisfiedChannel while selecting a channel; a channel
+//     over budget is skipped in favor of the next channel/priority tier (and,
+//     for "auto" group combinations, the next group) instead of erroring.
+//
+// Both sides record actual usage the same way, after a response completes:
+// see service.RecordTokenRateLimitUsage.
+// ---------------------------------------------------------------------------
+
+var UserDailyTokenLimitEnabled = false
+
+var ChannelDailyTokenLimitEnabled = false
+
+// UserDailyTokenLimitKey and ChannelDailyTokenLimitKey build the counter
+// keys shared by middleware.UserTokenRateLimit, model.GetRandomSatisfiedChannel
+// and service.RecordTokenRateLimitUsage, so all three always agree on where
+// a given user/channel's daily usage is tracked.
+func UserDailyTokenLimitKey(userId int) string {
+	return fmt.Sprintf("dailyTokenLimit:v1:user:%d", userId)
+}
+
+func ChannelDailyTokenLimitKey(channelId int) string {
+	return fmt.Sprintf("dailyTokenLimit:v1:channel:%d", channelId)
+}
