@@ -81,6 +81,18 @@ export type OrgContext = {
   is_reseller_admin: boolean
   is_reseller_customer: boolean
   org_type: string
+  // White-label brand a reseller customer sees in place of the platform brand.
+  brand_name: string
+  brand_logo: string
+}
+
+const EMPTY_ORG_CONTEXT: OrgContext = {
+  is_org_member: false,
+  is_reseller_admin: false,
+  is_reseller_customer: false,
+  org_type: '',
+  brand_name: '',
+  brand_logo: '',
 }
 
 export async function getOrgContext(): Promise<OrgContext> {
@@ -89,22 +101,27 @@ export async function getOrgContext(): Promise<OrgContext> {
       skipErrorHandler: true,
       skipBusinessError: true,
     })
-    return (
-      res.data?.data ?? {
-        is_org_member: false,
-        is_reseller_admin: false,
-        is_reseller_customer: false,
-        org_type: '',
-      }
-    )
+    return { ...EMPTY_ORG_CONTEXT, ...(res.data?.data ?? {}) }
   } catch {
-    return {
-      is_org_member: false,
-      is_reseller_admin: false,
-      is_reseller_customer: false,
-      org_type: '',
-    }
+    return EMPTY_ORG_CONTEXT
   }
+}
+
+export type ResellerBrand = {
+  brand_name: string
+  brand_logo: string
+}
+
+export async function getResellerBrand(): Promise<ResellerBrand> {
+  const res = await api.get<ApiResp<ResellerBrand>>('/api/reseller/brand')
+  return res.data?.data ?? { brand_name: '', brand_logo: '' }
+}
+
+export async function setResellerBrand(
+  brand: ResellerBrand
+): Promise<ResellerBrand> {
+  const res = await api.put<ApiResp<ResellerBrand>>('/api/reseller/brand', brand)
+  return res.data?.data ?? brand
 }
 
 export async function getResellerSelf(): Promise<OrgSelf | null> {

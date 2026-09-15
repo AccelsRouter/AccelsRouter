@@ -107,18 +107,21 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/topup/self", controller.GetUserTopUps)
 				// fork: Require2FAEnabled gates every money-in path so funds
 				// can only be added to accounts protected by a second factor.
-				selfRoute.POST("/topup", middleware.CriticalRateLimit(), middleware.Require2FAEnabled(), controller.TopUp)
-				selfRoute.POST("/pay", middleware.CriticalRateLimit(), middleware.Require2FAEnabled(), controller.RequestEpay)
+				// BlockResellerCustomer bars reseller-provisioned customers from
+				// self-funding a personal balance (their credit comes from the
+				// reseller wallet); it backs the hidden customer-console controls.
+				selfRoute.POST("/topup", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.TopUp)
+				selfRoute.POST("/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestEpay)
 				selfRoute.POST("/amount", controller.RequestAmount)
-				selfRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.Require2FAEnabled(), controller.RequestStripePay)
+				selfRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestStripePay)
 				selfRoute.POST("/stripe/amount", controller.RequestStripeAmount)
-				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.Require2FAEnabled(), controller.RequestCreemPay)
+				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestCreemPay)
 				selfRoute.POST("/waffo/amount", controller.RequestWaffoAmount)
-				selfRoute.POST("/waffo/pay", middleware.CriticalRateLimit(), middleware.Require2FAEnabled(), controller.RequestWaffoPay)
+				selfRoute.POST("/waffo/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestWaffoPay)
 				selfRoute.POST("/waffo-pancake/amount", controller.RequestWaffoPancakeAmount)
-				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.Require2FAEnabled(), controller.RequestWaffoPancakePay)
+				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestWaffoPancakePay)
 				selfRoute.POST("/wondergate/amount", controller.RequestWonderGateAmount)
-				selfRoute.POST("/wondergate/pay", middleware.CriticalRateLimit(), middleware.Require2FAEnabled(), controller.RequestWonderGatePay)
+				selfRoute.POST("/wondergate/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestWonderGatePay)
 				selfRoute.POST("/aff_transfer", middleware.UserCriticalRateLimit("aff-transfer"), controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 
@@ -254,6 +257,9 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			resellerRoute.GET("/wallet", controller.GetMyResellerWallet)
 			resellerRoute.POST("/wallet/purchase", middleware.CriticalRateLimit(), controller.PurchaseMyResellerCredit)
+			// White-label brand the reseller's customers see (self-service).
+			resellerRoute.GET("/brand", controller.GetMyResellerBrand)
+			resellerRoute.PUT("/brand", controller.SetMyResellerBrand)
 			// Customer delivery: invite a customer org's operator (admin).
 			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)
@@ -286,11 +292,11 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
-			subscriptionRoute.POST("/balance/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestBalancePay)
-			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestEpay)
-			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestStripePay)
-			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestCreemPay)
-			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), controller.SubscriptionRequestWaffoPancakePay)
+			subscriptionRoute.POST("/balance/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestBalancePay)
+			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestEpay)
+			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestStripePay)
+			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestCreemPay)
+			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestWaffoPancakePay)
 		}
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")
 		subscriptionAdminRoute.Use(middleware.AdminAuth())
