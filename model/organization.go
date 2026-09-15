@@ -71,7 +71,12 @@ type Organization struct {
 	// customer statement multiplies standard cost by the matched ratio to get
 	// what the customer owes the reseller. Never touches the billing hot path.
 	RetailDiscounts string `json:"retail_discounts" gorm:"type:text"`
-	OwnerUserId     int    `json:"owner_user_id" gorm:"index"`
+	// BrandName / BrandLogo white-label a RESELLER org: its downstream customers
+	// see this name+logo in place of the platform brand. Reseller self-set (see
+	// Get/SetResellerBrand). Empty = fall back to the platform brand.
+	BrandName   string `json:"brand_name" gorm:"type:varchar(128)"`
+	BrandLogo   string `json:"brand_logo" gorm:"type:text"`
+	OwnerUserId int    `json:"owner_user_id" gorm:"index"`
 	Remark          string `json:"remark" gorm:"type:varchar(255)"`
 	CreatedTime     int64  `json:"created_time"`
 	UpdatedTime     int64  `json:"updated_time"`

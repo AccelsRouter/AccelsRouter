@@ -239,6 +239,31 @@ func IsCustomerOrg(orgId int) bool {
 	return count > 0
 }
 
+// ResellerOrgIdForCustomer returns the reseller org that owns a customer org,
+// or (0, false) when the org is not a reseller-provisioned customer.
+func ResellerOrgIdForCustomer(customerOrgId int) (int, bool) {
+	var link ResellerCustomerLink
+	if err := DB.Where("customer_org_id = ?", customerOrgId).First(&link).Error; err != nil {
+		return 0, false
+	}
+	return link.ResellerOrgId, true
+}
+
+// IsResellerCustomerUser reports whether a user belongs to a reseller-
+// provisioned customer org (its single-payer OrgAccount). Such users are
+// downstream clients of a reseller, not platform customers, so they must not
+// self-fund a personal balance. Errors bubble up so callers can fail closed.
+func IsResellerCustomerUser(userId int) (bool, error) {
+	acc, err := GetOrgAccountByUser(userId)
+	if err != nil {
+		return false, err
+	}
+	if acc == nil {
+		return false, nil
+	}
+	return IsCustomerOrg(acc.OrgId), nil
+}
+
 // CustomerOrgIdSet returns the set of all customer org ids (for admin list
 // separation: enterprise-direct = enterprise orgs NOT in this set).
 func CustomerOrgIdSet() (map[int]bool, error) {

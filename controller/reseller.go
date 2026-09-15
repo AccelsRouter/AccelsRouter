@@ -358,11 +358,23 @@ func GetMyOrgContext(c *gin.Context) {
 	isOrgMember := false
 	isResellerCustomer := false
 	orgType := ""
+	brandName := ""
+	brandLogo := ""
 	if acc, err := model.GetOrgAccountByUser(userId); err == nil && acc != nil {
 		isOrgMember = true
 		if org, err := model.GetOrganizationById(acc.OrgId); err == nil && org != nil {
 			orgType = org.Type
 			isResellerCustomer = model.IsCustomerOrg(org.Id)
+			// White-label: a customer sees its reseller's brand in place of the
+			// platform brand.
+			if isResellerCustomer {
+				if resellerId, ok := model.ResellerOrgIdForCustomer(org.Id); ok {
+					if reseller, err := model.GetOrganizationById(resellerId); err == nil && reseller != nil {
+						brandName = reseller.BrandName
+						brandLogo = reseller.BrandLogo
+					}
+				}
+			}
 		}
 	}
 
@@ -371,6 +383,8 @@ func GetMyOrgContext(c *gin.Context) {
 		"is_reseller_admin":    isResellerAdmin,
 		"is_reseller_customer": isResellerCustomer,
 		"org_type":             orgType,
+		"brand_name":           brandName,
+		"brand_logo":           brandLogo,
 	})
 }
 
@@ -419,6 +433,66 @@ func GetMyResellerOrg(c *gin.Context) {
 		"price_group":  reseller.PriceGroup,
 		"is_owner":     true,
 	})
+}
+
+// GetMyResellerBrand — GET /api/reseller/brand
+// The reseller's white-label brand shown to its downstream customers.
+func GetMyResellerBrand(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"brand_name": reseller.BrandName,
+		"brand_logo": reseller.BrandLogo,
+	})
+}
+
+// SetMyResellerBrand — PUT /api/reseller/brand
+// Self-service: the reseller sets the name+logo its customers see in place of
+// the platform brand. Empty values clear the override (fall back to platform).
+func SetMyResellerBrand(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		BrandName string `json:"brand_name"`
+		BrandLogo string `json:"brand_logo"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	name := strings.TrimSpace(req.BrandName)
+	logo := strings.TrimSpace(req.BrandLogo)
+	if len([]rune(name)) > 64 {
+		common.ApiErrorMsg(c, "品牌名称过长（最多 64 字）")
+		return
+	}
+	// Logo is rendered as an <img src>; only allow web or inline-image sources
+	// so a customer page can't be pointed at an arbitrary scheme.
+	if logo != "" {
+		if len(logo) > 8192 {
+			common.ApiErrorMsg(c, "品牌 Logo 地址过长")
+			return
+		}
+		if !strings.HasPrefix(logo, "https://") &&
+			!strings.HasPrefix(logo, "http://") &&
+			!strings.HasPrefix(logo, "data:image/") {
+			common.ApiErrorMsg(c, "品牌 Logo 必须是 http(s) 链接或图片数据")
+			return
+		}
+	}
+	if err := model.UpdateOrganizationFields(reseller.Id, map[string]interface{}{
+		"brand_name": name,
+		"brand_logo": logo,
+	}); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "reseller.brand", fmt.Sprintf("org:%d", reseller.Id), name)
+	common.ApiSuccess(c, gin.H{"brand_name": name, "brand_logo": logo})
 }
 
 // maxResellerPurchaseQuota bounds a single self-service credit purchase, so a

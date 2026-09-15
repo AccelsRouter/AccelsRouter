@@ -5868,6 +5868,14 @@
     "Customer created": "客户已创建",
     "Customer Usage": "客户用量",
     "Distributor": "分销商",
-    "This area is for reseller organizations.": "此区域仅供经销商组织使用。"
+    "This area is for reseller organizations.": "此区域仅供经销商组织使用。",
+    "Brand": "品牌",
+    "Brand updated": "品牌已更新",
+    "Brand name": "品牌名称",
+    "e.g. Acme AI": "例如 Acme AI",
+    "Brand logo URL": "品牌 Logo 链接",
+    "Logo must be an http(s) link or image data.": "Logo 必须是 http(s) 链接或图片数据。",
+    "Your brand": "你的品牌",
+    "Your customers see this name and logo instead of the platform brand. Leave empty to fall back to the platform brand.": "你的客户会看到这个名称和 Logo，而不是平台品牌。留空则回退到平台品牌。"
   }
 }
