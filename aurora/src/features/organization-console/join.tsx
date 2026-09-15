@@ -58,13 +58,15 @@ export function JoinOrganization({ code }: { code?: string }) {
   })
 
   // The invite is scoped to a specific address; block the accept up front when
-  // the signed-in account's email differs, so the user gets an actionable
-  // reason instead of a bare server rejection.
-  const emailMismatch =
-    !!preview?.invited_email &&
-    !!currentEmail &&
-    currentEmail.trim().toLowerCase() !==
-      preview.invited_email.trim().toLowerCase()
+  // the signed-in account's email does not match, so the user gets an
+  // actionable reason instead of a bare server rejection. Two distinct cases:
+  // the account has no email at all (must bind it), or it has a different one.
+  // A username that merely looks like an email is NOT the account's email.
+  const invitedEmail = preview?.invited_email?.trim().toLowerCase() ?? ''
+  const myEmail = currentEmail?.trim().toLowerCase() ?? ''
+  const emailMissing = !!invitedEmail && myEmail === ''
+  const emailMismatch = !!invitedEmail && myEmail !== '' && myEmail !== invitedEmail
+  const emailBlocked = emailMissing || emailMismatch
 
   const acceptMutation = useMutation({
     mutationFn: () => acceptInvitation(activeCode),
@@ -151,6 +153,14 @@ export function JoinOrganization({ code }: { code?: string }) {
                   </span>
                 </p>
               )}
+              {emailMissing && (
+                <div className='border-destructive/40 bg-destructive/10 text-destructive rounded-md border px-3 py-2 text-xs'>
+                  {t(
+                    'Your account has no email set. Bind {{invited}} to your account (Profile), or sign in with the account whose email is {{invited}}, then accept.',
+                    { invited: preview.invited_email }
+                  )}
+                </div>
+              )}
               {emailMismatch && (
                 <div className='border-destructive/40 bg-destructive/10 text-destructive rounded-md border px-3 py-2 text-xs'>
                   {t(
@@ -161,7 +171,7 @@ export function JoinOrganization({ code }: { code?: string }) {
               )}
               <Button
                 onClick={() => acceptMutation.mutate()}
-                disabled={acceptMutation.isPending || emailMismatch}
+                disabled={acceptMutation.isPending || emailBlocked}
                 className='gap-1.5 self-start'
               >
                 {acceptMutation.isPending && (

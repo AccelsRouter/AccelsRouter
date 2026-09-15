@@ -5857,6 +5857,7 @@
     "Channel unbound": "Channel unbound",
     "Failed to unbind channel": "Failed to unbind channel",
     "Channel pricing ignores the Group field entirely: this user is routed only to channels bound to them below, each billed at its own ratio. Top-ups for this user are always at a fixed 1:1 rate.": "Channel pricing ignores the Group field entirely: this user is routed only to channels bound to them below, each billed at its own ratio. Top-ups for this user are always at a fixed 1:1 rate.",
-    "You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept.": "You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept."
+    "You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept.": "You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept.",
+    "Your account has no email set. Bind {{invited}} to your account (Profile), or sign in with the account whose email is {{invited}}, then accept.": "Your account has no email set. Bind {{invited}} to your account (Profile), or sign in with the account whose email is {{invited}}, then accept."
   }
 }
