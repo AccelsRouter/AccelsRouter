@@ -114,7 +114,18 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 // seconds; a zero bound is treated as open). The result is deterministic:
 // each breakdown is sorted by descending quota then key.
 func GetOrgUsage(orgId int, from, to int64) (*OrgUsageReport, error) {
-	report := &OrgUsageReport{OrgId: orgId, From: from, To: to}
+	// Initialize the breakdowns as empty (non-nil) slices so they always
+	// marshal as JSON [] rather than null. A customer with no bound tokens hits
+	// the early return below; the frontend usage tables index .length/.map on
+	// these arrays and a null crashes the report view.
+	report := &OrgUsageReport{
+		OrgId:       orgId,
+		From:        from,
+		To:          to,
+		ByWorkspace: []OrgUsageBucket{},
+		ByModel:     []OrgUsageBucket{},
+		ByMember:    []OrgUsageBucket{},
+	}
 
 	// 1. Resolve the org's bound tokens (main DB).
 	var bindings []WorkspaceToken

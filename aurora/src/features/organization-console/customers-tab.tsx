@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
-import { formatQuotaWithCurrency } from '@/lib/currency'
+import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 
 import {
@@ -469,6 +469,7 @@ function CustomerInviteDialog(props: {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder='owner@customer.com'
+                className='min-w-0'
               />
               <Button
                 onClick={() => inviteMutation.mutate()}
@@ -489,7 +490,7 @@ function CustomerInviteDialog(props: {
                 {t('Share this join link with the customer')}
               </span>
               <div className='flex items-center gap-2'>
-                <code className='bg-background flex-1 truncate rounded px-2 py-1 text-xs'>
+                <code className='bg-background min-w-0 flex-1 truncate rounded px-2 py-1 text-xs'>
                   {lastLink}
                 </code>
                 <Button
@@ -581,7 +582,7 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
       createCustomer({
         name: name.trim(),
         price_group: priceGroup.trim() || 'default',
-        initial_quota: Number(initialQuota) || 0,
+        initial_quota: quotaFromUSD(Number(initialQuota) || 0),
       }),
     onSuccess: () => {
       toast.success(t('Customer created'))
@@ -614,12 +615,20 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
               {t('The customer\'s retail price group. Defaults to "default".')}
             </span>
           </Field>
-          <Field label={t('Initial quota (raw units)')}>
-            <Input
-              type='number'
-              value={initialQuota}
-              onChange={(e) => setInitialQuota(e.target.value)}
-            />
+          <Field label={t('Initial amount (USD)')}>
+            <div className='relative'>
+              <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
+                $
+              </span>
+              <Input
+                type='number'
+                min={0}
+                step='0.01'
+                value={initialQuota}
+                onChange={(e) => setInitialQuota(e.target.value)}
+                className='pl-6'
+              />
+            </div>
           </Field>
         </div>
         <DialogFooter className='gap-2'>

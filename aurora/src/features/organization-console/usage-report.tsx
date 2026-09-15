@@ -47,6 +47,9 @@ function BucketTable(props: {
 }) {
   const { t } = useTranslation()
   const cols = props.showRetail ? 6 : 5
+  // A backend that has never aggregated for this org can send the breakdown as
+  // null; treat it as empty so the table renders instead of crashing.
+  const buckets = props.buckets ?? []
   return (
     <div className='flex flex-col gap-2'>
       <span className='text-sm font-medium'>{props.title}</span>
@@ -65,7 +68,7 @@ function BucketTable(props: {
             </tr>
           </thead>
           <tbody className='divide-border/60 divide-y'>
-            {props.buckets.length === 0 ? (
+            {buckets.length === 0 ? (
               <tr>
                 <td
                   colSpan={cols}
@@ -75,7 +78,7 @@ function BucketTable(props: {
                 </td>
               </tr>
             ) : (
-              props.buckets.map((b) => (
+              buckets.map((b) => (
                 <tr key={b.key} className='hover:bg-muted/30'>
                   <Td className='font-medium'>{b.key || '-'}</Td>
                   <Td className='text-right tabular-nums'>

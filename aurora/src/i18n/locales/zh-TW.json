@@ -4294,6 +4294,8 @@
     "Recharge": "充值",
     "Recharge Amount": "充值金額",
     "Recharge Amount (USD)": "充值金額 (USD)",
+    "Amount (USD)": "金額 (USD)",
+    "Initial amount (USD)": "初始金額 (USD)",
     "Recommended": "推薦",
     "Recommended actions": "推薦操作",
     "Recommended to keep this high to avoid upstream throttling.": "建議保持此值較高，以避免上游限流。",

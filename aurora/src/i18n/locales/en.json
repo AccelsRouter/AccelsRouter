@@ -4294,6 +4294,8 @@
     "Recharge": "Recharge",
     "Recharge Amount": "Recharge Amount",
     "Recharge Amount (USD)": "Recharge Amount (USD)",
+    "Amount (USD)": "Amount (USD)",
+    "Initial amount (USD)": "Initial amount (USD)",
     "Recommended": "Recommended",
     "Recommended actions": "Recommended actions",
     "Recommended to keep this high to avoid upstream throttling.": "Recommended to keep this high to avoid upstream throttling.",

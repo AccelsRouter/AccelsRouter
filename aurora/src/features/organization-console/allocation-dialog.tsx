@@ -42,6 +42,8 @@ import {
 } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 
+import { quotaFromUSD } from '@/lib/currency'
+
 import { allocateQuota, listCustomers, revokeQuota } from './api'
 import { Field } from './shared'
 
@@ -60,7 +62,8 @@ export function AllocationDialog(props: {
   const mode = props.mode
   const fixedOrgId = props.fixedOrgId
   const [toOrgId, setToOrgId] = useState('')
-  const [quota, setQuota] = useState('')
+  // Entered in USD; the API works in raw quota units.
+  const [dollars, setDollars] = useState('')
   const [remark, setRemark] = useState('')
   // When no target org is fixed (the top-level Allocate/Revoke buttons), let the
   // reseller pick a customer from a dropdown instead of typing a raw org id.
@@ -79,7 +82,7 @@ export function AllocationDialog(props: {
     setLoadedMode(mode)
     setLoadedKey(openKey)
     setToOrgId(fixedOrgId ? String(fixedOrgId) : '')
-    setQuota('')
+    setDollars('')
     setRemark('')
   }
 
@@ -87,7 +90,7 @@ export function AllocationDialog(props: {
     mutationFn: () => {
       const payload = {
         to_org_id: Number(toOrgId) || 0,
-        quota: Number(quota) || 0,
+        quota: quotaFromUSD(Number(dollars) || 0),
         remark: remark.trim(),
       }
       return mode === 'revoke' ? revokeQuota(payload) : allocateQuota(payload)
@@ -105,7 +108,7 @@ export function AllocationDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
-  const canSubmit = Number(toOrgId) > 0 && Number(quota) > 0
+  const canSubmit = Number(toOrgId) > 0 && Number(dollars) > 0
 
   return (
     <Dialog open={!!mode} onOpenChange={(o) => !o && props.onClose()}>
@@ -141,12 +144,20 @@ export function AllocationDialog(props: {
               </NativeSelect>
             )}
           </Field>
-          <Field label={t('Quota (raw units)')}>
-            <Input
-              type='number'
-              value={quota}
-              onChange={(e) => setQuota(e.target.value)}
-            />
+          <Field label={t('Amount (USD)')}>
+            <div className='relative'>
+              <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
+                $
+              </span>
+              <Input
+                type='number'
+                min={0}
+                step='0.01'
+                value={dollars}
+                onChange={(e) => setDollars(e.target.value)}
+                className='pl-6'
+              />
+            </div>
           </Field>
           <Field label={t('Remark')}>
             <Textarea
