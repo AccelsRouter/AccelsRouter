@@ -5871,6 +5871,17 @@
     "Credit Grant": "信用授予",
     "Credit Deduction": "信用扣減",
     "optional": "選填",
-    "e.g. \"June 2026 monthly authorized credit\" — shown to the user in their top-up history": "例如「2026年6月授信額度」— 使用者會在自己的充值記錄裡看到這段說明"
+    "e.g. \"June 2026 monthly authorized credit\" — shown to the user in their top-up history": "例如「2026年6月授信額度」— 使用者會在自己的充值記錄裡看到這段說明",
+    "Channel Pricing": "渠道定價模式",
+    "No channels bound yet.": "尚未綁定任何渠道。",
+    "Search channel by name...": "按名稱搜尋渠道...",
+    "Searching...": "搜尋中...",
+    "No matching channels.": "沒有符合的渠道。",
+    "Already bound": "已綁定",
+    "Channel bound": "渠道已綁定",
+    "Failed to bind channel": "綁定渠道失敗",
+    "Channel unbound": "渠道已解綁",
+    "Failed to unbind channel": "解綁渠道失敗",
+    "Channel pricing ignores the Group field entirely: this user is routed only to channels bound to them below, each billed at its own ratio. Top-ups for this user are always at a fixed 1:1 rate.": "渠道定價會完全忽略分組欄位：這個使用者只會被路由到下面綁定給他的渠道，各自按自己的倍率計費，充值固定用 1:1 的比例。"
   }
 }

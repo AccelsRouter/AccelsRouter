@@ -99,7 +99,14 @@ type User struct {
 	// consume per calendar day, reset at 00:00 UTC. 0 = unlimited. Set by an
 	// admin; see setting.UserDailyTokenLimitEnabled for the feature's global
 	// on/off switch.
-	DailyTokenLimit  int64                      `json:"daily_token_limit" gorm:"type:bigint;default:0;column:daily_token_limit"`
+	DailyTokenLimit int64 `json:"daily_token_limit" gorm:"type:bigint;default:0;column:daily_token_limit"`
+	// BillingMode selects between "group" (default; Group field + normal
+	// group ratio/channel selection) and "channel_pricing" (Group no
+	// longer takes effect at all; channel selection and billing use this
+	// user's own UserChannelBinding rows instead). See
+	// BillingModeGroup/BillingModeChannelPricing in
+	// model/user_channel_binding.go.
+	BillingMode      string                     `json:"billing_mode" gorm:"type:varchar(20);default:'group';column:billing_mode"`
 	Group            string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
 	AffCode          string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount         int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
@@ -165,6 +172,7 @@ func (user *User) ToBaseUser() *UserBase {
 		Setting:         user.Setting,
 		Email:           user.Email,
 		DailyTokenLimit: user.DailyTokenLimit,
+		BillingMode:     user.BillingMode,
 		AuthVersion:     user.AuthVersion,
 		CacheSchema:     userCacheSchemaVersion,
 	}
@@ -902,6 +910,7 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 		"group":             newUser.Group,
 		"remark":            newUser.Remark,
 		"daily_token_limit": newUser.DailyTokenLimit,
+		"billing_mode":      newUser.BillingMode,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password

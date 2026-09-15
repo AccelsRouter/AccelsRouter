@@ -62,9 +62,9 @@ export const userSchema = z.object({
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
   daily_token_limit: z.number().optional(),
-  // Monthly postpaid credit limit, in quota units (0 = not set, falls back
-  // to the global default trust threshold).
-  credit_limit: z.number().optional(),
+  // "group" (default) or "channel_pricing"; see backend
+  // model.BillingModeGroup / model.BillingModeChannelPricing.
+  billing_mode: z.enum(['group', 'channel_pricing']).optional(),
   admin_permissions: z
       .record(z.string(), z.record(z.string(), z.boolean()))
       .optional(),
@@ -120,9 +120,8 @@ export interface UserFormData {
   // Daily token quota (prompt+completion, resets at 00:00 UTC). 0/unset =
   // unlimited. Only used when updating user.
   daily_token_limit?: number
-  // Monthly postpaid credit limit, in quota units. 0/unset = not set (falls
-  // back to the global default trust threshold). Only used when updating user.
-  credit_limit?: number
+  // Only used when updating user
+  billing_mode?: 'group' | 'channel_pricing'
   admin_permissions?: AdminPermissionMatrix
 }
 

@@ -5837,6 +5837,17 @@
     "Credit Grant": "Credit Grant",
     "Credit Deduction": "Credit Deduction",
     "optional": "optional",
-    "e.g. \"June 2026 monthly authorized credit\" — shown to the user in their top-up history": "e.g. \"June 2026 monthly authorized credit\" — shown to the user in their top-up history"
+    "e.g. \"June 2026 monthly authorized credit\" — shown to the user in their top-up history": "e.g. \"June 2026 monthly authorized credit\" — shown to the user in their top-up history",
+    "Channel Pricing": "Channel Pricing",
+    "No channels bound yet.": "No channels bound yet.",
+    "Search channel by name...": "Search channel by name...",
+    "Searching...": "Searching...",
+    "No matching channels.": "No matching channels.",
+    "Already bound": "Already bound",
+    "Channel bound": "Channel bound",
+    "Failed to bind channel": "Failed to bind channel",
+    "Channel unbound": "Channel unbound",
+    "Failed to unbind channel": "Failed to unbind channel",
+    "Channel pricing ignores the Group field entirely: this user is routed only to channels bound to them below, each billed at its own ratio. Top-ups for this user are always at a fixed 1:1 rate.": "Channel pricing ignores the Group field entirely: this user is routed only to channels bound to them below, each billed at its own ratio. Top-ups for this user are always at a fixed 1:1 rate."
   }
 }

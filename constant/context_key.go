@@ -63,8 +63,13 @@ const (
 	// middleware.UserTokenRateLimit; see setting.UserDailyTokenLimitEnabled
 	// for the feature's global on/off switch.
 	ContextKeyUserDailyTokenLimit ContextKey = "user_daily_token_limit"
-	ContextKeyUserCreditLimit     ContextKey = "user_credit_limit"
-	ContextKeyLocalCountTokens    ContextKey = "local_count_tokens"
+	// ContextKeyUserBillingMode carries model.User.BillingMode ("group" or
+	// "channel_pricing"). Read by controller.getChannel to decide whether
+	// to use normal group-based channel selection/pricing or the
+	// channel-pricing-mode path (model.GetChannelPricingChannel +
+	// per-binding ratio).
+	ContextKeyUserBillingMode  ContextKey = "user_billing_mode"
+	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
 

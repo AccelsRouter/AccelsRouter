@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -376,6 +377,38 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			AutoBan: &autoBanInt,
 		}, nil
 	}
+
+	// Channel-pricing-mode users (model.User.BillingMode ==
+	// model.BillingModeChannelPricing) skip group-based selection/pricing
+	// entirely: they're routed only to their own bound channels
+	// (model.UserChannelBinding), each with its own billing ratio
+	// replacing the group ratio below.
+	if common.GetContextKeyString(c, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
+		userId := common.GetContextKeyInt(c, constant.ContextKeyUserId)
+		channel, err := service.CacheGetChannelPricingChannel(userId, retryParam)
+		if err != nil {
+			return nil, types.NewError(fmt.Errorf("获取用户 %d 绑定渠道下模型 %s 的可用渠道失败（retry）: %s", userId, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		if channel == nil {
+			return nil, types.NewError(fmt.Errorf("用户 %d 没有绑定支持模型 %s 的可用渠道（retry）", userId, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+
+		ratio, found := model.GetUserChannelBindingRatio(userId, channel.Id)
+		if !found || ratio <= 0 {
+			ratio = 1
+		}
+		info.PriceData.GroupRatioInfo = hosttypes.GroupRatioInfo{
+			GroupRatio:        ratio,
+			GroupSpecialRatio: -1,
+		}
+
+		newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
+		if newAPIError != nil {
+			return nil, newAPIError
+		}
+		return channel, nil
+	}
+
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())

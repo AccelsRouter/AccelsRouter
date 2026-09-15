@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const userCacheSchemaVersion = 3
+const userCacheSchemaVersion = 4
 
 type UserBase struct {
 	Id       int    `json:"id"`
@@ -25,8 +25,10 @@ type UserBase struct {
 	// DailyTokenLimit caps this user's tokens per calendar day (0 =
 	// unlimited); see model.User.DailyTokenLimit.
 	DailyTokenLimit int64 `json:"daily_token_limit"`
-	AuthVersion     int64 `json:"-"`
-	CacheSchema     int   `json:"-"`
+	// BillingMode is "group" or "channel_pricing"; see model.User.BillingMode.
+	BillingMode string `json:"billing_mode"`
+	AuthVersion int64  `json:"-"`
+	CacheSchema int    `json:"-"`
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {
@@ -37,6 +39,7 @@ func (user *UserBase) WriteContext(c *gin.Context) {
 	common.SetContextKey(c, constant.ContextKeyUserName, user.Username)
 	common.SetContextKey(c, constant.ContextKeyUserSetting, user.GetSetting())
 	common.SetContextKey(c, constant.ContextKeyUserDailyTokenLimit, user.DailyTokenLimit)
+	common.SetContextKey(c, constant.ContextKeyUserBillingMode, user.BillingMode)
 }
 
 func (user *UserBase) GetSetting() dto.UserSetting {
