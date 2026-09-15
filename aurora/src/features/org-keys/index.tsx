@@ -156,26 +156,30 @@ export function OrgKeysPanel() {
       <Dialog open={createOpen} onOpenChange={(o) => !o && closeCreate()}>
         <DialogContent className='sm:max-w-md'>
           <DialogHeader>
-            <DialogTitle>{t('Create API Key')}</DialogTitle>
+            <DialogTitle>
+              {newKey ? t('API key created') : t('Create API Key')}
+            </DialogTitle>
             <DialogDescription>
-              {t('Give the key a name to recognize it later.')}
+              {newKey
+                ? t('Copy your key now — it will not be shown again.')
+                : t('Give the key a name to recognize it later.')}
             </DialogDescription>
           </DialogHeader>
 
           {newKey ? (
             <div className='flex flex-col gap-3'>
-              <div className='border-border/60 bg-muted/30 flex flex-col gap-1.5 rounded-lg border p-3'>
-                <span className='text-muted-foreground text-xs'>
-                  {t('Copy your key now — it will not be shown again.')}
-                </span>
-                <div className='flex items-center gap-2'>
-                  <code className='bg-background min-w-0 flex-1 truncate rounded px-2 py-1 text-xs'>
-                    {newKey}
-                  </code>
-                  <Button size='sm' variant='outline' onClick={() => copy(newKey)}>
-                    <Copy className='h-4 w-4' />
-                  </Button>
-                </div>
+              <div className='border-border/60 bg-muted/30 flex items-center gap-2 rounded-lg border p-2'>
+                <code className='min-w-0 flex-1 truncate rounded px-1 py-1 font-mono text-xs'>
+                  {newKey}
+                </code>
+                <Button
+                  size='sm'
+                  variant='outline'
+                  className='shrink-0'
+                  onClick={() => copy(newKey)}
+                >
+                  <Copy className='h-4 w-4' />
+                </Button>
               </div>
               <DialogFooter>
                 <Button onClick={closeCreate}>{t('Done')}</Button>

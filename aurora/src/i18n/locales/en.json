@@ -5864,6 +5864,7 @@
     "e.g. Production": "e.g. Production",
     "No API keys yet. Create one to start making requests.": "No API keys yet. Create one to start making requests.",
     "Copy your key now — it will not be shown again.": "Copy your key now — it will not be shown again.",
-    "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.": "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key."
+    "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.": "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.",
+    "API key created": "API key created"
   }
 }
