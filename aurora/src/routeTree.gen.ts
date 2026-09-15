@@ -49,6 +49,7 @@ import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedPersonalByokIndexRouteImport } from './routes/_authenticated/personal-byok/index'
 import { Route as AuthenticatedOrganizationIndexRouteImport } from './routes/_authenticated/organization/index'
+import { Route as AuthenticatedOrgKeysIndexRouteImport } from './routes/_authenticated/org-keys/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
@@ -289,6 +290,12 @@ const AuthenticatedOrganizationIndexRoute =
     path: '/organization/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOrgKeysIndexRoute =
+  AuthenticatedOrgKeysIndexRouteImport.update({
+    id: '/org-keys/',
+    path: '/org-keys/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedModelsIndexRoute =
   AuthenticatedModelsIndexRouteImport.update({
     id: '/models/',
@@ -498,6 +505,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
+  '/org-keys/': typeof AuthenticatedOrgKeysIndexRoute
   '/organization/': typeof AuthenticatedOrganizationIndexRoute
   '/personal-byok/': typeof AuthenticatedPersonalByokIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -566,6 +574,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
+  '/org-keys': typeof AuthenticatedOrgKeysIndexRoute
   '/organization': typeof AuthenticatedOrganizationIndexRoute
   '/personal-byok': typeof AuthenticatedPersonalByokIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
@@ -638,6 +647,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
+  '/_authenticated/org-keys/': typeof AuthenticatedOrgKeysIndexRoute
   '/_authenticated/organization/': typeof AuthenticatedOrganizationIndexRoute
   '/_authenticated/personal-byok/': typeof AuthenticatedPersonalByokIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
@@ -709,6 +719,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/keys/'
     | '/models/'
+    | '/org-keys/'
     | '/organization/'
     | '/personal-byok/'
     | '/playground/'
@@ -777,6 +788,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/keys'
     | '/models'
+    | '/org-keys'
     | '/organization'
     | '/personal-byok'
     | '/playground'
@@ -848,6 +860,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/'
     | '/_authenticated/keys/'
     | '/_authenticated/models/'
+    | '/_authenticated/org-keys/'
     | '/_authenticated/organization/'
     | '/_authenticated/personal-byok/'
     | '/_authenticated/playground/'
@@ -1185,6 +1198,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOrganizationIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/org-keys/': {
+      id: '/_authenticated/org-keys/'
+      path: '/org-keys'
+      fullPath: '/org-keys/'
+      preLoaderRoute: typeof AuthenticatedOrgKeysIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/models/': {
       id: '/_authenticated/models/'
       path: '/models'
@@ -1499,6 +1519,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
+  AuthenticatedOrgKeysIndexRoute: typeof AuthenticatedOrgKeysIndexRoute
   AuthenticatedOrganizationIndexRoute: typeof AuthenticatedOrganizationIndexRoute
   AuthenticatedPersonalByokIndexRoute: typeof AuthenticatedPersonalByokIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
@@ -1526,6 +1547,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
+  AuthenticatedOrgKeysIndexRoute: AuthenticatedOrgKeysIndexRoute,
   AuthenticatedOrganizationIndexRoute: AuthenticatedOrganizationIndexRoute,
   AuthenticatedPersonalByokIndexRoute: AuthenticatedPersonalByokIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,

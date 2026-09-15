@@ -218,6 +218,12 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.GET("/customers", controller.ListMyCustomers)
 			orgRoute.POST("/customers", middleware.CriticalRateLimit(), controller.CreateMyCustomer)
 			orgRoute.GET("/customers/:id/usage", controller.GetMyCustomerUsage)
+			// Member-scoped org API keys (any active member): keys bound to the
+			// org's default workspace so they bill the org wallet, not a personal
+			// balance. Backs the org-member "API Keys" surface.
+			orgRoute.GET("/keys", controller.ListMyOrgKeys)
+			orgRoute.POST("/keys", middleware.CriticalRateLimit(), controller.CreateMyOrgKey)
+			orgRoute.DELETE("/keys/:token_id", controller.DeleteMyOrgKey)
 			orgRoute.GET("/workspaces", controller.ListMyWorkspaces)
 			orgRoute.POST("/workspaces", controller.CreateMyWorkspace)
 			orgRoute.PUT("/workspaces/:id", controller.UpdateMyWorkspace)

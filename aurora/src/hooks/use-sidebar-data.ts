@@ -65,6 +65,11 @@ export function useSidebarData(): SidebarData {
     staleTime: 60_000,
   })
   const isResellerCustomer = orgContext?.is_reseller_customer ?? false
+  // Org members manage keys under the org (bound to the org wallet). A personal
+  // key on /keys bills a personal balance an org member may not have, so point
+  // "API Keys" at the org-scoped manager for anyone in an organization.
+  const isOrgMember = orgContext?.is_org_member ?? false
+  const apiKeysUrl = isOrgMember ? '/org-keys' : '/keys'
 
   if (isResellerCustomer) {
     return {
@@ -80,7 +85,7 @@ export function useSidebarData(): SidebarData {
               url: '/dashboard/models',
               icon: LayoutDashboard,
             },
-            { title: t('API Keys'), url: '/keys', icon: Key },
+            { title: t('API Keys'), url: apiKeysUrl, icon: Key },
             {
               title: t('Usage Logs'),
               url: '/usage-logs/common',
@@ -178,7 +183,7 @@ export function useSidebarData(): SidebarData {
           },
           {
             title: t('API Keys'),
-            url: '/keys',
+            url: apiKeysUrl,
             icon: Key,
           },
           {

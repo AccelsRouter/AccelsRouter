@@ -5878,6 +5878,12 @@
     "Your brand": "你的品牌",
     "Your customers see this name and logo instead of the platform brand. Leave empty to fall back to the platform brand.": "你的客户会看到这个名称和 Logo，而不是平台品牌。留空则回退到平台品牌。",
     "You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept.": "你当前登录邮箱为 {{current}}，但此邀请指定的是 {{invited}}。请用受邀邮箱登录后再接受。",
-    "Your account has no email set. Bind {{invited}} to your account (Profile), or sign in with the account whose email is {{invited}}, then accept.": "你的账号未设置邮箱。请在「个人资料」中将 {{invited}} 绑定到你的账号，或改用邮箱为 {{invited}} 的账号登录后再接受。"
+    "Your account has no email set. Bind {{invited}} to your account (Profile), or sign in with the account whose email is {{invited}}, then accept.": "你的账号未设置邮箱。请在「个人资料」中将 {{invited}} 绑定到你的账号，或改用邮箱为 {{invited}} 的账号登录后再接受。",
+    "API key deleted": "API 密钥已删除",
+    "Give the key a name to recognize it later.": "给密钥起个名字，方便日后识别。",
+    "e.g. Production": "例如 生产",
+    "No API keys yet. Create one to start making requests.": "还没有 API 密钥。创建一个即可开始调用。",
+    "Copy your key now — it will not be shown again.": "请立即复制密钥——它不会再次显示。",
+    "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.": "这里的密钥使用你所在组织的余额。可作为兼容 OpenAI 的 API 密钥使用。"
   }
 }

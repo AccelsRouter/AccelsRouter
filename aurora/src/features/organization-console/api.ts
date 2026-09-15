@@ -456,6 +456,33 @@ export async function listOrgAudit(params: {
   return unwrap(res, 'Failed to load audit log')
 }
 
+export type OrgApiKey = {
+  token_id: number
+  name: string
+  status: number
+  key_masked: string
+  unlimited_quota: boolean
+  remain_quota: number
+  created_time: number
+}
+
+export async function listMyOrgKeys(): Promise<OrgApiKey[]> {
+  const res = await api.get<ApiResp<OrgApiKey[]>>('/api/organization/keys')
+  return res.data?.data ?? []
+}
+
+export async function createMyOrgKey(name: string): Promise<{ key: string }> {
+  const res = await api.post<ApiResp<{ token_id: number; key: string }>>(
+    '/api/organization/keys',
+    { name }
+  )
+  return unwrap(res, 'Failed to create API key')
+}
+
+export async function deleteMyOrgKey(tokenId: number): Promise<void> {
+  await api.delete(`/api/organization/keys/${tokenId}`)
+}
+
 export async function listResellerAudit(params: {
   page: number
   pageSize: number

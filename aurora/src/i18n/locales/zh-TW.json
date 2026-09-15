@@ -5892,6 +5892,12 @@
     "Failed to unbind channel": "解綁渠道失敗",
     "Channel pricing ignores the Group field entirely: this user is routed only to channels bound to them below, each billed at its own ratio. Top-ups for this user are always at a fixed 1:1 rate.": "渠道定價會完全忽略分組欄位：這個使用者只會被路由到下面綁定給他的渠道，各自按自己的倍率計費，充值固定用 1:1 的比例。",
     "You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept.": "你目前登入的信箱為 {{current}}，但此邀請指定的是 {{invited}}。請用受邀信箱登入後再接受。",
-    "Your account has no email set. Bind {{invited}} to your account (Profile), or sign in with the account whose email is {{invited}}, then accept.": "你的帳號未設定信箱。請在「個人資料」中將 {{invited}} 綁定到你的帳號，或改用信箱為 {{invited}} 的帳號登入後再接受。"
+    "Your account has no email set. Bind {{invited}} to your account (Profile), or sign in with the account whose email is {{invited}}, then accept.": "你的帳號未設定信箱。請在「個人資料」中將 {{invited}} 綁定到你的帳號，或改用信箱為 {{invited}} 的帳號登入後再接受。",
+    "API key deleted": "API 金鑰已刪除",
+    "Give the key a name to recognize it later.": "為金鑰取個名字，方便日後識別。",
+    "e.g. Production": "例如 正式環境",
+    "No API keys yet. Create one to start making requests.": "還沒有 API 金鑰。建立一個即可開始呼叫。",
+    "Copy your key now — it will not be shown again.": "請立即複製金鑰——它不會再次顯示。",
+    "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.": "這裡的金鑰使用你所在組織的餘額。可作為相容 OpenAI 的 API 金鑰使用。"
   }
 }
