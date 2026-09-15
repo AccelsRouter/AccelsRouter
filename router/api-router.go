@@ -223,6 +223,7 @@ func SetApiRouter(router *gin.Engine) {
 			// balance. Backs the org-member "API Keys" surface.
 			orgRoute.GET("/keys", controller.ListMyOrgKeys)
 			orgRoute.POST("/keys", middleware.CriticalRateLimit(), controller.CreateMyOrgKey)
+			orgRoute.POST("/keys/:token_id/key", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetMyOrgKey)
 			orgRoute.DELETE("/keys/:token_id", controller.DeleteMyOrgKey)
 			orgRoute.GET("/workspaces", controller.ListMyWorkspaces)
 			orgRoute.POST("/workspaces", controller.CreateMyWorkspace)

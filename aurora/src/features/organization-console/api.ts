@@ -483,6 +483,13 @@ export async function deleteMyOrgKey(tokenId: number): Promise<void> {
   await api.delete(`/api/organization/keys/${tokenId}`)
 }
 
+export async function getMyOrgKey(tokenId: number): Promise<string> {
+  const res = await api.post<ApiResp<{ key: string }>>(
+    `/api/organization/keys/${tokenId}/key`
+  )
+  return unwrap(res, 'Failed to reveal API key').key
+}
+
 export async function listResellerAudit(params: {
   page: number
   pageSize: number

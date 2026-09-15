@@ -5899,6 +5899,8 @@
     "No API keys yet. Create one to start making requests.": "還沒有 API 金鑰。建立一個即可開始呼叫。",
     "Copy your key now — it will not be shown again.": "請立即複製金鑰——它不會再次顯示。",
     "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.": "這裡的金鑰使用你所在組織的餘額。可作為相容 OpenAI 的 API 金鑰使用。",
-    "API key created": "API 金鑰已建立"
+    "API key created": "API 金鑰已建立",
+    "Copy key": "複製金鑰",
+    "Copy your key. You can copy it again anytime from the list.": "複製你的金鑰。之後也可隨時在列表中再次複製。"
   }
 }

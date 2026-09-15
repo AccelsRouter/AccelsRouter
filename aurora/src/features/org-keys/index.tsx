@@ -42,6 +42,7 @@ import { Input } from '@/components/ui/input'
 import {
   createMyOrgKey,
   deleteMyOrgKey,
+  getMyOrgKey,
   listMyOrgKeys,
 } from '@/features/organization-console/api'
 import { fmtTime } from '@/features/organization-console/shared'
@@ -80,6 +81,18 @@ export function OrgKeysPanel() {
   const copy = (value: string) => {
     void navigator.clipboard?.writeText(value)
     toast.success(t('Copied'))
+  }
+
+  const [revealingId, setRevealingId] = useState<number | null>(null)
+  const copyExisting = async (tokenId: number) => {
+    setRevealingId(tokenId)
+    try {
+      copy(await getMyOrgKey(tokenId))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRevealingId(null)
+    }
   }
 
   const closeCreate = () => {
@@ -136,15 +149,30 @@ export function OrgKeysPanel() {
                     {fmtTime(k.created_time)}
                   </td>
                   <td className='px-3 py-2 text-right'>
-                    <Button
-                      size='sm'
-                      variant='ghost'
-                      className='text-destructive'
-                      disabled={deleteMutation.isPending}
-                      onClick={() => deleteMutation.mutate(k.token_id)}
-                    >
-                      <Trash2 className='h-4 w-4' />
-                    </Button>
+                    <div className='flex items-center justify-end gap-1'>
+                      <Button
+                        size='sm'
+                        variant='ghost'
+                        title={t('Copy key')}
+                        disabled={revealingId === k.token_id}
+                        onClick={() => copyExisting(k.token_id)}
+                      >
+                        {revealingId === k.token_id ? (
+                          <Loader2 className='h-4 w-4 animate-spin' />
+                        ) : (
+                          <Copy className='h-4 w-4' />
+                        )}
+                      </Button>
+                      <Button
+                        size='sm'
+                        variant='ghost'
+                        className='text-destructive'
+                        disabled={deleteMutation.isPending}
+                        onClick={() => deleteMutation.mutate(k.token_id)}
+                      >
+                        <Trash2 className='h-4 w-4' />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -161,7 +189,7 @@ export function OrgKeysPanel() {
             </DialogTitle>
             <DialogDescription>
               {newKey
-                ? t('Copy your key now — it will not be shown again.')
+                ? t('Copy your key. You can copy it again anytime from the list.')
                 : t('Give the key a name to recognize it later.')}
             </DialogDescription>
           </DialogHeader>

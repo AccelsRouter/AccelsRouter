@@ -189,32 +189,57 @@ func CreateMyOrgKey(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"token_id": token.Id, "key": "sk-" + key})
 }
 
+// resolveOwnedOrgKey parses :token_id and authorizes it: the token must be one
+// of the caller's own keys bound to this org. Writes the error and returns
+// ok=false on any failure.
+func resolveOwnedOrgKey(c *gin.Context, org *model.Organization) (int, bool) {
+	tokenId := 0
+	if _, err := fmt.Sscanf(c.Param("token_id"), "%d", &tokenId); err != nil || tokenId <= 0 {
+		common.ApiErrorMsg(c, "invalid token id")
+		return 0, false
+	}
+	tokenIds, err := myOrgKeyTokenIds(org.Id, c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return 0, false
+	}
+	for _, id := range tokenIds {
+		if id == tokenId {
+			return tokenId, true
+		}
+	}
+	common.ApiErrorMsg(c, "该密钥不存在或不属于你")
+	return 0, false
+}
+
+// GetMyOrgKey — POST /api/organization/keys/:token_id/key
+// Reveals the full key so a member can re-copy it after creation (the list only
+// returns a masked value). Mirrors the personal-token reveal endpoint.
+func GetMyOrgKey(c *gin.Context) {
+	org, ok := callerOrgMember(c)
+	if !ok {
+		return
+	}
+	tokenId, ok := resolveOwnedOrgKey(c, org)
+	if !ok {
+		return
+	}
+	token, err := model.GetTokenByIds(tokenId, c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"key": "sk-" + token.Key})
+}
+
 // DeleteMyOrgKey — DELETE /api/organization/keys/:token_id
 func DeleteMyOrgKey(c *gin.Context) {
 	org, ok := callerOrgMember(c)
 	if !ok {
 		return
 	}
-	tokenId := 0
-	if _, err := fmt.Sscanf(c.Param("token_id"), "%d", &tokenId); err != nil || tokenId <= 0 {
-		common.ApiErrorMsg(c, "invalid token id")
-		return
-	}
-	// Authorize: the token must be one of the caller's own keys bound to this org.
-	tokenIds, err := myOrgKeyTokenIds(org.Id, c.GetInt("id"))
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	owned := false
-	for _, id := range tokenIds {
-		if id == tokenId {
-			owned = true
-			break
-		}
-	}
-	if !owned {
-		common.ApiErrorMsg(c, "该密钥不存在或不属于你")
+	tokenId, ok := resolveOwnedOrgKey(c, org)
+	if !ok {
 		return
 	}
 	// Delete the token first, then unbind: if the unbind failed after a

@@ -5865,6 +5865,8 @@
     "No API keys yet. Create one to start making requests.": "No API keys yet. Create one to start making requests.",
     "Copy your key now — it will not be shown again.": "Copy your key now — it will not be shown again.",
     "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.": "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.",
-    "API key created": "API key created"
+    "API key created": "API key created",
+    "Copy key": "Copy key",
+    "Copy your key. You can copy it again anytime from the list.": "Copy your key. You can copy it again anytime from the list."
   }
 }
