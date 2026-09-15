@@ -96,6 +96,7 @@ export function useSidebarData(): SidebarData {
   // read-only balance) — no Playground/Chat, no platform top-up/subscriptions,
   // no reseller/admin surfaces.
   const userId = useAuthStore((s) => s.auth.user?.id)
+  const userRole = useAuthStore((s) => s.auth.user?.role)
   const { data: orgContext } = useQuery({
     queryKey: ['org-context'],
     queryFn: getOrgContext,
@@ -107,10 +108,15 @@ export function useSidebarData(): SidebarData {
     if (orgContext) writeCachedOrgContext(userId, orgContext)
   }, [orgContext, userId])
 
-  const isResellerCustomer = orgContext?.is_reseller_customer ?? false
+  // A platform admin (incl. root) always keeps the full standard sidebar, even
+  // if they happen to hold an OrgAccount — org-scoping must never strip their
+  // personal keys/admin surfaces or force them into the customer console.
+  const isPlatformAdmin = (userRole ?? ROLE.GUEST) >= ROLE.ADMIN
+  const isResellerCustomer =
+    !isPlatformAdmin && (orgContext?.is_reseller_customer ?? false)
   // Org members manage API keys under "My Organization" (keys bound to the org
   // wallet), so the personal /keys entry is shown only to non-org users.
-  const isOrgMember = orgContext?.is_org_member ?? false
+  const isOrgMember = !isPlatformAdmin && (orgContext?.is_org_member ?? false)
 
   if (isResellerCustomer) {
     return {
