@@ -5890,6 +5890,7 @@
     "Failed to bind channel": "綁定渠道失敗",
     "Channel unbound": "渠道已解綁",
     "Failed to unbind channel": "解綁渠道失敗",
-    "Channel pricing ignores the Group field entirely: this user is routed only to channels bound to them below, each billed at its own ratio. Top-ups for this user are always at a fixed 1:1 rate.": "渠道定價會完全忽略分組欄位：這個使用者只會被路由到下面綁定給他的渠道，各自按自己的倍率計費，充值固定用 1:1 的比例。"
+    "Channel pricing ignores the Group field entirely: this user is routed only to channels bound to them below, each billed at its own ratio. Top-ups for this user are always at a fixed 1:1 rate.": "渠道定價會完全忽略分組欄位：這個使用者只會被路由到下面綁定給他的渠道，各自按自己的倍率計費，充值固定用 1:1 的比例。",
+    "You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept.": "你目前登入的信箱為 {{current}}，但此邀請指定的是 {{invited}}。請用受邀信箱登入後再接受。"
   }
 }

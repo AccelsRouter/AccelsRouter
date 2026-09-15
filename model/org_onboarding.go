@@ -360,7 +360,10 @@ func AcceptOrgInvitation(code string, userId int) (*OrgInvitation, error) {
 				return errors.New("用户不存在")
 			}
 			if !strings.EqualFold(NormalizeEmail(u.Email), inv.InvitedEmail) {
-				return errors.New("该邀请指定的邮箱与你的账号邮箱不一致")
+				// Name the required address so the invitee can act: this fails
+				// whenever they are signed in with a different account than the
+				// one the invitation was addressed to.
+				return fmt.Errorf("该邀请指定邮箱为 %s，请用该邮箱对应的账号登录后再接受", inv.InvitedEmail)
 			}
 		}
 		acc := &OrgAccount{

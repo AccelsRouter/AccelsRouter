@@ -243,11 +243,12 @@ func PreviewOrgInvitation(c *gin.Context) {
 		orgType = org.Type
 	}
 	common.ApiSuccess(c, gin.H{
-		"org_name":   orgName,
-		"org_type":   orgType,
-		"relation":   inv.Relation,
-		"role":       inv.Role,
-		"expires_at": inv.ExpiresAt,
+		"org_name":      orgName,
+		"org_type":      orgType,
+		"relation":      inv.Relation,
+		"role":          inv.Role,
+		"expires_at":    inv.ExpiresAt,
+		"invited_email": inv.InvitedEmail,
 	})
 }
 

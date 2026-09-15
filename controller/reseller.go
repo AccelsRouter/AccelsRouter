@@ -246,7 +246,7 @@ func ListMyCustomerInvitations(c *gin.Context) {
 
 // RevokeMyCustomerInvitation — DELETE /api/reseller/customers/:id/invitations/:inv_id
 func RevokeMyCustomerInvitation(c *gin.Context) {
-	_, customerId, ok := callerResellerCustomer(c)
+	reseller, customerId, ok := callerResellerCustomer(c)
 	if !ok {
 		return
 	}
@@ -255,6 +255,7 @@ func RevokeMyCustomerInvitation(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite.revoke", fmt.Sprintf("org:%d", customerId), fmt.Sprintf("inv:%d", invId))
 	common.ApiSuccess(c, nil)
 }
 
@@ -433,6 +434,26 @@ func GetMyResellerOrg(c *gin.Context) {
 		"price_group":  reseller.PriceGroup,
 		"is_owner":     true,
 	})
+}
+
+// GetMyResellerAudit — GET /api/reseller/audit
+// The reseller's own audit trail: every operation its admins performed on its
+// customers (create / allocate / revoke / pricing / models / invite / brand …),
+// recorded under the reseller org id. Read-only, paginated, newest first.
+func GetMyResellerAudit(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	rows, total, err := model.ListOrgAuditLogs(reseller.Id, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(rows)
+	common.ApiSuccess(c, page)
 }
 
 // GetMyResellerBrand — GET /api/reseller/brand

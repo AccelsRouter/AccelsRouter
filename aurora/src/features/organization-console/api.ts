@@ -456,6 +456,19 @@ export async function listOrgAudit(params: {
   return unwrap(res, 'Failed to load audit log')
 }
 
+export async function listResellerAudit(params: {
+  page: number
+  pageSize: number
+}): Promise<PagedResponse<OrgAuditLog>> {
+  const qs = new URLSearchParams()
+  qs.set('p', String(params.page))
+  qs.set('page_size', String(params.pageSize))
+  const res = await api.get<ApiResp<PagedResponse<OrgAuditLog>>>(
+    `/api/reseller/audit?${qs.toString()}`
+  )
+  return unwrap(res, 'Failed to load audit log')
+}
+
 export async function allocateQuota(payload: {
   to_org_id: number
   quota: number

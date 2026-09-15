@@ -5876,6 +5876,7 @@
     "Brand logo URL": "品牌 Logo 链接",
     "Logo must be an http(s) link or image data.": "Logo 必须是 http(s) 链接或图片数据。",
     "Your brand": "你的品牌",
-    "Your customers see this name and logo instead of the platform brand. Leave empty to fall back to the platform brand.": "你的客户会看到这个名称和 Logo，而不是平台品牌。留空则回退到平台品牌。"
+    "Your customers see this name and logo instead of the platform brand. Leave empty to fall back to the platform brand.": "你的客户会看到这个名称和 Logo，而不是平台品牌。留空则回退到平台品牌。",
+    "You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept.": "你当前登录邮箱为 {{current}}，但此邀请指定的是 {{invited}}。请用受邀邮箱登录后再接受。"
   }
 }

@@ -138,6 +138,8 @@ export type InvitationPreview = {
   relation: string
   role: string
   expires_at: number
+  // The address the invitation is scoped to; only this account may accept.
+  invited_email: string
 }
 
 // One row of a usage breakdown (by workspace, model, or member). Mirrors the

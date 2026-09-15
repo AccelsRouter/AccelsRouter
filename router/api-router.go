@@ -260,6 +260,8 @@ func SetApiRouter(router *gin.Engine) {
 			// White-label brand the reseller's customers see (self-service).
 			resellerRoute.GET("/brand", controller.GetMyResellerBrand)
 			resellerRoute.PUT("/brand", controller.SetMyResellerBrand)
+			// Read-only audit trail of the reseller's operations on its customers.
+			resellerRoute.GET("/audit", controller.GetMyResellerAudit)
 			// Customer delivery: invite a customer org's operator (admin).
 			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)

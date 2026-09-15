@@ -32,6 +32,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { acceptInvitation, previewInvitation } from './api'
 import { Field } from './shared'
@@ -41,6 +42,7 @@ export function JoinOrganization({ code }: { code?: string }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [manualCode, setManualCode] = useState('')
+  const currentEmail = useAuthStore((s) => s.auth.user?.email)
 
   const activeCode = (code ?? '').trim()
 
@@ -54,6 +56,15 @@ export function JoinOrganization({ code }: { code?: string }) {
     enabled: activeCode.length > 0,
     retry: false,
   })
+
+  // The invite is scoped to a specific address; block the accept up front when
+  // the signed-in account's email differs, so the user gets an actionable
+  // reason instead of a bare server rejection.
+  const emailMismatch =
+    !!preview?.invited_email &&
+    !!currentEmail &&
+    currentEmail.trim().toLowerCase() !==
+      preview.invited_email.trim().toLowerCase()
 
   const acceptMutation = useMutation({
     mutationFn: () => acceptInvitation(activeCode),
@@ -132,9 +143,25 @@ export function JoinOrganization({ code }: { code?: string }) {
                 </span>
                 .
               </p>
+              {preview.invited_email && (
+                <p className='text-muted-foreground text-sm'>
+                  {t('Invited email')}:{' '}
+                  <span className='text-foreground font-medium'>
+                    {preview.invited_email}
+                  </span>
+                </p>
+              )}
+              {emailMismatch && (
+                <div className='border-destructive/40 bg-destructive/10 text-destructive rounded-md border px-3 py-2 text-xs'>
+                  {t(
+                    'You are signed in as {{current}}, but this invitation is for {{invited}}. Sign in with the invited email to accept.',
+                    { current: currentEmail, invited: preview.invited_email }
+                  )}
+                </div>
+              )}
               <Button
                 onClick={() => acceptMutation.mutate()}
-                disabled={acceptMutation.isPending}
+                disabled={acceptMutation.isPending || emailMismatch}
                 className='gap-1.5 self-start'
               >
                 {acceptMutation.isPending && (

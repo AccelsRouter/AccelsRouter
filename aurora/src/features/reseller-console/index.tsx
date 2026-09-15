@@ -35,8 +35,10 @@ import { AllocationDialog, type AllocationMode } from '@/features/organization-c
 import { ApplyPanel } from '@/features/organization-console/apply-panel'
 import {
   getResellerSelf,
+  listResellerAudit,
   listResellerLedger,
 } from '@/features/organization-console/api'
+import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
 import { formatQuotaWithCurrency } from '@/lib/currency'
@@ -47,6 +49,7 @@ import { ResellerTopUpDialog } from './reseller-topup-dialog'
 export function ResellerConsole() {
   const { t } = useTranslation()
   const [tab, setTab] = useState('customers')
+  const [auditPage, setAuditPage] = useState(1)
   const [topUpOpen, setTopUpOpen] = useState(false)
   const [allocationMode, setAllocationMode] = useState<AllocationMode | null>(
     null
@@ -128,6 +131,7 @@ export function ResellerConsole() {
               <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                 <TabsTrigger value='customers'>{t('Customers')}</TabsTrigger>
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
+                <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
                 <TabsTrigger value='brand'>{t('Brand')}</TabsTrigger>
               </TabsList>
               <TabsContent value='customers' className='pt-4'>
@@ -137,6 +141,15 @@ export function ResellerConsole() {
                 <LedgerTab
                   fetchLedger={listResellerLedger}
                   queryKey='reseller-ledger'
+                />
+              </TabsContent>
+              <TabsContent value='audit' className='pt-4'>
+                <AuditPanel
+                  queryKey={['reseller-audit', auditPage]}
+                  queryFn={listResellerAudit}
+                  page={auditPage}
+                  onPageChange={setAuditPage}
+                  enabled={tab === 'audit'}
                 />
               </TabsContent>
               <TabsContent value='brand' className='pt-4'>
