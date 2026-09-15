@@ -5879,7 +5879,7 @@
     "Brand logo URL": "品牌 Logo 連結",
     "Logo must be an http(s) link or image data.": "Logo 必須是 http(s) 連結或圖片資料。",
     "Your brand": "你的品牌",
-    "Your customers see this name and logo instead of the platform brand. Leave empty to fall back to the platform brand.": "你的客戶會看到這個名稱和 Logo，而不是平台品牌。留空则回退到平台品牌。"
+    "Your customers see this name and logo instead of the platform brand. Leave empty to fall back to the platform brand.": "你的客戶會看到這個名稱和 Logo，而不是平台品牌。留空则回退到平台品牌。",
     "Channel Pricing": "渠道定價模式",
     "No channels bound yet.": "尚未綁定任何渠道。",
     "Search channel by name...": "按名稱搜尋渠道...",
