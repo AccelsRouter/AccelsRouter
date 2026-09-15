@@ -17,23 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /*
-Simplified, member-facing API key manager for organization members. Keys made
-here bill the ORG wallet (they are bound to the org's default workspace), unlike
-the personal /keys page which bills the member's own balance — so a member (and
-especially a reseller customer, who has no personal balance) always gets a key
-that actually works against their org's allocated quota.
+Simplified, member-facing API key manager, mounted as the "API Keys" tab of the
+organization console. Keys made here bill the ORG wallet (they are bound to the
+org's default workspace), unlike the personal /keys page which bills the
+member's own balance — so a member (and especially a reseller customer, who has
+no personal balance) always gets a key that works against the org's quota.
 */
 import { useState } from 'react'
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Key, Loader2, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -51,7 +46,7 @@ import {
 } from '@/features/organization-console/api'
 import { fmtTime } from '@/features/organization-console/shared'
 
-export function OrgApiKeys() {
+export function OrgKeysPanel() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
@@ -94,74 +89,69 @@ export function OrgApiKeys() {
   }
 
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('API Keys')}</SectionPageLayout.Title>
-      <SectionPageLayout.Actions>
-        <Button size='sm' onClick={() => setCreateOpen(true)}>
-          {t('Create API Key')}
-        </Button>
-      </SectionPageLayout.Actions>
-      <SectionPageLayout.Content>
-        <p className='text-muted-foreground mb-4 text-sm'>
+    <div className='flex flex-col gap-4'>
+      <div className='flex flex-wrap items-center justify-between gap-3'>
+        <p className='text-muted-foreground max-w-xl text-sm'>
           {t(
             'Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.'
           )}
         </p>
+        <Button size='sm' onClick={() => setCreateOpen(true)}>
+          {t('Create API Key')}
+        </Button>
+      </div>
 
-        {isLoading ? (
-          <div className='flex h-40 items-center justify-center'>
-            <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
-          </div>
-        ) : !keys || keys.length === 0 ? (
-          <div className='border-border/60 flex flex-col items-center gap-2 rounded-lg border border-dashed p-10 text-center'>
-            <Key className='text-muted-foreground/60 h-8 w-8' />
-            <p className='text-muted-foreground text-sm'>
-              {t('No API keys yet. Create one to start making requests.')}
-            </p>
-          </div>
-        ) : (
-          <div className='border-border/60 overflow-x-auto rounded-md border'>
-            <table className='w-full text-sm'>
-              <thead className='bg-muted/40 text-muted-foreground text-xs'>
-                <tr>
-                  <th className='px-3 py-2 text-left font-medium'>
-                    {t('Name')}
-                  </th>
-                  <th className='px-3 py-2 text-left font-medium'>{t('Key')}</th>
-                  <th className='px-3 py-2 text-left font-medium'>
-                    {t('Created')}
-                  </th>
-                  <th className='px-3 py-2 text-right font-medium'></th>
+      {isLoading ? (
+        <div className='flex h-40 items-center justify-center'>
+          <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
+        </div>
+      ) : !keys || keys.length === 0 ? (
+        <div className='border-border/60 flex flex-col items-center gap-2 rounded-lg border border-dashed p-10 text-center'>
+          <Key className='text-muted-foreground/60 h-8 w-8' />
+          <p className='text-muted-foreground text-sm'>
+            {t('No API keys yet. Create one to start making requests.')}
+          </p>
+        </div>
+      ) : (
+        <div className='border-border/60 overflow-x-auto rounded-md border'>
+          <table className='w-full text-sm'>
+            <thead className='bg-muted/40 text-muted-foreground text-xs'>
+              <tr>
+                <th className='px-3 py-2 text-left font-medium'>{t('Name')}</th>
+                <th className='px-3 py-2 text-left font-medium'>{t('Key')}</th>
+                <th className='px-3 py-2 text-left font-medium'>
+                  {t('Created')}
+                </th>
+                <th className='px-3 py-2 text-right font-medium'></th>
+              </tr>
+            </thead>
+            <tbody className='divide-border/60 divide-y'>
+              {keys.map((k) => (
+                <tr key={k.token_id} className='hover:bg-muted/30'>
+                  <td className='px-3 py-2 font-medium'>{k.name || '-'}</td>
+                  <td className='text-muted-foreground px-3 py-2'>
+                    <span className='font-mono text-xs'>{k.key_masked}</span>
+                  </td>
+                  <td className='text-muted-foreground px-3 py-2 text-xs whitespace-nowrap'>
+                    {fmtTime(k.created_time)}
+                  </td>
+                  <td className='px-3 py-2 text-right'>
+                    <Button
+                      size='sm'
+                      variant='ghost'
+                      className='text-destructive'
+                      disabled={deleteMutation.isPending}
+                      onClick={() => deleteMutation.mutate(k.token_id)}
+                    >
+                      <Trash2 className='h-4 w-4' />
+                    </Button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className='divide-border/60 divide-y'>
-                {keys.map((k) => (
-                  <tr key={k.token_id} className='hover:bg-muted/30'>
-                    <td className='px-3 py-2 font-medium'>{k.name || '-'}</td>
-                    <td className='text-muted-foreground px-3 py-2'>
-                      <span className='font-mono text-xs'>{k.key_masked}</span>
-                    </td>
-                    <td className='text-muted-foreground px-3 py-2 text-xs whitespace-nowrap'>
-                      {fmtTime(k.created_time)}
-                    </td>
-                    <td className='px-3 py-2 text-right'>
-                      <Button
-                        size='sm'
-                        variant='ghost'
-                        className='text-destructive'
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(k.token_id)}
-                      >
-                        <Trash2 className='h-4 w-4' />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </SectionPageLayout.Content>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <Dialog open={createOpen} onOpenChange={(o) => !o && closeCreate()}>
         <DialogContent className='sm:max-w-md'>
@@ -218,6 +208,6 @@ export function OrgApiKeys() {
           )}
         </DialogContent>
       </Dialog>
-    </SectionPageLayout>
+    </div>
   )
 }

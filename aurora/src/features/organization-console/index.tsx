@@ -49,10 +49,11 @@ import { LedgerTab } from './ledger-tab'
 import { SsoTab } from './sso-tab'
 import { UsageTab } from './usage-tab'
 import { WorkspacesTab } from './workspaces-tab'
+import { OrgKeysPanel } from '@/features/org-keys'
 
 export function OrganizationConsole() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState('accounts')
+  const [tab, setTab] = useState('keys')
 
   const { data: self, isLoading } = useQuery({
     queryKey: ['org-self'],
@@ -111,6 +112,7 @@ export function OrganizationConsole() {
 
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
+                <TabsTrigger value='keys'>{t('API Keys')}</TabsTrigger>
                 <TabsTrigger value='accounts'>{t('Members')}</TabsTrigger>
                 <TabsTrigger value='invitations'>
                   {t('Invitations')}
@@ -123,6 +125,9 @@ export function OrganizationConsole() {
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
                 <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
               </TabsList>
+              <TabsContent value='keys' className='pt-4'>
+                <OrgKeysPanel />
+              </TabsContent>
               <TabsContent value='accounts' className='pt-4'>
                 <AccountsTab orgType={self.type} />
               </TabsContent>

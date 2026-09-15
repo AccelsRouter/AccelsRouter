@@ -38,12 +38,48 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { type NavItem, type SidebarData } from '@/components/layout/types'
-import { getOrgContext } from '@/features/organization-console/api'
+import {
+  getOrgContext,
+  type OrgContext,
+} from '@/features/organization-console/api'
 import { useStatus } from '@/hooks/use-status'
 import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
+
+// The org-context (member/customer type) determines which sidebar a user sees.
+// On a hard refresh the query cache is empty, so without a hint the default
+// sidebar renders for a beat before the scoped customer console replaces it —
+// a visible flash. Seed the query from a per-user localStorage cache so the
+// first paint already reflects the last-known type. Keyed by user id so a
+// shared browser never shows one account's scoped nav to another.
+function orgContextCacheKey(userId?: number): string | null {
+  return userId ? `wr:org-ctx:${userId}` : null
+}
+
+function readCachedOrgContext(userId?: number): OrgContext | undefined {
+  const key = orgContextCacheKey(userId)
+  if (!key) return undefined
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as OrgContext) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeCachedOrgContext(userId: number | undefined, ctx: OrgContext) {
+  const key = orgContextCacheKey(userId)
+  if (!key) return
+  try {
+    localStorage.setItem(key, JSON.stringify(ctx))
+  } catch {
+    /* storage unavailable — the flash-suppression is best-effort */
+  }
+}
 
 /**
  * Root navigation groups for the application sidebar.
@@ -59,17 +95,22 @@ export function useSidebarData(): SidebarData {
   // platform: it gets a scoped "customer console" (usage, call records, keys,
   // read-only balance) — no Playground/Chat, no platform top-up/subscriptions,
   // no reseller/admin surfaces.
+  const userId = useAuthStore((s) => s.auth.user?.id)
   const { data: orgContext } = useQuery({
     queryKey: ['org-context'],
     queryFn: getOrgContext,
     staleTime: 60_000,
+    // Show the last-known type immediately to avoid a wrong-sidebar flash.
+    placeholderData: () => readCachedOrgContext(userId),
   })
+  useEffect(() => {
+    if (orgContext) writeCachedOrgContext(userId, orgContext)
+  }, [orgContext, userId])
+
   const isResellerCustomer = orgContext?.is_reseller_customer ?? false
-  // Org members manage keys under the org (bound to the org wallet). A personal
-  // key on /keys bills a personal balance an org member may not have, so point
-  // "API Keys" at the org-scoped manager for anyone in an organization.
+  // Org members manage API keys under "My Organization" (keys bound to the org
+  // wallet), so the personal /keys entry is shown only to non-org users.
   const isOrgMember = orgContext?.is_org_member ?? false
-  const apiKeysUrl = isOrgMember ? '/org-keys' : '/keys'
 
   if (isResellerCustomer) {
     return {
@@ -85,7 +126,6 @@ export function useSidebarData(): SidebarData {
               url: '/dashboard/models',
               icon: LayoutDashboard,
             },
-            { title: t('API Keys'), url: apiKeysUrl, icon: Key },
             {
               title: t('Usage Logs'),
               url: '/usage-logs/common',
@@ -181,11 +221,11 @@ export function useSidebarData(): SidebarData {
             url: '/dashboard/models',
             icon: LayoutDashboard,
           },
-          {
-            title: t('API Keys'),
-            url: apiKeysUrl,
-            icon: Key,
-          },
+          // Org members create keys under "My Organization" (org-wallet billed);
+          // only non-org users get the personal /keys entry here.
+          ...(!isOrgMember
+            ? [{ title: t('API Keys'), url: '/keys', icon: Key } as NavItem]
+            : []),
           {
             title: t('Usage Logs'),
             url: '/usage-logs/common',
