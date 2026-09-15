@@ -68,6 +68,7 @@ export function useSidebarData(): SidebarData {
 
   if (isResellerCustomer) {
     return {
+      scoped: true,
       navGroups: [
         {
           id: 'general',

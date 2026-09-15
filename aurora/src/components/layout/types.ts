@@ -85,6 +85,11 @@ export type NavGroup = {
  */
 export type SidebarData = {
   navGroups: NavGroup[]
+  // A deliberately curated view (e.g. the reseller-customer console) that must
+  // not be further narrowed by the platform's sidebar_modules config — those
+  // toggles are meant for the normal platform sidebar and can wrongly strip
+  // curated entries like Profile/Wallet.
+  scoped?: boolean
 }
 
 /**
