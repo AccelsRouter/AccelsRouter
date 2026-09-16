@@ -267,10 +267,11 @@ func (s *BillingSession) reserveFunding(delta int) error {
 		// Mid-stream reserve for tiered pricing: charge the org wallet
 		// unconditionally (the tokens are consumed) and record the spend on
 		// the member/workspace counters past the budget, mirroring Settle.
+		// Settle applies the retail discount and tracks funding.consumed itself,
+		// so do NOT adjust consumed here (it would double-count in standard units).
 		if err := funding.Settle(delta); err != nil {
 			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 		}
-		funding.consumed += delta
 		return nil
 	default:
 		return types.NewError(fmt.Errorf("unsupported funding source: %s", s.funding.Source()), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
@@ -290,10 +291,10 @@ func (s *BillingSession) rollbackFundingReserve(delta int) {
 			common.SysLog("error rolling back subscription funding reserve: " + err.Error())
 		}
 	case *OrgWalletFunding:
+		// Settle tracks funding.consumed itself (in discounted units); a manual
+		// adjustment here would double-count.
 		if err := funding.Settle(-delta); err != nil {
 			common.SysLog("error rolling back org funding reserve: " + err.Error())
-		} else {
-			funding.consumed -= delta
 		}
 	}
 }

@@ -46,12 +46,29 @@ type OrgWalletFunding struct {
 	orgId       int
 	userId      int
 	workspaceId int // 0 = token not bound to a workspace
-	consumed    int // reserved org quota (for refund)
+	consumed    int // reserved org quota (for refund), in charged (discounted) units
+	// discountRatio in (0,1] is the reseller's per-model-series retail discount
+	// for THIS request's model (1.0 = none). It scales what the org wallet and
+	// the member/workspace budget counters are charged, and nothing else — the
+	// platform's price computation, consume log and channel stats stay standard.
+	// This is the only place a reseller customer's discount reaches actual money.
+	discountRatio float64
 }
 
 func (o *OrgWalletFunding) Source() string { return BillingSourceOrgWallet }
 
-func (o *OrgWalletFunding) PreConsume(amount int) error {
+// charge scales a standard quota amount by the retail discount, truncating via
+// the shared quota-math helper (never a bare cast). Sign is preserved so a
+// refund delta discounts symmetrically. A ratio outside (0,1] means no discount.
+func (o *OrgWalletFunding) charge(amount int) int {
+	if o.discountRatio <= 0 || o.discountRatio >= 1 {
+		return amount
+	}
+	return common.QuotaFromFloat(float64(amount) * o.discountRatio)
+}
+
+func (o *OrgWalletFunding) PreConsume(stdAmount int) error {
+	amount := o.charge(stdAmount)
 	if amount <= 0 {
 		return nil
 	}
@@ -92,10 +109,15 @@ func (o *OrgWalletFunding) PreConsume(amount int) error {
 	return nil
 }
 
-func (o *OrgWalletFunding) Settle(delta int) error {
+func (o *OrgWalletFunding) Settle(stdDelta int) error {
+	delta := o.charge(stdDelta)
 	if delta == 0 {
 		return nil
 	}
+	// Track the charged amount so a later Refund (only reachable before Settle,
+	// e.g. a failed mid-stream reserve) returns exactly what was charged. This
+	// is why billing_session.go must NOT also adjust o.consumed for org funding.
+	o.consumed += delta
 	if delta > 0 {
 		// Overshoot: the upstream tokens are consumed; record unconditionally.
 		if err := model.DecreaseOrgQuota(o.orgId, delta); err != nil {
@@ -168,12 +190,24 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 			types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 	}
 
+	// Reseller retail discount: scale THIS customer's org-wallet charge by the
+	// per-model-series ratio the reseller set (1.0 = none). Reporting only for a
+	// non-reseller enterprise org (empty RetailDiscounts). Model matched on the
+	// requested name, same as the usage-report overlay (RetailDiscountFor).
+	discountRatio := 1.0
+	if info.RetailDiscounts != "" {
+		discountRatio = model.RetailDiscountFor(
+			relayInfo.OriginModelName,
+			model.ParseRetailDiscounts(info.RetailDiscounts),
+		)
+	}
 	session := &BillingSession{
 		relayInfo: relayInfo,
 		funding: &OrgWalletFunding{
-			orgId:       info.OrgId,
-			userId:      relayInfo.UserId,
-			workspaceId: info.WorkspaceId,
+			orgId:         info.OrgId,
+			userId:        relayInfo.UserId,
+			workspaceId:   info.WorkspaceId,
+			discountRatio: discountRatio,
 		},
 	}
 	if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
