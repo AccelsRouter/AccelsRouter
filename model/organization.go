@@ -477,6 +477,11 @@ type WorkspaceBillingInfo struct {
 	OrgId           int
 	OrgStatus       string
 	WorkspaceStatus string
+	// RetailDiscounts is the customer org's per-model-series retail discount
+	// map (JSON). For a reseller customer it makes the org-wallet charge honor
+	// the reseller's discount; empty = standard price. Carried here from the
+	// org row already loaded, so it costs no extra query.
+	RetailDiscounts string
 }
 
 // GetWorkspaceBillingInfo resolves the org that pays for a token via its
@@ -511,6 +516,7 @@ func GetWorkspaceBillingInfo(tokenId int) (*WorkspaceBillingInfo, error) {
 		OrgId:           ws.OrgId,
 		OrgStatus:       org.Status,
 		WorkspaceStatus: ws.Status,
+		RetailDiscounts: org.RetailDiscounts,
 	}, nil
 }
 
