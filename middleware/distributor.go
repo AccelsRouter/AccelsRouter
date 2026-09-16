@@ -112,10 +112,9 @@ func Distribute() func(c *gin.Context) {
 				// in ModelPriceHelper) already knows the real channel and its
 				// ratio by the time it runs, instead of guessing at a group
 				// ratio that gets corrected only at settlement.
-				billingModeDebug := common.GetContextKeyString(c, constant.ContextKeyUserBillingMode)
-				if billingModeDebug == model.BillingModeChannelPricing {
+				if common.GetContextKeyString(c, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
 					userId := c.GetInt("id")
-					pricingChannel, pcErr := model.GetChannelPricingChannel(userId, modelRequest.Model, 0, c.Request.URL.Path)
+					pricingChannel, overBudget, pcErr := model.GetChannelPricingChannel(userId, modelRequest.Model, 0, c.Request.URL.Path)
 					if pcErr != nil {
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable,
 							fmt.Sprintf("获取用户 %d 绑定渠道下模型 %s 的可用渠道失败: %s", userId, modelRequest.Model, pcErr.Error()),
@@ -123,6 +122,12 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if pricingChannel == nil {
+						if overBudget {
+							abortWithOpenAiMessage(c, http.StatusTooManyRequests,
+								fmt.Sprintf("用户 %d 绑定的渠道下模型 %s 今日额度已用尽，请明日再试", userId, modelRequest.Model),
+								types.ErrorCodeModelNotFound)
+							return
+						}
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable,
 							fmt.Sprintf("用户 %d 没有绑定支持模型 %s 的可用渠道", userId, modelRequest.Model),
 							types.ErrorCodeModelNotFound)
@@ -212,7 +217,8 @@ func Distribute() func(c *gin.Context) {
 							affinityUsable := false
 							preferred, err := model.CacheGetChannel(preferredChannelID)
 							if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-								channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
+								channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) &&
+								!model.IsChannelOverDailyTokenBudget(preferred) {
 								if usingGroup == "auto" {
 									userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 									autoGroups := service.GetRequestAutoGroups(c, userGroup)

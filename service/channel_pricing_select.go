@@ -11,6 +11,11 @@ import (
 // model.User.BillingMode == model.BillingModeChannelPricing and be retrying
 // the same way they would for a normal group-based selection
 // (param.GetRetry(), incrementing on each attempt until common.RetryTimes).
-func CacheGetChannelPricingChannel(userId int, param *RetryParam) (*model.Channel, error) {
+//
+// The overBudget return value distinguishes, for a nil-channel result,
+// whether a bound channel exists that supports the model but was over its
+// daily token budget (true) versus no supporting binding existing at all
+// (false) — see model.GetChannelPricingChannel.
+func CacheGetChannelPricingChannel(userId int, param *RetryParam) (channel *model.Channel, overBudget bool, err error) {
 	return model.GetChannelPricingChannel(userId, param.ModelName, param.GetRetry(), param.RequestPath)
 }

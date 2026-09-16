@@ -1,14 +1,18 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/limiter"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -122,6 +126,7 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 		return nil, err
 	}
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
+	abilities = filterAbilitiesByTokenBudget(abilities)
 	channel := Channel{}
 	if len(abilities) > 0 {
 		// Randomly choose one
@@ -189,6 +194,70 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 		if config != nil && config.SupportsPathForModel(requestPath, model) {
 			filtered = append(filtered, ability)
 		}
+	}
+	return filtered
+}
+
+// filterAbilitiesByTokenBudget is filterChannelsByTokenBudget's counterpart
+// for the DB (non-memory-cache) selection path used by GetChannel — i.e.
+// when common.MemoryCacheEnabled is false, which is this project's default.
+// Without this, a channel's configured daily token budget
+// (setting.ChannelDailyTokenLimitEnabled) would only ever be enforced when
+// the in-memory channel cache is on, silently never applying otherwise.
+// Drops any ability whose channel has already exhausted its own daily token
+// budget (resets at 00:00 UTC); channels with no limit configured, or whose
+// budget check fails/times out, are kept (fail open).
+func filterAbilitiesByTokenBudget(abilities []Ability) []Ability {
+	if !setting.ChannelDailyTokenLimitEnabled || len(abilities) == 0 {
+		return abilities
+	}
+
+	channelIds := make([]int, 0, len(abilities))
+	seen := make(map[int]struct{}, len(abilities))
+	for _, ability := range abilities {
+		if _, ok := seen[ability.ChannelId]; ok {
+			continue
+		}
+		seen[ability.ChannelId] = struct{}{}
+		channelIds = append(channelIds, ability.ChannelId)
+	}
+
+	var channels []*Channel
+	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
+		// On error, fall back to unfiltered candidates to avoid blocking selection
+		return abilities
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	overBudget := make(map[int]struct{})
+	for _, channel := range channels {
+		limitTokens := channel.GetSetting().DailyTokenLimit
+		if limitTokens <= 0 {
+			common.SysLog(fmt.Sprintf("[DEBUG] filterAbilitiesByTokenBudget: channel %d has no daily_token_limit set, treating as unlimited", channel.Id))
+			continue
+		}
+		count, err := limiter.PeekDailyTokens(ctx, setting.ChannelDailyTokenLimitKey(channel.Id))
+		if err != nil {
+			common.SysLog(fmt.Sprintf("daily token limit peek failed for channel %d, allowing through: %v", channel.Id, err))
+			continue
+		}
+		common.SysLog(fmt.Sprintf("[DEBUG] filterAbilitiesByTokenBudget: channel %d today's usage=%d limit=%d", channel.Id, count, limitTokens))
+		if count >= limitTokens {
+			overBudget[channel.Id] = struct{}{}
+		}
+	}
+	if len(overBudget) == 0 {
+		return abilities
+	}
+
+	filtered := make([]Ability, 0, len(abilities))
+	for _, ability := range abilities {
+		if _, over := overBudget[ability.ChannelId]; over {
+			continue
+		}
+		filtered = append(filtered, ability)
 	}
 	return filtered
 }

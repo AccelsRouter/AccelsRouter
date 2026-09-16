@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 )
@@ -22,18 +24,25 @@ import (
 // its daily token budget — binding a channel doesn't require it to be
 // healthy, but actually routing live traffic to it does.
 //
+// The overBudget return value distinguishes, for a nil-channel result, why
+// nothing was selected: true means at least one bound channel supports
+// modelName but was filtered out solely for being over its daily token
+// budget (a transient, "try again later" condition); false means there was
+// never a supporting channel to begin with (a configuration gap). Callers
+// use this to give a more specific error than a single generic message.
+//
 // Mirrors GetRandomSatisfiedChannel's own memory-cache split: channelsIDM
 // (and the request-path filter that reads it) is only populated when
 // common.MemoryCacheEnabled is true, so a disabled memory cache falls
 // through to a direct DB query instead of silently seeing every candidate
 // as "not found".
-func GetChannelPricingChannel(userId int, modelName string, retry int, requestPath string) (*Channel, error) {
+func GetChannelPricingChannel(userId int, modelName string, retry int, requestPath string) (channel *Channel, overBudget bool, err error) {
 	channelIds, err := getUserBoundChannelIds(userId)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(channelIds) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	if !common.MemoryCacheEnabled {
@@ -45,12 +54,12 @@ func GetChannelPricingChannel(userId int, modelName string, retry int, requestPa
 
 	candidates := make([]int, 0, len(channelIds))
 	for _, id := range channelIds {
-		channel, ok := channelsIDM[id]
-		if !ok || channel.Status != common.ChannelStatusEnabled {
+		ch, ok := channelsIDM[id]
+		if !ok || ch.Status != common.ChannelStatusEnabled {
 			continue
 		}
 		supported := false
-		for _, m := range channel.GetModels() {
+		for _, m := range ch.GetModels() {
 			if m == modelName {
 				supported = true
 				break
@@ -62,16 +71,18 @@ func GetChannelPricingChannel(userId int, modelName string, retry int, requestPa
 		candidates = append(candidates, id)
 	}
 
-	// Reuse the same request-path/advanced-custom and daily-token-budget
-	// filters group-based selection already applies, so a channel-pricing
-	// user's bound channels are held to the same bar as any other channel.
+	// Reuse the same request-path/advanced-custom filter group-based
+	// selection already applies, so a channel-pricing user's bound
+	// channels are held to the same bar as any other channel.
 	candidates = filterChannelsByRequestPathAndModel(candidates, requestPath, modelName)
+	hadCandidates := len(candidates) > 0
 	candidates = filterChannelsByTokenBudget(candidates)
+	overBudget = hadCandidates && len(candidates) == 0
 
 	if retry < 0 || retry >= len(candidates) {
-		return nil, nil
+		return nil, overBudget, nil
 	}
-	return channelsIDM[candidates[retry]], nil
+	return channelsIDM[candidates[retry]], false, nil
 }
 
 // GetUserBoundEnabledModels returns the union of models declared by every
@@ -124,10 +135,10 @@ func GetUserBoundEnabledModels(userId int) ([]string, error) {
 // when the in-memory channel cache is disabled (common.MemoryCacheEnabled
 // == false, the project's default) — queries the bound channels directly
 // instead of relying on channelsIDM, which is never populated in that mode.
-func getChannelPricingChannelFromDB(channelIds []int, modelName string, retry int, requestPath string) (*Channel, error) {
+func getChannelPricingChannelFromDB(channelIds []int, modelName string, retry int, requestPath string) (channel *Channel, overBudget bool, err error) {
 	var channels []*Channel
 	if err := DB.Where("id IN ? AND status = ?", channelIds, common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	byId := make(map[int]*Channel, len(channels))
@@ -137,12 +148,12 @@ func getChannelPricingChannelFromDB(channelIds []int, modelName string, retry in
 
 	candidates := make([]int, 0, len(channelIds))
 	for _, id := range channelIds {
-		channel, ok := byId[id]
+		ch, ok := byId[id]
 		if !ok {
 			continue
 		}
 		supported := false
-		for _, m := range channel.GetModels() {
+		for _, m := range ch.GetModels() {
 			if m == modelName {
 				supported = true
 				break
@@ -151,19 +162,36 @@ func getChannelPricingChannelFromDB(channelIds []int, modelName string, retry in
 		if !supported {
 			continue
 		}
-		if requestPath != "" && channel.Type == constant.ChannelTypeAdvancedCustom {
-			config := channel.GetOtherSettings().AdvancedCustom
+		if requestPath != "" && ch.Type == constant.ChannelTypeAdvancedCustom {
+			config := ch.GetOtherSettings().AdvancedCustom
 			if config == nil || !config.SupportsPathForModel(requestPath, modelName) {
 				continue
 			}
 		}
 		candidates = append(candidates, id)
 	}
+	hadCandidates := len(candidates) > 0
 
-	candidates = filterChannelsByTokenBudget(candidates)
+	// Fork: filterChannelsByTokenBudget itself reads channelsIDM (the
+	// memory-cache map), which is never populated when
+	// common.MemoryCacheEnabled is false — the exact case this DB-fallback
+	// function exists for. Using it here would silently no-op (every
+	// lookup misses, so every channel is kept regardless of its actual
+	// usage). Filter directly against the *Channel objects already loaded
+	// from the DB above instead.
+	filtered := make([]int, 0, len(candidates))
+	for _, id := range candidates {
+		if ch, ok := byId[id]; ok && IsChannelOverDailyTokenBudget(ch) {
+			common.SysLog(fmt.Sprintf("[DEBUG] getChannelPricingChannelFromDB: dropping channel %d, over daily token budget", id))
+			continue
+		}
+		filtered = append(filtered, id)
+	}
+	candidates = filtered
+	overBudget = hadCandidates && len(candidates) == 0
 
 	if retry < 0 || retry >= len(candidates) {
-		return nil, nil
+		return nil, overBudget, nil
 	}
-	return byId[candidates[retry]], nil
+	return byId[candidates[retry]], false, nil
 }

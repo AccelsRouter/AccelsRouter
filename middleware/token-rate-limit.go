@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -36,6 +37,7 @@ const tokenRateLimitCheckTimeout = 2 * time.Second
 func UserTokenRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !setting.UserDailyTokenLimitEnabled {
+			logger.LogInfo(c.Request.Context(), "[DEBUG] UserTokenRateLimit: UserDailyTokenLimitEnabled=false, skipping check entirely")
 			c.Next()
 			return
 		}
@@ -50,6 +52,7 @@ func UserTokenRateLimit() gin.HandlerFunc {
 		limitTokens, _ := common.GetContextKeyType[int64](c, constant.ContextKeyUserDailyTokenLimit)
 		if limitTokens <= 0 {
 			// 0/unset on the user record means unlimited.
+			logger.LogInfo(c.Request.Context(), fmt.Sprintf("[DEBUG] UserTokenRateLimit: userId=%d has no daily_token_limit set (value=%d), treating as unlimited", userId, limitTokens))
 			c.Next()
 			return
 		}
@@ -64,6 +67,7 @@ func UserTokenRateLimit() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		logger.LogInfo(c.Request.Context(), fmt.Sprintf("[DEBUG] UserTokenRateLimit: userId=%d today's usage=%d limit=%d key=%s", userId, count, limitTokens, setting.UserDailyTokenLimitKey(userId)))
 		if count >= limitTokens {
 			abortWithOpenAiMessage(c, http.StatusTooManyRequests, i18n.T(c, i18n.MsgRateLimitDailyTokenReached, map[string]any{
 				"Max": limitTokens,
