@@ -1,7 +1,9 @@
 package channel
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -481,6 +483,83 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 
+// ---------------------------------------------------------------------------
+// Local-only upstream mock (MOCK_UPSTREAM=true). Never used in production —
+// see doRequest above.
+// ---------------------------------------------------------------------------
+
+// mockUpstreamEnabled reports whether userId should get a fabricated
+// response instead of a real upstream call. Scoped to a single test user
+// (11) so other traffic still hits real channels.
+func mockUpstreamEnabled(userId int) bool {
+	return userId == 11
+}
+
+const mockUpstreamReplyText = "这是一条来自本地 MOCK_UPSTREAM 模式的测试回复，不是真实模型生成的。"
+
+// buildMockUpstreamResponse fabricates an OpenAI-format chat-completion
+// response (streaming or non-streaming, matching info.IsStream) without
+// touching the network. Only ever called when mockUpstreamEnabled(userId) is true.
+func buildMockUpstreamResponse(info *common.RelayInfo) *http.Response {
+	id := fmt.Sprintf("chatcmpl-mock-%d", time.Now().Unix())
+	created := time.Now().Unix()
+	modelName := info.OriginModelName
+	if modelName == "" {
+		modelName = "mock-model"
+	}
+
+	var body []byte
+	contentType := "application/json"
+
+	if info.IsStream {
+		contentType = "text/event-stream"
+		var buf bytes.Buffer
+		writeChunk := func(delta map[string]any, finishReason any) {
+			chunk := map[string]any{
+				"id": id, "object": "chat.completion.chunk", "created": created, "model": modelName,
+				"choices": []map[string]any{{"index": 0, "delta": delta, "finish_reason": finishReason}},
+			}
+			b, _ := json.Marshal(chunk)
+			buf.WriteString("data: ")
+			buf.Write(b)
+			buf.WriteString("\n\n")
+		}
+		writeChunk(map[string]any{"role": "assistant"}, nil)
+		runes := []rune(mockUpstreamReplyText)
+		for i := 0; i < len(runes); i += 4 {
+			end := i + 4
+			if end > len(runes) {
+				end = len(runes)
+			}
+			writeChunk(map[string]any{"content": string(runes[i:end])}, nil)
+		}
+		writeChunk(map[string]any{}, "stop")
+		buf.WriteString("data: [DONE]\n\n")
+		body = buf.Bytes()
+	} else {
+		resp := map[string]any{
+			"id": id, "object": "chat.completion", "created": created, "model": modelName,
+			"choices": []map[string]any{{
+				"index":         0,
+				"message":       map[string]any{"role": "assistant", "content": mockUpstreamReplyText},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+		}
+		body, _ = json.Marshal(resp)
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     http.Header{"Content-Type": []string{contentType}},
+		Body:       io.NopCloser(bytes.NewReader(body)),
+	}
+}
+
 // keepUpstreamRedirectResponse stops net/http from following redirects while
 // returning the upstream 3xx response to the relay without an extra error.
 func keepUpstreamRedirectResponse(_ *http.Request, _ []*http.Request) error {
@@ -488,6 +567,16 @@ func keepUpstreamRedirectResponse(_ *http.Request, _ []*http.Request) error {
 }
 
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
+	// Local testing only: MOCK_UPSTREAM=true skips the real HTTP call
+	// entirely and fabricates a plausible OpenAI-format response, so the
+	// rest of the relay/billing pipeline (channel selection, pricing,
+	// pre-consume, settlement, logging) can be exercised without a real
+	// channel/upstream provider. See buildMockUpstreamResponse below.
+	if mockUpstreamEnabled(info.UserId) {
+		logger.LogInfo(c, "MOCK_UPSTREAM enabled: skipping real upstream call, returning fabricated response")
+		return buildMockUpstreamResponse(info), nil
+	}
+
 	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
