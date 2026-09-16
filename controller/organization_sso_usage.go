@@ -192,6 +192,27 @@ func AdminGetOrgUsage(c *gin.Context) {
 	common.ApiSuccess(c, report)
 }
 
+// AdminListOrgLogs — GET /api/admin/organizations/:id/logs
+// Per-request call records for one org, with the reseller retail discount
+// overlaid per row (ListOrgLogs) so a platform admin can see the discounted
+// price a reseller customer actually paid.
+func AdminListOrgLogs(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	logs, total, err := model.ListOrgLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(logs)
+	common.ApiSuccess(c, page)
+}
+
 // writeUsageCSV streams the report as a CSV invoice. Quota is rendered in the
 // platform's display unit via common.LogQuota-style conversion so the exported
 // numbers match the console.
