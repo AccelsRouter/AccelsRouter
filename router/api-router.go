@@ -179,6 +179,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgAdminRoute.PUT("/:id", controller.AdminUpdateOrganization)
 			orgAdminRoute.POST("/:id/credit", middleware.CriticalRateLimit(), controller.AdminCreditOrganization)
 			orgAdminRoute.GET("/:id/ledger", controller.AdminListOrgLedger)
+			orgAdminRoute.GET("/:id/logs", controller.AdminListOrgLogs)
 			orgAdminRoute.POST("/accounts", controller.AdminAttachOrgAccount)
 			orgAdminRoute.DELETE("/:id/accounts/:user_id", controller.AdminDetachOrgAccount)
 			// Reseller-admin management (per-admin offboarding / containment).

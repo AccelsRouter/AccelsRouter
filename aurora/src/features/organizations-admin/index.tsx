@@ -50,9 +50,10 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
+import { CallRecords } from '@/features/organization-console/call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { formatQuotaWithCurrency } from '@/lib/currency'
@@ -61,6 +62,7 @@ import dayjs from '@/lib/dayjs'
 import {
   addSsoDomain,
   adminListOrgAudit,
+  adminListOrgLogs,
   createOrganization,
   creditOrganization,
   attachOrgAccount,
@@ -1225,9 +1227,27 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
             onChange={setRange}
           />
         </div>
-        <div className='max-h-[60vh] overflow-auto'>
-          <UsageReport report={data} isLoading={isLoading} />
-        </div>
+        <Tabs defaultValue='report'>
+          <TabsList>
+            <TabsTrigger value='report'>{t('Usage')}</TabsTrigger>
+            <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value='report' className='pt-3'>
+            <div className='max-h-[55vh] overflow-auto'>
+              <UsageReport report={data} isLoading={isLoading} />
+            </div>
+          </TabsContent>
+          <TabsContent value='records' className='pt-3'>
+            {org && (
+              <CallRecords
+                fetchLogs={(p) =>
+                  adminListOrgLogs({ id: org.id, from, to, ...p })
+                }
+                queryKey={`admin-org-logs-${org.id}-${from}-${to}`}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

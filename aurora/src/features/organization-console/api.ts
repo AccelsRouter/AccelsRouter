@@ -176,6 +176,8 @@ export type OrgLog = {
   prompt_tokens: number
   completion_tokens: number
   quota: number
+  // Discounted price actually charged to the org wallet (reseller customers).
+  retail_quota?: number
   content: string
 }
 

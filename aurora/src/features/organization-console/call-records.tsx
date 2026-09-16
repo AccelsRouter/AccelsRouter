@@ -39,6 +39,9 @@ export function CallRecords({
   })
 
   const items = data?.items ?? []
+  // Show the discounted (actually-charged) price column only when the reseller
+  // has set a discount for this customer.
+  const showRetail = items.some((l) => l.retail_quota != null)
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -70,6 +73,9 @@ export function CallRecords({
               <Th className='text-right'>{t('Input')}</Th>
               <Th className='text-right'>{t('Output')}</Th>
               <Th className='text-right'>{t('Cost')}</Th>
+              {showRetail && (
+                <Th className='text-right'>{t('Charged')}</Th>
+              )}
             </tr>
           </thead>
           <tbody className='divide-border/60 divide-y'>
@@ -85,6 +91,11 @@ export function CallRecords({
                 <Td className='text-right tabular-nums'>
                   {formatQuotaWithCurrency(l.quota)}
                 </Td>
+                {showRetail && (
+                  <Td className='text-right font-medium tabular-nums'>
+                    {formatQuotaWithCurrency(l.retail_quota ?? l.quota)}
+                  </Td>
+                )}
               </tr>
             ))}
           </tbody>

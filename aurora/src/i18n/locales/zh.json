@@ -5887,6 +5887,7 @@
     "Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.": "这里的密钥使用你所在组织的余额。可作为兼容 OpenAI 的 API 密钥使用。",
     "API key created": "API 密钥已创建",
     "Copy key": "复制密钥",
-    "Copy your key. You can copy it again anytime from the list.": "复制你的密钥。之后也可随时在列表中再次复制。"
+    "Copy your key. You can copy it again anytime from the list.": "复制你的密钥。之后也可随时在列表中再次复制。",
+    "Charged": "实付"
   }
 }
