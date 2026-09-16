@@ -201,6 +201,19 @@ func GetMyOrgLogs(c *gin.Context) {
 	common.ApiSuccess(c, page)
 }
 
+// ExportMyOrgLogs — GET /api/organization/logs/export (CSV)
+func ExportMyOrgLogs(c *gin.Context) {
+	org, _, ok := callerOrg(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	writeOrgLogsCSV(c, org.Id, org.Name, from, to)
+}
+
 func ListMyOrgLedger(c *gin.Context) {
 	org, _, ok := callerOrg(c)
 	if !ok {

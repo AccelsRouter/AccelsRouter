@@ -53,6 +53,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
+import { exportAdminOrgLogs } from '@/features/organization-console/api'
 import { CallRecords } from '@/features/organization-console/call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
@@ -1244,6 +1245,7 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
                   adminListOrgLogs({ id: org.id, from, to, ...p })
                 }
                 queryKey={`admin-org-logs-${org.id}-${from}-${to}`}
+                onExport={() => exportAdminOrgLogs(org.id, from, to)}
               />
             )}
           </TabsContent>

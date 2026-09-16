@@ -192,6 +192,69 @@ func AdminGetOrgUsage(c *gin.Context) {
 	common.ApiSuccess(c, report)
 }
 
+// orgLogsExportCap bounds a per-request CSV export so one download can't pull an
+// unbounded number of rows into memory.
+const orgLogsExportCap = 100000
+
+// writeOrgLogsCSV streams one org's per-request call log as CSV, one row per
+// request with the reseller retail discount already overlaid (ListOrgLogs). The
+// caller is responsible for authorizing access to orgId.
+func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) {
+	logs, _, err := model.ListOrgLogs(orgId, from, to, 0, orgLogsExportCap)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	filename := fmt.Sprintf("call-records-%d-%d-%d.csv", orgId, from, to)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=\""+filename+"\"")
+
+	w := csv.NewWriter(c.Writer)
+	defer w.Flush()
+
+	usd := func(q int) string {
+		return strconv.FormatFloat(float64(q)/common.QuotaPerUnit, 'f', 6, 64)
+	}
+	_ = w.Write([]string{
+		"Time", "Member", "Model", "Input Tokens", "Output Tokens",
+		"Standard Price (USD)", "Discount", "Charged Price (USD)",
+	})
+	for _, l := range logs {
+		charged := l.Quota
+		if l.RetailQuota > 0 {
+			charged = l.RetailQuota
+		}
+		discount := "-"
+		if l.Quota > 0 {
+			discount = strconv.FormatFloat(float64(charged)/float64(l.Quota), 'f', 2, 64)
+		}
+		_ = w.Write([]string{
+			time.Unix(l.CreatedAt, 0).Format("2006-01-02 15:04:05"),
+			csvSafe(l.Username),
+			csvSafe(l.ModelName),
+			strconv.Itoa(l.PromptTokens),
+			strconv.Itoa(l.CompletionTokens),
+			usd(l.Quota),
+			discount,
+			usd(charged),
+		})
+	}
+}
+
+// AdminExportOrgLogs — GET /api/admin/organizations/:id/logs/export
+func AdminExportOrgLogs(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	name := ""
+	if org, err := model.GetOrganizationById(orgId); err == nil && org != nil {
+		name = org.Name
+	}
+	writeOrgLogsCSV(c, orgId, name, from, to)
+}
+
 // AdminListOrgLogs — GET /api/admin/organizations/:id/logs
 // Per-request call records for one org, with the reseller retail discount
 // overlaid per row (ListOrgLogs) so a platform admin can see the discounted

@@ -392,6 +392,23 @@ func GetMyOrgContext(c *gin.Context) {
 // GetMyCustomerLogs — GET /api/reseller/customers/:id/logs
 // Individual call records (consume logs) for one of the reseller's customers,
 // paginated, newest first.
+// ExportMyCustomerLogs — GET /api/reseller/customers/:id/logs/export (CSV)
+func ExportMyCustomerLogs(c *gin.Context) {
+	_, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	name := ""
+	if org, err := model.GetOrganizationById(customerId); err == nil && org != nil {
+		name = org.Name
+	}
+	writeOrgLogsCSV(c, customerId, name, from, to)
+}
+
 func GetMyCustomerLogs(c *gin.Context) {
 	_, customerId, ok := callerResellerCustomer(c)
 	if !ok {

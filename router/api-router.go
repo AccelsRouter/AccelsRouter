@@ -180,6 +180,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgAdminRoute.POST("/:id/credit", middleware.CriticalRateLimit(), controller.AdminCreditOrganization)
 			orgAdminRoute.GET("/:id/ledger", controller.AdminListOrgLedger)
 			orgAdminRoute.GET("/:id/logs", controller.AdminListOrgLogs)
+			orgAdminRoute.GET("/:id/logs/export", controller.AdminExportOrgLogs)
 			orgAdminRoute.POST("/accounts", controller.AdminAttachOrgAccount)
 			orgAdminRoute.DELETE("/:id/accounts/:user_id", controller.AdminDetachOrgAccount)
 			// Reseller-admin management (per-admin offboarding / containment).
@@ -248,6 +249,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.GET("/sso-domains", controller.ListMyOrgSsoDomains)
 			orgRoute.GET("/usage", controller.GetMyOrgUsage)
 			orgRoute.GET("/logs", controller.GetMyOrgLogs)
+			orgRoute.GET("/logs/export", controller.ExportMyOrgLogs)
 			orgRoute.GET("/usage/export", controller.ExportMyOrgUsage)
 			orgRoute.GET("/audit", controller.ListMyOrgAudit)
 		}
@@ -272,6 +274,7 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.GET("/audit", controller.GetMyResellerAudit)
 			// Customer delivery: invite a customer org's operator (admin).
 			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
+			resellerRoute.GET("/customers/:id/logs/export", controller.ExportMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)
 			resellerRoute.POST("/customers/:id/invitations", middleware.CriticalRateLimit(), controller.InviteMyCustomerOwner)
 			resellerRoute.DELETE("/customers/:id/invitations/:inv_id", controller.RevokeMyCustomerInvitation)
