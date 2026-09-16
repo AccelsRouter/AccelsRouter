@@ -130,10 +130,14 @@ export function OrganizationConsole() {
                     {t('Workspaces')}
                   </TabsTrigger>
                 )}
-                <TabsTrigger value='byok'>{t('BYOK')}</TabsTrigger>
+                {!isResellerCustomer && (
+                  <TabsTrigger value='byok'>{t('BYOK')}</TabsTrigger>
+                )}
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
                 <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
-                <TabsTrigger value='sso'>{t('SSO')}</TabsTrigger>
+                {!isResellerCustomer && (
+                  <TabsTrigger value='sso'>{t('SSO')}</TabsTrigger>
+                )}
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
                 <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
               </TabsList>
