@@ -17,6 +17,9 @@ import { Td, Th, fmtTime } from './shared'
 import type { PagedResponse } from './types'
 
 const PAGE_SIZE = 20
+// Show enough precision to distinguish tiny per-call costs (and the discounted
+// price from the standard one) — the platform log uses 6 fraction digits too.
+const PRICE_OPTS = { digitsLarge: 4, digitsSmall: 6 }
 
 type LogFetcher = (params: {
   page: number
@@ -120,17 +123,20 @@ export function CallRecords({
                   {l.completion_tokens}
                 </Td>
                 <Td className='text-right tabular-nums'>
-                  {formatQuotaWithCurrency(l.quota)}
+                  {formatQuotaWithCurrency(l.quota, PRICE_OPTS)}
                 </Td>
                 {showRetail && (
                   <>
                     <Td className='text-muted-foreground text-right tabular-nums'>
-                      {l.retail_quota != null && l.quota > 0
-                        ? `${Math.round((l.retail_quota / l.quota) * 100)}%`
+                      {l.retail_ratio != null
+                        ? `${Math.round(l.retail_ratio * 100)}%`
                         : '-'}
                     </Td>
                     <Td className='text-right font-medium tabular-nums'>
-                      {formatQuotaWithCurrency(l.retail_quota ?? l.quota)}
+                      {formatQuotaWithCurrency(
+                        l.retail_quota ?? l.quota,
+                        PRICE_OPTS
+                      )}
                     </Td>
                   </>
                 )}

@@ -83,6 +83,10 @@ type Log struct {
 	// = what the customer's org wallet actually paid. Set only on reseller-
 	// customer org log views (see ListOrgLogs); 0/omitted otherwise.
 	RetailQuota int `json:"retail_quota,omitempty" gorm:"-"`
+	// RetailRatio is the CONFIGURED discount ratio for this row's model (0,1),
+	// shown as the discount %. Distinct from RetailQuota/Quota, which fluctuates
+	// row to row from integer truncation at tiny quotas. Computed, non-persisted.
+	RetailRatio float64 `json:"retail_ratio,omitempty" gorm:"-"`
 }
 
 // don't use iota, avoid change log type value

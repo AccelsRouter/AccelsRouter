@@ -178,6 +178,8 @@ export type OrgLog = {
   quota: number
   // Discounted price actually charged to the org wallet (reseller customers).
   retail_quota?: number
+  // Configured discount ratio for the row's model (0,1); shown as the discount %.
+  retail_ratio?: number
   content: string
 }
 

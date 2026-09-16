@@ -117,6 +117,10 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 		if len(discounts) > 0 {
 			for _, l := range logs {
 				ratio := RetailDiscountFor(l.ModelName, discounts)
+				if ratio >= 1 {
+					continue // model has no configured discount
+				}
+				l.RetailRatio = ratio
 				l.RetailQuota = common.QuotaFromFloat(float64(l.Quota) * ratio)
 			}
 		}

@@ -224,9 +224,10 @@ func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) 
 		if l.RetailQuota > 0 {
 			charged = l.RetailQuota
 		}
+		// Configured discount ratio (consistent), not the truncated effective one.
 		discount := "-"
-		if l.Quota > 0 {
-			discount = strconv.FormatFloat(float64(charged)/float64(l.Quota), 'f', 2, 64)
+		if l.RetailRatio > 0 {
+			discount = strconv.FormatFloat(l.RetailRatio, 'f', 2, 64)
 		}
 		_ = w.Write([]string{
 			time.Unix(l.CreatedAt, 0).Format("2006-01-02 15:04:05"),
