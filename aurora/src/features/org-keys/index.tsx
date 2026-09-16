@@ -143,36 +143,37 @@ export function OrgKeysPanel() {
                 <tr key={k.token_id} className='hover:bg-muted/30'>
                   <td className='px-3 py-2 font-medium'>{k.name || '-'}</td>
                   <td className='text-muted-foreground px-3 py-2'>
-                    <span className='font-mono text-xs'>{k.key_masked}</span>
-                  </td>
-                  <td className='text-muted-foreground px-3 py-2 text-xs whitespace-nowrap'>
-                    {fmtTime(k.created_time)}
-                  </td>
-                  <td className='px-3 py-2 text-right'>
-                    <div className='flex items-center justify-end gap-1'>
+                    <div className='flex items-center gap-1.5'>
+                      <span className='font-mono text-xs'>{k.key_masked}</span>
                       <Button
-                        size='sm'
+                        size='icon'
                         variant='ghost'
+                        className='h-6 w-6'
                         title={t('Copy key')}
                         disabled={revealingId === k.token_id}
                         onClick={() => copyExisting(k.token_id)}
                       >
                         {revealingId === k.token_id ? (
-                          <Loader2 className='h-4 w-4 animate-spin' />
+                          <Loader2 className='h-3.5 w-3.5 animate-spin' />
                         ) : (
-                          <Copy className='h-4 w-4' />
+                          <Copy className='h-3.5 w-3.5' />
                         )}
                       </Button>
-                      <Button
-                        size='sm'
-                        variant='ghost'
-                        className='text-destructive'
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(k.token_id)}
-                      >
-                        <Trash2 className='h-4 w-4' />
-                      </Button>
                     </div>
+                  </td>
+                  <td className='text-muted-foreground px-3 py-2 text-xs whitespace-nowrap'>
+                    {fmtTime(k.created_time)}
+                  </td>
+                  <td className='px-3 py-2 text-right'>
+                    <Button
+                      size='sm'
+                      variant='ghost'
+                      className='text-destructive'
+                      disabled={deleteMutation.isPending}
+                      onClick={() => deleteMutation.mutate(k.token_id)}
+                    >
+                      <Trash2 className='h-4 w-4' />
+                    </Button>
                   </td>
                 </tr>
               ))}
