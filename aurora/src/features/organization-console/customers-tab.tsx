@@ -62,6 +62,7 @@ import {
   getCustomerUsage,
   inviteCustomerOwner,
   listCustomerInvitations,
+  exportCustomerLogs,
   listCustomerLogs,
   listCustomers,
   revokeCustomerInvitation,
@@ -707,8 +708,9 @@ function CustomerUsageDialog(props: {
           <TabsContent value='records' className='pt-4'>
             {customer && (
               <CallRecords
-                fetchLogs={(p) => listCustomerLogs(customer.org.id, p)}
-                queryKey={`customer-logs-${customer.org.id}`}
+                fetchLogs={(p) => listCustomerLogs(customer.org.id, p, from, to)}
+                queryKey={`customer-logs-${customer.org.id}-${from}-${to}`}
+                onExport={() => exportCustomerLogs(customer.org.id, from, to)}
               />
             )}
           </TabsContent>

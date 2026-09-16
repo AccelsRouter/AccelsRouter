@@ -201,6 +201,10 @@ export interface LogOtherData {
     end_error?: string
     errors?: string[]
   }
+  // Reseller retail discount applied to the org-wallet charge (org customers):
+  // ratio in (0,1) and the discounted quota actually charged.
+  org_discount_ratio?: number
+  org_charged_quota?: number
   // Violation fee fields
   violation_fee?: boolean
   violation_fee_code?: string

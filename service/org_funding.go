@@ -201,6 +201,9 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 			model.ParseRetailDiscounts(info.RetailDiscounts),
 		)
 	}
+	// Surface the applied discount so the consume log can show the discounted
+	// price (see attachOrgRetailDiscount).
+	relayInfo.OrgDiscountRatio = discountRatio
 	session := &BillingSession{
 		relayInfo: relayInfo,
 		funding: &OrgWalletFunding{

@@ -4,9 +4,10 @@ reseller (viewing a customer) and by the org itself (a reseller customer or any
 org admin seeing every call under its org, not just its own key).
 */
 import { useState } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
+import { Download, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { formatQuotaWithCurrency } from '@/lib/currency'
@@ -25,12 +26,21 @@ type LogFetcher = (params: {
 export function CallRecords({
   fetchLogs,
   queryKey,
+  onExport,
 }: {
   fetchLogs: LogFetcher
   queryKey: string
+  // When provided, shows an "Export CSV" button that streams every row in the
+  // current range (model, tokens, standard price, discount, charged price).
+  onExport?: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
+
+  const exportMutation = useMutation({
+    mutationFn: () => onExport!(),
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: [queryKey, page],
@@ -63,6 +73,24 @@ export function CallRecords({
 
   return (
     <div className='flex flex-col gap-3'>
+      {onExport && (
+        <div className='flex justify-end'>
+          <Button
+            variant='outline'
+            size='sm'
+            className='gap-1.5'
+            onClick={() => exportMutation.mutate()}
+            disabled={exportMutation.isPending}
+          >
+            {exportMutation.isPending ? (
+              <Loader2 className='h-3.5 w-3.5 animate-spin' />
+            ) : (
+              <Download className='h-3.5 w-3.5' />
+            )}
+            {t('Export CSV')}
+          </Button>
+        </div>
+      )}
       <div className='overflow-x-auto rounded-lg border'>
         <table className='w-full text-sm'>
           <thead className='bg-muted/40 text-muted-foreground text-xs'>
@@ -74,7 +102,10 @@ export function CallRecords({
               <Th className='text-right'>{t('Output')}</Th>
               <Th className='text-right'>{t('Cost')}</Th>
               {showRetail && (
-                <Th className='text-right'>{t('Charged')}</Th>
+                <>
+                  <Th className='text-right'>{t('Discount')}</Th>
+                  <Th className='text-right'>{t('Charged')}</Th>
+                </>
               )}
             </tr>
           </thead>
@@ -92,9 +123,16 @@ export function CallRecords({
                   {formatQuotaWithCurrency(l.quota)}
                 </Td>
                 {showRetail && (
-                  <Td className='text-right font-medium tabular-nums'>
-                    {formatQuotaWithCurrency(l.retail_quota ?? l.quota)}
-                  </Td>
+                  <>
+                    <Td className='text-muted-foreground text-right tabular-nums'>
+                      {l.retail_quota != null && l.quota > 0
+                        ? `${Math.round((l.retail_quota / l.quota) * 100)}%`
+                        : '-'}
+                    </Td>
+                    <Td className='text-right font-medium tabular-nums'>
+                      {formatQuotaWithCurrency(l.retail_quota ?? l.quota)}
+                    </Td>
+                  </>
                 )}
               </tr>
             ))}

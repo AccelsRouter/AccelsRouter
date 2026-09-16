@@ -43,7 +43,6 @@ import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 
-import { BrandTab } from './brand-tab'
 import { ResellerTopUpDialog } from './reseller-topup-dialog'
 
 export function ResellerConsole() {
@@ -132,7 +131,6 @@ export function ResellerConsole() {
                 <TabsTrigger value='customers'>{t('Customers')}</TabsTrigger>
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
                 <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
-                <TabsTrigger value='brand'>{t('Brand')}</TabsTrigger>
               </TabsList>
               <TabsContent value='customers' className='pt-4'>
                 <CustomersTab walletQuota={self.wallet_quota} />
@@ -151,9 +149,6 @@ export function ResellerConsole() {
                   onPageChange={setAuditPage}
                   enabled={tab === 'audit'}
                 />
-              </TabsContent>
-              <TabsContent value='brand' className='pt-4'>
-                <BrandTab />
               </TabsContent>
             </Tabs>
           </div>

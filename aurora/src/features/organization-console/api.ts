@@ -200,10 +200,15 @@ export async function listOrgLogs(params: {
 
 export async function listCustomerLogs(
   customerId: number,
-  params: { page: number; pageSize: number }
+  params: { page: number; pageSize: number },
+  from?: number,
+  to?: number
 ): Promise<PagedResponse<OrgLog>> {
+  const qs = new URLSearchParams(orgLogsQuery(params.page, params.pageSize))
+  if (from != null) qs.set('from', String(from))
+  if (to != null) qs.set('to', String(to))
   const res = await api.get<ApiResp<PagedResponse<OrgLog>>>(
-    `/api/reseller/customers/${customerId}/logs?${orgLogsQuery(params.page, params.pageSize)}`
+    `/api/reseller/customers/${customerId}/logs?${qs.toString()}`
   )
   return unwrap(res, 'Failed to load call records')
 }
@@ -648,6 +653,58 @@ export async function exportOrgUsage(
   a.click()
   a.remove()
   window.URL.revokeObjectURL(url)
+}
+
+// Download a CSV the backend streams (auth via axios, so a plain anchor would
+// not authenticate); reused by the per-request call-record exports.
+async function downloadCsv(url: string, filename: string): Promise<void> {
+  const res = await api.get(url, {
+    responseType: 'blob',
+    skipErrorHandler: true,
+  })
+  const blob = new Blob([res.data as BlobPart], {
+    type: 'text/csv;charset=utf-8',
+  })
+  const objUrl = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.URL.revokeObjectURL(objUrl)
+}
+
+export async function exportCustomerLogs(
+  orgId: number,
+  from?: number,
+  to?: number
+): Promise<void> {
+  await downloadCsv(
+    `/api/reseller/customers/${orgId}/logs/export${usageRangeQuery(from, to)}`,
+    `call_records_${orgId}_${Date.now()}.csv`
+  )
+}
+
+export async function exportMyOrgLogs(
+  from?: number,
+  to?: number
+): Promise<void> {
+  await downloadCsv(
+    `/api/organization/logs/export${usageRangeQuery(from, to)}`,
+    `call_records_${Date.now()}.csv`
+  )
+}
+
+export async function exportAdminOrgLogs(
+  orgId: number,
+  from?: number,
+  to?: number
+): Promise<void> {
+  await downloadCsv(
+    `/api/admin/organizations/${orgId}/logs/export${usageRangeQuery(from, to)}`,
+    `call_records_${orgId}_${Date.now()}.csv`
+  )
 }
 
 // --- Reseller downstream customers ---

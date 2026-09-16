@@ -127,6 +127,10 @@ type RelayInfo struct {
 	// BillingSource indicates whether this request is billed from wallet quota or subscription.
 	// "" or "wallet" => wallet; "subscription" => subscription
 	BillingSource string
+	// OrgDiscountRatio in (0,1) is the reseller retail discount actually applied
+	// to this request's org-wallet charge (0/1 = none). Recorded on the consume
+	// log's `other` so any log view can show the discounted price.
+	OrgDiscountRatio float64
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)

@@ -38,7 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { AccountsTab } from './accounts-tab'
-import { listOrgLogs } from './api'
+import { exportMyOrgLogs, listOrgLogs } from './api'
 import { CallRecords } from './call-records'
 import { getOrgSelf } from './api'
 import { AuditTab } from './audit-tab'
@@ -144,7 +144,11 @@ export function OrganizationConsole() {
                 <UsageTab />
               </TabsContent>
               <TabsContent value='records' className='pt-4'>
-                <CallRecords fetchLogs={listOrgLogs} queryKey='org-logs' />
+                <CallRecords
+                  fetchLogs={listOrgLogs}
+                  queryKey='org-logs'
+                  onExport={() => exportMyOrgLogs()}
+                />
               </TabsContent>
               <TabsContent value='sso' className='pt-4'>
                 <SsoTab />
