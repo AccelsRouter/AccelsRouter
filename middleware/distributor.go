@@ -90,7 +90,14 @@ func Distribute() func(c *gin.Context) {
 			if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); modelRequest.Model != "" && perr == nil && payer != nil && payer.AllowedModels != nil {
 				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model)
 				if !payer.AllowedModels[modelRequest.Model] && !payer.AllowedModels[matchName] {
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
+					msg := i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model})
+					// Record the rejection so a reseller/customer can see the
+					// blocked model in the org call records (this org gate aborts
+					// before the relay's own error logging).
+					model.RecordErrorLog(c, c.GetInt("id"), 0, modelRequest.Model,
+						c.GetString("token_name"), msg, c.GetInt("token_id"), 0, false,
+						common.GetContextKeyString(c, constant.ContextKeyUsingGroup), nil)
+					abortWithOpenAiMessage(c, http.StatusForbidden, msg)
 					return
 				}
 			}

@@ -112,8 +112,14 @@ export function useSidebarData(): SidebarData {
   // if they happen to hold an OrgAccount — org-scoping must never strip their
   // personal keys/admin surfaces or force them into the customer console.
   const isPlatformAdmin = (userRole ?? ROLE.GUEST) >= ROLE.ADMIN
+  // A reseller admin runs a distributor business; even if their own org is also
+  // some reseller's customer, they must keep the full sidebar (incl. the
+  // Distributor entry), not be collapsed into the scoped customer console.
+  const isResellerAdmin = orgContext?.is_reseller_admin ?? false
   const isResellerCustomer =
-    !isPlatformAdmin && (orgContext?.is_reseller_customer ?? false)
+    !isPlatformAdmin &&
+    !isResellerAdmin &&
+    (orgContext?.is_reseller_customer ?? false)
   // Org members manage API keys under "My Organization" (keys bound to the org
   // wallet), so the personal /keys entry is shown only to non-org users.
   const isOrgMember = !isPlatformAdmin && (orgContext?.is_org_member ?? false)

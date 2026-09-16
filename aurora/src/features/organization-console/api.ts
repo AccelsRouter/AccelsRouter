@@ -169,6 +169,8 @@ export type CustomerInvitation = {
 
 export type OrgLog = {
   id: number
+  // Log type: 2 = consume (success), 5 = error (failed, e.g. model not allowed).
+  type?: number
   created_at: number
   model_name: string
   token_name: string
@@ -178,6 +180,8 @@ export type OrgLog = {
   quota: number
   // Discounted price actually charged to the org wallet (reseller customers).
   retail_quota?: number
+  // Configured discount ratio for the row's model (0,1); shown as the discount %.
+  retail_ratio?: number
   content: string
 }
 

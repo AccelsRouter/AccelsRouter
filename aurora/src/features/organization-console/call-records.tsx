@@ -17,6 +17,10 @@ import { Td, Th, fmtTime } from './shared'
 import type { PagedResponse } from './types'
 
 const PAGE_SIZE = 20
+const LOG_TYPE_ERROR = 5
+// Show enough precision to distinguish tiny per-call costs (and the discounted
+// price from the standard one) — the platform log uses 6 fraction digits too.
+const PRICE_OPTS = { digitsLarge: 4, digitsSmall: 6 }
 
 type LogFetcher = (params: {
   page: number
@@ -110,32 +114,50 @@ export function CallRecords({
             </tr>
           </thead>
           <tbody className='divide-border/60 divide-y'>
-            {items.map((l) => (
+            {items.map((l) => {
+              const isError = l.type === LOG_TYPE_ERROR
+              return (
               <tr key={l.id} className='hover:bg-muted/30'>
                 <Td className='whitespace-nowrap'>{fmtTime(l.created_at)}</Td>
-                <Td>{l.model_name || '-'}</Td>
+                <Td>
+                  <span>{l.model_name || '-'}</span>
+                  {isError && (
+                    <span
+                      className='bg-destructive/10 text-destructive ml-2 rounded px-1.5 py-0.5 text-xs'
+                      title={l.content || ''}
+                    >
+                      {t('Failed')}
+                    </span>
+                  )}
+                </Td>
                 <Td className='text-muted-foreground'>{l.token_name || '-'}</Td>
                 <Td className='text-right tabular-nums'>{l.prompt_tokens}</Td>
                 <Td className='text-right tabular-nums'>
                   {l.completion_tokens}
                 </Td>
                 <Td className='text-right tabular-nums'>
-                  {formatQuotaWithCurrency(l.quota)}
+                  {isError ? '-' : formatQuotaWithCurrency(l.quota, PRICE_OPTS)}
                 </Td>
                 {showRetail && (
                   <>
                     <Td className='text-muted-foreground text-right tabular-nums'>
-                      {l.retail_quota != null && l.quota > 0
-                        ? `${Math.round((l.retail_quota / l.quota) * 100)}%`
-                        : '-'}
+                      {isError || l.retail_ratio == null
+                        ? '-'
+                        : `${Math.round(l.retail_ratio * 100)}%`}
                     </Td>
                     <Td className='text-right font-medium tabular-nums'>
-                      {formatQuotaWithCurrency(l.retail_quota ?? l.quota)}
+                      {isError
+                        ? '-'
+                        : formatQuotaWithCurrency(
+                            l.retail_quota ?? l.quota,
+                            PRICE_OPTS
+                          )}
                     </Td>
                   </>
                 )}
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

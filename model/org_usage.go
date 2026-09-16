@@ -90,7 +90,10 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 	for _, b := range bindings {
 		tokenIds = append(tokenIds, b.TokenId)
 	}
-	tx := LOG_DB.Model(&Log{}).Where("token_id IN ?", tokenIds).Where("type = ?", LogTypeConsume)
+	// Include failed requests (LogTypeError) too — e.g. a model the reseller has
+	// not opened to the customer — so the org call records show blocked attempts.
+	tx := LOG_DB.Model(&Log{}).Where("token_id IN ?", tokenIds).
+		Where("type IN ?", []int{LogTypeConsume, LogTypeError})
 	if from > 0 {
 		tx = tx.Where("created_at >= ?", from)
 	}
@@ -117,6 +120,10 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 		if len(discounts) > 0 {
 			for _, l := range logs {
 				ratio := RetailDiscountFor(l.ModelName, discounts)
+				if ratio >= 1 {
+					continue // model has no configured discount
+				}
+				l.RetailRatio = ratio
 				l.RetailQuota = common.QuotaFromFloat(float64(l.Quota) * ratio)
 			}
 		}

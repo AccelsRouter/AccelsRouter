@@ -216,27 +216,41 @@ func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) 
 		return strconv.FormatFloat(float64(q)/common.QuotaPerUnit, 'f', 6, 64)
 	}
 	_ = w.Write([]string{
-		"Time", "Member", "Model", "Input Tokens", "Output Tokens",
-		"Standard Price (USD)", "Discount", "Charged Price (USD)",
+		"Time", "Member", "Model", "Status", "Input Tokens", "Output Tokens",
+		"Standard Price (USD)", "Discount", "Charged Price (USD)", "Detail",
 	})
 	for _, l := range logs {
+		if l.Type == model.LogTypeError {
+			// Failed request (e.g. model not opened to the customer): no charge,
+			// carry the reason in Detail.
+			_ = w.Write([]string{
+				time.Unix(l.CreatedAt, 0).Format("2006-01-02 15:04:05"),
+				csvSafe(l.Username), csvSafe(l.ModelName), "Failed",
+				strconv.Itoa(l.PromptTokens), strconv.Itoa(l.CompletionTokens),
+				"-", "-", "-", csvSafe(l.Content),
+			})
+			continue
+		}
 		charged := l.Quota
 		if l.RetailQuota > 0 {
 			charged = l.RetailQuota
 		}
+		// Configured discount ratio (consistent), not the truncated effective one.
 		discount := "-"
-		if l.Quota > 0 {
-			discount = strconv.FormatFloat(float64(charged)/float64(l.Quota), 'f', 2, 64)
+		if l.RetailRatio > 0 {
+			discount = strconv.FormatFloat(l.RetailRatio, 'f', 2, 64)
 		}
 		_ = w.Write([]string{
 			time.Unix(l.CreatedAt, 0).Format("2006-01-02 15:04:05"),
 			csvSafe(l.Username),
 			csvSafe(l.ModelName),
+			"OK",
 			strconv.Itoa(l.PromptTokens),
 			strconv.Itoa(l.CompletionTokens),
 			usd(l.Quota),
 			discount,
 			usd(charged),
+			"",
 		})
 	}
 }
