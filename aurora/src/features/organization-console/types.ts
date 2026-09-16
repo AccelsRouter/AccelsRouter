@@ -36,6 +36,7 @@ export type OrgSelf = {
 
 export type OrgAccount = {
   user_id: number
+  email?: string
   relation: string // member | customer
   role: string // owner | admin | member
   monthly_budget: number // 0 = unlimited
@@ -186,6 +187,8 @@ export type ResellerCustomerOrg = {
 export type ResellerCustomer = {
   org: ResellerCustomerOrg
   net_allocated: number
+  // Email of the customer's operator (invited admin), for reseller contact.
+  owner_email?: string
 }
 
 // A JIT-provisioning email-domain mapping. New members whose email matches an

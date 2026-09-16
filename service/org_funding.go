@@ -57,14 +57,16 @@ type OrgWalletFunding struct {
 
 func (o *OrgWalletFunding) Source() string { return BillingSourceOrgWallet }
 
-// charge scales a standard quota amount by the retail discount, truncating via
-// the shared quota-math helper (never a bare cast). Sign is preserved so a
-// refund delta discounts symmetrically. A ratio outside (0,1] means no discount.
+// charge scales a standard quota amount by the retail discount, rounding
+// (half-away-from-zero) via the shared quota-math helper (never a bare cast) so
+// the charged amount stays closest to standard × ratio — truncating made a 0.4
+// discount read as ~0.35 on tiny requests. Sign is preserved so a refund delta
+// discounts symmetrically. A ratio outside (0,1] means no discount.
 func (o *OrgWalletFunding) charge(amount int) int {
 	if o.discountRatio <= 0 || o.discountRatio >= 1 {
 		return amount
 	}
-	return common.QuotaFromFloat(float64(amount) * o.discountRatio)
+	return common.QuotaRound(float64(amount) * o.discountRatio)
 }
 
 func (o *OrgWalletFunding) PreConsume(stdAmount int) error {

@@ -112,7 +112,7 @@ func PurchaseResellerCredit(resellerOrgId, userId, quota, cost int, tradeNo, rem
 		// Verify the credit landed (parity with PlatformCreditOrg/TransferOrgCredit):
 		// if the org row is gone, roll back rather than silently debiting the buyer.
 		if cred.RowsAffected != 1 {
-			return errors.New("代理商组织不存在")
+			return errors.New("分销商组织不存在")
 		}
 		return insertLedger(tx, 0, resellerOrgId, quota, userId, LedgerTypePurchase, tradeNo, remark)
 	})
@@ -144,6 +144,9 @@ type ResellerCustomerLink struct {
 type ResellerCustomer struct {
 	Org          *Organization `json:"org"`
 	NetAllocated int           `json:"net_allocated"`
+	// OwnerEmail is the customer org's operator (the invited admin) email, so a
+	// reseller can identify the contact behind each customer.
+	OwnerEmail string `json:"owner_email,omitempty"`
 }
 
 // CreateResellerCustomer provisions a customer org (type enterprise, retail
@@ -158,13 +161,13 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 		return nil, err
 	}
 	if reseller == nil || reseller.Type != OrgTypeReseller {
-		return nil, errors.New("只有代理商组织可以创建客户")
+		return nil, errors.New("只有分销商组织可以创建客户")
 	}
 	if initialQuota <= 0 {
 		return nil, errors.New("初始划拨额度必须为正")
 	}
 	if reseller.WalletQuota < initialQuota {
-		return nil, errors.New("代理商钱包余额不足")
+		return nil, errors.New("分销商钱包余额不足")
 	}
 	if priceGroup == "" {
 		priceGroup = "default"
@@ -200,6 +203,30 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Order("id ASC").Find(&links).Error; err != nil {
 		return nil, err
 	}
+	// Resolve each customer org's operator (owner/admin) email in a couple of
+	// batch queries rather than per-row.
+	custIds := make([]int, 0, len(links))
+	for _, l := range links {
+		custIds = append(custIds, l.CustomerOrgId)
+	}
+	ownerByOrg := map[int]int{}
+	if len(custIds) > 0 {
+		var accts []OrgAccount
+		if err := DB.Where("org_id IN ?", custIds).Find(&accts).Error; err == nil {
+			for _, a := range accts {
+				// Prefer an explicit owner, else the first admin/member seen.
+				if cur, ok := ownerByOrg[a.OrgId]; !ok || (a.Role == OrgRoleOwner && cur != 0) {
+					ownerByOrg[a.OrgId] = a.UserId
+				}
+			}
+		}
+	}
+	ownerIds := make([]int, 0, len(ownerByOrg))
+	for _, uid := range ownerByOrg {
+		ownerIds = append(ownerIds, uid)
+	}
+	emails := UserEmailsByIds(ownerIds)
+
 	out := make([]*ResellerCustomer, 0, len(links))
 	for _, link := range links {
 		org, err := GetOrganizationById(link.CustomerOrgId)
@@ -210,7 +237,11 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, &ResellerCustomer{Org: org, NetAllocated: net})
+		out = append(out, &ResellerCustomer{
+			Org:          org,
+			NetAllocated: net,
+			OwnerEmail:   emails[ownerByOrg[link.CustomerOrgId]],
+		})
 	}
 	return out, nil
 }

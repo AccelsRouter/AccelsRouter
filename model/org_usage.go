@@ -9,6 +9,7 @@ package model
 // workspace/member attribution back together in Go.
 
 import (
+	"math"
 	"sort"
 
 	"github.com/QuantumNous/new-api/common"
@@ -57,7 +58,7 @@ func (r *OrgUsageReport) ApplyRetailDiscounts(discounts map[string]float64) {
 	var total int64
 	for i := range r.ByModel {
 		ratio := RetailDiscountFor(r.ByModel[i].Key, discounts)
-		retail := int64(float64(r.ByModel[i].Quota) * ratio)
+		retail := int64(math.Round(float64(r.ByModel[i].Quota) * ratio))
 		r.ByModel[i].RetailQuota = retail
 		total += retail
 	}
@@ -124,7 +125,7 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 					continue // model has no configured discount
 				}
 				l.RetailRatio = ratio
-				l.RetailQuota = common.QuotaFromFloat(float64(l.Quota) * ratio)
+				l.RetailQuota = common.QuotaRound(float64(l.Quota) * ratio)
 			}
 		}
 	}

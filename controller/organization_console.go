@@ -72,6 +72,14 @@ func ListMyOrgAccounts(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	ids := make([]int, 0, len(accounts))
+	for _, a := range accounts {
+		ids = append(ids, a.UserId)
+	}
+	emails := model.UserEmailsByIds(ids)
+	for _, a := range accounts {
+		a.Email = emails[a.UserId]
+	}
 	common.ApiSuccess(c, accounts)
 }
 

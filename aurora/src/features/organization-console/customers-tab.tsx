@@ -138,6 +138,7 @@ export function CustomersTab(props: { walletQuota: number }) {
             <thead className='bg-muted/40 text-muted-foreground text-xs'>
               <tr>
                 <Th>{t('Name')}</Th>
+                <Th>{t('Owner')}</Th>
                 <Th className='text-right'>{t('Wallet Balance')}</Th>
                 <Th className='text-right'>{t('Net Allocated')}</Th>
                 <Th>{t('Price Group')}</Th>
@@ -157,6 +158,9 @@ export function CustomersTab(props: { walletQuota: number }) {
                         {t('Suspended')}
                       </Badge>
                     )}
+                  </Td>
+                  <Td className='text-muted-foreground'>
+                    {c.owner_email || '-'}
                   </Td>
                   <Td className='text-right tabular-nums'>
                     {formatQuotaWithCurrency(c.org.wallet_quota)}

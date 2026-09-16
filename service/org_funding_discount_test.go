@@ -23,8 +23,9 @@ func TestOrgWalletFundingCharge_Discount(t *testing.T) {
 		{"ratio >1 treated as no discount", 1.5, 1000, 1000},
 		{"deepseek 4折", 0.4, 1000, 400},
 		{"9折", 0.9, 1000, 900},
-		{"truncates, never rounds up", 0.4, 3, 1}, // 1.2 -> 1
-		{"tiny charge truncates to 0", 0.4, 1, 0}, // 0.4 -> 0
+		{"rounds to nearest (6.8 -> 7)", 0.4, 17, 7},  // was 6 under truncation
+		{"rounds down below .5 (1.2 -> 1)", 0.4, 3, 1}, // 1.2 -> 1
+		{"tiny charge rounds to 0", 0.4, 1, 0},         // 0.4 -> 0
 		{"zero stays zero", 0.4, 0, 0},
 		{"refund delta discounts symmetrically", 0.4, -1000, -400},
 	}

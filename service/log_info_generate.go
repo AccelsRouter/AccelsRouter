@@ -50,7 +50,7 @@ func attachOrgRetailDiscount(relayInfo *relaycommon.RelayInfo, other map[string]
 		return
 	}
 	other["org_discount_ratio"] = ratio
-	other["org_charged_quota"] = common.QuotaFromFloat(float64(quota) * ratio)
+	other["org_charged_quota"] = common.QuotaRound(float64(quota) * ratio)
 }
 
 func attachQuotaSaturation(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {

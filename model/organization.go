@@ -101,6 +101,28 @@ type OrgAccount struct {
 	RegisteredBy  string `json:"registered_by" gorm:"type:varchar(64)"` // deal registration
 	Status        string `json:"status" gorm:"type:varchar(16);index"`  // active | suspended
 	CreatedTime   int64  `json:"created_time"`
+	// Email is a computed, non-persisted convenience: the account user's email,
+	// so member lists can show the address instead of a bare user id.
+	Email string `json:"email,omitempty" gorm:"-"`
+}
+
+// UserEmailsByIds batch-loads user emails keyed by user id.
+func UserEmailsByIds(ids []int) map[int]string {
+	out := map[int]string{}
+	if len(ids) == 0 {
+		return out
+	}
+	type row struct {
+		Id    int
+		Email string
+	}
+	var rows []row
+	if err := DB.Table("users").Select("id, email").Where("id IN ?", ids).Scan(&rows).Error; err == nil {
+		for _, r := range rows {
+			out[r.Id] = r.Email
+		}
+	}
+	return out
 }
 
 // CreditLedger is append-only: rows are never updated or deleted.

@@ -92,7 +92,9 @@ export function OrganizationConsole() {
                   >
                     {self.type === 'reseller'
                       ? t('Reseller')
-                      : t('Enterprise')}
+                      : isResellerCustomer
+                        ? t('Customer')
+                        : t('Enterprise')}
                   </Badge>
                   <Badge
                     variant={

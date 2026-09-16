@@ -27,7 +27,7 @@ func callerReseller(c *gin.Context) (*model.Organization, bool) {
 		return nil, false
 	}
 	if org == nil {
-		common.ApiErrorMsg(c, "仅代理商组织可访问")
+		common.ApiErrorMsg(c, "仅分销商组织可访问")
 		return nil, false
 	}
 	if org.Status == model.OrgStatusSuspended {

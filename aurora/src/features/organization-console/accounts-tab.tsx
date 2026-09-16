@@ -97,7 +97,7 @@ export function AccountsTab({ orgType }: { orgType: OrgType }) {
           <table className='w-full text-sm'>
             <thead className='bg-muted/40 text-muted-foreground text-xs'>
               <tr>
-                <Th>{t('User ID')}</Th>
+                <Th>{t('User')}</Th>
                 <Th>{t('Role')}</Th>
                 <Th className='text-right'>{t('Monthly Budget')}</Th>
                 <Th className='text-right'>{t('Period Spend')}</Th>
@@ -108,7 +108,9 @@ export function AccountsTab({ orgType }: { orgType: OrgType }) {
             <tbody className='divide-border/60 divide-y'>
               {accounts.map((a) => (
                 <tr key={a.user_id} className='hover:bg-muted/30'>
-                  <Td className='font-medium'>#{a.user_id}</Td>
+                  <Td className='font-medium'>
+                    {a.email || `#${a.user_id}`}
+                  </Td>
                   <Td className='text-muted-foreground'>{a.role || '-'}</Td>
                   <Td className='text-right tabular-nums'>
                     {budgetLabel(a.monthly_budget, t('Unlimited'))}

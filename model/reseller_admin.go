@@ -83,7 +83,7 @@ func SetResellerAdminStatus(resellerOrgId, userId int, status string) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return errors.New("该用户不是此代理商的管理员")
+		return errors.New("该用户不是此分销商的管理员")
 	}
 	return nil
 }
@@ -99,7 +99,7 @@ func RemoveResellerAdmin(resellerOrgId, userId int) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return errors.New("该用户不是此代理商的管理员")
+		return errors.New("该用户不是此分销商的管理员")
 	}
 	return nil
 }
