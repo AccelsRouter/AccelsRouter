@@ -5902,6 +5902,15 @@
     "API key created": "API 金鑰已建立",
     "Copy key": "複製金鑰",
     "Copy your key. You can copy it again anytime from the list.": "複製你的金鑰。之後也可隨時在列表中再次複製。",
-    "Charged": "實付"
+    "Charged": "實付",
+    "Reconciliation": "對帳",
+    "Standard consumption": "標準消耗",
+    "Reseller discount": "經銷商讓利",
+    "Platform standard price": "平台標準價",
+    "Let-give to customers": "給客戶的讓利",
+    "Standard minus discount": "標準價減讓利",
+    "Consumption over time": "消耗趨勢",
+    "By Channel (upstream)": "按渠道（上游）",
+    "By Group": "按分組"
   }
 }

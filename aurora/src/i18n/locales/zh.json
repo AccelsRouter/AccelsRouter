@@ -5888,6 +5888,15 @@
     "API key created": "API 密钥已创建",
     "Copy key": "复制密钥",
     "Copy your key. You can copy it again anytime from the list.": "复制你的密钥。之后也可随时在列表中再次复制。",
-    "Charged": "实付"
+    "Charged": "实付",
+    "Reconciliation": "对账",
+    "Standard consumption": "标准消耗",
+    "Reseller discount": "经销商让利",
+    "Platform standard price": "平台标准价",
+    "Let-give to customers": "给客户的让利",
+    "Standard minus discount": "标准价减让利",
+    "Consumption over time": "消耗趋势",
+    "By Channel (upstream)": "按渠道（上游）",
+    "By Group": "按分组"
   }
 }

@@ -29,6 +29,7 @@ import {
   ListTodo,
   MessageSquare,
   Radio,
+  Scale,
   ServerCog,
   Settings,
   Ticket,
@@ -261,6 +262,11 @@ export function useSidebarData(): SidebarData {
         id: 'admin',
         title: t('Admin'),
         items: [
+          {
+            title: t('Reconciliation'),
+            url: '/reconciliation',
+            icon: Scale,
+          },
           {
             title: t('Channels'),
             url: '/channels',

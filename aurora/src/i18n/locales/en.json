@@ -5868,6 +5868,15 @@
     "API key created": "API key created",
     "Copy key": "Copy key",
     "Copy your key. You can copy it again anytime from the list.": "Copy your key. You can copy it again anytime from the list.",
-    "Charged": "Charged"
+    "Charged": "Charged",
+    "Reconciliation": "Reconciliation",
+    "Standard consumption": "Standard consumption",
+    "Reseller discount": "Reseller discount",
+    "Platform standard price": "Platform standard price",
+    "Let-give to customers": "Let-give to customers",
+    "Standard minus discount": "Standard minus discount",
+    "Consumption over time": "Consumption over time",
+    "By Channel (upstream)": "By Channel (upstream)",
+    "By Group": "By Group"
   }
 }

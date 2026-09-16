@@ -171,6 +171,13 @@ func SetApiRouter(router *gin.Engine) {
 		// Fork: organization system (enterprise / reseller). Admin group manages
 		// orgs and invoiced credit; the org console (UserAuth) lets org
 		// owners/admins manage their own members/customers/workspaces/BYOK.
+		reconRoute := apiRouter.Group("/admin/reconciliation")
+		reconRoute.Use(middleware.AdminAuth())
+		{
+			reconRoute.GET("", controller.AdminGetReconciliation)
+			reconRoute.GET("/export", controller.AdminExportReconciliation)
+		}
+
 		orgAdminRoute := apiRouter.Group("/admin/organizations")
 		orgAdminRoute.Use(middleware.AdminAuth())
 		{
