@@ -385,11 +385,14 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	// replacing the group ratio below.
 	if common.GetContextKeyString(c, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
 		userId := common.GetContextKeyInt(c, constant.ContextKeyUserId)
-		channel, err := service.CacheGetChannelPricingChannel(userId, retryParam)
+		channel, overBudget, err := service.CacheGetChannelPricingChannel(userId, retryParam)
 		if err != nil {
 			return nil, types.NewError(fmt.Errorf("获取用户 %d 绑定渠道下模型 %s 的可用渠道失败（retry）: %s", userId, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 		}
 		if channel == nil {
+			if overBudget {
+				return nil, types.NewError(fmt.Errorf("用户 %d 绑定的渠道下模型 %s 今日额度已用尽，请明日再试（retry）", userId, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+			}
 			return nil, types.NewError(fmt.Errorf("用户 %d 没有绑定支持模型 %s 的可用渠道（retry）", userId, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 		}
 
