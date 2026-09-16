@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -43,6 +44,25 @@ const defaultTieredPreConsumeMaxTokens = 8192
 
 // HandleGroupRatio checks for "auto_group" in the context and updates the group ratio and relayInfo.UsingGroup if present
 func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hosttypes.GroupRatioInfo {
+	// Fork: channel-pricing-mode users (model.User.BillingMode ==
+	// model.BillingModeChannelPricing) never had a meaningful group in the
+	// first place — middleware.Distribute already picked one of their own
+	// bound channels before this runs, and stored it in context. Use that
+	// channel's own binding ratio instead of any group ratio lookup, so
+	// pre-consume already reflects the real price (no more "estimate at
+	// group rate, correct at settlement").
+	if common.GetContextKeyString(ctx, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
+		channelId := common.GetContextKeyInt(ctx, constant.ContextKeyChannelId)
+		ratio, found := model.GetUserChannelBindingRatio(relayInfo.UserId, channelId)
+		if !found || ratio <= 0 {
+			ratio = 1
+		}
+		return hosttypes.GroupRatioInfo{
+			GroupRatio:        ratio,
+			GroupSpecialRatio: -1,
+		}
+	}
+
 	groupRatioInfo := hosttypes.GroupRatioInfo{
 		GroupRatio:        1.0, // default ratio
 		GroupSpecialRatio: -1,
