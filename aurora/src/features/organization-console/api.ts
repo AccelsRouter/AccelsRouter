@@ -169,6 +169,8 @@ export type CustomerInvitation = {
 
 export type OrgLog = {
   id: number
+  // Log type: 2 = consume (success), 5 = error (failed, e.g. model not allowed).
+  type?: number
   created_at: number
   model_name: string
   token_name: string

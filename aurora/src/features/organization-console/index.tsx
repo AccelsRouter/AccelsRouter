@@ -38,7 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import { AccountsTab } from './accounts-tab'
-import { exportMyOrgLogs, listOrgLogs } from './api'
+import { exportMyOrgLogs, getOrgContext, listOrgLogs } from './api'
 import { CallRecords } from './call-records'
 import { getOrgSelf } from './api'
 import { AuditTab } from './audit-tab'
@@ -60,6 +60,14 @@ export function OrganizationConsole() {
     queryFn: getOrgSelf,
     staleTime: 60_000,
   })
+  // A reseller customer's keys bind to an auto-managed default workspace, so the
+  // workspace concept is hidden from them — it's reseller/enterprise plumbing.
+  const { data: orgContext } = useQuery({
+    queryKey: ['org-context'],
+    queryFn: getOrgContext,
+    staleTime: 60_000,
+  })
+  const isResellerCustomer = orgContext?.is_reseller_customer ?? false
 
   return (
     <SectionPageLayout>
@@ -117,7 +125,11 @@ export function OrganizationConsole() {
                 <TabsTrigger value='invitations'>
                   {t('Invitations')}
                 </TabsTrigger>
-                <TabsTrigger value='workspaces'>{t('Workspaces')}</TabsTrigger>
+                {!isResellerCustomer && (
+                  <TabsTrigger value='workspaces'>
+                    {t('Workspaces')}
+                  </TabsTrigger>
+                )}
                 <TabsTrigger value='byok'>{t('BYOK')}</TabsTrigger>
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
                 <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
