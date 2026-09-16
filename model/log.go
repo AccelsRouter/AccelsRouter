@@ -78,6 +78,11 @@ type Log struct {
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+	// RetailQuota is a computed, non-persisted field: the reseller's discounted
+	// price for this row (Quota × the customer's matched model-series discount),
+	// = what the customer's org wallet actually paid. Set only on reseller-
+	// customer org log views (see ListOrgLogs); 0/omitted otherwise.
+	RetailQuota int `json:"retail_quota,omitempty" gorm:"-"`
 }
 
 // don't use iota, avoid change log type value

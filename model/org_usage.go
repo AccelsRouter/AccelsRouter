@@ -11,6 +11,7 @@ package model
 import (
 	"sort"
 
+	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
 )
 
@@ -107,6 +108,19 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 	// Strip admin-only fields (Other.admin_info/audit_info, ChannelName) — these
 	// viewers (reseller admin, org owner/admin) are not platform admins.
 	formatUserLogs(logs, startIdx)
+	// Overlay the reseller's per-model retail discount so each row shows the
+	// discounted price the customer's org wallet actually paid. Reporting only;
+	// mirrors ApplyRetailDiscounts on the aggregate report and the live charge
+	// applied in service/org_funding.go.
+	if org, err := GetOrganizationById(orgId); err == nil && org != nil && org.RetailDiscounts != "" {
+		discounts := ParseRetailDiscounts(org.RetailDiscounts)
+		if len(discounts) > 0 {
+			for _, l := range logs {
+				ratio := RetailDiscountFor(l.ModelName, discounts)
+				l.RetailQuota = common.QuotaFromFloat(float64(l.Quota) * ratio)
+			}
+		}
+	}
 	return logs, total, nil
 }
 
