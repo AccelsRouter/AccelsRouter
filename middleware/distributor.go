@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"github.com/QuantumNous/new-api/logger"
 	"io"
 	"net/http"
 	"slices"
@@ -112,7 +113,10 @@ func Distribute() func(c *gin.Context) {
 				// in ModelPriceHelper) already knows the real channel and its
 				// ratio by the time it runs, instead of guessing at a group
 				// ratio that gets corrected only at settlement.
-				if common.GetContextKeyString(c, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
+				billingModeDebug := common.GetContextKeyString(c, constant.ContextKeyUserBillingMode)
+				userIdDebug := c.GetInt("id")
+				logger.LogInfo(c, fmt.Sprintf("[DEBUG] Distribute billing_mode check: userId=%d billingMode=%q", userIdDebug, billingModeDebug))
+				if billingModeDebug == model.BillingModeChannelPricing {
 					userId := c.GetInt("id")
 					pricingChannel, pcErr := model.GetChannelPricingChannel(userId, modelRequest.Model, 0, c.Request.URL.Path)
 					if pcErr != nil {
