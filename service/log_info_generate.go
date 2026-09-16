@@ -37,6 +37,22 @@ func attachQuotaSaturationToOther(other map[string]interface{}, clamp *common.Qu
 // attachQuotaSaturation records the request's quota clamp (if any) onto the
 // consume log's other.admin_info and emits a request-correlated backend audit
 // line. Called right before RecordConsumeLog on the text/audio/wss paths.
+// attachOrgRetailDiscount records the reseller retail discount actually applied
+// to an org-wallet request onto the consume log's `other`, so any log view can
+// show the discounted price. Visible (not admin_info) — the customer and
+// reseller both see what was charged. No-op when there is no discount.
+func attachOrgRetailDiscount(relayInfo *relaycommon.RelayInfo, other map[string]interface{}, quota int) {
+	if relayInfo == nil || other == nil {
+		return
+	}
+	ratio := relayInfo.OrgDiscountRatio
+	if ratio <= 0 || ratio >= 1 {
+		return
+	}
+	other["org_discount_ratio"] = ratio
+	other["org_charged_quota"] = common.QuotaFromFloat(float64(quota) * ratio)
+}
+
 func attachQuotaSaturation(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
 	if relayInfo == nil {
 		return
