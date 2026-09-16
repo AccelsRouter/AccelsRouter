@@ -695,6 +695,25 @@ func GetUserModels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+
+	// Fork: channel-pricing-mode users see the union of models their own
+	// bound channels declare support for — Group doesn't apply to them at
+	// all, so the normal group-based listing below would be meaningless
+	// (and could show models they have no bound channel to actually reach).
+	if user.BillingMode == model.BillingModeChannelPricing {
+		models, err := model.GetUserBoundEnabledModels(id)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    models,
+		})
+		return
+	}
+
 	groups := service.GetUserUsableGroups(user.Group)
 	group := c.Query("group")
 	var groupsToQuery []string

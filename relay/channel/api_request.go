@@ -492,7 +492,7 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 // response instead of a real upstream call. Scoped to a single test user
 // (11) so other traffic still hits real channels.
 func mockUpstreamEnabled(userId int) bool {
-	return userId == 11
+	return false
 }
 
 const mockUpstreamReplyText = "这是一条来自本地 MOCK_UPSTREAM 模式的测试回复，不是真实模型生成的。"

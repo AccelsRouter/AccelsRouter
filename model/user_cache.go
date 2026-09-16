@@ -40,9 +40,6 @@ func (user *UserBase) WriteContext(c *gin.Context) {
 	common.SetContextKey(c, constant.ContextKeyUserSetting, user.GetSetting())
 	common.SetContextKey(c, constant.ContextKeyUserDailyTokenLimit, user.DailyTokenLimit)
 	common.SetContextKey(c, constant.ContextKeyUserBillingMode, user.BillingMode)
-
-	// TEMP DEBUG
-	common.SysLog(fmt.Sprintf("[DEBUG] WriteContext: userId=%d billingMode=%q cacheSchema=%d", user.Id, user.BillingMode, user.CacheSchema))
 }
 
 func (user *UserBase) GetSetting() dto.UserSetting {
