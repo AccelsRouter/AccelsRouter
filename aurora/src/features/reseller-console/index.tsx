@@ -99,7 +99,7 @@ export function ResellerConsole() {
           <div className='flex flex-col gap-5'>
             <div className='border-border/60 bg-muted/30 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4'>
               <div className='flex flex-col gap-1'>
-                <div className='flex items-center gap-2'>
+                <div className='flex flex-wrap items-center gap-2'>
                   <span className='text-base font-semibold'>{self.name}</span>
                   <Badge variant='default'>{t('Reseller')}</Badge>
                   <Badge
@@ -109,6 +109,13 @@ export function ResellerConsole() {
                   >
                     {self.status === 'active' ? t('Active') : t('Suspended')}
                   </Badge>
+                  {self.wholesale_ratio != null &&
+                    self.wholesale_ratio > 0 &&
+                    self.wholesale_ratio < 1 && (
+                      <span className='rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-600 ring-1 ring-amber-500/30 dark:text-amber-400'>
+                        {t('Wholesale ratio')}: {self.wholesale_ratio.toFixed(2)}
+                      </span>
+                    )}
                 </div>
                 {self.price_group && (
                   <span className='text-muted-foreground text-xs'>

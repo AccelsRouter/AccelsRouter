@@ -117,6 +117,10 @@ func AdminUpdateOrganization(c *gin.Context) {
 			common.ApiErrorMsg(c, "wholesale_ratio must be within (0, 1]")
 			return
 		}
+		if !ratioAtMost2Decimals(*req.WholesaleRatio) {
+			common.ApiErrorMsg(c, "批发折最多保留两位小数")
+			return
+		}
 		fields["wholesale_ratio"] = *req.WholesaleRatio
 	}
 	if req.AllowedModels != nil {

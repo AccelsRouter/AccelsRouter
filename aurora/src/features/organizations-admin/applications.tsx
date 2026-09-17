@@ -285,7 +285,16 @@ function ReviewDialog(props: {
   const [priceGroup, setPriceGroup] = useState('')
   const [wholesaleRatio, setWholesaleRatio] = useState('')
   const [note, setNote] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
+
+  const wholesaleNum = Number(wholesaleRatio)
+  // Reseller approval requires a wholesale ratio in (0,1] with <= 2 decimals.
+  const wholesaleValid =
+    !isReseller ||
+    (/^\d+(\.\d{1,2})?$/.test(wholesaleRatio.trim()) &&
+      wholesaleNum > 0 &&
+      wholesaleNum <= 1)
 
   const { data: groups } = useQuery({
     queryKey: ['admin-groups'],
@@ -307,10 +316,7 @@ function ReviewDialog(props: {
       isApprove
         ? approveApplication(review!.app.id, {
             price_group: priceGroup.trim() || undefined,
-            wholesale_ratio:
-              isReseller && wholesaleRatio.trim() !== ''
-                ? Number(wholesaleRatio)
-                : undefined,
+            wholesale_ratio: isReseller ? Number(wholesaleRatio) : undefined,
             note: note.trim() || undefined,
           })
         : rejectApplication(review!.app.id, {
@@ -320,11 +326,26 @@ function ReviewDialog(props: {
       toast.success(isApprove ? t('Application approved') : t('Application rejected'))
       queryClient.invalidateQueries({ queryKey: ['admin-org-applications'] })
       queryClient.invalidateQueries({ queryKey: ['admin-organizations'] })
+      setConfirmOpen(false)
       setLoadedKey(null)
       props.onClose()
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
+
+  // Reseller approval goes through a second confirmation showing the wholesale
+  // ratio (it is the floor every customer discount must beat).
+  const handlePrimary = () => {
+    if (isApprove && isReseller) {
+      if (!wholesaleValid) {
+        toast.error(t('Enter a wholesale ratio in (0,1] with at most 2 decimals'))
+        return
+      }
+      setConfirmOpen(true)
+      return
+    }
+    mutation.mutate()
+  }
 
   return (
     <Dialog open={!!review} onOpenChange={(o) => !o && props.onClose()}>
@@ -375,21 +396,29 @@ function ReviewDialog(props: {
           )}
           {isApprove && isReseller && (
             <div className='flex flex-col gap-1.5'>
-              <Label className='text-xs'>{t('Wholesale ratio')}</Label>
+              <Label className='text-xs'>
+                {t('Wholesale ratio')}{' '}
+                <span className='text-destructive'>*</span>
+              </Label>
               <Input
                 type='number'
                 min={0}
                 max={1}
                 step='0.01'
-                placeholder='1.0'
+                placeholder='0.80'
                 value={wholesaleRatio}
                 onChange={(e) => setWholesaleRatio(e.target.value)}
               />
               <span className='text-muted-foreground text-xs'>
                 {t(
-                  'The reseller pays this fraction of face value when buying credit (e.g. 0.85 = 15% off). Blank = no discount.'
+                  'The reseller pays this fraction of face value when buying credit (e.g. 0.85 = 15% off). Required; (0,1], at most 2 decimals.'
                 )}
               </span>
+              {wholesaleRatio.trim() !== '' && !wholesaleValid && (
+                <span className='text-destructive text-xs'>
+                  {t('Enter a wholesale ratio in (0,1] with at most 2 decimals')}
+                </span>
+              )}
             </div>
           )}
           <div className='flex flex-col gap-1.5'>
@@ -410,8 +439,11 @@ function ReviewDialog(props: {
             {t('Cancel')}
           </Button>
           <Button
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
+            onClick={handlePrimary}
+            disabled={
+              mutation.isPending ||
+              (isApprove && isReseller && !wholesaleValid)
+            }
             className='gap-1.5'
           >
             {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
@@ -419,6 +451,40 @@ function ReviewDialog(props: {
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>{t('Confirm wholesale ratio')}</DialogTitle>
+            <DialogDescription>
+              {t(
+                'Set the wholesale ratio for {{name}} to {{ratio}}? Customer discounts must be strictly higher than this, and you can adjust it later.',
+                {
+                  name: review?.app.org_name ?? '',
+                  ratio: wholesaleNum.toFixed(2),
+                }
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className='gap-2'>
+            <Button
+              variant='outline'
+              onClick={() => setConfirmOpen(false)}
+              disabled={mutation.isPending}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending}
+              className='gap-1.5'
+            >
+              {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
+              {t('Confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

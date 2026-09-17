@@ -7,6 +7,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -152,9 +153,21 @@ func SetMyCustomerPricing(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// A customer's retail ratio must be strictly greater than the reseller's own
+	// wholesale ratio (the reseller must not resell below its cost), have at most
+	// two decimals, and stay within (0,1].
+	floor := reseller.EffectiveWholesaleRatio()
 	for token, ratio := range req.Discounts {
 		if ratio <= 0 || ratio > 1 {
 			common.ApiErrorMsg(c, "折扣比例必须在 (0,1] 之间: "+token)
+			return
+		}
+		if !ratioAtMost2Decimals(ratio) {
+			common.ApiErrorMsg(c, "折扣最多保留两位小数: "+token)
+			return
+		}
+		if ratio <= floor {
+			common.ApiErrorMsg(c, fmt.Sprintf("客户折扣必须大于你的批发折 %.2f: %s", floor, token))
 			return
 		}
 	}
@@ -443,14 +456,22 @@ func GetMyResellerOrg(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"id":           reseller.Id,
-		"name":         reseller.Name,
-		"type":         reseller.Type,
-		"status":       reseller.Status,
-		"wallet_quota": reseller.WalletQuota,
-		"price_group":  reseller.PriceGroup,
-		"is_owner":     true,
+		"id":              reseller.Id,
+		"name":            reseller.Name,
+		"type":            reseller.Type,
+		"status":          reseller.Status,
+		"wallet_quota":    reseller.WalletQuota,
+		"price_group":     reseller.PriceGroup,
+		"wholesale_ratio": reseller.WholesaleRatio,
+		"is_owner":        true,
 	})
+}
+
+// ratioAtMost2Decimals reports whether a discount ratio has at most two decimal
+// places (e.g. 0.85 ok, 0.855 not), tolerating float representation noise.
+func ratioAtMost2Decimals(r float64) bool {
+	scaled := r * 100
+	return math.Abs(scaled-math.Round(scaled)) < 1e-6
 }
 
 // GetMyResellerAudit — GET /api/reseller/audit

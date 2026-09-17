@@ -5911,6 +5911,12 @@
     "Standard minus discount": "標準價減讓利",
     "Consumption over time": "消耗趨勢",
     "By Channel (upstream)": "按渠道（上游）",
-    "By Group": "按分組"
+    "By Group": "按分組",
+    "Confirm wholesale ratio": "確認批發折",
+    "Enter a wholesale ratio in (0,1] with at most 2 decimals": "請輸入 (0,1] 之間、最多兩位小數的批發折",
+    "Set the wholesale ratio for {{name}} to {{ratio}}? Customer discounts must be strictly higher than this, and you can adjust it later.": "確認給「{{name}}」設定批發折 {{ratio}}?客戶折扣必須嚴格大於此值,之後可隨時調整。",
+    "The reseller pays this fraction of face value when buying credit (e.g. 0.85 = 15% off). Required; (0,1], at most 2 decimals.": "分銷商按此比例的面值購買額度(如 0.85 = 85 折)。必填;(0,1],最多兩位小數。",
+    "Set a discount ratio per model series (e.g. deepseek 0.6 = 40% off). The customer is charged at this ratio from their org wallet.": "按模型系列設定折扣比例(如 deepseek 0.6 = 6 折)。客戶按此比例從組織錢包扣費。",
+    "Each ratio must be strictly greater than your wholesale ratio {{floor}}.": "每個折扣必須嚴格大於你的批發折 {{floor}}。"
   }
 }

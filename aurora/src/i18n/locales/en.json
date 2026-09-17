@@ -5877,6 +5877,12 @@
     "Standard minus discount": "Standard minus discount",
     "Consumption over time": "Consumption over time",
     "By Channel (upstream)": "By Channel (upstream)",
-    "By Group": "By Group"
+    "By Group": "By Group",
+    "Confirm wholesale ratio": "Confirm wholesale ratio",
+    "Enter a wholesale ratio in (0,1] with at most 2 decimals": "Enter a wholesale ratio in (0,1] with at most 2 decimals",
+    "Set the wholesale ratio for {{name}} to {{ratio}}? Customer discounts must be strictly higher than this, and you can adjust it later.": "Set the wholesale ratio for {{name}} to {{ratio}}? Customer discounts must be strictly higher than this, and you can adjust it later.",
+    "The reseller pays this fraction of face value when buying credit (e.g. 0.85 = 15% off). Required; (0,1], at most 2 decimals.": "The reseller pays this fraction of face value when buying credit (e.g. 0.85 = 15% off). Required; (0,1], at most 2 decimals.",
+    "Set a discount ratio per model series (e.g. deepseek 0.6 = 40% off). The customer is charged at this ratio from their org wallet.": "Set a discount ratio per model series (e.g. deepseek 0.6 = 40% off). The customer is charged at this ratio from their org wallet.",
+    "Each ratio must be strictly greater than your wholesale ratio {{floor}}.": "Each ratio must be strictly greater than your wholesale ratio {{floor}}."
   }
 }

@@ -21,7 +21,11 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 
-import { getCustomerPricing, setCustomerPricing } from './api'
+import {
+  getCustomerPricing,
+  getResellerSelf,
+  setCustomerPricing,
+} from './api'
 import type { ResellerCustomer } from './types'
 
 type Row = { token: string; ratio: string }
@@ -41,6 +45,24 @@ export function CustomerPricingDialog(props: {
     queryFn: () => getCustomerPricing(customer!.org.id),
     enabled: !!customer,
   })
+  // The reseller's own wholesale ratio is the floor: a customer discount must be
+  // strictly higher (the reseller can't resell below its cost).
+  const { data: self } = useQuery({
+    queryKey: ['reseller-self'],
+    queryFn: getResellerSelf,
+    staleTime: 60_000,
+  })
+  const floor =
+    self?.wholesale_ratio && self.wholesale_ratio > 0 && self.wholesale_ratio < 1
+      ? self.wholesale_ratio
+      : 0
+  const twoDecimals = (s: string) => /^\d+(\.\d{1,2})?$/.test(s.trim())
+  const rowValid = (r: Row) => {
+    const ratio = Number(r.ratio)
+    return (
+      twoDecimals(r.ratio) && ratio > 0 && ratio <= 1 && ratio > floor
+    )
+  }
 
   if (customer && data && loadedId !== customer.org.id) {
     setLoadedId(customer.org.id)
@@ -56,8 +78,7 @@ export function CustomerPricingDialog(props: {
       const discounts: Record<string, number> = {}
       for (const r of rows) {
         const token = r.token.trim().toLowerCase()
-        const ratio = Number(r.ratio)
-        if (token && ratio > 0 && ratio <= 1) discounts[token] = ratio
+        if (token && rowValid(r)) discounts[token] = Number(r.ratio)
       }
       return setCustomerPricing(customer!.org.id, discounts)
     },
@@ -72,9 +93,7 @@ export function CustomerPricingDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
-  const invalid = rows.some(
-    (r) => r.token.trim() && !(Number(r.ratio) > 0 && Number(r.ratio) <= 1)
-  )
+  const invalid = rows.some((r) => r.token.trim() && !rowValid(r))
 
   const update = (i: number, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
@@ -86,10 +105,18 @@ export function CustomerPricingDialog(props: {
           <DialogTitle>{t('Discount pricing')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Set a discount ratio per model series (e.g. deepseek 0.6 = 40% off). This sets the retail price the customer owes you — the platform still bills the customer at standard price.'
+              'Set a discount ratio per model series (e.g. deepseek 0.6 = 40% off). The customer is charged at this ratio from their org wallet.'
             )}
           </DialogDescription>
         </DialogHeader>
+        {floor > 0 && (
+          <div className='rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-500/25 dark:text-amber-400'>
+            {t(
+              'Each ratio must be strictly greater than your wholesale ratio {{floor}}.',
+              { floor: floor.toFixed(2) }
+            )}
+          </div>
+        )}
         <div className='flex flex-col gap-2'>
           <div className='text-muted-foreground flex gap-2 px-1 text-xs'>
             <span className='flex-1'>{t('Model series')}</span>

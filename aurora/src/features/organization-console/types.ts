@@ -31,6 +31,9 @@ export type OrgSelf = {
   status: OrgStatus
   wallet_quota: number
   price_group: string
+  // Reseller only: the wholesale ratio set by the platform (its cost basis and
+  // the floor every customer discount must beat).
+  wholesale_ratio?: number
   is_owner: boolean
 }
 

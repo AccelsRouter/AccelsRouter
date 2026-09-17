@@ -117,18 +117,34 @@ func AdminApproveOrgApplication(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var req reviewApplicationRequest
 	_ = c.ShouldBindJSON(&req)
+	// Approving a reseller REQUIRES a wholesale ratio (its cost basis, and the
+	// floor every customer discount must beat). Validate before creating the org.
+	app, aerr := model.GetOrgApplicationById(id)
+	if aerr != nil {
+		common.ApiError(c, aerr)
+		return
+	}
+	if app != nil && app.Type == model.OrgTypeReseller {
+		if req.WholesaleRatio == nil {
+			common.ApiErrorMsg(c, "审核分销商必须设置批发折")
+			return
+		}
+		if *req.WholesaleRatio <= 0 || *req.WholesaleRatio > 1 {
+			common.ApiErrorMsg(c, "批发折必须在 (0,1] 之间")
+			return
+		}
+		if !ratioAtMost2Decimals(*req.WholesaleRatio) {
+			common.ApiErrorMsg(c, "批发折最多保留两位小数")
+			return
+		}
+	}
 	org, err := model.ApproveOrgApplication(id, c.GetInt("id"), req.PriceGroup, req.Note)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	// Set the reseller's wholesale ratio at approval time (optional; bounded to
-	// (0,1], 0 = no discount). Applied to the freshly created org.
+	// Persist the wholesale ratio on the freshly created org (bounded above).
 	if req.WholesaleRatio != nil && org != nil {
-		if *req.WholesaleRatio < 0 || *req.WholesaleRatio > 1 {
-			common.ApiErrorMsg(c, "wholesale_ratio must be within (0, 1]")
-			return
-		}
 		if err := model.UpdateOrganizationFields(org.Id, map[string]interface{}{"wholesale_ratio": *req.WholesaleRatio}); err != nil {
 			common.ApiError(c, err)
 			return
