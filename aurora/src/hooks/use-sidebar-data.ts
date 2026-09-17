@@ -159,23 +159,27 @@ export function useSidebarData(): SidebarData {
     }
   }
 
-  // Enterprise and reseller are separate consoles, but BOTH entries are always
-  // shown so either is discoverable — a person may run an enterprise org and a
-  // reseller org. "My Organization" (/organization) is the enterprise console /
-  // self-service apply page; "Distributor" (/reseller) is the reseller console,
-  // which shows a placeholder for non-resellers.
-  const orgNavItems: NavItem[] = [
-    {
+  // Enterprise and reseller are separate consoles. "My Organization"
+  // (/organization) is the enterprise console / self-service apply page;
+  // "Distributor" (/reseller) is the reseller console. Both are normally shown so
+  // either is discoverable — a person may run an enterprise org and a reseller
+  // org. The exception: a pure reseller admin (runs only a reseller org, holds no
+  // OrgAccount) has no enterprise org, so "My Organization" would only echo the
+  // approved-reseller apply card — hide it and leave just "Distributor".
+  const hideMyOrganization = isResellerAdmin && !isOrgMember
+  const orgNavItems: NavItem[] = []
+  if (!hideMyOrganization) {
+    orgNavItems.push({
       title: t('My Organization'),
       url: '/organization',
       icon: Building2,
-    },
-    {
-      title: t('Distributor'),
-      url: '/reseller',
-      icon: Building2,
-    },
-  ]
+    })
+  }
+  orgNavItems.push({
+    title: t('Distributor'),
+    url: '/reseller',
+    icon: Building2,
+  })
 
   const personalItems: NavItem[] = [
     {
