@@ -257,23 +257,9 @@ export function OrganizationsAdmin() {
                           <Button
                             size='sm'
                             variant='outline'
-                            onClick={() => setAttachOrg(o)}
-                          >
-                            {t('Attach Account')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline'
                             onClick={() => setUsageOrg(o)}
                           >
                             {t('Usage')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setSsoOrg(o)}
-                          >
-                            {t('SSO Domains')}
                           </Button>
                           <Button
                             size='sm'
