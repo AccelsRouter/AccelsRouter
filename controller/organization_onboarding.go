@@ -138,7 +138,13 @@ func AdminApproveOrgApplication(c *gin.Context) {
 			return
 		}
 	}
-	org, err := model.ApproveOrgApplication(id, c.GetInt("id"), req.PriceGroup, req.Note)
+	// A reseller org is pinned to the default price group; its pricing is driven
+	// by the wholesale ratio, not a base-rate group.
+	priceGroup := req.PriceGroup
+	if app != nil && app.Type == model.OrgTypeReseller {
+		priceGroup = "default"
+	}
+	org, err := model.ApproveOrgApplication(id, c.GetInt("id"), priceGroup, req.Note)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return

@@ -68,10 +68,16 @@ func AdminCreateOrganization(c *gin.Context) {
 			return
 		}
 	}
+	// A reseller's pricing is driven by its wholesale ratio, not a base-rate
+	// group, so reseller orgs are pinned to the default price group.
+	priceGroup := req.PriceGroup
+	if req.Type == model.OrgTypeReseller {
+		priceGroup = "default"
+	}
 	org := &model.Organization{
 		Name:        req.Name,
 		Type:        req.Type,
-		PriceGroup:  req.PriceGroup,
+		PriceGroup:  priceGroup,
 		OwnerUserId: req.OwnerId,
 		Remark:      req.Remark,
 	}
@@ -110,7 +116,13 @@ func AdminUpdateOrganization(c *gin.Context) {
 		fields["name"] = name
 	}
 	if req.PriceGroup != nil {
-		fields["price_group"] = *req.PriceGroup
+		// Reseller orgs are pinned to the default price group (pricing comes from
+		// the wholesale ratio), so ignore any other group for them.
+		priceGroup := *req.PriceGroup
+		if org, gErr := model.GetOrganizationById(id); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
+			priceGroup = "default"
+		}
+		fields["price_group"] = priceGroup
 	}
 	if req.Status != nil {
 		if *req.Status != model.OrgStatusActive && *req.Status != model.OrgStatusSuspended {
