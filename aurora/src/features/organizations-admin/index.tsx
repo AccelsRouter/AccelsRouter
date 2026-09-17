@@ -204,6 +204,7 @@ export function OrganizationsAdmin() {
                     <Th>{t('Status')}</Th>
                     <Th className='text-right'>{t('Wallet Balance')}</Th>
                     <Th>{t('Price Group')}</Th>
+                    <Th>{t('Wholesale ratio')}</Th>
                     <Th>{t('Owner')}</Th>
                     <Th className='text-right'>{t('Action')}</Th>
                   </tr>
@@ -228,6 +229,18 @@ export function OrganizationsAdmin() {
                       </Td>
                       <Td className='text-muted-foreground'>
                         {o.price_group || '-'}
+                      </Td>
+                      <Td>
+                        {o.type === 'reseller' &&
+                        o.wholesale_ratio != null &&
+                        o.wholesale_ratio > 0 &&
+                        o.wholesale_ratio < 1 ? (
+                          <span className='rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-600 tabular-nums dark:text-amber-400'>
+                            {o.wholesale_ratio.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className='text-muted-foreground'>-</span>
+                        )}
                       </Td>
                       <Td className='text-muted-foreground text-xs'>
                         #{o.owner_user_id}
