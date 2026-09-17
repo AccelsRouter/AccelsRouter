@@ -96,6 +96,8 @@
     "{{n}} records": "{{n}} 筆記錄",
     "Amount to buy (USD)": "購買金額（美元）",
     "credit units": "額度單位",
+    "Amount to credit (USD)": "儲值金額 (USD)",
+    "Record an invoiced top-up to this organization wallet. Enter the invoiced amount in USD.": "記錄一筆已開票的組織錢包儲值，按發票金額（USD）填寫。",
     "Customer": "客戶",
     "Select a customer": "選擇客戶",
     "Wholesale ratio": "批發折扣",

@@ -57,7 +57,7 @@ import { exportAdminOrgLogs } from '@/features/organization-console/api'
 import { CallRecords } from '@/features/organization-console/call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
-import { formatQuotaWithCurrency } from '@/lib/currency'
+import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 
 import {
@@ -243,7 +243,12 @@ export function OrganizationsAdmin() {
                         )}
                       </Td>
                       <Td className='text-muted-foreground text-xs'>
-                        {o.owner_email || `#${o.owner_user_id}`}
+                        <div className='flex flex-col'>
+                          <span>#{o.owner_user_id}</span>
+                          {o.owner_email && (
+                            <span className='text-[11px]'>{o.owner_email}</span>
+                          )}
+                        </div>
                       </Td>
                       <Td className='text-right'>
                         <div className='flex justify-end gap-2'>
@@ -622,22 +627,27 @@ function CreditOrgDialog(props: {
 }) {
   const { t } = useTranslation()
   const org = props.org
-  const [quota, setQuota] = useState('')
+  const [dollars, setDollars] = useState('')
   const [tradeNo, setTradeNo] = useState('')
   const [remark, setRemark] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
 
   if (org && org.id !== loadedId) {
     setLoadedId(org.id)
-    setQuota('')
+    setDollars('')
     setTradeNo('')
     setRemark('')
   }
 
+  // Admins record top-ups by the invoiced dollar amount; the API works in raw
+  // quota units, so convert before submitting.
+  const usd = Number(dollars) || 0
+  const credit = quotaFromUSD(usd)
+
   const mutation = useMutation({
     mutationFn: () =>
       creditOrganization(org!.id, {
-        quota: Number(quota) || 0,
+        quota: credit,
         trade_no: tradeNo.trim(),
         remark: remark.trim(),
       }),
@@ -649,7 +659,7 @@ function CreditOrgDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
-  const canSubmit = Number(quota) > 0 && tradeNo.trim().length > 0
+  const canSubmit = credit > 0 && tradeNo.trim().length > 0
 
   return (
     <Dialog open={!!org} onOpenChange={(o) => !o && props.onClose()}>
@@ -658,7 +668,7 @@ function CreditOrgDialog(props: {
           <DialogTitle>{t('Credit Organization')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Record an invoiced top-up to this organization wallet. Enter the raw quota amount.'
+              'Record an invoiced top-up to this organization wallet. Enter the invoiced amount in USD.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -673,12 +683,25 @@ function CreditOrgDialog(props: {
           </div>
         )}
         <div className='flex flex-col gap-3'>
-          <Field label={t('Quota (raw units)')}>
-            <Input
-              type='number'
-              value={quota}
-              onChange={(e) => setQuota(e.target.value)}
-            />
+          <Field label={t('Amount to credit (USD)')}>
+            <div className='relative'>
+              <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
+                $
+              </span>
+              <Input
+                type='number'
+                min={0}
+                step='0.01'
+                value={dollars}
+                onChange={(e) => setDollars(e.target.value)}
+                className='pl-6'
+              />
+            </div>
+            {credit > 0 && (
+              <span className='text-muted-foreground text-xs'>
+                = {credit.toLocaleString()} {t('credit units')}
+              </span>
+            )}
           </Field>
           <Field label={t('Trade No.')}>
             <Input

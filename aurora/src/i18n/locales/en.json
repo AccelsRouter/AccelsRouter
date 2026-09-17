@@ -96,6 +96,8 @@
     "{{n}} records": "{{n}} records",
     "Amount to buy (USD)": "Amount to buy (USD)",
     "credit units": "credit units",
+    "Amount to credit (USD)": "Amount to credit (USD)",
+    "Record an invoiced top-up to this organization wallet. Enter the invoiced amount in USD.": "Record an invoiced top-up to this organization wallet. Enter the invoiced amount in USD.",
     "Customer": "Customer",
     "Select a customer": "Select a customer",
     "Wholesale ratio": "Wholesale ratio",
