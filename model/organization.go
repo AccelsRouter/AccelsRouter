@@ -84,8 +84,8 @@ type Organization struct {
 	// reseller-provisioned customer (in ResellerCustomerLink). Lets the admin UI
 	// separate enterprise direct clients from reseller customers.
 	IsCustomer bool `json:"is_customer" gorm:"-"`
-	// OwnerEmail is a computed, non-persisted convenience: the owner user's email
-	// for admin list display.
+	// OwnerEmail is a computed, non-persisted convenience for admin list display:
+	// the owner user's email, or their username when no email is set.
 	OwnerEmail string `json:"owner_email,omitempty" gorm:"-"`
 }
 
@@ -123,6 +123,32 @@ func UserEmailsByIds(ids []int) map[int]string {
 	if err := DB.Table("users").Select("id, email").Where("id IN ?", ids).Scan(&rows).Error; err == nil {
 		for _, r := range rows {
 			out[r.Id] = r.Email
+		}
+	}
+	return out
+}
+
+// UserDisplayLabelsByIds batch-loads a human-readable label per user id: the
+// email when set, otherwise the username. Used where an admin needs to identify
+// a user who may have registered with a username only (no email).
+func UserDisplayLabelsByIds(ids []int) map[int]string {
+	out := map[int]string{}
+	if len(ids) == 0 {
+		return out
+	}
+	type row struct {
+		Id       int
+		Email    string
+		Username string
+	}
+	var rows []row
+	if err := DB.Table("users").Select("id, email, username").Where("id IN ?", ids).Scan(&rows).Error; err == nil {
+		for _, r := range rows {
+			if r.Email != "" {
+				out[r.Id] = r.Email
+			} else {
+				out[r.Id] = r.Username
+			}
 		}
 	}
 	return out

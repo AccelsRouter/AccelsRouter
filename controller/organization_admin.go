@@ -37,9 +37,9 @@ func AdminListOrganizations(c *gin.Context) {
 			ownerIds = append(ownerIds, o.OwnerUserId)
 		}
 	}
-	if emails := model.UserEmailsByIds(ownerIds); len(emails) > 0 {
+	if labels := model.UserDisplayLabelsByIds(ownerIds); len(labels) > 0 {
 		for _, o := range orgs {
-			o.OwnerEmail = emails[o.OwnerUserId]
+			o.OwnerEmail = labels[o.OwnerUserId]
 		}
 	}
 	page.SetTotal(int(total))
