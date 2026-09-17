@@ -34,6 +34,7 @@ export type Organization = {
   is_customer?: boolean
   allowed_models?: string
   owner_user_id: number
+  owner_email?: string
   remark: string
   created_time: number
   updated_time: number

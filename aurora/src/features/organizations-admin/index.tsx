@@ -243,7 +243,7 @@ export function OrganizationsAdmin() {
                         )}
                       </Td>
                       <Td className='text-muted-foreground text-xs'>
-                        #{o.owner_user_id}
+                        {o.owner_email || `#${o.owner_user_id}`}
                       </Td>
                       <Td className='text-right'>
                         <div className='flex justify-end gap-2'>

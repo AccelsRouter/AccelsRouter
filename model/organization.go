@@ -84,6 +84,9 @@ type Organization struct {
 	// reseller-provisioned customer (in ResellerCustomerLink). Lets the admin UI
 	// separate enterprise direct clients from reseller customers.
 	IsCustomer bool `json:"is_customer" gorm:"-"`
+	// OwnerEmail is a computed, non-persisted convenience: the owner user's email
+	// for admin list display.
+	OwnerEmail string `json:"owner_email,omitempty" gorm:"-"`
 }
 
 // OrgAccount binds a user to the organization that pays for it. UserId is

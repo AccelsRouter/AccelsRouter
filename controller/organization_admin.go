@@ -30,6 +30,18 @@ func AdminListOrganizations(c *gin.Context) {
 			o.IsCustomer = customers[o.Id]
 		}
 	}
+	// Fill in each owner's email so the admin list shows a human-readable owner.
+	ownerIds := make([]int, 0, len(orgs))
+	for _, o := range orgs {
+		if o.OwnerUserId > 0 {
+			ownerIds = append(ownerIds, o.OwnerUserId)
+		}
+	}
+	if emails := model.UserEmailsByIds(ownerIds); len(emails) > 0 {
+		for _, o := range orgs {
+			o.OwnerEmail = emails[o.OwnerUserId]
+		}
+	}
 	page.SetTotal(int(total))
 	page.SetItems(orgs)
 	common.ApiSuccess(c, page)
