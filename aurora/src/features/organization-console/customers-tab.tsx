@@ -612,12 +612,9 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label={t('Price Group')}>
-            <Input
-              value={priceGroup}
-              onChange={(e) => setPriceGroup(e.target.value)}
-            />
+            <Input value={priceGroup} disabled readOnly />
             <span className='text-muted-foreground text-xs'>
-              {t('The customer\'s retail price group. Defaults to "default".')}
+              {t('Fixed to "default"; pricing is driven by your discounts.')}
             </span>
           </Field>
           <Field label={t('Initial amount (USD)')}>

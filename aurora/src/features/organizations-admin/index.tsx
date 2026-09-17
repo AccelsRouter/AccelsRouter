@@ -368,7 +368,7 @@ function CreateOrgDialog(props: {
       createOrganization({
         name: name.trim(),
         type,
-        price_group: priceGroup.trim(),
+        price_group: type === 'reseller' ? 'default' : priceGroup.trim(),
         owner_user_id: Number(ownerUserId) || 0,
         remark: remark.trim(),
       }),
@@ -433,9 +433,16 @@ function CreateOrgDialog(props: {
           </Field>
           <Field label={t('Price Group')}>
             <Input
-              value={priceGroup}
+              value={type === 'reseller' ? 'default' : priceGroup}
               onChange={(e) => setPriceGroup(e.target.value)}
+              disabled={type === 'reseller'}
+              readOnly={type === 'reseller'}
             />
+            {type === 'reseller' && (
+              <span className='text-muted-foreground text-xs'>
+                {t('Fixed to "default"; distributor pricing is driven by the wholesale ratio.')}
+              </span>
+            )}
           </Field>
           <Field label={t('Remark')}>
             <Textarea
@@ -510,7 +517,7 @@ function EditOrgDialog(props: {
     mutationFn: () =>
       updateOrganization(org!.id, {
         name: name.trim(),
-        price_group: priceGroup.trim(),
+        price_group: isReseller ? 'default' : priceGroup.trim(),
         status,
         remark: remark.trim(),
         ...(isReseller
@@ -545,9 +552,16 @@ function EditOrgDialog(props: {
           </Field>
           <Field label={t('Price Group')}>
             <Input
-              value={priceGroup}
+              value={isReseller ? 'default' : priceGroup}
               onChange={(e) => setPriceGroup(e.target.value)}
+              disabled={isReseller}
+              readOnly={isReseller}
             />
+            {isReseller && (
+              <span className='text-muted-foreground text-xs'>
+                {t('Fixed to "default"; distributor pricing is driven by the wholesale ratio.')}
+              </span>
+            )}
           </Field>
           <Field label={t('Status')}>
             <NativeSelect

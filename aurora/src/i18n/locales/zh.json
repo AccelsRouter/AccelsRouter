@@ -97,6 +97,8 @@
     "{{n}} records": "{{n}} 条记录",
     "Amount to buy (USD)": "购买金额（美元）",
     "credit units": "额度单位",
+    "Fixed to \"default\"; pricing is driven by your discounts.": "固定为 “default”，计价由你设置的折扣决定。",
+    "Fixed to \"default\"; distributor pricing is driven by the wholesale ratio.": "固定为 “default”，分销商计价由批发折扣决定。",
     "Amount to credit (USD)": "充值金额 (USD)",
     "Record an invoiced top-up to this organization wallet. Enter the invoiced amount in USD.": "记录一笔已开票的组织钱包充值，按发票金额（USD）填写。",
     "Customer": "客户",
