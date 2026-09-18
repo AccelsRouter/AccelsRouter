@@ -82,11 +82,15 @@ function BucketTable(props: {
                 <tr key={b.key} className='hover:bg-muted/30'>
                   <Td className='font-medium'>{b.key || '-'}</Td>
                   <Td className='text-right tabular-nums'>
-                    {formatQuotaWithCurrency(b.quota)}
+                    {formatQuotaWithCurrency(b.quota, {
+                      padFractionDigits: true,
+                    })}
                   </Td>
                   {props.showRetail && (
                     <Td className='text-right tabular-nums'>
-                      {formatQuotaWithCurrency(b.retail_quota ?? b.quota)}
+                      {formatQuotaWithCurrency(b.retail_quota ?? b.quota, {
+                        padFractionDigits: true,
+                      })}
                     </Td>
                   )}
                   <Td className='text-right tabular-nums'>
