@@ -32,6 +32,21 @@ func TestRetailDiscountFor(t *testing.T) {
 	assert.Equal(t, 1.0, WholesaleRatioFor("gpt-4o", exact))
 }
 
+// The offerable-model allow-set matches an exact name (or its normalized alias)
+// and also a series PREFIX, so "deepseek" permits every "deepseek*" model.
+func TestModelAllowedBy(t *testing.T) {
+	// nil set = unrestricted.
+	assert.True(t, ModelAllowedBy(nil, "anything", "anything"))
+
+	set := map[string]bool{"deepseek": true, "gpt-4o": true}
+	assert.True(t, ModelAllowedBy(set, "deepseek-chat", "deepseek-chat"), "prefix series")
+	assert.True(t, ModelAllowedBy(set, "DeepSeek-V3", "deepseek-v3"), "case-insensitive prefix")
+	assert.True(t, ModelAllowedBy(set, "gpt-4o", "gpt-4o"), "exact")
+	assert.False(t, ModelAllowedBy(set, "claude-opus-4", "claude-opus-4"), "no matching series")
+	// An entry that is only a mid-string substring must NOT match (prefix only).
+	assert.False(t, ModelAllowedBy(map[string]bool{"seek": true}, "deepseek-chat", "deepseek-chat"))
+}
+
 // Round-trip: invalid ratios/tokens are dropped; empty map serializes to "".
 func TestRetailDiscountsSerialization(t *testing.T) {
 	stored, err := MarshalRetailDiscounts(map[string]float64{

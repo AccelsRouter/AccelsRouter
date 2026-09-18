@@ -89,7 +89,7 @@ func Distribute() func(c *gin.Context) {
 			// submit — enforcing here would falsely 403 a customer's own polling.
 			if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); modelRequest.Model != "" && perr == nil && payer != nil && payer.AllowedModels != nil {
 				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model)
-				if !payer.AllowedModels[modelRequest.Model] && !payer.AllowedModels[matchName] {
+				if !model.ModelAllowedBy(payer.AllowedModels, modelRequest.Model, matchName) {
 					msg := i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model})
 					// Record the rejection so a reseller/customer can see the
 					// blocked model in the org call records (this org gate aborts

@@ -281,6 +281,80 @@ func queryOrgUsageLogs(tokenIds []int, from, to int64) ([]logUsageRow, error) {
 	return rows, nil
 }
 
+// GetResellerUsage aggregates a reseller's usage across all its customer orgs.
+// A reseller org has no bound tokens of its own (usage lives on its customers),
+// so GetOrgUsage(resellerId) is always empty; this rolls up each customer's
+// usage instead. ByWorkspace becomes one line PER CUSTOMER (so the admin sees a
+// per-customer breakdown), while ByModel and ByMember are merged across all
+// customers. Each customer's retail discount is applied so the retail columns
+// reflect what customers owe the reseller.
+func GetResellerUsage(resellerOrgId int, from, to int64) (*OrgUsageReport, error) {
+	report := &OrgUsageReport{
+		OrgId:       resellerOrgId,
+		From:        from,
+		To:          to,
+		ByWorkspace: []OrgUsageBucket{},
+		ByModel:     []OrgUsageBucket{},
+		ByMember:    []OrgUsageBucket{},
+	}
+	var links []ResellerCustomerLink
+	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Order("id ASC").Find(&links).Error; err != nil {
+		return nil, err
+	}
+	byModel := map[string]*OrgUsageBucket{}
+	byMember := map[string]*OrgUsageBucket{}
+	addBucket := func(m map[string]*OrgUsageBucket, b OrgUsageBucket) {
+		cur, ok := m[b.Key]
+		if !ok {
+			cp := b
+			m[b.Key] = &cp
+			return
+		}
+		cur.Quota += b.Quota
+		cur.Requests += b.Requests
+		cur.PromptTokens += b.PromptTokens
+		cur.CompletionTokens += b.CompletionTokens
+		cur.RetailQuota += b.RetailQuota
+	}
+	for _, link := range links {
+		cust, err := GetOrganizationById(link.CustomerOrgId)
+		if err != nil || cust == nil {
+			continue
+		}
+		sub, err := GetOrgUsage(link.CustomerOrgId, from, to)
+		if err != nil {
+			return nil, err
+		}
+		// Apply this customer's retail discount so retail columns show what the
+		// customer owes (mirrors the reseller's per-customer usage view).
+		if cust.RetailDiscounts != "" {
+			sub.ApplyRetailDiscounts(ParseRetailDiscounts(cust.RetailDiscounts))
+		}
+		report.ByWorkspace = append(report.ByWorkspace, OrgUsageBucket{
+			Key:              cust.Name,
+			Quota:            sub.TotalQuota,
+			Requests:         sub.TotalRequests,
+			PromptTokens:     sub.TotalPrompt,
+			CompletionTokens: sub.TotalCompletion,
+			RetailQuota:      sub.TotalRetailQuota,
+		})
+		report.TotalQuota += sub.TotalQuota
+		report.TotalRequests += sub.TotalRequests
+		report.TotalPrompt += sub.TotalPrompt
+		report.TotalCompletion += sub.TotalCompletion
+		report.TotalRetailQuota += sub.TotalRetailQuota
+		for _, b := range sub.ByModel {
+			addBucket(byModel, b)
+		}
+		for _, b := range sub.ByMember {
+			addBucket(byMember, b)
+		}
+	}
+	report.ByModel = sortedBuckets(byModel)
+	report.ByMember = sortedBuckets(byMember)
+	return report, nil
+}
+
 func sortedBuckets(m map[string]*OrgUsageBucket) []OrgUsageBucket {
 	out := make([]OrgUsageBucket, 0, len(m))
 	for _, b := range m {

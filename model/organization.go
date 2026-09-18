@@ -237,6 +237,28 @@ func (org *Organization) AllowedModelSet() map[string]bool {
 	return parseAllowedModels(org.AllowedModels)
 }
 
+// ModelAllowedBy reports whether a model is permitted by an allow-set. nil set =
+// unrestricted. An entry matches when it equals the requested model name (or its
+// normalized alias), OR when it is a PREFIX of the requested name — so a series
+// entry like "deepseek" permits "deepseek-chat", "deepseek-v3", etc. Prefix
+// matching is case-insensitive; exact matching preserves the existing behavior.
+func ModelAllowedBy(allowed map[string]bool, model, matchName string) bool {
+	if allowed == nil {
+		return true
+	}
+	if allowed[model] || (matchName != "" && allowed[matchName]) {
+		return true
+	}
+	name := strings.ToLower(model)
+	for token := range allowed {
+		t := strings.ToLower(strings.TrimSpace(token))
+		if t != "" && strings.HasPrefix(name, t) {
+			return true
+		}
+	}
+	return false
+}
+
 // MarshalAllowedModels serializes a model-name list for storage, de-duplicated
 // and trimmed. An empty result serializes to "" (= unrestricted).
 func MarshalAllowedModels(models []string) (string, error) {

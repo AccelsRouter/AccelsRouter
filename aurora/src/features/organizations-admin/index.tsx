@@ -89,8 +89,11 @@ export function OrganizationsAdmin() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [view, setView] = useState<'orgs' | 'applications'>('orgs')
+  // Default to platform-managed orgs (enterprise direct + resellers), hiding
+  // reseller customers — those are a reseller's private clients; the admin can
+  // still switch to "All organizations" or "Reseller customers" to see them.
   const [category, setCategory] = useState<'all' | 'enterprise' | 'customer'>(
-    'all'
+    'enterprise'
   )
   const [page, setPage] = useState(1)
   const [createOpen, setCreateOpen] = useState(false)
@@ -139,7 +142,7 @@ export function OrganizationsAdmin() {
               {t('All organizations')}
             </NativeSelectOption>
             <NativeSelectOption value='enterprise'>
-              {t('Enterprise direct')}
+              {t('Enterprise & resellers')}
             </NativeSelectOption>
             <NativeSelectOption value='customer'>
               {t('Reseller customers')}

@@ -184,7 +184,15 @@ func AdminGetOrgUsage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	report, err := model.GetOrgUsage(orgId, from, to)
+	// A reseller org has no bound tokens of its own — its usage lives on its
+	// customer orgs — so aggregate across customers instead of returning empty.
+	var report *model.OrgUsageReport
+	var err error
+	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
+		report, err = model.GetResellerUsage(orgId, from, to)
+	} else {
+		report, err = model.GetOrgUsage(orgId, from, to)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
