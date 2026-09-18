@@ -132,6 +132,73 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 	return logs, total, nil
 }
 
+// ListResellerLogs returns the per-request call log across ALL of a reseller's
+// customer orgs (a reseller has no bound tokens of its own). Each row's retail
+// overlay uses the discount of the customer that owns the row's token.
+func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*Log, int64, error) {
+	var links []ResellerCustomerLink
+	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Find(&links).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(links) == 0 {
+		return []*Log{}, 0, nil
+	}
+	custIds := make([]int, 0, len(links))
+	for _, l := range links {
+		custIds = append(custIds, l.CustomerOrgId)
+	}
+	var bindings []WorkspaceToken
+	if err := DB.Where("org_id IN ?", custIds).Find(&bindings).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(bindings) == 0 {
+		return []*Log{}, 0, nil
+	}
+	tokenIds := make([]int, 0, len(bindings))
+	tokenToOrg := make(map[int]int, len(bindings))
+	for _, b := range bindings {
+		tokenIds = append(tokenIds, b.TokenId)
+		tokenToOrg[b.TokenId] = b.OrgId
+	}
+	tx := LOG_DB.Model(&Log{}).Where("token_id IN ?", tokenIds).
+		Where("type IN ?", []int{LogTypeConsume, LogTypeError})
+	if from > 0 {
+		tx = tx.Where("created_at >= ?", from)
+	}
+	if to > 0 {
+		tx = tx.Where("created_at <= ?", to)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var logs []*Log
+	if err := tx.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+	formatUserLogs(logs, startIdx)
+	// Overlay each row with the discount of the customer that owns its token.
+	discountsByOrg := map[int]map[string]float64{}
+	for _, l := range links {
+		if org, err := GetOrganizationById(l.CustomerOrgId); err == nil && org != nil && org.RetailDiscounts != "" {
+			discountsByOrg[l.CustomerOrgId] = ParseRetailDiscounts(org.RetailDiscounts)
+		}
+	}
+	for _, lg := range logs {
+		d := discountsByOrg[tokenToOrg[lg.TokenId]]
+		if len(d) == 0 {
+			continue
+		}
+		ratio := RetailDiscountFor(lg.ModelName, d)
+		if ratio >= 1 {
+			continue
+		}
+		lg.RetailRatio = ratio
+		lg.RetailQuota = common.QuotaRound(float64(lg.Quota) * ratio)
+	}
+	return logs, total, nil
+}
+
 // GetOrgUsage aggregates the org's billed usage between [from, to] (unix
 // seconds; a zero bound is treated as open). The result is deterministic:
 // each breakdown is sorted by descending quota then key.

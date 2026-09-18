@@ -208,7 +208,14 @@ const orgLogsExportCap = 100000
 // request with the reseller retail discount already overlaid (ListOrgLogs). The
 // caller is responsible for authorizing access to orgId.
 func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) {
-	logs, _, err := model.ListOrgLogs(orgId, from, to, 0, orgLogsExportCap)
+	// A reseller aggregates its customers' rows; any other org uses its own.
+	var logs []*model.Log
+	var err error
+	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
+		logs, _, err = model.ListResellerLogs(orgId, from, to, 0, orgLogsExportCap)
+	} else {
+		logs, _, err = model.ListOrgLogs(orgId, from, to, 0, orgLogsExportCap)
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -288,7 +295,15 @@ func AdminListOrgLogs(c *gin.Context) {
 		return
 	}
 	page := common.GetPageQuery(c)
-	logs, total, err := model.ListOrgLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
+	// A reseller has no tokens of its own — aggregate its customers' call logs.
+	var logs []*model.Log
+	var total int64
+	var err error
+	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
+		logs, total, err = model.ListResellerLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
+	} else {
+		logs, total, err = model.ListOrgLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
+	}
 	if err != nil {
 		common.ApiError(c, err)
 		return

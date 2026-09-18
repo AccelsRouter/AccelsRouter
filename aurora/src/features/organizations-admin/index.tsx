@@ -239,14 +239,12 @@ export function OrganizationsAdmin() {
                         o.wholesale_ratios &&
                         Object.keys(o.wholesale_ratios).length > 0 ? (
                           <span
-                            className='rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-600 tabular-nums dark:text-amber-400'
+                            className='inline-block max-w-[180px] truncate rounded bg-amber-500/15 px-1.5 py-0.5 align-middle text-xs font-semibold text-amber-600 dark:text-amber-400'
                             title={Object.entries(o.wholesale_ratios)
                               .map(([m, r]) => `${m}: ${r.toFixed(2)}`)
                               .join('\n')}
                           >
-                            {t('{{n}} models', {
-                              n: Object.keys(o.wholesale_ratios).length,
-                            })}
+                            {Object.keys(o.wholesale_ratios).join(', ')}
                           </span>
                         ) : (
                           <span className='text-muted-foreground'>-</span>
