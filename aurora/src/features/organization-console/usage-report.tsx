@@ -148,7 +148,7 @@ export function UsageReport(props: {
       <div className='grid grid-cols-2 gap-3 lg:grid-cols-4'>
         <StatCard
           label={t('Total Quota')}
-          value={formatQuotaWithCurrency(report.total_quota)}
+          value={formatQuotaWithCurrency(report.total_quota, MONEY_OPTS)}
         />
         <StatCard
           label={t('Requests')}
@@ -165,7 +165,7 @@ export function UsageReport(props: {
         {report.total_retail_quota != null && (
           <StatCard
             label={t('Total Retail')}
-            value={formatQuotaWithCurrency(report.total_retail_quota)}
+            value={formatQuotaWithCurrency(report.total_retail_quota, MONEY_OPTS)}
           />
         )}
       </div>
