@@ -30,6 +30,15 @@ import { formatNumber } from '@/lib/format'
 import { Td, Th } from './shared'
 import type { OrgUsageReport, UsageBucket } from './types'
 
+// Money columns match the call-records precision (up to 6 fraction digits so
+// tiny per-model charges don't collapse) and pad trailing zeros so the column
+// lines up on the decimal. Keep in sync with call-records PRICE_OPTS.
+const MONEY_OPTS = {
+  digitsLarge: 4,
+  digitsSmall: 6,
+  padFractionDigits: true,
+} as const
+
 function StatCard(props: { label: string; value: string }) {
   return (
     <div className='border-border/60 bg-muted/30 flex flex-col gap-1 rounded-lg border p-4'>
@@ -82,15 +91,14 @@ function BucketTable(props: {
                 <tr key={b.key} className='hover:bg-muted/30'>
                   <Td className='font-medium'>{b.key || '-'}</Td>
                   <Td className='text-right tabular-nums'>
-                    {formatQuotaWithCurrency(b.quota, {
-                      padFractionDigits: true,
-                    })}
+                    {formatQuotaWithCurrency(b.quota, MONEY_OPTS)}
                   </Td>
                   {props.showRetail && (
                     <Td className='text-right tabular-nums'>
-                      {formatQuotaWithCurrency(b.retail_quota ?? b.quota, {
-                        padFractionDigits: true,
-                      })}
+                      {formatQuotaWithCurrency(
+                        b.retail_quota ?? b.quota,
+                        MONEY_OPTS
+                      )}
                     </Td>
                   )}
                   <Td className='text-right tabular-nums'>

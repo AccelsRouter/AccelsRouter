@@ -20,7 +20,10 @@ const PAGE_SIZE = 20
 const LOG_TYPE_ERROR = 5
 // Show enough precision to distinguish tiny per-call costs (and the discounted
 // price from the standard one) — the platform log uses 6 fraction digits too.
-const PRICE_OPTS = { digitsLarge: 4, digitsSmall: 6 }
+// Money columns: up to 6 fraction digits (tiny charges don't collapse), padded
+// with trailing zeros so the column lines up. Keep in sync with the usage
+// report's MONEY_OPTS.
+const PRICE_OPTS = { digitsLarge: 4, digitsSmall: 6, padFractionDigits: true }
 
 type LogFetcher = (params: {
   page: number
