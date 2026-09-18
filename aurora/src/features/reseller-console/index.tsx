@@ -109,11 +109,13 @@ export function ResellerConsole() {
                   >
                     {self.status === 'active' ? t('Active') : t('Suspended')}
                   </Badge>
-                  {self.wholesale_ratio != null &&
-                    self.wholesale_ratio > 0 &&
-                    self.wholesale_ratio < 1 && (
+                  {self.wholesale_ratios &&
+                    Object.keys(self.wholesale_ratios).length > 0 && (
                       <span className='rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-600 ring-1 ring-amber-500/30 dark:text-amber-400'>
-                        {t('Wholesale ratio')}: {self.wholesale_ratio.toFixed(2)}
+                        {t('Per-model wholesale')}:{' '}
+                        {Object.entries(self.wholesale_ratios)
+                          .map(([m, r]) => `${m} ${r.toFixed(2)}`)
+                          .join(', ')}
                       </span>
                     )}
                 </div>

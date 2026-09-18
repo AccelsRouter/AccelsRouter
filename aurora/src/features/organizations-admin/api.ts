@@ -190,7 +190,7 @@ export async function approveApplication(
   id: number,
   payload: {
     price_group?: string
-    wholesale_ratio?: number
+    wholesale_ratios?: Record<string, number>
     note?: string
   }
 ): Promise<void> {

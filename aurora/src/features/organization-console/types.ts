@@ -34,6 +34,9 @@ export type OrgSelf = {
   // Reseller only: the wholesale ratio set by the platform (its cost basis and
   // the floor every customer discount must beat).
   wholesale_ratio?: number
+  // Reseller only: per-model wholesale ratios (the per-model cost basis; each
+  // customer discount for a model must be >= its wholesale ratio).
+  wholesale_ratios?: Record<string, number>
   is_owner: boolean
 }
 

@@ -42,6 +42,13 @@ func AdminListOrganizations(c *gin.Context) {
 			o.OwnerEmail = labels[o.OwnerUserId]
 		}
 	}
+	// Expose per-model wholesale as a parsed map for the admin UI (the raw JSON
+	// string field is not serialized).
+	for _, o := range orgs {
+		if o.Type == model.OrgTypeReseller && o.WholesaleRatios != "" {
+			o.WholesaleRatioMap = model.ParseRetailDiscounts(o.WholesaleRatios)
+		}
+	}
 	page.SetTotal(int(total))
 	page.SetItems(orgs)
 	common.ApiSuccess(c, page)

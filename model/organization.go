@@ -77,7 +77,9 @@ type Organization struct {
 	// name beats prefix; unset/unmatched = 1.0 = reseller pays full standard).
 	// This is the platform's per-model margin floor and DOES touch the billing
 	// hot path (see service/org_funding.go). Supersedes the flat WholesaleRatio.
-	WholesaleRatios string `json:"wholesale_ratios" gorm:"type:text"`
+	// Stored as the raw JSON string; the parsed map is exposed to the frontend via
+	// the computed WholesaleRatioMap below (this raw field is not serialized).
+	WholesaleRatios string `json:"-" gorm:"type:text"`
 	// BrandName / BrandLogo white-label a RESELLER org: its downstream customers
 	// see this name+logo in place of the platform brand. Reseller self-set (see
 	// Get/SetResellerBrand). Empty = fall back to the platform brand.
@@ -94,6 +96,10 @@ type Organization struct {
 	// OwnerEmail is a computed, non-persisted convenience for admin list display:
 	// the owner user's email, or their username when no email is set.
 	OwnerEmail string `json:"owner_email,omitempty" gorm:"-"`
+	// WholesaleRatioMap is the computed, non-persisted parsed form of
+	// WholesaleRatios ({model -> ratio}) for the admin frontend. Populated where an
+	// org is returned to the admin UI (see AdminListOrganizations).
+	WholesaleRatioMap map[string]float64 `json:"wholesale_ratios,omitempty" gorm:"-"`
 }
 
 // OrgAccount binds a user to the organization that pays for it. UserId is

@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { ratioForModel } from '@/components/model-ratio-rows'
 
 import {
   getCustomerPricing,
@@ -45,22 +46,22 @@ export function CustomerPricingDialog(props: {
     queryFn: () => getCustomerPricing(customer!.org.id),
     enabled: !!customer,
   })
-  // The reseller's own wholesale ratio is the floor: a customer discount must be
-  // strictly higher (the reseller can't resell below its cost).
+  // The reseller's per-model wholesale ratio is the floor for that model: a
+  // customer discount must be at least the wholesale (the reseller can't resell
+  // below its cost; equal = zero margin is allowed).
   const { data: self } = useQuery({
     queryKey: ['reseller-self'],
     queryFn: getResellerSelf,
     staleTime: 60_000,
   })
-  const floor =
-    self?.wholesale_ratio && self.wholesale_ratio > 0 && self.wholesale_ratio < 1
-      ? self.wholesale_ratio
-      : 0
+  const wholesale = self?.wholesale_ratios ?? {}
+  const hasWholesale = Object.keys(wholesale).length > 0
   const twoDecimals = (s: string) => /^\d+(\.\d{1,2})?$/.test(s.trim())
   const rowValid = (r: Row) => {
     const ratio = Number(r.ratio)
+    const floor = ratioForModel(r.token.trim().toLowerCase(), wholesale)
     return (
-      twoDecimals(r.ratio) && ratio > 0 && ratio <= 1 && ratio > floor
+      twoDecimals(r.ratio) && ratio > 0 && ratio <= 1 && ratio >= floor
     )
   }
 
@@ -109,11 +110,10 @@ export function CustomerPricingDialog(props: {
             )}
           </DialogDescription>
         </DialogHeader>
-        {floor > 0 && (
+        {hasWholesale && (
           <div className='rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-500/25 dark:text-amber-400'>
             {t(
-              'Each ratio must be strictly greater than your wholesale ratio {{floor}}.',
-              { floor: floor.toFixed(2) }
+              "Each model's ratio must be at least your wholesale ratio for that model (exact name beats prefix)."
             )}
           </div>
         )}

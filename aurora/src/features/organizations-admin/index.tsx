@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ModelRatioRows } from '@/components/model-ratio-rows'
 import {
   NativeSelect,
   NativeSelectOption,
@@ -232,11 +233,17 @@ export function OrganizationsAdmin() {
                       </Td>
                       <Td>
                         {o.type === 'reseller' &&
-                        o.wholesale_ratio != null &&
-                        o.wholesale_ratio > 0 &&
-                        o.wholesale_ratio < 1 ? (
-                          <span className='rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-600 tabular-nums dark:text-amber-400'>
-                            {o.wholesale_ratio.toFixed(2)}
+                        o.wholesale_ratios &&
+                        Object.keys(o.wholesale_ratios).length > 0 ? (
+                          <span
+                            className='rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-600 tabular-nums dark:text-amber-400'
+                            title={Object.entries(o.wholesale_ratios)
+                              .map(([m, r]) => `${m}: ${r.toFixed(2)}`)
+                              .join('\n')}
+                          >
+                            {t('{{n}} models', {
+                              n: Object.keys(o.wholesale_ratios).length,
+                            })}
                           </span>
                         ) : (
                           <span className='text-muted-foreground'>-</span>
@@ -497,7 +504,10 @@ function EditOrgDialog(props: {
   const [priceGroup, setPriceGroup] = useState('')
   const [status, setStatus] = useState<OrgStatus>('active')
   const [remark, setRemark] = useState('')
-  const [wholesaleRatio, setWholesaleRatio] = useState('')
+  const [wholesaleRatios, setWholesaleRatios] = useState<Record<string, number>>(
+    {}
+  )
+  const [wholesaleValid, setWholesaleValid] = useState(true)
   const [allowedModels, setAllowedModels] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
   const isReseller = org?.type === 'reseller'
@@ -509,7 +519,8 @@ function EditOrgDialog(props: {
     setPriceGroup(org.price_group)
     setStatus(org.status)
     setRemark(org.remark)
-    setWholesaleRatio(org.wholesale_ratio ? String(org.wholesale_ratio) : '')
+    setWholesaleRatios(org.wholesale_ratios ?? {})
+    setWholesaleValid(true)
     setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
   }
 
@@ -522,9 +533,7 @@ function EditOrgDialog(props: {
         remark: remark.trim(),
         ...(isReseller
           ? {
-              wholesale_ratio: wholesaleRatio.trim()
-                ? Number(wholesaleRatio)
-                : 0,
+              wholesale_ratios: wholesaleRatios,
               allowed_models: allowedModels
                 .split(/[\n,]/)
                 .map((m) => m.trim())
@@ -587,17 +596,21 @@ function EditOrgDialog(props: {
           {isReseller && (
             <>
               <Field
-                label={t('Wholesale ratio (0–1, blank = no discount)')}
+                label={t('Per-model wholesale ratios (blank = no discount)')}
               >
-                <Input
-                  type='number'
-                  step='0.01'
-                  min='0'
-                  max='1'
-                  value={wholesaleRatio}
-                  onChange={(e) => setWholesaleRatio(e.target.value)}
-                  placeholder='e.g. 0.85'
+                <ModelRatioRows
+                  key={org?.id}
+                  initial={org?.wholesale_ratios ?? {}}
+                  onChange={(map, valid) => {
+                    setWholesaleRatios(map)
+                    setWholesaleValid(valid)
+                  }}
                 />
+                <span className='text-muted-foreground text-xs'>
+                  {t(
+                    'The reseller pays standard × this ratio per call for matching models. Exact model name beats prefix.'
+                  )}
+                </span>
               </Field>
               <Field
                 label={t('Offerable models (one per line; blank = all)')}
@@ -622,7 +635,11 @@ function EditOrgDialog(props: {
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={name.trim().length === 0 || mutation.isPending}
+            disabled={
+              name.trim().length === 0 ||
+              (isReseller && !wholesaleValid) ||
+              mutation.isPending
+            }
             className='gap-1.5'
           >
             {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}

@@ -43,8 +43,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ModelRatioRows } from '@/components/model-ratio-rows'
 import {
   NativeSelect,
   NativeSelectOption,
@@ -283,18 +283,15 @@ function ReviewDialog(props: {
   const isApprove = review?.mode === 'approve'
   const isReseller = review?.app.type === 'reseller'
   const [priceGroup, setPriceGroup] = useState('')
-  const [wholesaleRatio, setWholesaleRatio] = useState('')
+  const [wholesaleRatios, setWholesaleRatios] = useState<
+    Record<string, number>
+  >({})
+  const [wholesaleValid, setWholesaleValid] = useState(true)
   const [note, setNote] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
 
-  const wholesaleNum = Number(wholesaleRatio)
-  // Reseller approval requires a wholesale ratio in (0,1] with <= 2 decimals.
-  const wholesaleValid =
-    !isReseller ||
-    (/^\d+(\.\d{1,2})?$/.test(wholesaleRatio.trim()) &&
-      wholesaleNum > 0 &&
-      wholesaleNum <= 1)
+  const wholesaleCount = Object.keys(wholesaleRatios).length
 
   const { data: groups } = useQuery({
     queryKey: ['admin-groups'],
@@ -307,7 +304,8 @@ function ReviewDialog(props: {
   if (review && key !== loadedKey) {
     setLoadedKey(key)
     setPriceGroup('')
-    setWholesaleRatio('')
+    setWholesaleRatios({})
+    setWholesaleValid(true)
     setNote('')
   }
 
@@ -316,7 +314,8 @@ function ReviewDialog(props: {
       isApprove
         ? approveApplication(review!.app.id, {
             price_group: priceGroup.trim() || undefined,
-            wholesale_ratio: isReseller ? Number(wholesaleRatio) : undefined,
+            wholesale_ratios:
+              isReseller && wholesaleCount > 0 ? wholesaleRatios : undefined,
             note: note.trim() || undefined,
           })
         : rejectApplication(review!.app.id, {
@@ -333,12 +332,12 @@ function ReviewDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
-  // Reseller approval goes through a second confirmation showing the wholesale
-  // ratio (it is the floor every customer discount must beat).
+  // Reseller approval goes through a second confirmation summarizing the
+  // per-model wholesale (the floor every customer discount must beat).
   const handlePrimary = () => {
     if (isApprove && isReseller) {
       if (!wholesaleValid) {
-        toast.error(t('Enter a wholesale ratio in (0,1] with at most 2 decimals'))
+        toast.error(t('Each ratio must be in (0,1] with at most 2 decimals'))
         return
       }
       setConfirmOpen(true)
@@ -396,29 +395,20 @@ function ReviewDialog(props: {
           )}
           {isApprove && isReseller && (
             <div className='flex flex-col gap-1.5'>
-              <Label className='text-xs'>
-                {t('Wholesale ratio')}{' '}
-                <span className='text-destructive'>*</span>
-              </Label>
-              <Input
-                type='number'
-                min={0}
-                max={1}
-                step='0.01'
-                placeholder='0.80'
-                value={wholesaleRatio}
-                onChange={(e) => setWholesaleRatio(e.target.value)}
+              <Label className='text-xs'>{t('Per-model wholesale ratios')}</Label>
+              <ModelRatioRows
+                key={key ?? 'none'}
+                initial={{}}
+                onChange={(map, valid) => {
+                  setWholesaleRatios(map)
+                  setWholesaleValid(valid)
+                }}
               />
               <span className='text-muted-foreground text-xs'>
                 {t(
-                  'The reseller pays this fraction of face value when buying credit (e.g. 0.85 = 15% off). Required; (0,1], at most 2 decimals.'
+                  'Optional: the reseller pays standard × this ratio per call for matching models (e.g. 0.85 = 15% off). Unset = no discount. You can adjust anytime.'
                 )}
               </span>
-              {wholesaleRatio.trim() !== '' && !wholesaleValid && (
-                <span className='text-destructive text-xs'>
-                  {t('Enter a wholesale ratio in (0,1] with at most 2 decimals')}
-                </span>
-              )}
             </div>
           )}
           <div className='flex flex-col gap-1.5'>
@@ -440,10 +430,7 @@ function ReviewDialog(props: {
           </Button>
           <Button
             onClick={handlePrimary}
-            disabled={
-              mutation.isPending ||
-              (isApprove && isReseller && !wholesaleValid)
-            }
+            disabled={mutation.isPending || (isReseller && !wholesaleValid)}
             className='gap-1.5'
           >
             {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
@@ -455,15 +442,20 @@ function ReviewDialog(props: {
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className='sm:max-w-md'>
           <DialogHeader>
-            <DialogTitle>{t('Confirm wholesale ratio')}</DialogTitle>
+            <DialogTitle>{t('Confirm wholesale pricing')}</DialogTitle>
             <DialogDescription>
-              {t(
-                'Set the wholesale ratio for {{name}} to {{ratio}}? Customer discounts must be strictly higher than this, and you can adjust it later.',
-                {
-                  name: review?.app.org_name ?? '',
-                  ratio: wholesaleNum.toFixed(2),
-                }
-              )}
+              {wholesaleCount > 0
+                ? t(
+                    'Approve {{name}} with wholesale ratios for {{count}} model(s)? Customer discounts must be at least these, and you can adjust them later.',
+                    {
+                      name: review?.app.org_name ?? '',
+                      count: wholesaleCount,
+                    }
+                  )
+                : t(
+                    'Approve {{name}} with no wholesale discount (the reseller pays full standard per call)? You can set per-model wholesale later.',
+                    { name: review?.app.org_name ?? '' }
+                  )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className='gap-2'>
