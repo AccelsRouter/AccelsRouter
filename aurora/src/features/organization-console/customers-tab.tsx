@@ -466,7 +466,7 @@ function CustomerInviteDialog(props: {
             )}
           </DialogDescription>
         </DialogHeader>
-        <div className='flex flex-col gap-3'>
+        <div className='flex min-w-0 flex-col gap-3'>
           <Field label={t('Invited email')}>
             <div className='flex gap-2'>
               <Input
@@ -474,7 +474,7 @@ function CustomerInviteDialog(props: {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder='owner@customer.com'
-                className='min-w-0'
+                className='min-w-0 flex-1'
               />
               <Button
                 onClick={() => inviteMutation.mutate()}
