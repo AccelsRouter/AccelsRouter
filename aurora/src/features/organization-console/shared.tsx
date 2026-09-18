@@ -21,6 +21,17 @@ Small presentational primitives shared across the organization console tabs.
 */
 import { Label } from '@/components/ui/label'
 
+// Shared money formatting for consumption/cost figures across the org & reseller
+// consoles: up to 6 fraction digits so tiny per-call charges don't collapse to
+// $0.0000, padded with trailing zeros so columns line up on the decimal. Used
+// for usage, call records, and member/workspace spend so every "spend" figure
+// reads with the same precision. (Wallet balances/budgets keep the default.)
+export const MONEY_OPTS = {
+  digitsLarge: 4,
+  digitsSmall: 6,
+  padFractionDigits: true,
+} as const
+
 export function Th(props: { children: React.ReactNode; className?: string }) {
   return (
     <th className={`px-3 py-2 text-left font-medium ${props.className ?? ''}`}>

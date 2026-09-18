@@ -48,7 +48,7 @@ import {
   removeOrgAccount,
   updateOrgAccount,
 } from './api'
-import { Field, Td, Th } from './shared'
+import { Field, MONEY_OPTS, Td, Th } from './shared'
 import type { AccountStatus, OrgAccount, OrgType } from './types'
 
 function budgetLabel(budget: number, unlimited: string): string {
@@ -116,7 +116,7 @@ export function AccountsTab({ orgType }: { orgType: OrgType }) {
                     {budgetLabel(a.monthly_budget, t('Unlimited'))}
                   </Td>
                   <Td className='text-right tabular-nums'>
-                    {formatQuotaWithCurrency(a.period_spend)}
+                    {formatQuotaWithCurrency(a.period_spend, MONEY_OPTS)}
                   </Td>
                   <Td>
                     <Badge

@@ -49,7 +49,7 @@ import {
   listWorkspaceKeys,
   updateOrgWorkspace,
 } from './api'
-import { Field, Td, Th } from './shared'
+import { Field, MONEY_OPTS, Td, Th } from './shared'
 import type { OrgWorkspace } from './types'
 
 export function WorkspacesTab() {
@@ -128,7 +128,7 @@ export function WorkspacesTab() {
                       : t('Unlimited')}
                   </Td>
                   <Td className='text-right tabular-nums'>
-                    {formatQuotaWithCurrency(w.period_spend)}
+                    {formatQuotaWithCurrency(w.period_spend, MONEY_OPTS)}
                   </Td>
                   <Td className='text-right'>
                     <div className='flex justify-end gap-2'>

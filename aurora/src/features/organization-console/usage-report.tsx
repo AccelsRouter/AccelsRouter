@@ -27,17 +27,8 @@ import { useTranslation } from 'react-i18next'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
 
-import { Td, Th } from './shared'
+import { MONEY_OPTS, Td, Th } from './shared'
 import type { OrgUsageReport, UsageBucket } from './types'
-
-// Money columns match the call-records precision (up to 6 fraction digits so
-// tiny per-model charges don't collapse) and pad trailing zeros so the column
-// lines up on the decimal. Keep in sync with call-records PRICE_OPTS.
-const MONEY_OPTS = {
-  digitsLarge: 4,
-  digitsSmall: 6,
-  padFractionDigits: true,
-} as const
 
 function StatCard(props: { label: string; value: string }) {
   return (

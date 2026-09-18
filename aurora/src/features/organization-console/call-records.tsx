@@ -13,18 +13,11 @@ import { Button } from '@/components/ui/button'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import type { OrgLog } from './api'
-import { Td, Th, fmtTime } from './shared'
+import { MONEY_OPTS, Td, Th, fmtTime } from './shared'
 import type { PagedResponse } from './types'
 
 const PAGE_SIZE = 20
 const LOG_TYPE_ERROR = 5
-// Show enough precision to distinguish tiny per-call costs (and the discounted
-// price from the standard one) — the platform log uses 6 fraction digits too.
-// Money columns: up to 6 fraction digits (tiny charges don't collapse), padded
-// with trailing zeros so the column lines up. Keep in sync with the usage
-// report's MONEY_OPTS.
-const PRICE_OPTS = { digitsLarge: 4, digitsSmall: 6, padFractionDigits: true }
-
 type LogFetcher = (params: {
   page: number
   pageSize: number
@@ -139,7 +132,7 @@ export function CallRecords({
                   {l.completion_tokens}
                 </Td>
                 <Td className='text-right tabular-nums'>
-                  {isError ? '-' : formatQuotaWithCurrency(l.quota, PRICE_OPTS)}
+                  {isError ? '-' : formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
                 </Td>
                 {showRetail && (
                   <>
@@ -153,7 +146,7 @@ export function CallRecords({
                         ? '-'
                         : formatQuotaWithCurrency(
                             l.retail_quota ?? l.quota,
-                            PRICE_OPTS
+                            MONEY_OPTS
                           )}
                     </Td>
                   </>
