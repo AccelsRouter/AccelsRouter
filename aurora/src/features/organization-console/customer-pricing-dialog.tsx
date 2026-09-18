@@ -96,6 +96,22 @@ export function CustomerPricingDialog(props: {
 
   const invalid = rows.some((r) => r.token.trim() && !rowValid(r))
 
+  // A specific, per-row reason so the reseller understands WHY a row is blocked
+  // (out of range vs below the model's wholesale floor — including the floor 1.00
+  // case where the platform gave no wholesale discount for that model).
+  const rowError = (r: Row): string => {
+    if (!r.token.trim()) return ''
+    const ratio = Number(r.ratio)
+    if (!twoDecimals(r.ratio) || ratio <= 0 || ratio > 1)
+      return t('Ratio must be within (0, 1].')
+    const floor = ratioForModel(r.token.trim().toLowerCase(), wholesale)
+    if (ratio < floor)
+      return t('Must be ≥ {{floor}} (your wholesale for this model)', {
+        floor: floor.toFixed(2),
+      })
+    return ''
+  }
+
   const update = (i: number, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
 
@@ -123,36 +139,47 @@ export function CustomerPricingDialog(props: {
             <span className='w-28'>{t('Ratio (0-1)')}</span>
             <span className='w-8' />
           </div>
-          {rows.map((r, i) => (
-            <div key={i} className='flex items-center gap-2'>
-              <Input
-                className='flex-1'
-                placeholder='deepseek'
-                value={r.token}
-                onChange={(e) => update(i, { token: e.target.value })}
-              />
-              <Input
-                className='w-28'
-                type='number'
-                min={0}
-                max={1}
-                step='0.05'
-                placeholder='0.6'
-                value={r.ratio}
-                onChange={(e) => update(i, { ratio: e.target.value })}
-              />
-              <Button
-                size='icon'
-                variant='ghost'
-                className='h-8 w-8'
-                onClick={() =>
-                  setRows((prev) => prev.filter((_, idx) => idx !== i))
-                }
-              >
-                <X className='h-4 w-4' />
-              </Button>
-            </div>
-          ))}
+          {rows.map((r, i) => {
+            const err = rowError(r)
+            return (
+              <div key={i} className='flex flex-col gap-1'>
+                <div className='flex items-center gap-2'>
+                  <Input
+                    className='min-w-0 flex-1'
+                    placeholder='deepseek'
+                    value={r.token}
+                    onChange={(e) => update(i, { token: e.target.value })}
+                  />
+                  <Input
+                    className='w-28'
+                    type='number'
+                    min={0}
+                    max={1}
+                    step='0.05'
+                    placeholder='0.6'
+                    value={r.ratio}
+                    onChange={(e) => update(i, { ratio: e.target.value })}
+                    aria-invalid={err ? true : undefined}
+                  />
+                  <Button
+                    size='icon'
+                    variant='ghost'
+                    className='h-8 w-8 shrink-0'
+                    onClick={() =>
+                      setRows((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                  >
+                    <X className='h-4 w-4' />
+                  </Button>
+                </div>
+                {err && (
+                  <span className='text-destructive px-1 text-xs'>
+                    {r.token.trim()}: {err}
+                  </span>
+                )}
+              </div>
+            )
+          })}
           <Button
             size='sm'
             variant='outline'
@@ -162,11 +189,6 @@ export function CustomerPricingDialog(props: {
             <Plus className='h-3.5 w-3.5' />
             {t('Add series')}
           </Button>
-          {invalid && (
-            <p className='text-destructive text-xs'>
-              {t('Ratio must be within (0, 1].')}
-            </p>
-          )}
         </div>
         <DialogFooter className='gap-2'>
           <Button variant='outline' onClick={props.onClose}>
