@@ -196,8 +196,8 @@ export function OrgKeysPanel() {
           </DialogHeader>
 
           {newKey ? (
-            <div className='flex flex-col gap-3'>
-              <div className='border-border/60 bg-muted/30 flex items-center gap-2 rounded-lg border p-2'>
+            <div className='flex min-w-0 flex-col gap-3'>
+              <div className='border-border/60 bg-muted/30 flex min-w-0 items-center gap-2 rounded-lg border p-2'>
                 <code className='min-w-0 flex-1 truncate rounded px-1 py-1 font-mono text-xs'>
                   {newKey}
                 </code>
