@@ -57,23 +57,43 @@ func MarshalRetailDiscounts(m map[string]float64) (string, error) {
 	return string(b), nil
 }
 
-// RetailDiscountFor returns the ratio to apply to a model, matching the longest
-// series token that is a substring of the (lowercased) model name; 1.0 (no
-// discount) when nothing matches.
-func RetailDiscountFor(modelName string, discounts map[string]float64) float64 {
-	if len(discounts) == 0 {
+// discountRatioFor resolves the ratio for a model from a {token -> ratio} map
+// with a fixed precedence: an exact full-model-name key wins over any prefix,
+// and among prefixes the longest (most specific) wins; 1.0 (no discount) when
+// nothing matches. Matching is case-insensitive. Shared by the retail and
+// wholesale sides so both honor the same "exact beats prefix" rule.
+func discountRatioFor(modelName string, ratios map[string]float64) float64 {
+	if len(ratios) == 0 {
 		return 1.0
 	}
 	name := strings.ToLower(modelName)
+	// 1. Exact full-model-name match takes priority over any prefix.
+	if r, ok := ratios[name]; ok {
+		return r
+	}
+	// 2. Otherwise the longest matching prefix wins.
 	best := 1.0
 	bestLen := -1
-	for token, ratio := range discounts {
-		if strings.Contains(name, token) && len(token) > bestLen {
+	for token, ratio := range ratios {
+		if strings.HasPrefix(name, token) && len(token) > bestLen {
 			best = ratio
 			bestLen = len(token)
 		}
 	}
 	return best
+}
+
+// RetailDiscountFor returns the reseller's retail (customer-side) ratio for a
+// model. Exact model name beats prefix; 1.0 when nothing matches.
+func RetailDiscountFor(modelName string, discounts map[string]float64) float64 {
+	return discountRatioFor(modelName, discounts)
+}
+
+// WholesaleRatioFor returns the platform's wholesale (reseller-cost) ratio for a
+// model. Exact model name beats prefix; 1.0 (reseller pays full standard) when
+// nothing matches — an unset wholesale means no discount.
+func WholesaleRatioFor(modelName string, ratios map[string]float64) float64 {
+	return discountRatioFor(modelName, ratios)
 }
 
 // EffectiveWholesaleRatio returns the reseller's wholesale price ratio, clamped
@@ -166,9 +186,9 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	if initialQuota <= 0 {
 		return nil, errors.New("初始划拨额度必须为正")
 	}
-	if reseller.WalletQuota < initialQuota {
-		return nil, errors.New("分销商钱包余额不足")
-	}
+	// Route-2: the initial allocation is a spending-cap grant to the customer, not
+	// a transfer funded from the reseller wallet (that wallet is the reseller's
+	// per-call cost balance), so no reseller-balance precheck is needed.
 	if priceGroup == "" {
 		priceGroup = "default"
 	}
@@ -181,14 +201,14 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 		DB.Delete(&Organization{}, customer.Id)
 		return nil, err
 	}
-	// Fund it (atomic wallet move + ledger). On failure — e.g. a race drained
-	// the reseller wallet after the pre-check — remove the orphan shell + link.
-	if err := TransferOrgCredit(resellerOrgId, customer.Id, initialQuota, operatorId, LedgerTypeAllocate, "initial allocation"); err != nil {
+	// Grant the customer its initial spending cap (+ledger). On failure remove the
+	// orphan shell + link.
+	if err := GrantCustomerQuota(resellerOrgId, customer.Id, initialQuota, operatorId, "initial allocation"); err != nil {
 		DB.Where("customer_org_id = ?", customer.Id).Delete(&ResellerCustomerLink{})
 		DB.Delete(&Organization{}, customer.Id)
 		return nil, err
 	}
-	// Re-fetch so the returned org reflects the funded wallet (TransferOrgCredit
+	// Re-fetch so the returned org reflects the granted cap (GrantCustomerQuota
 	// updated the DB row, not the in-memory struct).
 	if fresh, err := GetOrganizationById(customer.Id); err == nil && fresh != nil {
 		customer = fresh

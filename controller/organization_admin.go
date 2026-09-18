@@ -90,12 +90,13 @@ func AdminCreateOrganization(c *gin.Context) {
 }
 
 type adminUpdateOrgRequest struct {
-	Name           *string   `json:"name"`
-	PriceGroup     *string   `json:"price_group"`
-	Status         *string   `json:"status"`
-	Remark         *string   `json:"remark"`
-	WholesaleRatio *float64  `json:"wholesale_ratio"`
-	AllowedModels  *[]string `json:"allowed_models"`
+	Name            *string             `json:"name"`
+	PriceGroup      *string             `json:"price_group"`
+	Status          *string             `json:"status"`
+	Remark          *string             `json:"remark"`
+	WholesaleRatio  *float64            `json:"wholesale_ratio"`
+	WholesaleRatios *map[string]float64 `json:"wholesale_ratios"`
+	AllowedModels   *[]string           `json:"allowed_models"`
 }
 
 // AdminUpdateOrganization — PUT /api/admin/organizations/:id
@@ -146,6 +147,26 @@ func AdminUpdateOrganization(c *gin.Context) {
 			return
 		}
 		fields["wholesale_ratio"] = *req.WholesaleRatio
+	}
+	if req.WholesaleRatios != nil {
+		// Per-model wholesale (route-2): the reseller's per-model cost basis. Each
+		// ratio (0,1], ≤2 decimals; empty map clears it (= no discount = 1.0).
+		for token, ratio := range *req.WholesaleRatios {
+			if ratio <= 0 || ratio > 1 {
+				common.ApiErrorMsg(c, "批发折必须在 (0,1] 之间: "+token)
+				return
+			}
+			if !ratioAtMost2Decimals(ratio) {
+				common.ApiErrorMsg(c, "批发折最多保留两位小数: "+token)
+				return
+			}
+		}
+		stored, mErr := model.MarshalRetailDiscounts(*req.WholesaleRatios)
+		if mErr != nil {
+			common.ApiError(c, mErr)
+			return
+		}
+		fields["wholesale_ratios"] = stored
 	}
 	if req.AllowedModels != nil {
 		// The reseller's offerable model set (names only). Empty = unrestricted.

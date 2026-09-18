@@ -148,10 +148,11 @@ func SetMyCustomerPricing(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	// A customer's retail ratio must be strictly greater than the reseller's own
-	// wholesale ratio (the reseller must not resell below its cost), have at most
-	// two decimals, and stay within (0,1].
-	floor := reseller.EffectiveWholesaleRatio()
+	// A customer's per-model retail ratio must be at least the reseller's own
+	// per-model wholesale ratio for that model (the reseller must not resell below
+	// its cost — equal is allowed = zero margin), have at most two decimals, and
+	// stay within (0,1]. The floor is resolved per model (exact name beats prefix).
+	wholesale := model.ParseRetailDiscounts(reseller.WholesaleRatios)
 	for token, ratio := range req.Discounts {
 		if ratio <= 0 || ratio > 1 {
 			common.ApiErrorMsg(c, "折扣比例必须在 (0,1] 之间: "+token)
@@ -161,8 +162,9 @@ func SetMyCustomerPricing(c *gin.Context) {
 			common.ApiErrorMsg(c, "折扣最多保留两位小数: "+token)
 			return
 		}
-		if ratio <= floor {
-			common.ApiErrorMsg(c, fmt.Sprintf("客户折扣必须大于你的批发折 %.2f: %s", floor, token))
+		floor := model.WholesaleRatioFor(token, wholesale)
+		if ratio < floor {
+			common.ApiErrorMsg(c, fmt.Sprintf("客户折扣不能低于该模型的批发折 %.2f: %s", floor, token))
 			return
 		}
 	}
@@ -451,14 +453,15 @@ func GetMyResellerOrg(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"id":              reseller.Id,
-		"name":            reseller.Name,
-		"type":            reseller.Type,
-		"status":          reseller.Status,
-		"wallet_quota":    reseller.WalletQuota,
-		"price_group":     reseller.PriceGroup,
-		"wholesale_ratio": reseller.WholesaleRatio,
-		"is_owner":        true,
+		"id":               reseller.Id,
+		"name":             reseller.Name,
+		"type":             reseller.Type,
+		"status":           reseller.Status,
+		"wallet_quota":     reseller.WalletQuota,
+		"price_group":      reseller.PriceGroup,
+		"wholesale_ratio":  reseller.WholesaleRatio,
+		"wholesale_ratios": model.ParseRetailDiscounts(reseller.WholesaleRatios),
+		"is_owner":         true,
 	})
 }
 
@@ -597,12 +600,11 @@ func PurchaseMyResellerCredit(c *gin.Context) {
 		common.ApiErrorMsg(c, "单次购买额度超过上限")
 		return
 	}
-	// cost (personal quota spent) = credit × wholesale ratio, rounded via the
-	// centralized quota rounding helper. ratio ≤ 1 ⇒ cost ≤ credit.
-	cost := common.QuotaRound(float64(req.Quota) * reseller.EffectiveWholesaleRatio())
-	if cost <= 0 {
-		cost = req.Quota
-	}
+	// Route-2: the reseller tops up its cost balance 1:1 (personal quota spent =
+	// credit bought). The wholesale discount is no longer realized at top-up — it
+	// is applied per call, per model, against the reseller wallet (see
+	// service/org_funding.go). ratio-at-purchase is gone.
+	cost := req.Quota
 	tradeNo := "rspur-" + common.GetUUID()
 	if err := model.PurchaseResellerCredit(reseller.Id, c.GetInt("id"), req.Quota, cost, tradeNo, "reseller wallet purchase"); err != nil {
 		common.ApiErrorMsg(c, err.Error())

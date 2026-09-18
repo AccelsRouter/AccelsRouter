@@ -107,9 +107,9 @@ func AdminListOrgApplications(c *gin.Context) {
 }
 
 type reviewApplicationRequest struct {
-	PriceGroup     string   `json:"price_group"`
-	WholesaleRatio *float64 `json:"wholesale_ratio"`
-	Note           string   `json:"note"`
+	PriceGroup      string             `json:"price_group"`
+	WholesaleRatios map[string]float64 `json:"wholesale_ratios"`
+	Note            string             `json:"note"`
 }
 
 // AdminApproveOrgApplication — POST /api/admin/organizations/applications/:id/approve
@@ -117,29 +117,25 @@ func AdminApproveOrgApplication(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var req reviewApplicationRequest
 	_ = c.ShouldBindJSON(&req)
-	// Approving a reseller REQUIRES a wholesale ratio (its cost basis, and the
-	// floor every customer discount must beat). Validate before creating the org.
 	app, aerr := model.GetOrgApplicationById(id)
 	if aerr != nil {
 		common.ApiError(c, aerr)
 		return
 	}
-	if app != nil && app.Type == model.OrgTypeReseller {
-		if req.WholesaleRatio == nil {
-			common.ApiErrorMsg(c, "审核分销商必须设置批发折")
+	// Per-model wholesale is optional now (unset = no discount = reseller pays full
+	// standard, per call). Validate any provided ratios: (0,1], ≤2 decimals.
+	for token, ratio := range req.WholesaleRatios {
+		if ratio <= 0 || ratio > 1 {
+			common.ApiErrorMsg(c, "批发折必须在 (0,1] 之间: "+token)
 			return
 		}
-		if *req.WholesaleRatio <= 0 || *req.WholesaleRatio > 1 {
-			common.ApiErrorMsg(c, "批发折必须在 (0,1] 之间")
-			return
-		}
-		if !ratioAtMost2Decimals(*req.WholesaleRatio) {
-			common.ApiErrorMsg(c, "批发折最多保留两位小数")
+		if !ratioAtMost2Decimals(ratio) {
+			common.ApiErrorMsg(c, "批发折最多保留两位小数: "+token)
 			return
 		}
 	}
 	// A reseller org is pinned to the default price group; its pricing is driven
-	// by the wholesale ratio, not a base-rate group.
+	// by the per-model wholesale ratios, not a base-rate group.
 	priceGroup := req.PriceGroup
 	if app != nil && app.Type == model.OrgTypeReseller {
 		priceGroup = "default"
@@ -149,13 +145,18 @@ func AdminApproveOrgApplication(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	// Persist the wholesale ratio on the freshly created org (bounded above).
-	if req.WholesaleRatio != nil && org != nil {
-		if err := model.UpdateOrganizationFields(org.Id, map[string]interface{}{"wholesale_ratio": *req.WholesaleRatio}); err != nil {
+	// Persist the per-model wholesale map on the freshly created reseller org.
+	if len(req.WholesaleRatios) > 0 && org != nil {
+		stored, mErr := model.MarshalRetailDiscounts(req.WholesaleRatios)
+		if mErr != nil {
+			common.ApiError(c, mErr)
+			return
+		}
+		if err := model.UpdateOrganizationFields(org.Id, map[string]interface{}{"wholesale_ratios": stored}); err != nil {
 			common.ApiError(c, err)
 			return
 		}
-		org.WholesaleRatio = *req.WholesaleRatio
+		org.WholesaleRatios = stored
 	}
 	common.ApiSuccess(c, org)
 }

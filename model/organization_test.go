@@ -288,22 +288,23 @@ func TestResellerCustomers(t *testing.T) {
 	_, err := CreateResellerCustomer(enterprise.Id, "cust-x", "default", 100, 1)
 	require.Error(t, err)
 
-	// Initial allocation must be positive and within the reseller's wallet.
+	// Initial allocation must be positive. Route-2: it's a spending-cap grant, no
+	// longer bounded by the reseller wallet, so an "over-wallet" amount succeeds.
 	_, err = CreateResellerCustomer(reseller.Id, "cust-x", "retail", 0, 1)
 	require.Error(t, err)
-	_, err = CreateResellerCustomer(reseller.Id, "cust-x", "retail", 5000, 1)
-	require.Error(t, err, "over-wallet allocation must fail")
 
-	// Happy path: customer org created, funded, relationship established.
+	// Happy path: customer org created, granted its cap, relationship established.
 	cust, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", 400, 1)
 	require.NoError(t, err)
 	require.NotNil(t, cust)
 	assert.Equal(t, OrgTypeEnterprise, cust.Type)
 	assert.Equal(t, "retail", cust.PriceGroup)
-	assert.Equal(t, 400, cust.WalletQuota, "customer funded with the initial allocation")
+	assert.Equal(t, 400, cust.WalletQuota, "customer granted the initial allocation cap")
 
+	// Route-2: allocation is a free grant — the reseller wallet (its per-call cost
+	// balance) is NOT debited by allocating to a customer.
 	r, _ := GetOrganizationById(reseller.Id)
-	assert.Equal(t, 600, r.WalletQuota, "reseller wallet debited")
+	assert.Equal(t, 1000, r.WalletQuota, "reseller wallet untouched by allocation")
 
 	// The customer shows up in the reseller's customer list with net allocation.
 	customers, err := ListResellerCustomers(reseller.Id)
