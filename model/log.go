@@ -87,6 +87,10 @@ type Log struct {
 	// shown as the discount %. Distinct from RetailQuota/Quota, which fluctuates
 	// row to row from integer truncation at tiny quotas. Computed, non-persisted.
 	RetailRatio float64 `json:"retail_ratio,omitempty" gorm:"-"`
+	// CustomerName is the name of the customer org this row belongs to. Populated
+	// only in a reseller's AGGREGATED call log (ListResellerLogs), where rows span
+	// multiple customers; empty otherwise. Computed, non-persisted.
+	CustomerName string `json:"customer_name,omitempty" gorm:"-"`
 }
 
 // don't use iota, avoid change log type value

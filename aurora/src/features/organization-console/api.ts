@@ -183,6 +183,9 @@ export type OrgLog = {
   // Configured discount ratio for the row's model (0,1); shown as the discount %.
   retail_ratio?: number
   content: string
+  // Customer org name — set only in a reseller's aggregated call log (rows span
+  // multiple customers); empty in single-org views.
+  customer_name?: string
 }
 
 function orgLogsQuery(page: number, pageSize: number): string {

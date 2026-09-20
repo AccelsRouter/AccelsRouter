@@ -52,6 +52,9 @@ export function CallRecords({
   // Show the discounted (actually-charged) price column only when the reseller
   // has set a discount for this customer.
   const showRetail = items.some((l) => l.retail_quota != null)
+  // A reseller's aggregated log spans multiple customers; show which customer
+  // each row belongs to. Empty in single-org (customer/enterprise) views.
+  const showCustomer = items.some((l) => l.customer_name)
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -96,6 +99,7 @@ export function CallRecords({
           <thead className='bg-muted/40 text-muted-foreground text-xs'>
             <tr>
               <Th>{t('Time')}</Th>
+              {showCustomer && <Th>{t('Customer')}</Th>}
               <Th>{t('Model')}</Th>
               <Th>{t('Key')}</Th>
               <Th>{t('Status')}</Th>
@@ -117,6 +121,9 @@ export function CallRecords({
               return (
               <tr key={l.id} className='hover:bg-muted/30'>
                 <Td className='whitespace-nowrap'>{fmtTime(l.created_at)}</Td>
+                {showCustomer && (
+                  <Td className='whitespace-nowrap'>{l.customer_name || '-'}</Td>
+                )}
                 <Td>{l.model_name || '-'}</Td>
                 <Td className='text-muted-foreground'>{l.token_name || '-'}</Td>
                 <Td>

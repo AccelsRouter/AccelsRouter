@@ -177,15 +177,22 @@ func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*
 		return nil, 0, err
 	}
 	formatUserLogs(logs, startIdx)
-	// Overlay each row with the discount of the customer that owns its token.
+	// Per customer: the retail discount (for the overlay) and the org name (for
+	// the aggregated call log's customer column).
 	discountsByOrg := map[int]map[string]float64{}
+	nameByOrg := map[int]string{}
 	for _, l := range links {
-		if org, err := GetOrganizationById(l.CustomerOrgId); err == nil && org != nil && org.RetailDiscounts != "" {
-			discountsByOrg[l.CustomerOrgId] = ParseRetailDiscounts(org.RetailDiscounts)
+		if org, err := GetOrganizationById(l.CustomerOrgId); err == nil && org != nil {
+			nameByOrg[l.CustomerOrgId] = org.Name
+			if org.RetailDiscounts != "" {
+				discountsByOrg[l.CustomerOrgId] = ParseRetailDiscounts(org.RetailDiscounts)
+			}
 		}
 	}
 	for _, lg := range logs {
-		d := discountsByOrg[tokenToOrg[lg.TokenId]]
+		orgId := tokenToOrg[lg.TokenId]
+		lg.CustomerName = nameByOrg[orgId]
+		d := discountsByOrg[orgId]
 		if len(d) == 0 {
 			continue
 		}
