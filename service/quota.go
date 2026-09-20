@@ -469,6 +469,15 @@ func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, pre
 }
 
 func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int) {
+	// Org-billed requests (reseller customers, org members) are paid from the
+	// organization wallet, not the caller's personal quota — which is typically 0
+	// and would otherwise trigger a bogus "your quota is almost used up ($0)"
+	// reminder with a self top-up link the user can't act on. The org wallet has
+	// its own insufficient-balance alert (notifyOrgOwnerBudget); skip the personal
+	// reminder here.
+	if relayInfo == nil || relayInfo.BillingSource == BillingSourceOrgWallet {
+		return
+	}
 	gopool.Go(func() {
 		userSetting := relayInfo.UserSetting
 		threshold := common.QuotaRemindThreshold
