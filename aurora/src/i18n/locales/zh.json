@@ -97,6 +97,8 @@
     "{{n}} records": "{{n}} 条记录",
     "Amount to buy (USD)": "购买金额（美元）",
     "credit units": "额度单位",
+    "Tokens (in / out)": "Token（输入/输出）",
+    "Cost / Charged": "费用/实付",
     "Must be ≥ {{floor}} (your wholesale for this model)": "不能低于 {{floor}}（你对该模型的批发折）",
     "Enterprise & resellers": "企业 & 分销商",
     "Model (name or prefix)": "模型（名称或前缀）",

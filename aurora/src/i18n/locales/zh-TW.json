@@ -96,6 +96,8 @@
     "{{n}} records": "{{n}} 筆記錄",
     "Amount to buy (USD)": "購買金額（美元）",
     "credit units": "額度單位",
+    "Tokens (in / out)": "Token（輸入/輸出）",
+    "Cost / Charged": "費用/實付",
     "Must be ≥ {{floor}} (your wholesale for this model)": "不能低於 {{floor}}（你對該模型的批發折）",
     "Enterprise & resellers": "企業 & 分銷商",
     "Model (name or prefix)": "模型（名稱或前綴）",

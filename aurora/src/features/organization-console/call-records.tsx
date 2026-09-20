@@ -103,15 +103,10 @@ export function CallRecords({
               <Th>{t('Model')}</Th>
               <Th>{t('Key')}</Th>
               <Th>{t('Status')}</Th>
-              <Th className='text-right'>{t('Input')}</Th>
-              <Th className='text-right'>{t('Output')}</Th>
-              <Th className='text-right'>{t('Cost')}</Th>
-              {showRetail && (
-                <>
-                  <Th className='text-right'>{t('Discount')}</Th>
-                  <Th className='text-right'>{t('Charged')}</Th>
-                </>
-              )}
+              <Th className='text-right'>{t('Tokens (in / out)')}</Th>
+              <Th className='text-right'>
+                {showRetail ? t('Cost / Charged') : t('Cost')}
+              </Th>
               <Th>{t('Detail')}</Th>
             </tr>
           </thead>
@@ -120,7 +115,7 @@ export function CallRecords({
               const isError = l.type === LOG_TYPE_ERROR
               return (
               <tr key={l.id} className='hover:bg-muted/30'>
-                <Td className='whitespace-nowrap'>{fmtTime(l.created_at)}</Td>
+                <Td className='text-xs'>{fmtTime(l.created_at)}</Td>
                 {showCustomer && (
                   <Td className='whitespace-nowrap'>{l.customer_name || '-'}</Td>
                 )}
@@ -137,34 +132,39 @@ export function CallRecords({
                     </span>
                   )}
                 </Td>
-                <Td className='text-right tabular-nums'>{l.prompt_tokens}</Td>
-                <Td className='text-right tabular-nums'>
-                  {l.completion_tokens}
+                {/* Tokens merged into one column: input / output. */}
+                <Td className='text-right tabular-nums whitespace-nowrap'>
+                  {isError
+                    ? '-'
+                    : `${l.prompt_tokens} / ${l.completion_tokens}`}
                 </Td>
-                <Td className='text-right tabular-nums'>
-                  {isError ? '-' : formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
+                {/* Price merged: charged (bold) + standard·discount% as subtext. */}
+                <Td className='text-right tabular-nums whitespace-nowrap'>
+                  {isError ? (
+                    '-'
+                  ) : showRetail ? (
+                    <div className='flex flex-col items-end'>
+                      <span className='font-medium'>
+                        {formatQuotaWithCurrency(
+                          l.retail_quota ?? l.quota,
+                          MONEY_OPTS
+                        )}
+                      </span>
+                      <span className='text-muted-foreground text-xs'>
+                        {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
+                        {l.retail_ratio != null
+                          ? ` · ${Math.round(l.retail_ratio * 100)}%`
+                          : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    formatQuotaWithCurrency(l.quota, MONEY_OPTS)
+                  )}
                 </Td>
-                {showRetail && (
-                  <>
-                    <Td className='text-muted-foreground text-right tabular-nums'>
-                      {isError || l.retail_ratio == null
-                        ? '-'
-                        : `${Math.round(l.retail_ratio * 100)}%`}
-                    </Td>
-                    <Td className='text-right font-medium tabular-nums'>
-                      {isError
-                        ? '-'
-                        : formatQuotaWithCurrency(
-                            l.retail_quota ?? l.quota,
-                            MONEY_OPTS
-                          )}
-                    </Td>
-                  </>
-                )}
                 <Td className='text-muted-foreground text-xs'>
                   {isError && l.content ? (
                     <span
-                      className='inline-block max-w-[320px] truncate align-middle'
+                      className='inline-block max-w-[240px] truncate align-middle'
                       title={l.content}
                     >
                       {l.content}
