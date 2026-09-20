@@ -100,6 +100,9 @@ function PLTable(props: {
 export function ResellerUsageReport(props: {
   report: OrgUsageReport | undefined
   isLoading: boolean
+  // "Platform discount" (standard − reseller cost) is the platform's own metric;
+  // show it only to platform admins, not to the reseller itself.
+  showPlatformDiscount?: boolean
 }) {
   const { t } = useTranslation()
   if (props.isLoading) {
@@ -125,13 +128,19 @@ export function ResellerUsageReport(props: {
 
   return (
     <div className='flex flex-col gap-5'>
-      <div className='grid grid-cols-2 gap-3 lg:grid-cols-5'>
+      <div
+        className={`grid grid-cols-2 gap-3 ${
+          props.showPlatformDiscount ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
+        }`}
+      >
         <StatCard label={t('Standard price')} value={money(standard)} />
-        <StatCard
-          label={t('Platform discount')}
-          value={money(platformGiveback)}
-          hint={t('Standard − my cost')}
-        />
+        {props.showPlatformDiscount && (
+          <StatCard
+            label={t('Platform discount')}
+            value={money(platformGiveback)}
+            hint={t('Standard − my cost')}
+          />
+        )}
         <StatCard label={t('My cost')} value={money(cost)} />
         <StatCard label={t('Customer pays')} value={money(retail)} />
         <StatCard

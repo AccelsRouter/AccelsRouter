@@ -57,6 +57,7 @@ import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { exportAdminOrgLogs } from '@/features/organization-console/api'
 import { CustomerFilteredCallRecords } from '@/features/organization-console/customer-filtered-call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
+import { ResellerUsageReport } from '@/features/reseller-console/usage-report'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
@@ -1309,7 +1310,15 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
           </TabsList>
           <TabsContent value='report' className='pt-3'>
             <div className='max-h-[55vh] overflow-auto'>
-              <UsageReport report={data} isLoading={isLoading} />
+              {isReseller ? (
+                <ResellerUsageReport
+                  report={data}
+                  isLoading={isLoading}
+                  showPlatformDiscount
+                />
+              ) : (
+                <UsageReport report={data} isLoading={isLoading} />
+              )}
             </div>
           </TabsContent>
           <TabsContent value='records' className='pt-3'>
