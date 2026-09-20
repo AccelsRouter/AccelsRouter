@@ -295,8 +295,8 @@ export function Reconciliation() {
                   </TabsTrigger>
                   <TabsTrigger value='group'>{t('By Group')}</TabsTrigger>
                   <TabsTrigger value='user'>{t('By Member')}</TabsTrigger>
-                  <TabsTrigger value='customer'>
-                    {t('Reseller customers')}
+                  <TabsTrigger value='reseller'>
+                    {t('Resellers')}
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value='model' className='pt-3'>
@@ -311,8 +311,8 @@ export function Reconciliation() {
                 <TabsContent value='user' className='pt-3'>
                   <DimTable keyLabel={t('Member')} rows={data.by_user} />
                 </TabsContent>
-                <TabsContent value='customer' className='pt-3'>
-                  {data.by_customer.length === 0 ? (
+                <TabsContent value='reseller' className='pt-3'>
+                  {data.by_reseller.length === 0 ? (
                     <p className='text-muted-foreground py-8 text-center text-sm'>
                       {t('No data.')}
                     </p>
@@ -322,7 +322,7 @@ export function Reconciliation() {
                         <thead className='bg-muted/40 text-muted-foreground sticky top-0 text-xs'>
                           <tr>
                             <th className='px-3 py-2 text-left font-medium'>
-                              {t('Customer')}
+                              {t('Distributor')}
                             </th>
                             <th className='px-3 py-2 text-right font-medium'>
                               {t('Standard')}
@@ -339,7 +339,7 @@ export function Reconciliation() {
                           </tr>
                         </thead>
                         <tbody className='divide-border/60 divide-y'>
-                          {data.by_customer.map((r) => (
+                          {data.by_reseller.map((r) => (
                             <tr key={r.org_id} className='hover:bg-muted/30'>
                               <td className='px-3 py-2 font-medium'>
                                 {r.name}

@@ -25,7 +25,7 @@ export type ReconRow = {
   tokens: number
 }
 
-export type ReconCustomerRow = {
+export type ReconResellerRow = {
   org_id: number
   name: string
   standard_quota: number
@@ -58,7 +58,7 @@ export type ReconReport = {
   by_channel: ReconRow[]
   by_group: ReconRow[]
   by_user: ReconRow[]
-  by_customer: ReconCustomerRow[]
+  by_reseller: ReconResellerRow[]
   series: ReconSeriesPoint[]
 }
 

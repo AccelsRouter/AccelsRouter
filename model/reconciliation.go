@@ -9,6 +9,7 @@
 package model
 
 import (
+	"sort"
 	"strconv"
 	"time"
 )
@@ -21,8 +22,10 @@ type ReconRow struct {
 	Tokens   int64  `json:"tokens"`
 }
 
-// ReconCustomerRow is one reseller customer's discount reconciliation.
-type ReconCustomerRow struct {
+// ReconResellerRow is one reseller's discount reconciliation, aggregated over
+// all of that reseller's customers (the admin view groups by reseller, not by
+// individual customer).
+type ReconResellerRow struct {
 	OrgId         int    `json:"org_id"`
 	Name          string `json:"name"`
 	StandardQuota int64  `json:"standard_quota"`
@@ -58,7 +61,7 @@ type ReconReport struct {
 	ByChannel  []ReconRow         `json:"by_channel"`
 	ByGroup    []ReconRow         `json:"by_group"`
 	ByUser     []ReconRow         `json:"by_user"`
-	ByCustomer []ReconCustomerRow `json:"by_customer"`
+	ByReseller []ReconResellerRow `json:"by_reseller"`
 	Series     []ReconSeriesPoint `json:"series"`
 }
 
@@ -193,59 +196,66 @@ func reconSeries(from, to int64, granularity string) ([]ReconSeriesPoint, error)
 	return out, nil
 }
 
-// reconCustomerDiscounts computes the reseller retail let-give per customer org
-// over the window (standard vs discounted charge). Iterates the customer orgs
-// only (bounded set), reusing per-org usage.
-func reconCustomerDiscounts(from, to int64) ([]ReconCustomerRow, int64, int64, error) {
-	ids, err := customerOrgIds()
-	if err != nil {
+// reconResellerDiscounts computes the reseller retail let-give aggregated per
+// RESELLER over the window (standard vs discounted charge), summed across each
+// reseller's customer orgs. Reuses per-org usage for the bounded customer set.
+func reconResellerDiscounts(from, to int64) ([]ReconResellerRow, int64, int64, error) {
+	var links []ResellerCustomerLink
+	if err := DB.Find(&links).Error; err != nil {
 		return nil, 0, 0, err
 	}
-	rows := make([]ReconCustomerRow, 0, len(ids))
-	var totalDiscount, totalStandard int64
-	for _, orgId := range ids {
-		report, err := GetOrgUsage(orgId, from, to)
+	type agg struct{ std, charged, req int64 }
+	byReseller := map[int]*agg{}
+	for _, link := range links {
+		report, err := GetOrgUsage(link.CustomerOrgId, from, to)
 		if err != nil || report == nil {
 			continue
 		}
 		std := report.TotalQuota
 		charged := std
-		org, err := GetOrganizationById(orgId)
-		name := "#" + strconv.Itoa(orgId)
-		if err == nil && org != nil {
-			if org.Name != "" {
-				name = org.Name
-			}
-			if org.RetailDiscounts != "" {
-				report.ApplyRetailDiscounts(ParseRetailDiscounts(org.RetailDiscounts))
-				charged = report.TotalRetailQuota
-			}
+		if org, err := GetOrganizationById(link.CustomerOrgId); err == nil && org != nil && org.RetailDiscounts != "" {
+			report.ApplyRetailDiscounts(ParseRetailDiscounts(org.RetailDiscounts))
+			charged = report.TotalRetailQuota
 		}
-		discount := std - charged
+		a := byReseller[link.ResellerOrgId]
+		if a == nil {
+			a = &agg{}
+			byReseller[link.ResellerOrgId] = a
+		}
+		a.std += std
+		a.charged += charged
+		a.req += report.TotalRequests
+	}
+	rows := make([]ReconResellerRow, 0, len(byReseller))
+	var totalDiscount, totalStandard int64
+	for resellerId, a := range byReseller {
+		discount := a.std - a.charged
 		totalDiscount += discount
-		totalStandard += std
-		if report.TotalRequests == 0 && std == 0 {
+		totalStandard += a.std
+		if a.req == 0 && a.std == 0 {
 			continue
 		}
-		rows = append(rows, ReconCustomerRow{
-			OrgId:         orgId,
+		name := "#" + strconv.Itoa(resellerId)
+		if org, err := GetOrganizationById(resellerId); err == nil && org != nil && org.Name != "" {
+			name = org.Name
+		}
+		rows = append(rows, ReconResellerRow{
+			OrgId:         resellerId,
 			Name:          name,
-			StandardQuota: std,
-			ChargedQuota:  charged,
+			StandardQuota: a.std,
+			ChargedQuota:  a.charged,
 			DiscountQuota: discount,
-			Requests:      report.TotalRequests,
+			Requests:      a.req,
 		})
 	}
+	// Deterministic order: largest standard consumption first, then name.
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].StandardQuota != rows[j].StandardQuota {
+			return rows[i].StandardQuota > rows[j].StandardQuota
+		}
+		return rows[i].Name < rows[j].Name
+	})
 	return rows, totalDiscount, totalStandard, nil
-}
-
-// customerOrgIds returns the reseller-provisioned customer org ids.
-func customerOrgIds() ([]int, error) {
-	var ids []int
-	if err := DB.Model(&ResellerCustomerLink{}).Pluck("customer_org_id", &ids).Error; err != nil {
-		return nil, err
-	}
-	return ids, nil
 }
 
 // GetReconciliation builds the full admin reconciliation report.
@@ -282,11 +292,11 @@ func GetReconciliation(from, to int64, granularity string) (*ReconReport, error)
 	}
 	report.Series = series
 
-	customers, totalDiscount, _, err := reconCustomerDiscounts(from, to)
+	resellers, totalDiscount, _, err := reconResellerDiscounts(from, to)
 	if err != nil {
 		return nil, err
 	}
-	report.ByCustomer = customers
+	report.ByReseller = resellers
 
 	standard, requests, tokens, channels, err := reconTotals(from, to)
 	if err != nil {
