@@ -98,6 +98,7 @@ export function CallRecords({
               <Th>{t('Time')}</Th>
               <Th>{t('Model')}</Th>
               <Th>{t('Key')}</Th>
+              <Th>{t('Status')}</Th>
               <Th className='text-right'>{t('Input')}</Th>
               <Th className='text-right'>{t('Output')}</Th>
               <Th className='text-right'>{t('Cost')}</Th>
@@ -107,6 +108,7 @@ export function CallRecords({
                   <Th className='text-right'>{t('Charged')}</Th>
                 </>
               )}
+              <Th>{t('Detail')}</Th>
             </tr>
           </thead>
           <tbody className='divide-border/60 divide-y'>
@@ -115,27 +117,19 @@ export function CallRecords({
               return (
               <tr key={l.id} className='hover:bg-muted/30'>
                 <Td className='whitespace-nowrap'>{fmtTime(l.created_at)}</Td>
-                <Td>
-                  <div className='flex flex-col gap-0.5'>
-                    <div className='flex items-center gap-2'>
-                      <span>{l.model_name || '-'}</span>
-                      {isError && (
-                        <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs'>
-                          {t('Failed')}
-                        </span>
-                      )}
-                    </div>
-                    {isError && l.content && (
-                      <span
-                        className='text-destructive/80 max-w-[320px] text-xs break-words'
-                        title={l.content}
-                      >
-                        {l.content}
-                      </span>
-                    )}
-                  </div>
-                </Td>
+                <Td>{l.model_name || '-'}</Td>
                 <Td className='text-muted-foreground'>{l.token_name || '-'}</Td>
+                <Td>
+                  {isError ? (
+                    <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs whitespace-nowrap'>
+                      {t('Failed')}
+                    </span>
+                  ) : (
+                    <span className='rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs whitespace-nowrap text-emerald-600 dark:text-emerald-400'>
+                      {t('Success')}
+                    </span>
+                  )}
+                </Td>
                 <Td className='text-right tabular-nums'>{l.prompt_tokens}</Td>
                 <Td className='text-right tabular-nums'>
                   {l.completion_tokens}
@@ -160,6 +154,18 @@ export function CallRecords({
                     </Td>
                   </>
                 )}
+                <Td className='text-muted-foreground text-xs'>
+                  {isError && l.content ? (
+                    <span
+                      className='inline-block max-w-[320px] truncate align-middle'
+                      title={l.content}
+                    >
+                      {l.content}
+                    </span>
+                  ) : (
+                    '-'
+                  )}
+                </Td>
               </tr>
               )
             })}
