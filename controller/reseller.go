@@ -119,6 +119,27 @@ func GetMyCustomerUsage(c *gin.Context) {
 	common.ApiSuccess(c, report)
 }
 
+// GetMyResellerUsage — GET /api/organization/reseller/usage
+// The reseller's aggregated usage across ALL its own customers (per-customer in
+// ByWorkspace, merged by model/member), with each customer's retail overlay.
+// callerReseller scopes it to the caller's own reseller org.
+func GetMyResellerUsage(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	report, err := model.GetResellerUsage(reseller.Id, from, to)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, report)
+}
+
 // ListMyResellerLogs — GET /api/organization/reseller/logs
 // The reseller's aggregated call records across all its customers, or scoped to
 // one customer when customer_id is a valid customer of it.

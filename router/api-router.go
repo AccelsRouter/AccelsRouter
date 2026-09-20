@@ -228,6 +228,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.GET("/customers", controller.ListMyCustomers)
 			orgRoute.POST("/customers", middleware.CriticalRateLimit(), controller.CreateMyCustomer)
 			orgRoute.GET("/customers/:id/usage", controller.GetMyCustomerUsage)
+			orgRoute.GET("/reseller/usage", controller.GetMyResellerUsage)
 			orgRoute.GET("/reseller/logs", controller.ListMyResellerLogs)
 			orgRoute.GET("/reseller/logs/export", controller.ExportMyResellerLogs)
 			// Member-scoped org API keys (any active member): keys bound to the

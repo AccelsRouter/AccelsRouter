@@ -645,6 +645,18 @@ export async function getOrgUsage(
   return unwrap(res, 'Failed to load usage')
 }
 
+// A reseller's aggregated usage across its own customers (per-customer +
+// merged by model/member).
+export async function getResellerUsage(
+  from?: number,
+  to?: number
+): Promise<OrgUsageReport> {
+  const res = await api.get<ApiResp<OrgUsageReport>>(
+    `/api/organization/reseller/usage${usageRangeQuery(from, to)}`
+  )
+  return unwrap(res, 'Failed to load usage')
+}
+
 // Downloads the usage report as CSV via the Bearer-authenticated api client
 // (cookie session was removed, so a plain anchor would not authenticate),
 // then triggers a browser download.
