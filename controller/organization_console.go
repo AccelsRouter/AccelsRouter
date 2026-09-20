@@ -219,7 +219,7 @@ func ExportMyOrgLogs(c *gin.Context) {
 	if !ok {
 		return
 	}
-	writeOrgLogsCSV(c, org.Id, org.Name, from, to)
+	writeOrgLogsCSV(c, org.Id, 0, org.Name, from, to)
 }
 
 func ListMyOrgLedger(c *gin.Context) {

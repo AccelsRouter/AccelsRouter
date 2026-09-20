@@ -55,7 +55,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { exportAdminOrgLogs } from '@/features/organization-console/api'
-import { CallRecords } from '@/features/organization-console/call-records'
+import { CustomerFilteredCallRecords } from '@/features/organization-console/customer-filtered-call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
@@ -64,6 +64,7 @@ import dayjs from '@/lib/dayjs'
 import {
   addSsoDomain,
   adminListOrgAudit,
+  adminListOrgCustomers,
   adminListOrgLogs,
   createOrganization,
   creditOrganization,
@@ -1261,6 +1262,14 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
     placeholderData: keepPreviousData,
   })
 
+  const isReseller = org?.type === 'reseller'
+  const { data: customers } = useQuery({
+    queryKey: ['admin-org-customers', org?.id],
+    queryFn: () => adminListOrgCustomers(org!.id),
+    enabled: !!org && isReseller,
+    staleTime: 60_000,
+  })
+
   return (
     <Dialog
       open={!!org}
@@ -1295,12 +1304,15 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
           <TabsContent value='records' className='pt-3'>
             {org && (
               <div className='max-h-[55vh] overflow-auto'>
-                <CallRecords
-                  fetchLogs={(p) =>
-                    adminListOrgLogs({ id: org.id, from, to, ...p })
+                <CustomerFilteredCallRecords
+                  customers={customers ?? []}
+                  fetchLogs={(customerId, p) =>
+                    adminListOrgLogs({ id: org.id, from, to, customerId, ...p })
                   }
-                  queryKey={`admin-org-logs-${org.id}-${from}-${to}`}
-                  onExport={() => exportAdminOrgLogs(org.id, from, to)}
+                  onExport={(customerId) =>
+                    exportAdminOrgLogs(org.id, from, to, customerId)
+                  }
+                  queryKeyBase={`admin-org-logs-${org.id}-${from}-${to}`}
                 />
               </div>
             )}

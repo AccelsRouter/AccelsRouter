@@ -706,12 +706,43 @@ export async function exportMyOrgLogs(
 export async function exportAdminOrgLogs(
   orgId: number,
   from?: number,
-  to?: number
+  to?: number,
+  customerId?: number
 ): Promise<void> {
-  await downloadCsv(
-    `/api/admin/organizations/${orgId}/logs/export${usageRangeQuery(from, to)}`,
-    `call_records_${orgId}_${Date.now()}.csv`
+  let url = `/api/admin/organizations/${orgId}/logs/export${usageRangeQuery(from, to)}`
+  if (customerId) url += `${url.includes('?') ? '&' : '?'}customer_id=${customerId}`
+  await downloadCsv(url, `call_records_${orgId}_${Date.now()}.csv`)
+}
+
+// A reseller's own aggregated call records (across its customers, or one when
+// customerId is set).
+export async function listResellerLogs(params: {
+  from?: number
+  to?: number
+  page: number
+  pageSize: number
+  customerId?: number
+}): Promise<PagedResponse<OrgLog>> {
+  const qs = new URLSearchParams()
+  if (params.from != null) qs.set('from', String(params.from))
+  if (params.to != null) qs.set('to', String(params.to))
+  qs.set('p', String(params.page))
+  qs.set('page_size', String(params.pageSize))
+  if (params.customerId) qs.set('customer_id', String(params.customerId))
+  const res = await api.get<ApiResp<PagedResponse<OrgLog>>>(
+    `/api/organization/reseller/logs?${qs.toString()}`
   )
+  return unwrap(res, 'Failed to load call records')
+}
+
+export async function exportResellerLogs(
+  from?: number,
+  to?: number,
+  customerId?: number
+): Promise<void> {
+  let url = `/api/organization/reseller/logs/export${usageRangeQuery(from, to)}`
+  if (customerId) url += `${url.includes('?') ? '&' : '?'}customer_id=${customerId}`
+  await downloadCsv(url, `call_records_${Date.now()}.csv`)
 }
 
 // --- Reseller downstream customers ---

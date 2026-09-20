@@ -207,14 +207,21 @@ const orgLogsExportCap = 100000
 // writeOrgLogsCSV streams one org's per-request call log as CSV, one row per
 // request with the reseller retail discount already overlaid (ListOrgLogs). The
 // caller is responsible for authorizing access to orgId.
-func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) {
-	// A reseller aggregates its customers' rows; any other org uses its own.
+func writeOrgLogsCSV(c *gin.Context, orgId, customerId int, orgName string, from, to int64) {
+	// A reseller aggregates its customers' rows; any other org (or a single
+	// selected customer) uses that org's own rows.
 	var logs []*model.Log
 	var err error
 	withCustomer := false
 	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
-		logs, _, err = model.ListResellerLogs(orgId, from, to, 0, orgLogsExportCap)
-		withCustomer = true // aggregated log spans multiple customers
+		if customerId > 0 {
+			if isCust, _ := model.IsResellerCustomer(orgId, customerId); isCust {
+				logs, _, err = model.ListOrgLogs(customerId, from, to, 0, orgLogsExportCap)
+			}
+		} else {
+			logs, _, err = model.ListResellerLogs(orgId, from, to, 0, orgLogsExportCap)
+			withCustomer = true // aggregated log spans multiple customers
+		}
 	} else {
 		logs, _, err = model.ListOrgLogs(orgId, from, to, 0, orgLogsExportCap)
 	}
@@ -291,7 +298,8 @@ func AdminExportOrgLogs(c *gin.Context) {
 	if org, err := model.GetOrganizationById(orgId); err == nil && org != nil {
 		name = org.Name
 	}
-	writeOrgLogsCSV(c, orgId, name, from, to)
+	customerId, _ := strconv.Atoi(c.Query("customer_id"))
+	writeOrgLogsCSV(c, orgId, customerId, name, from, to)
 }
 
 // AdminListOrgLogs — GET /api/admin/organizations/:id/logs
@@ -305,12 +313,20 @@ func AdminListOrgLogs(c *gin.Context) {
 		return
 	}
 	page := common.GetPageQuery(c)
-	// A reseller has no tokens of its own — aggregate its customers' call logs.
+	customerId, _ := strconv.Atoi(c.Query("customer_id"))
+	// A reseller has no tokens of its own — aggregate its customers' call logs,
+	// or scope to one customer when customer_id is a valid customer of it.
 	var logs []*model.Log
 	var total int64
 	var err error
 	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
-		logs, total, err = model.ListResellerLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
+		if customerId > 0 {
+			if isCust, _ := model.IsResellerCustomer(orgId, customerId); isCust {
+				logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+			}
+		} else {
+			logs, total, err = model.ListResellerLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
+		}
 	} else {
 		logs, total, err = model.ListOrgLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
 	}

@@ -15,6 +15,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// AdminListOrgCustomers — GET /api/admin/organizations/:id/customers
+// Lists a reseller org's downstream customers (id + name), for the admin's
+// per-customer filter on the reseller's usage/call-records views. Empty for a
+// non-reseller org.
+func AdminListOrgCustomers(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	customers, err := model.ListResellerCustomers(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	out := make([]gin.H, 0, len(customers))
+	for _, cust := range customers {
+		if cust.Org == nil {
+			continue
+		}
+		out = append(out, gin.H{"id": cust.Org.Id, "name": cust.Org.Name})
+	}
+	common.ApiSuccess(c, out)
+}
+
 // AdminListOrganizations — GET /api/admin/organizations
 func AdminListOrganizations(c *gin.Context) {
 	page := common.GetPageQuery(c)

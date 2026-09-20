@@ -188,6 +188,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgAdminRoute.GET("/:id/ledger", controller.AdminListOrgLedger)
 			orgAdminRoute.GET("/:id/logs", controller.AdminListOrgLogs)
 			orgAdminRoute.GET("/:id/logs/export", controller.AdminExportOrgLogs)
+			orgAdminRoute.GET("/:id/customers", controller.AdminListOrgCustomers)
 			orgAdminRoute.POST("/accounts", controller.AdminAttachOrgAccount)
 			orgAdminRoute.DELETE("/:id/accounts/:user_id", controller.AdminDetachOrgAccount)
 			// Reseller-admin management (per-admin offboarding / containment).
@@ -227,6 +228,8 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.GET("/customers", controller.ListMyCustomers)
 			orgRoute.POST("/customers", middleware.CriticalRateLimit(), controller.CreateMyCustomer)
 			orgRoute.GET("/customers/:id/usage", controller.GetMyCustomerUsage)
+			orgRoute.GET("/reseller/logs", controller.ListMyResellerLogs)
+			orgRoute.GET("/reseller/logs/export", controller.ExportMyResellerLogs)
 			// Member-scoped org API keys (any active member): keys bound to the
 			// org's default workspace so they bill the org wallet, not a personal
 			// balance. Backs the org-member "API Keys" surface.

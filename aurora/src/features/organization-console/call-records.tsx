@@ -101,7 +101,9 @@ export function CallRecords({
               <Th>{t('Time')}</Th>
               {showCustomer && <Th>{t('Customer')}</Th>}
               <Th>{t('Model')}</Th>
-              <Th>{t('Key')}</Th>
+              {/* In the aggregated (per-customer) view, Customer replaces Key to
+                  keep the table narrow. */}
+              {!showCustomer && <Th>{t('Key')}</Th>}
               <Th>{t('Status')}</Th>
               <Th className='text-right'>{t('Tokens (in / out)')}</Th>
               <Th className='text-right'>
@@ -120,7 +122,11 @@ export function CallRecords({
                   <Td className='whitespace-nowrap'>{l.customer_name || '-'}</Td>
                 )}
                 <Td>{l.model_name || '-'}</Td>
-                <Td className='text-muted-foreground'>{l.token_name || '-'}</Td>
+                {!showCustomer && (
+                  <Td className='text-muted-foreground'>
+                    {l.token_name || '-'}
+                  </Td>
+                )}
                 <Td>
                   {isError ? (
                     <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs whitespace-nowrap'>

@@ -119,6 +119,55 @@ func GetMyCustomerUsage(c *gin.Context) {
 	common.ApiSuccess(c, report)
 }
 
+// ListMyResellerLogs — GET /api/organization/reseller/logs
+// The reseller's aggregated call records across all its customers, or scoped to
+// one customer when customer_id is a valid customer of it.
+func ListMyResellerLogs(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	customerId, _ := strconv.Atoi(c.Query("customer_id"))
+	var logs []*model.Log
+	var total int64
+	var err error
+	if customerId > 0 {
+		if isCust, _ := model.IsResellerCustomer(reseller.Id, customerId); !isCust {
+			common.ApiErrorMsg(c, "该组织不是你的客户")
+			return
+		}
+		logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+	} else {
+		logs, total, err = model.ListResellerLogs(reseller.Id, from, to, page.GetStartIdx(), page.GetPageSize())
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(logs)
+	common.ApiSuccess(c, page)
+}
+
+// ExportMyResellerLogs — GET /api/organization/reseller/logs/export (CSV)
+func ExportMyResellerLogs(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	customerId, _ := strconv.Atoi(c.Query("customer_id"))
+	writeOrgLogsCSV(c, reseller.Id, customerId, reseller.Name, from, to)
+}
+
 // GetMyCustomerPricing — GET /api/reseller/customers/:id/pricing
 func GetMyCustomerPricing(c *gin.Context) {
 	_, customerId, ok := callerResellerCustomer(c)
@@ -416,7 +465,7 @@ func ExportMyCustomerLogs(c *gin.Context) {
 	if org, err := model.GetOrganizationById(customerId); err == nil && org != nil {
 		name = org.Name
 	}
-	writeOrgLogsCSV(c, customerId, name, from, to)
+	writeOrgLogsCSV(c, customerId, 0, name, from, to)
 }
 
 func GetMyCustomerLogs(c *gin.Context) {
