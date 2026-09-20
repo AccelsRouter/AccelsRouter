@@ -131,6 +131,15 @@ type RelayInfo struct {
 	// to this request's org-wallet charge (0/1 = none). Recorded on the consume
 	// log's `other` so any log view can show the discounted price.
 	OrgDiscountRatio float64
+	// Org-billing context for the immutable usage rollup (org_usage_daily),
+	// populated when the request is billed to an organization workspace.
+	// OrgId is the paying (customer/enterprise) org; ResellerOrgId is its
+	// reseller (0 if none); OrgWholesaleRatio in (0,1] is the reseller's per-model
+	// wholesale for this request's model (1 = full standard).
+	OrgId             int
+	OrgWorkspaceId    int
+	ResellerOrgId     int
+	OrgWholesaleRatio float64
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)

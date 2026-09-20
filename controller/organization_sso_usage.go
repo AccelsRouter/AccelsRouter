@@ -151,7 +151,7 @@ func GetMyOrgUsage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	report, err := model.GetOrgUsage(org.Id, from, to)
+	report, err := model.GetOrgUsageFromDaily(org.Id, from, to)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -169,7 +169,7 @@ func ExportMyOrgUsage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	report, err := model.GetOrgUsage(org.Id, from, to)
+	report, err := model.GetOrgUsageFromDaily(org.Id, from, to)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -189,9 +189,9 @@ func AdminGetOrgUsage(c *gin.Context) {
 	var report *model.OrgUsageReport
 	var err error
 	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
-		report, err = model.GetResellerUsage(orgId, from, to)
+		report, err = model.GetResellerUsageFromDaily(orgId, from, to)
 	} else {
-		report, err = model.GetOrgUsage(orgId, from, to)
+		report, err = model.GetOrgUsageFromDaily(orgId, from, to)
 	}
 	if err != nil {
 		common.ApiError(c, err)

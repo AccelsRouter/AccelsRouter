@@ -525,6 +525,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 
 	attachQuotaSaturation(ctx, relayInfo, other)
+	attachOrgRetailDiscount(relayInfo, other, summary.Quota)
+	recordOrgUsageDaily(relayInfo, summary.Quota, summary.PromptTokens, summary.CompletionTokens)
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

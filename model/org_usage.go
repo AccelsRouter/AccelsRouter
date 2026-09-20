@@ -29,7 +29,7 @@ type OrgUsageBucket struct {
 	RetailQuota int64 `json:"retail_quota,omitempty"`
 	// CostQuota is the reseller's own cost for this line = Quota × the platform's
 	// per-model wholesale ratio. Populated only on the reseller aggregate view
-	// (GetResellerUsage); lets the reseller see cost/profit per dimension.
+	// (GetResellerUsageFromDaily); lets the reseller see cost/profit per dimension.
 	CostQuota int64 `json:"cost_quota,omitempty"`
 }
 
@@ -362,99 +362,6 @@ func queryOrgUsageLogs(tokenIds []int, from, to int64) ([]logUsageRow, error) {
 	return rows, nil
 }
 
-// GetResellerUsage aggregates a reseller's usage across all its customer orgs.
-// A reseller org has no bound tokens of its own (usage lives on its customers),
-// so GetOrgUsage(resellerId) is always empty; this rolls up each customer's
-// usage instead. ByWorkspace becomes one line PER CUSTOMER (so the admin sees a
-// per-customer breakdown), while ByModel and ByMember are merged across all
-// customers. Each customer's retail discount is applied so the retail columns
-// reflect what customers owe the reseller.
-func GetResellerUsage(resellerOrgId int, from, to int64) (*OrgUsageReport, error) {
-	report := &OrgUsageReport{
-		OrgId:       resellerOrgId,
-		From:        from,
-		To:          to,
-		ByWorkspace: []OrgUsageBucket{},
-		ByModel:     []OrgUsageBucket{},
-		ByMember:    []OrgUsageBucket{},
-	}
-	var links []ResellerCustomerLink
-	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Order("id ASC").Find(&links).Error; err != nil {
-		return nil, err
-	}
-	// The reseller's own per-model wholesale ratios: cost = standard × ratio.
-	var wholesale map[string]float64
-	if reseller, err := GetOrganizationById(resellerOrgId); err == nil && reseller != nil {
-		wholesale = ParseRetailDiscounts(reseller.WholesaleRatios)
-	}
-	modelCost := func(model string, quota int64) int64 {
-		return int64(common.QuotaRound(float64(quota) * WholesaleRatioFor(model, wholesale)))
-	}
-	byModel := map[string]*OrgUsageBucket{}
-	byMember := map[string]*OrgUsageBucket{}
-	addBucket := func(m map[string]*OrgUsageBucket, b OrgUsageBucket) {
-		cur, ok := m[b.Key]
-		if !ok {
-			cp := b
-			m[b.Key] = &cp
-			return
-		}
-		cur.Quota += b.Quota
-		cur.Requests += b.Requests
-		cur.PromptTokens += b.PromptTokens
-		cur.CompletionTokens += b.CompletionTokens
-		cur.RetailQuota += b.RetailQuota
-		cur.CostQuota += b.CostQuota
-	}
-	for _, link := range links {
-		cust, err := GetOrganizationById(link.CustomerOrgId)
-		if err != nil || cust == nil {
-			continue
-		}
-		sub, err := GetOrgUsage(link.CustomerOrgId, from, to)
-		if err != nil {
-			return nil, err
-		}
-		// Per model, compute what this customer pays (retail; standard when it has
-		// no discount for that model) and what it costs the reseller (wholesale),
-		// so every dimension carries standard / cost / retail.
-		custDiscounts := ParseRetailDiscounts(cust.RetailDiscounts)
-		var custCost, custRetail int64
-		for i := range sub.ByModel {
-			q := sub.ByModel[i].Quota
-			retail := int64(common.QuotaRound(float64(q) * RetailDiscountFor(sub.ByModel[i].Key, custDiscounts)))
-			cost := modelCost(sub.ByModel[i].Key, q)
-			sub.ByModel[i].RetailQuota = retail
-			sub.ByModel[i].CostQuota = cost
-			custRetail += retail
-			custCost += cost
-		}
-		report.ByWorkspace = append(report.ByWorkspace, OrgUsageBucket{
-			Key:              cust.Name,
-			Quota:            sub.TotalQuota,
-			Requests:         sub.TotalRequests,
-			PromptTokens:     sub.TotalPrompt,
-			CompletionTokens: sub.TotalCompletion,
-			RetailQuota:      custRetail,
-			CostQuota:        custCost,
-		})
-		report.TotalQuota += sub.TotalQuota
-		report.TotalRequests += sub.TotalRequests
-		report.TotalPrompt += sub.TotalPrompt
-		report.TotalCompletion += sub.TotalCompletion
-		report.TotalRetailQuota += custRetail
-		report.TotalCostQuota += custCost
-		for _, b := range sub.ByModel {
-			addBucket(byModel, b) // b.CostQuota set above
-		}
-		for _, b := range sub.ByMember {
-			addBucket(byMember, b)
-		}
-	}
-	report.ByModel = sortedBuckets(byModel)
-	report.ByMember = sortedBuckets(byMember)
-	return report, nil
-}
 
 func sortedBuckets(m map[string]*OrgUsageBucket) []OrgUsageBucket {
 	out := make([]OrgUsageBucket, 0, len(m))

@@ -197,34 +197,25 @@ func reconSeries(from, to int64, granularity string) ([]ReconSeriesPoint, error)
 }
 
 // reconResellerDiscounts computes the reseller retail let-give aggregated per
-// RESELLER over the window (standard vs discounted charge), summed across each
-// reseller's customer orgs. Reuses per-org usage for the bounded customer set.
+// RESELLER over the window (standard vs actually-charged), from the immutable
+// org_usage_daily rollup — so it reflects what customers actually paid at call
+// time and never drifts when a ratio is later changed.
 func reconResellerDiscounts(from, to int64) ([]ReconResellerRow, int64, int64, error) {
-	var links []ResellerCustomerLink
-	if err := DB.Find(&links).Error; err != nil {
+	dailyRows, err := fetchOrgUsageDaily("reseller_org_id > 0", nil, from, to)
+	if err != nil {
 		return nil, 0, 0, err
 	}
 	type agg struct{ std, charged, req int64 }
 	byReseller := map[int]*agg{}
-	for _, link := range links {
-		report, err := GetOrgUsage(link.CustomerOrgId, from, to)
-		if err != nil || report == nil {
-			continue
-		}
-		std := report.TotalQuota
-		charged := std
-		if org, err := GetOrganizationById(link.CustomerOrgId); err == nil && org != nil && org.RetailDiscounts != "" {
-			report.ApplyRetailDiscounts(ParseRetailDiscounts(org.RetailDiscounts))
-			charged = report.TotalRetailQuota
-		}
-		a := byReseller[link.ResellerOrgId]
+	for _, r := range dailyRows {
+		a := byReseller[r.ResellerOrgId]
 		if a == nil {
 			a = &agg{}
-			byReseller[link.ResellerOrgId] = a
+			byReseller[r.ResellerOrgId] = a
 		}
-		a.std += std
-		a.charged += charged
-		a.req += report.TotalRequests
+		a.std += r.StandardQuota
+		a.charged += r.ChargedQuota
+		a.req += r.Requests
 	}
 	rows := make([]ReconResellerRow, 0, len(byReseller))
 	var totalDiscount, totalStandard int64

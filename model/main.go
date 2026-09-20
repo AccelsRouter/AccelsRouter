@@ -300,6 +300,7 @@ func migrateDB() error {
 		&OrgAuditLog{},
 		&ResellerCustomerLink{},
 		&ResellerAdmin{},
+		&OrgUsageDaily{},
 		&UserChannel{},
 		&SystemInstance{},
 		&SystemTask{},

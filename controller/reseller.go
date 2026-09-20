@@ -106,15 +106,11 @@ func GetMyCustomerUsage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	report, err := model.GetOrgUsage(customerId, from, to)
+	// Immutable rollup already carries the actual charged (retail) per row.
+	report, err := model.GetOrgUsageFromDaily(customerId, from, to)
 	if err != nil {
 		common.ApiError(c, err)
 		return
-	}
-	// Overlay the reseller's retail discount so the statement shows what the
-	// customer owes (standard × per-model-series ratio). Reporting only.
-	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
-		report.ApplyRetailDiscounts(model.ParseRetailDiscounts(customer.RetailDiscounts))
 	}
 	common.ApiSuccess(c, report)
 }
@@ -132,7 +128,7 @@ func GetMyResellerUsage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	report, err := model.GetResellerUsage(reseller.Id, from, to)
+	report, err := model.GetResellerUsageFromDaily(reseller.Id, from, to)
 	if err != nil {
 		common.ApiError(c, err)
 		return

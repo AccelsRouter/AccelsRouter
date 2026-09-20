@@ -289,6 +289,12 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 			model.ParseRetailDiscounts(info.WholesaleRatios),
 		)
 	}
+	// Carry the org-billing context so the settle path can record the immutable
+	// usage rollup (org_usage_daily) with actual standard/charged/cost amounts.
+	relayInfo.OrgId = info.OrgId
+	relayInfo.OrgWorkspaceId = info.WorkspaceId
+	relayInfo.ResellerOrgId = info.ResellerOrgId
+	relayInfo.OrgWholesaleRatio = wholesaleRatio
 	session := &BillingSession{
 		relayInfo: relayInfo,
 		funding: &OrgWalletFunding{
