@@ -211,8 +211,10 @@ func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) 
 	// A reseller aggregates its customers' rows; any other org uses its own.
 	var logs []*model.Log
 	var err error
+	withCustomer := false
 	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
 		logs, _, err = model.ListResellerLogs(orgId, from, to, 0, orgLogsExportCap)
+		withCustomer = true // aggregated log spans multiple customers
 	} else {
 		logs, _, err = model.ListOrgLogs(orgId, from, to, 0, orgLogsExportCap)
 	}
@@ -230,20 +232,28 @@ func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) 
 	usd := func(q int) string {
 		return strconv.FormatFloat(float64(q)/common.QuotaPerUnit, 'f', 6, 64)
 	}
-	_ = w.Write([]string{
+	// Prepend a Customer column only for a reseller's aggregated export.
+	withPrefix := func(customer string, cols ...string) []string {
+		if !withCustomer {
+			return cols
+		}
+		return append([]string{customer}, cols...)
+	}
+	header := withPrefix("Customer",
 		"Time", "Member", "Model", "Status", "Input Tokens", "Output Tokens",
 		"Standard Price (USD)", "Discount", "Charged Price (USD)", "Detail",
-	})
+	)
+	_ = w.Write(header)
 	for _, l := range logs {
 		if l.Type == model.LogTypeError {
 			// Failed request (e.g. model not opened to the customer): no charge,
 			// carry the reason in Detail.
-			_ = w.Write([]string{
+			_ = w.Write(withPrefix(csvSafe(l.CustomerName),
 				time.Unix(l.CreatedAt, 0).Format("2006-01-02 15:04:05"),
 				csvSafe(l.Username), csvSafe(l.ModelName), "Failed",
 				strconv.Itoa(l.PromptTokens), strconv.Itoa(l.CompletionTokens),
 				"-", "-", "-", csvSafe(l.Content),
-			})
+			))
 			continue
 		}
 		charged := l.Quota
@@ -255,7 +265,7 @@ func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) 
 		if l.RetailRatio > 0 {
 			discount = strconv.FormatFloat(l.RetailRatio, 'f', 2, 64)
 		}
-		_ = w.Write([]string{
+		_ = w.Write(withPrefix(csvSafe(l.CustomerName),
 			time.Unix(l.CreatedAt, 0).Format("2006-01-02 15:04:05"),
 			csvSafe(l.Username),
 			csvSafe(l.ModelName),
@@ -266,7 +276,7 @@ func writeOrgLogsCSV(c *gin.Context, orgId int, orgName string, from, to int64) 
 			discount,
 			usd(charged),
 			"",
-		})
+		))
 	}
 }
 
