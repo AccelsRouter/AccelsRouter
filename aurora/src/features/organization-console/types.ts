@@ -158,6 +158,8 @@ export type UsageBucket = {
   prompt_tokens: number
   completion_tokens: number
   retail_quota?: number
+  // Reseller aggregate only: the reseller's cost = standard × wholesale ratio.
+  cost_quota?: number
 }
 
 // Aggregated usage report for an organization over a time window. Mirrors
@@ -174,6 +176,8 @@ export type OrgUsageReport = {
   by_model: UsageBucket[]
   by_member: UsageBucket[]
   total_retail_quota?: number
+  // Reseller aggregate only: total cost = sum of standard × wholesale.
+  total_cost_quota?: number
 }
 
 // A downstream customer organization managed by a reseller. `org` is the

@@ -27,6 +27,10 @@ type OrgUsageBucket struct {
 	// customer's matched model-series discount. Populated only on the reseller's
 	// customer statement (see ApplyRetailDiscounts); 0/omitted otherwise.
 	RetailQuota int64 `json:"retail_quota,omitempty"`
+	// CostQuota is the reseller's own cost for this line = Quota × the platform's
+	// per-model wholesale ratio. Populated only on the reseller aggregate view
+	// (GetResellerUsage); lets the reseller see cost/profit per dimension.
+	CostQuota int64 `json:"cost_quota,omitempty"`
 }
 
 // OrgUsageReport is the full breakdown over a time window.
@@ -45,6 +49,9 @@ type OrgUsageReport struct {
 	// (each model's standard quota × its matched discount). Populated only on a
 	// reseller customer statement.
 	TotalRetailQuota int64 `json:"total_retail_quota,omitempty"`
+	// TotalCostQuota is the reseller's total cost = sum of per-model cost (standard
+	// quota × wholesale ratio). Populated only on the reseller aggregate view.
+	TotalCostQuota int64 `json:"total_cost_quota,omitempty"`
 }
 
 // ApplyRetailDiscounts overlays a reseller's per-model-series retail discount
@@ -375,6 +382,14 @@ func GetResellerUsage(resellerOrgId int, from, to int64) (*OrgUsageReport, error
 	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Order("id ASC").Find(&links).Error; err != nil {
 		return nil, err
 	}
+	// The reseller's own per-model wholesale ratios: cost = standard × ratio.
+	var wholesale map[string]float64
+	if reseller, err := GetOrganizationById(resellerOrgId); err == nil && reseller != nil {
+		wholesale = ParseRetailDiscounts(reseller.WholesaleRatios)
+	}
+	modelCost := func(model string, quota int64) int64 {
+		return int64(common.QuotaRound(float64(quota) * WholesaleRatioFor(model, wholesale)))
+	}
 	byModel := map[string]*OrgUsageBucket{}
 	byMember := map[string]*OrgUsageBucket{}
 	addBucket := func(m map[string]*OrgUsageBucket, b OrgUsageBucket) {
@@ -389,6 +404,7 @@ func GetResellerUsage(resellerOrgId int, from, to int64) (*OrgUsageReport, error
 		cur.PromptTokens += b.PromptTokens
 		cur.CompletionTokens += b.CompletionTokens
 		cur.RetailQuota += b.RetailQuota
+		cur.CostQuota += b.CostQuota
 	}
 	for _, link := range links {
 		cust, err := GetOrganizationById(link.CustomerOrgId)
@@ -399,10 +415,19 @@ func GetResellerUsage(resellerOrgId int, from, to int64) (*OrgUsageReport, error
 		if err != nil {
 			return nil, err
 		}
-		// Apply this customer's retail discount so retail columns show what the
-		// customer owes (mirrors the reseller's per-customer usage view).
-		if cust.RetailDiscounts != "" {
-			sub.ApplyRetailDiscounts(ParseRetailDiscounts(cust.RetailDiscounts))
+		// Per model, compute what this customer pays (retail; standard when it has
+		// no discount for that model) and what it costs the reseller (wholesale),
+		// so every dimension carries standard / cost / retail.
+		custDiscounts := ParseRetailDiscounts(cust.RetailDiscounts)
+		var custCost, custRetail int64
+		for i := range sub.ByModel {
+			q := sub.ByModel[i].Quota
+			retail := int64(common.QuotaRound(float64(q) * RetailDiscountFor(sub.ByModel[i].Key, custDiscounts)))
+			cost := modelCost(sub.ByModel[i].Key, q)
+			sub.ByModel[i].RetailQuota = retail
+			sub.ByModel[i].CostQuota = cost
+			custRetail += retail
+			custCost += cost
 		}
 		report.ByWorkspace = append(report.ByWorkspace, OrgUsageBucket{
 			Key:              cust.Name,
@@ -410,15 +435,17 @@ func GetResellerUsage(resellerOrgId int, from, to int64) (*OrgUsageReport, error
 			Requests:         sub.TotalRequests,
 			PromptTokens:     sub.TotalPrompt,
 			CompletionTokens: sub.TotalCompletion,
-			RetailQuota:      sub.TotalRetailQuota,
+			RetailQuota:      custRetail,
+			CostQuota:        custCost,
 		})
 		report.TotalQuota += sub.TotalQuota
 		report.TotalRequests += sub.TotalRequests
 		report.TotalPrompt += sub.TotalPrompt
 		report.TotalCompletion += sub.TotalCompletion
-		report.TotalRetailQuota += sub.TotalRetailQuota
+		report.TotalRetailQuota += custRetail
+		report.TotalCostQuota += custCost
 		for _, b := range sub.ByModel {
-			addBucket(byModel, b)
+			addBucket(byModel, b) // b.CostQuota set above
 		}
 		for _, b := range sub.ByMember {
 			addBucket(byMember, b)

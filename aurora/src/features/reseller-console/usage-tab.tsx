@@ -8,8 +8,9 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 
 import { getResellerUsage } from '@/features/organization-console/api'
-import { UsageReport } from '@/features/organization-console/usage-report'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
+
+import { ResellerUsageReport } from './usage-report'
 
 function toUnix(date?: Date): number | undefined {
   return date ? Math.floor(date.getTime() / 1000) : undefined
@@ -38,7 +39,7 @@ export function ResellerUsageTab() {
           onChange={setRange}
         />
       </div>
-      <UsageReport report={data} isLoading={isLoading} />
+      <ResellerUsageReport report={data} isLoading={isLoading} />
     </div>
   )
 }
