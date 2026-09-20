@@ -329,6 +329,12 @@ type OrgPayerInfo struct {
 	// unrestricted). Enforced in the distributor so a reseller-provisioned
 	// customer can only use the models it was assigned.
 	AllowedModels map[string]bool
+	// ResellerAllowedModels is the OWNING reseller's offerable-model allow-list
+	// (nil = unrestricted or not a reseller customer). A reseller customer's
+	// request must satisfy BOTH this and AllowedModels — the reseller's set caps
+	// everything it may offer, regardless of the customer's own (possibly empty)
+	// list. Populated only for reseller customers.
+	ResellerAllowedModels map[string]bool
 }
 
 type orgPayerCacheEntry struct {
@@ -385,6 +391,13 @@ func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
 			MonthlyBudget: row.MonthlyBudget,
 			Relation:      row.Relation,
 			AllowedModels: parseAllowedModels(row.AllowedModels),
+		}
+		// A reseller customer is also capped by its reseller's offerable models:
+		// carry the reseller's allow-list so the distributor enforces both.
+		if resellerId, ok := ResellerOrgIdForCustomer(row.OrgId); ok && resellerId > 0 {
+			if reseller, rErr := GetOrganizationById(resellerId); rErr == nil && reseller != nil {
+				info.ResellerAllowedModels = parseAllowedModels(reseller.AllowedModels)
+			}
 		}
 	}
 	orgPayerCache.Store(userId, orgPayerCacheEntry{info: info, expiresAt: time.Now().Add(orgPayerCacheTTL)})
