@@ -116,15 +116,24 @@ export function CallRecords({
               <tr key={l.id} className='hover:bg-muted/30'>
                 <Td className='whitespace-nowrap'>{fmtTime(l.created_at)}</Td>
                 <Td>
-                  <span>{l.model_name || '-'}</span>
-                  {isError && (
-                    <span
-                      className='bg-destructive/10 text-destructive ml-2 rounded px-1.5 py-0.5 text-xs'
-                      title={l.content || ''}
-                    >
-                      {t('Failed')}
-                    </span>
-                  )}
+                  <div className='flex flex-col gap-0.5'>
+                    <div className='flex items-center gap-2'>
+                      <span>{l.model_name || '-'}</span>
+                      {isError && (
+                        <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs'>
+                          {t('Failed')}
+                        </span>
+                      )}
+                    </div>
+                    {isError && l.content && (
+                      <span
+                        className='text-destructive/80 max-w-[320px] text-xs break-words'
+                        title={l.content}
+                      >
+                        {l.content}
+                      </span>
+                    )}
+                  </div>
                 </Td>
                 <Td className='text-muted-foreground'>{l.token_name || '-'}</Td>
                 <Td className='text-right tabular-nums'>{l.prompt_tokens}</Td>

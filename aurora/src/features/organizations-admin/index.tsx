@@ -1268,7 +1268,7 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
         if (!o) props.onClose()
       }}
     >
-      <DialogContent className='sm:max-w-3xl'>
+      <DialogContent className='max-h-[90vh] overflow-y-auto sm:max-w-3xl'>
         <DialogHeader>
           <DialogTitle>
             {t('Usage')}
@@ -1294,13 +1294,15 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
           </TabsContent>
           <TabsContent value='records' className='pt-3'>
             {org && (
-              <CallRecords
-                fetchLogs={(p) =>
-                  adminListOrgLogs({ id: org.id, from, to, ...p })
-                }
-                queryKey={`admin-org-logs-${org.id}-${from}-${to}`}
-                onExport={() => exportAdminOrgLogs(org.id, from, to)}
-              />
+              <div className='max-h-[55vh] overflow-auto'>
+                <CallRecords
+                  fetchLogs={(p) =>
+                    adminListOrgLogs({ id: org.id, from, to, ...p })
+                  }
+                  queryKey={`admin-org-logs-${org.id}-${from}-${to}`}
+                  onExport={() => exportAdminOrgLogs(org.id, from, to)}
+                />
+              </div>
             )}
           </TabsContent>
         </Tabs>
