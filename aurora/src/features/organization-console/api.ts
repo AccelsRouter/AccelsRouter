@@ -198,9 +198,16 @@ function orgLogsQuery(page: number, pageSize: number): string {
 export async function listOrgLogs(params: {
   page: number
   pageSize: number
+  from?: number
+  to?: number
 }): Promise<PagedResponse<OrgLog>> {
+  const qs = new URLSearchParams()
+  qs.set('p', String(params.page))
+  qs.set('page_size', String(params.pageSize))
+  if (params.from != null) qs.set('from', String(params.from))
+  if (params.to != null) qs.set('to', String(params.to))
   const res = await api.get<ApiResp<PagedResponse<OrgLog>>>(
-    `/api/organization/logs?${orgLogsQuery(params.page, params.pageSize)}`
+    `/api/organization/logs?${qs.toString()}`
   )
   return unwrap(res, 'Failed to load call records')
 }

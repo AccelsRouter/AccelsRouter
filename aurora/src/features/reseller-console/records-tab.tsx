@@ -21,7 +21,7 @@ function toUnix(date?: Date): number | undefined {
 
 export function ResellerRecordsTab() {
   const [range, setRange] = useState<{ start?: Date; end?: Date }>(() => ({
-    start: dayjs().subtract(30, 'day').startOf('day').toDate(),
+    start: dayjs().startOf('day').toDate(),
     end: dayjs().endOf('day').toDate(),
   }))
   const from = toUnix(range.start)

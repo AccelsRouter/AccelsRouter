@@ -29,6 +29,7 @@ user so this page is reachable.
 */
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -36,6 +37,8 @@ import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatQuotaWithCurrency } from '@/lib/currency'
+
+import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 
 import { AccountsTab } from './accounts-tab'
 import { exportMyOrgLogs, getOrgContext, listOrgLogs } from './api'
@@ -51,9 +54,24 @@ import { UsageTab } from './usage-tab'
 import { WorkspacesTab } from './workspaces-tab'
 import { OrgKeysPanel } from '@/features/org-keys'
 
+function recToUnix(date?: Date): number | undefined {
+  return date ? Math.floor(date.getTime() / 1000) : undefined
+}
+
 export function OrganizationConsole() {
   const { t } = useTranslation()
   const [tab, setTab] = useState('keys')
+  // Call-records date range, defaulting to today (with the picker's 7d/30d/custom
+  // presets available).
+  const [recordsRange, setRecordsRange] = useState<{
+    start?: Date
+    end?: Date
+  }>(() => ({
+    start: dayjs().startOf('day').toDate(),
+    end: dayjs().endOf('day').toDate(),
+  }))
+  const recFrom = recToUnix(recordsRange.start)
+  const recTo = recToUnix(recordsRange.end)
 
   const { data: self, isLoading } = useQuery({
     queryKey: ['org-self'],
@@ -162,11 +180,22 @@ export function OrganizationConsole() {
                 <UsageTab />
               </TabsContent>
               <TabsContent value='records' className='pt-4'>
-                <CallRecords
-                  fetchLogs={listOrgLogs}
-                  queryKey='org-logs'
-                  onExport={() => exportMyOrgLogs()}
-                />
+                <div className='flex flex-col gap-4'>
+                  <div className='w-full sm:w-auto sm:min-w-[280px]'>
+                    <CompactDateTimeRangePicker
+                      start={recordsRange.start}
+                      end={recordsRange.end}
+                      onChange={setRecordsRange}
+                    />
+                  </div>
+                  <CallRecords
+                    fetchLogs={(p) =>
+                      listOrgLogs({ ...p, from: recFrom, to: recTo })
+                    }
+                    queryKey={`org-logs-${recFrom}-${recTo}`}
+                    onExport={() => exportMyOrgLogs(recFrom, recTo)}
+                  />
+                </div>
               </TabsContent>
               <TabsContent value='sso' className='pt-4'>
                 <SsoTab />

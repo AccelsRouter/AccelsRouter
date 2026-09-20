@@ -224,7 +224,7 @@ export function OrganizationsAdmin() {
                         </span>
                       </Td>
                       <Td>
-                        <OrgTypeBadge type={o.type} />
+                        <OrgTypeBadge type={o.type} isCustomer={o.is_customer} />
                       </Td>
                       <Td>
                         <OrgStatusBadge status={o.status} />
@@ -939,8 +939,19 @@ function Td(props: { children: React.ReactNode; className?: string }) {
   )
 }
 
-function OrgTypeBadge({ type }: { type: OrgType }) {
+function OrgTypeBadge({
+  type,
+  isCustomer,
+}: {
+  type: OrgType
+  isCustomer?: boolean
+}) {
   const { t } = useTranslation()
+  // A reseller-provisioned customer is stored as an enterprise org; label it
+  // "Customer" so the admin list distinguishes it from a direct enterprise.
+  if (isCustomer) {
+    return <Badge variant='outline'>{t('Customer')}</Badge>
+  }
   return (
     <Badge variant={type === 'reseller' ? 'default' : 'secondary'}>
       {type === 'reseller' ? t('Reseller') : t('Enterprise')}
