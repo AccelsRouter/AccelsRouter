@@ -139,11 +139,9 @@ export function useSidebarData(): SidebarData {
               url: '/dashboard/models',
               icon: LayoutDashboard,
             },
-            {
-              title: t('Usage Logs'),
-              url: '/usage-logs/common',
-              icon: FileText,
-            },
+            // No personal "Usage Logs": a reseller customer is org-billed, so its
+            // usage/call records live under "My Organization" (personal logs are
+            // empty/irrelevant for it).
           ],
         },
         {
@@ -243,11 +241,18 @@ export function useSidebarData(): SidebarData {
           ...(!isOrgMember
             ? [{ title: t('API Keys'), url: '/keys', icon: Key } as NavItem]
             : []),
-          {
-            title: t('Usage Logs'),
-            url: '/usage-logs/common',
-            icon: FileText,
-          },
+          // A reseller admin reviews consumption under the Distributor console
+          // (its customers' usage/call records), so hide the personal Usage Logs.
+          // Platform admins keep everything.
+          ...(isPlatformAdmin || !isResellerAdmin
+            ? [
+                {
+                  title: t('Usage Logs'),
+                  url: '/usage-logs/common',
+                  icon: FileText,
+                } as NavItem,
+              ]
+            : []),
           {
             title: t('Task Logs'),
             url: '/usage-logs/task',
