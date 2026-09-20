@@ -34,6 +34,8 @@ function StatCard(props: { label: string; value: string; hint?: string }) {
 function PLTable(props: {
   title: string
   keyLabel: string
+  costLabel: string
+  profitLabel: string
   buckets: UsageBucket[]
 }) {
   const { t } = useTranslation()
@@ -47,9 +49,9 @@ function PLTable(props: {
             <tr>
               <Th>{props.keyLabel}</Th>
               <Th className='text-right'>{t('Standard price')}</Th>
-              <Th className='text-right'>{t('My cost')}</Th>
+              <Th className='text-right'>{props.costLabel}</Th>
               <Th className='text-right'>{t('Customer pays')}</Th>
-              <Th className='text-right'>{t('Profit')}</Th>
+              <Th className='text-right'>{props.profitLabel}</Th>
               <Th className='text-right'>{t('Requests')}</Th>
             </tr>
           </thead>
@@ -125,6 +127,12 @@ export function ResellerUsageReport(props: {
   const retail = report.total_retail_quota ?? 0
   const profit = retail - cost
   const platformGiveback = standard - cost
+  // Admin view (showPlatformDiscount) labels cost/profit from the reseller's
+  // perspective ("Reseller ..."); the reseller's own view uses "My ...".
+  const costLabel = props.showPlatformDiscount ? t('Reseller cost') : t('My cost')
+  const profitLabel = props.showPlatformDiscount
+    ? t('Reseller profit')
+    : t('My profit')
 
   return (
     <div className='flex flex-col gap-5'>
@@ -141,23 +149,27 @@ export function ResellerUsageReport(props: {
             hint={t('Standard − my cost')}
           />
         )}
-        <StatCard label={t('My cost')} value={money(cost)} />
+        <StatCard label={costLabel} value={money(cost)} />
         <StatCard label={t('Customer pays')} value={money(retail)} />
         <StatCard
-          label={t('My profit')}
+          label={profitLabel}
           value={money(profit)}
-          hint={t('Customer pays − my cost')}
+          hint={t('Customer pays − cost')}
         />
       </div>
 
       <PLTable
         title={t('By Model')}
         keyLabel={t('Model')}
+        costLabel={costLabel}
+        profitLabel={profitLabel}
         buckets={report.by_model}
       />
       <PLTable
         title={t('By Customer')}
         keyLabel={t('Customer')}
+        costLabel={costLabel}
+        profitLabel={profitLabel}
         buckets={report.by_workspace}
       />
     </div>
