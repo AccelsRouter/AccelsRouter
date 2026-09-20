@@ -101,7 +101,10 @@ func Distribute() func(c *gin.Context) {
 					model.RecordErrorLog(c, c.GetInt("id"), 0, modelRequest.Model,
 						c.GetString("token_name"), msg, c.GetInt("token_id"), 0, false,
 						common.GetContextKeyString(c, constant.ContextKeyUsingGroup), nil)
-					abortWithOpenAiMessage(c, http.StatusForbidden, msg)
+					// Same error code as the platform's other model-access
+					// rejections in this gate (model_not_found) for a consistent
+					// machine-readable code instead of an empty one.
+					abortWithOpenAiMessage(c, http.StatusForbidden, msg, types.ErrorCodeModelNotFound)
 					return
 				}
 			}
