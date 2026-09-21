@@ -103,6 +103,16 @@ export function CompactDateTimeRangePicker({
     setOpen(false)
   }
 
+  // Apply a manual edit as soon as an input changes, so the selected range
+  // takes effect even if the popover closes before the user reaches Confirm
+  // (some browsers dismiss it when the native date-picker dropdown opens).
+  const emitRange = (nextStart: string, nextEnd: string) => {
+    onChange({
+      start: fromInputValue(nextStart),
+      end: fromInputValue(nextEnd),
+    })
+  }
+
   const applyPreset = (kind: 'today' | '7d' | 'week' | '30d' | 'month') => {
     const now = dayjs()
     const presets = {
@@ -165,7 +175,10 @@ export function CompactDateTimeRangePicker({
               <Input
                 type='datetime-local'
                 value={draftStart}
-                onChange={(e) => setDraftStart(e.target.value)}
+                onChange={(e) => {
+                  setDraftStart(e.target.value)
+                  emitRange(e.target.value, draftEnd)
+                }}
                 className='h-8 text-sm leading-5 tabular-nums'
               />
             </div>
@@ -179,7 +192,10 @@ export function CompactDateTimeRangePicker({
               <Input
                 type='datetime-local'
                 value={draftEnd}
-                onChange={(e) => setDraftEnd(e.target.value)}
+                onChange={(e) => {
+                  setDraftEnd(e.target.value)
+                  emitRange(draftStart, e.target.value)
+                }}
                 className='h-8 text-sm leading-5 tabular-nums'
               />
             </div>
