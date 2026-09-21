@@ -455,10 +455,16 @@ func GetMyOrgContext(c *gin.Context) {
 		}
 	}
 
+	// A reseller party (admin, reseller-org member or reseller customer) is
+	// barred from BYOK — see model.IsResellerParty; derived here from values
+	// already resolved so the UI can hide the entry without another lookup.
+	isResellerParty := isResellerAdmin || isResellerCustomer || orgType == model.OrgTypeReseller
+
 	common.ApiSuccess(c, gin.H{
 		"is_org_member":        isOrgMember,
 		"is_reseller_admin":    isResellerAdmin,
 		"is_reseller_customer": isResellerCustomer,
+		"is_reseller_party":    isResellerParty,
 		"org_type":             orgType,
 		"brand_name":           brandName,
 		"brand_logo":           brandLogo,

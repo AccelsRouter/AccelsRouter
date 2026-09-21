@@ -122,6 +122,10 @@ export function useSidebarData(): SidebarData {
   // Org members manage API keys under "My Organization" (keys bound to the org
   // wallet), so the personal /keys entry is shown only to non-org users.
   const isOrgMember = !isPlatformAdmin && (orgContext?.is_org_member ?? false)
+  // Any reseller party — admin, reseller-org member or reseller customer — is
+  // barred from BYOK (see model.IsResellerParty), so it must not see the entry.
+  const isResellerParty =
+    !isPlatformAdmin && (orgContext?.is_reseller_party ?? false)
 
   if (isResellerCustomer) {
     return {
@@ -195,7 +199,10 @@ export function useSidebarData(): SidebarData {
     // Personal BYOK is an opt-in platform feature; only surface it when the
     // backend status flag enables it — and never to reseller parties, who must
     // stay on platform-controlled upstreams (the backend refuses them as well).
-    ...(status?.personal_byok_enabled && !isResellerAdmin && !isResellerCustomer
+    ...(status?.personal_byok_enabled &&
+    !isResellerAdmin &&
+    !isResellerCustomer &&
+    !isResellerParty
       ? [
           {
             title: t('Personal BYOK'),

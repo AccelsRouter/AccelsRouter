@@ -21,7 +21,6 @@ Organization console API client. Wraps /api/organization/* endpoints used
 by an org owner/admin to manage their own organization.
 */
 import { api } from '@/lib/api'
-
 import type {
   ApplyResult,
   InvitationPreview,
@@ -80,6 +79,9 @@ export type OrgContext = {
   is_org_member: boolean
   is_reseller_admin: boolean
   is_reseller_customer: boolean
+  // Any reseller party (admin, reseller-org member or reseller customer) is
+  // barred from BYOK, so the UI hides that entry for them.
+  is_reseller_party: boolean
   org_type: string
   // White-label brand a reseller customer sees in place of the platform brand.
   brand_name: string
@@ -90,6 +92,7 @@ const EMPTY_ORG_CONTEXT: OrgContext = {
   is_org_member: false,
   is_reseller_admin: false,
   is_reseller_customer: false,
+  is_reseller_party: false,
   org_type: '',
   brand_name: '',
   brand_logo: '',
@@ -97,10 +100,13 @@ const EMPTY_ORG_CONTEXT: OrgContext = {
 
 export async function getOrgContext(): Promise<OrgContext> {
   try {
-    const res = await api.get<ApiResp<OrgContext>>('/api/organization/context', {
-      skipErrorHandler: true,
-      skipBusinessError: true,
-    })
+    const res = await api.get<ApiResp<OrgContext>>(
+      '/api/organization/context',
+      {
+        skipErrorHandler: true,
+        skipBusinessError: true,
+      }
+    )
     return { ...EMPTY_ORG_CONTEXT, ...(res.data?.data ?? {}) }
   } catch {
     return EMPTY_ORG_CONTEXT
@@ -120,7 +126,10 @@ export async function getResellerBrand(): Promise<ResellerBrand> {
 export async function setResellerBrand(
   brand: ResellerBrand
 ): Promise<ResellerBrand> {
-  const res = await api.put<ApiResp<ResellerBrand>>('/api/reseller/brand', brand)
+  const res = await api.put<ApiResp<ResellerBrand>>(
+    '/api/reseller/brand',
+    brand
+  )
   return res.data?.data ?? brand
 }
 
@@ -416,9 +425,7 @@ export type WorkspaceKey = {
   created_time: number
 }
 
-export async function listWorkspaceKeys(
-  id: number
-): Promise<WorkspaceKey[]> {
+export async function listWorkspaceKeys(id: number): Promise<WorkspaceKey[]> {
   const res = await api.get<ApiResp<WorkspaceKey[]>>(
     `/api/organization/workspaces/${id}/keys`
   )
@@ -729,7 +736,8 @@ export async function exportAdminOrgLogs(
   customerId?: number
 ): Promise<void> {
   let url = `/api/admin/organizations/${orgId}/logs/export${usageRangeQuery(from, to)}`
-  if (customerId) url += `${url.includes('?') ? '&' : '?'}customer_id=${customerId}`
+  if (customerId)
+    url += `${url.includes('?') ? '&' : '?'}customer_id=${customerId}`
   await downloadCsv(url, `call_records_${orgId}_${Date.now()}.csv`)
 }
 
@@ -760,7 +768,8 @@ export async function exportResellerLogs(
   customerId?: number
 ): Promise<void> {
   let url = `/api/organization/reseller/logs/export${usageRangeQuery(from, to)}`
-  if (customerId) url += `${url.includes('?') ? '&' : '?'}customer_id=${customerId}`
+  if (customerId)
+    url += `${url.includes('?') ? '&' : '?'}customer_id=${customerId}`
   await downloadCsv(url, `call_records_${Date.now()}.csv`)
 }
 
