@@ -15,6 +15,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// AdminListOrgCustomers — GET /api/admin/organizations/:id/customers
+// Lists a reseller org's downstream customers (id + name), for the admin's
+// per-customer filter on the reseller's usage/call-records views. Empty for a
+// non-reseller org.
+func AdminListOrgCustomers(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	customers, err := model.ListResellerCustomers(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	out := make([]gin.H, 0, len(customers))
+	for _, cust := range customers {
+		if cust.Org == nil {
+			continue
+		}
+		out = append(out, gin.H{"id": cust.Org.Id, "name": cust.Org.Name})
+	}
+	common.ApiSuccess(c, out)
+}
+
 // AdminListOrganizations — GET /api/admin/organizations
 func AdminListOrganizations(c *gin.Context) {
 	page := common.GetPageQuery(c)
@@ -28,6 +49,25 @@ func AdminListOrganizations(c *gin.Context) {
 	if customers, cErr := model.CustomerOrgIdSet(); cErr == nil {
 		for _, o := range orgs {
 			o.IsCustomer = customers[o.Id]
+		}
+	}
+	// Fill in each owner's email so the admin list shows a human-readable owner.
+	ownerIds := make([]int, 0, len(orgs))
+	for _, o := range orgs {
+		if o.OwnerUserId > 0 {
+			ownerIds = append(ownerIds, o.OwnerUserId)
+		}
+	}
+	if labels := model.UserDisplayLabelsByIds(ownerIds); len(labels) > 0 {
+		for _, o := range orgs {
+			o.OwnerEmail = labels[o.OwnerUserId]
+		}
+	}
+	// Expose per-model wholesale as a parsed map for the admin UI (the raw JSON
+	// string field is not serialized).
+	for _, o := range orgs {
+		if o.Type == model.OrgTypeReseller && o.WholesaleRatios != "" {
+			o.WholesaleRatioMap = model.ParseRetailDiscounts(o.WholesaleRatios)
 		}
 	}
 	page.SetTotal(int(total))
@@ -56,10 +96,16 @@ func AdminCreateOrganization(c *gin.Context) {
 			return
 		}
 	}
+	// A reseller's pricing is driven by its wholesale ratio, not a base-rate
+	// group, so reseller orgs are pinned to the default price group.
+	priceGroup := req.PriceGroup
+	if req.Type == model.OrgTypeReseller {
+		priceGroup = "default"
+	}
 	org := &model.Organization{
 		Name:        req.Name,
 		Type:        req.Type,
-		PriceGroup:  req.PriceGroup,
+		PriceGroup:  priceGroup,
 		OwnerUserId: req.OwnerId,
 		Remark:      req.Remark,
 	}
@@ -72,12 +118,13 @@ func AdminCreateOrganization(c *gin.Context) {
 }
 
 type adminUpdateOrgRequest struct {
-	Name           *string   `json:"name"`
-	PriceGroup     *string   `json:"price_group"`
-	Status         *string   `json:"status"`
-	Remark         *string   `json:"remark"`
-	WholesaleRatio *float64  `json:"wholesale_ratio"`
-	AllowedModels  *[]string `json:"allowed_models"`
+	Name            *string             `json:"name"`
+	PriceGroup      *string             `json:"price_group"`
+	Status          *string             `json:"status"`
+	Remark          *string             `json:"remark"`
+	WholesaleRatio  *float64            `json:"wholesale_ratio"`
+	WholesaleRatios *map[string]float64 `json:"wholesale_ratios"`
+	AllowedModels   *[]string           `json:"allowed_models"`
 }
 
 // AdminUpdateOrganization — PUT /api/admin/organizations/:id
@@ -98,7 +145,13 @@ func AdminUpdateOrganization(c *gin.Context) {
 		fields["name"] = name
 	}
 	if req.PriceGroup != nil {
-		fields["price_group"] = *req.PriceGroup
+		// Reseller orgs are pinned to the default price group (pricing comes from
+		// the wholesale ratio), so ignore any other group for them.
+		priceGroup := *req.PriceGroup
+		if org, gErr := model.GetOrganizationById(id); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
+			priceGroup = "default"
+		}
+		fields["price_group"] = priceGroup
 	}
 	if req.Status != nil {
 		if *req.Status != model.OrgStatusActive && *req.Status != model.OrgStatusSuspended {
@@ -117,7 +170,31 @@ func AdminUpdateOrganization(c *gin.Context) {
 			common.ApiErrorMsg(c, "wholesale_ratio must be within (0, 1]")
 			return
 		}
+		if !ratioAtMost2Decimals(*req.WholesaleRatio) {
+			common.ApiErrorMsg(c, "批发折最多保留两位小数")
+			return
+		}
 		fields["wholesale_ratio"] = *req.WholesaleRatio
+	}
+	if req.WholesaleRatios != nil {
+		// Per-model wholesale (route-2): the reseller's per-model cost basis. Each
+		// ratio (0,1], ≤2 decimals; empty map clears it (= no discount = 1.0).
+		for token, ratio := range *req.WholesaleRatios {
+			if ratio <= 0 || ratio > 1 {
+				common.ApiErrorMsg(c, "批发折必须在 (0,1] 之间: "+token)
+				return
+			}
+			if !ratioAtMost2Decimals(ratio) {
+				common.ApiErrorMsg(c, "批发折最多保留两位小数: "+token)
+				return
+			}
+		}
+		stored, mErr := model.MarshalRetailDiscounts(*req.WholesaleRatios)
+		if mErr != nil {
+			common.ApiError(c, mErr)
+			return
+		}
+		fields["wholesale_ratios"] = stored
 	}
 	if req.AllowedModels != nil {
 		// The reseller's offerable model set (names only). Empty = unrestricted.

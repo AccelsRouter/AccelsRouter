@@ -13,15 +13,11 @@ import { Button } from '@/components/ui/button'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 
 import type { OrgLog } from './api'
-import { Td, Th, fmtTime } from './shared'
+import { MONEY_OPTS, Td, Th, fmtTime } from './shared'
 import type { PagedResponse } from './types'
 
 const PAGE_SIZE = 20
 const LOG_TYPE_ERROR = 5
-// Show enough precision to distinguish tiny per-call costs (and the discounted
-// price from the standard one) — the platform log uses 6 fraction digits too.
-const PRICE_OPTS = { digitsLarge: 4, digitsSmall: 6 }
-
 type LogFetcher = (params: {
   page: number
   pageSize: number
@@ -56,6 +52,9 @@ export function CallRecords({
   // Show the discounted (actually-charged) price column only when the reseller
   // has set a discount for this customer.
   const showRetail = items.some((l) => l.retail_quota != null)
+  // A reseller's aggregated log spans multiple customers; show which customer
+  // each row belongs to. Empty in single-org (customer/enterprise) views.
+  const showCustomer = items.some((l) => l.customer_name)
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -100,17 +99,17 @@ export function CallRecords({
           <thead className='bg-muted/40 text-muted-foreground text-xs'>
             <tr>
               <Th>{t('Time')}</Th>
+              {showCustomer && <Th>{t('Customer')}</Th>}
               <Th>{t('Model')}</Th>
-              <Th>{t('Key')}</Th>
-              <Th className='text-right'>{t('Input')}</Th>
-              <Th className='text-right'>{t('Output')}</Th>
-              <Th className='text-right'>{t('Cost')}</Th>
-              {showRetail && (
-                <>
-                  <Th className='text-right'>{t('Discount')}</Th>
-                  <Th className='text-right'>{t('Charged')}</Th>
-                </>
-              )}
+              {/* In the aggregated (per-customer) view, Customer replaces Key to
+                  keep the table narrow. */}
+              {!showCustomer && <Th>{t('Key')}</Th>}
+              <Th>{t('Status')}</Th>
+              <Th className='text-right'>{t('Tokens (in / out)')}</Th>
+              <Th className='text-right'>
+                {showRetail ? t('Cost / Charged') : t('Cost')}
+              </Th>
+              <Th>{t('Detail')}</Th>
             </tr>
           </thead>
           <tbody className='divide-border/60 divide-y'>
@@ -118,43 +117,68 @@ export function CallRecords({
               const isError = l.type === LOG_TYPE_ERROR
               return (
               <tr key={l.id} className='hover:bg-muted/30'>
-                <Td className='whitespace-nowrap'>{fmtTime(l.created_at)}</Td>
+                <Td className='text-xs'>{fmtTime(l.created_at)}</Td>
+                {showCustomer && (
+                  <Td className='whitespace-nowrap'>{l.customer_name || '-'}</Td>
+                )}
+                <Td>{l.model_name || '-'}</Td>
+                {!showCustomer && (
+                  <Td className='text-muted-foreground'>
+                    {l.token_name || '-'}
+                  </Td>
+                )}
                 <Td>
-                  <span>{l.model_name || '-'}</span>
-                  {isError && (
-                    <span
-                      className='bg-destructive/10 text-destructive ml-2 rounded px-1.5 py-0.5 text-xs'
-                      title={l.content || ''}
-                    >
+                  {isError ? (
+                    <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs whitespace-nowrap'>
                       {t('Failed')}
+                    </span>
+                  ) : (
+                    <span className='rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs whitespace-nowrap text-emerald-600 dark:text-emerald-400'>
+                      {t('Success')}
                     </span>
                   )}
                 </Td>
-                <Td className='text-muted-foreground'>{l.token_name || '-'}</Td>
-                <Td className='text-right tabular-nums'>{l.prompt_tokens}</Td>
-                <Td className='text-right tabular-nums'>
-                  {l.completion_tokens}
+                {/* Tokens merged into one column: input / output. */}
+                <Td className='text-right tabular-nums whitespace-nowrap'>
+                  {isError
+                    ? '-'
+                    : `${l.prompt_tokens} / ${l.completion_tokens}`}
                 </Td>
-                <Td className='text-right tabular-nums'>
-                  {isError ? '-' : formatQuotaWithCurrency(l.quota, PRICE_OPTS)}
+                {/* Price merged: charged (bold) + standard·discount% as subtext. */}
+                <Td className='text-right tabular-nums whitespace-nowrap'>
+                  {isError ? (
+                    '-'
+                  ) : showRetail ? (
+                    <div className='flex flex-col items-end'>
+                      <span className='font-medium'>
+                        {formatQuotaWithCurrency(
+                          l.retail_quota ?? l.quota,
+                          MONEY_OPTS
+                        )}
+                      </span>
+                      <span className='text-muted-foreground text-xs'>
+                        {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
+                        {l.retail_ratio != null
+                          ? ` · ${Math.round(l.retail_ratio * 100)}%`
+                          : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    formatQuotaWithCurrency(l.quota, MONEY_OPTS)
+                  )}
                 </Td>
-                {showRetail && (
-                  <>
-                    <Td className='text-muted-foreground text-right tabular-nums'>
-                      {isError || l.retail_ratio == null
-                        ? '-'
-                        : `${Math.round(l.retail_ratio * 100)}%`}
-                    </Td>
-                    <Td className='text-right font-medium tabular-nums'>
-                      {isError
-                        ? '-'
-                        : formatQuotaWithCurrency(
-                            l.retail_quota ?? l.quota,
-                            PRICE_OPTS
-                          )}
-                    </Td>
-                  </>
-                )}
+                <Td className='text-muted-foreground text-xs'>
+                  {isError && l.content ? (
+                    <span
+                      className='inline-block max-w-[240px] truncate align-middle'
+                      title={l.content}
+                    >
+                      {l.content}
+                    </span>
+                  ) : (
+                    '-'
+                  )}
+                </Td>
               </tr>
               )
             })}

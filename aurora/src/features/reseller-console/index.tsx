@@ -43,7 +43,9 @@ import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 
+import { ResellerRecordsTab } from './records-tab'
 import { ResellerTopUpDialog } from './reseller-topup-dialog'
+import { ResellerUsageTab } from './usage-tab'
 
 export function ResellerConsole() {
   const { t } = useTranslation()
@@ -99,7 +101,7 @@ export function ResellerConsole() {
           <div className='flex flex-col gap-5'>
             <div className='border-border/60 bg-muted/30 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4'>
               <div className='flex flex-col gap-1'>
-                <div className='flex items-center gap-2'>
+                <div className='flex flex-wrap items-center gap-2'>
                   <span className='text-base font-semibold'>{self.name}</span>
                   <Badge variant='default'>{t('Reseller')}</Badge>
                   <Badge
@@ -109,6 +111,15 @@ export function ResellerConsole() {
                   >
                     {self.status === 'active' ? t('Active') : t('Suspended')}
                   </Badge>
+                  {self.wholesale_ratios &&
+                    Object.keys(self.wholesale_ratios).length > 0 && (
+                      <span className='rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-600 ring-1 ring-amber-500/30 dark:text-amber-400'>
+                        {t('Per-model wholesale')}:{' '}
+                        {Object.entries(self.wholesale_ratios)
+                          .map(([m, r]) => `${m} ${r.toFixed(2)}`)
+                          .join(', ')}
+                      </span>
+                    )}
                 </div>
                 {self.price_group && (
                   <span className='text-muted-foreground text-xs'>
@@ -129,11 +140,19 @@ export function ResellerConsole() {
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                 <TabsTrigger value='customers'>{t('Customers')}</TabsTrigger>
+                <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
+                <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
                 <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
               </TabsList>
               <TabsContent value='customers' className='pt-4'>
                 <CustomersTab walletQuota={self.wallet_quota} />
+              </TabsContent>
+              <TabsContent value='usage' className='pt-4'>
+                <ResellerUsageTab />
+              </TabsContent>
+              <TabsContent value='records' className='pt-4'>
+                <ResellerRecordsTab />
               </TabsContent>
               <TabsContent value='ledger' className='pt-4'>
                 <LedgerTab

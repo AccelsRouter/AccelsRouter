@@ -71,6 +71,15 @@ type Organization struct {
 	// customer statement multiplies standard cost by the matched ratio to get
 	// what the customer owes the reseller. Never touches the billing hot path.
 	RetailDiscounts string `json:"retail_discounts" gorm:"type:text"`
+	// WholesaleRatios is a platform-set JSON map {model token -> ratio in (0,1]}
+	// on a RESELLER org: the reseller's per-model cost basis. Each customer call
+	// debits the reseller's wallet by standard × the matched ratio (exact model
+	// name beats prefix; unset/unmatched = 1.0 = reseller pays full standard).
+	// This is the platform's per-model margin floor and DOES touch the billing
+	// hot path (see service/org_funding.go). Supersedes the flat WholesaleRatio.
+	// Stored as the raw JSON string; the parsed map is exposed to the frontend via
+	// the computed WholesaleRatioMap below (this raw field is not serialized).
+	WholesaleRatios string `json:"-" gorm:"type:text"`
 	// BrandName / BrandLogo white-label a RESELLER org: its downstream customers
 	// see this name+logo in place of the platform brand. Reseller self-set (see
 	// Get/SetResellerBrand). Empty = fall back to the platform brand.
@@ -84,6 +93,13 @@ type Organization struct {
 	// reseller-provisioned customer (in ResellerCustomerLink). Lets the admin UI
 	// separate enterprise direct clients from reseller customers.
 	IsCustomer bool `json:"is_customer" gorm:"-"`
+	// OwnerEmail is a computed, non-persisted convenience for admin list display:
+	// the owner user's email, or their username when no email is set.
+	OwnerEmail string `json:"owner_email,omitempty" gorm:"-"`
+	// WholesaleRatioMap is the computed, non-persisted parsed form of
+	// WholesaleRatios ({model -> ratio}) for the admin frontend. Populated where an
+	// org is returned to the admin UI (see AdminListOrganizations).
+	WholesaleRatioMap map[string]float64 `json:"wholesale_ratios,omitempty" gorm:"-"`
 }
 
 // OrgAccount binds a user to the organization that pays for it. UserId is
@@ -101,6 +117,54 @@ type OrgAccount struct {
 	RegisteredBy  string `json:"registered_by" gorm:"type:varchar(64)"` // deal registration
 	Status        string `json:"status" gorm:"type:varchar(16);index"`  // active | suspended
 	CreatedTime   int64  `json:"created_time"`
+	// Email is a computed, non-persisted convenience: the account user's email,
+	// so member lists can show the address instead of a bare user id.
+	Email string `json:"email,omitempty" gorm:"-"`
+}
+
+// UserEmailsByIds batch-loads user emails keyed by user id.
+func UserEmailsByIds(ids []int) map[int]string {
+	out := map[int]string{}
+	if len(ids) == 0 {
+		return out
+	}
+	type row struct {
+		Id    int
+		Email string
+	}
+	var rows []row
+	if err := DB.Table("users").Select("id, email").Where("id IN ?", ids).Scan(&rows).Error; err == nil {
+		for _, r := range rows {
+			out[r.Id] = r.Email
+		}
+	}
+	return out
+}
+
+// UserDisplayLabelsByIds batch-loads a human-readable label per user id: the
+// email when set, otherwise the username. Used where an admin needs to identify
+// a user who may have registered with a username only (no email).
+func UserDisplayLabelsByIds(ids []int) map[int]string {
+	out := map[int]string{}
+	if len(ids) == 0 {
+		return out
+	}
+	type row struct {
+		Id       int
+		Email    string
+		Username string
+	}
+	var rows []row
+	if err := DB.Table("users").Select("id, email, username").Where("id IN ?", ids).Scan(&rows).Error; err == nil {
+		for _, r := range rows {
+			if r.Email != "" {
+				out[r.Id] = r.Email
+			} else {
+				out[r.Id] = r.Username
+			}
+		}
+	}
+	return out
 }
 
 // CreditLedger is append-only: rows are never updated or deleted.
@@ -173,6 +237,28 @@ func (org *Organization) AllowedModelSet() map[string]bool {
 	return parseAllowedModels(org.AllowedModels)
 }
 
+// ModelAllowedBy reports whether a model is permitted by an allow-set. nil set =
+// unrestricted. An entry matches when it equals the requested model name (or its
+// normalized alias), OR when it is a PREFIX of the requested name — so a series
+// entry like "deepseek" permits "deepseek-chat", "deepseek-v3", etc. Prefix
+// matching is case-insensitive; exact matching preserves the existing behavior.
+func ModelAllowedBy(allowed map[string]bool, model, matchName string) bool {
+	if allowed == nil {
+		return true
+	}
+	if allowed[model] || (matchName != "" && allowed[matchName]) {
+		return true
+	}
+	name := strings.ToLower(model)
+	for token := range allowed {
+		t := strings.ToLower(strings.TrimSpace(token))
+		if t != "" && strings.HasPrefix(name, t) {
+			return true
+		}
+	}
+	return false
+}
+
 // MarshalAllowedModels serializes a model-name list for storage, de-duplicated
 // and trimmed. An empty result serializes to "" (= unrestricted).
 func MarshalAllowedModels(models []string) (string, error) {
@@ -243,6 +329,12 @@ type OrgPayerInfo struct {
 	// unrestricted). Enforced in the distributor so a reseller-provisioned
 	// customer can only use the models it was assigned.
 	AllowedModels map[string]bool
+	// ResellerAllowedModels is the OWNING reseller's offerable-model allow-list
+	// (nil = unrestricted or not a reseller customer). A reseller customer's
+	// request must satisfy BOTH this and AllowedModels — the reseller's set caps
+	// everything it may offer, regardless of the customer's own (possibly empty)
+	// list. Populated only for reseller customers.
+	ResellerAllowedModels map[string]bool
 }
 
 type orgPayerCacheEntry struct {
@@ -299,6 +391,13 @@ func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
 			MonthlyBudget: row.MonthlyBudget,
 			Relation:      row.Relation,
 			AllowedModels: parseAllowedModels(row.AllowedModels),
+		}
+		// A reseller customer is also capped by its reseller's offerable models:
+		// carry the reseller's allow-list so the distributor enforces both.
+		if resellerId, ok := ResellerOrgIdForCustomer(row.OrgId); ok && resellerId > 0 {
+			if reseller, rErr := GetOrganizationById(resellerId); rErr == nil && reseller != nil {
+				info.ResellerAllowedModels = parseAllowedModels(reseller.AllowedModels)
+			}
 		}
 	}
 	orgPayerCache.Store(userId, orgPayerCacheEntry{info: info, expiresAt: time.Now().Add(orgPayerCacheTTL)})
@@ -482,6 +581,14 @@ type WorkspaceBillingInfo struct {
 	// the reseller's discount; empty = standard price. Carried here from the
 	// org row already loaded, so it costs no extra query.
 	RetailDiscounts string
+	// ResellerOrgId is the reseller that owns this customer org (0 = not a
+	// reseller customer). When non-zero, each call also debits the reseller's
+	// wallet at the per-model wholesale ratio below (route-2 two-pool billing).
+	ResellerOrgId int
+	// WholesaleRatios is that reseller's per-model wholesale map (JSON): the
+	// reseller's cost basis, drained from the reseller wallet per call. Empty /
+	// unmatched = 1.0 = reseller pays full standard.
+	WholesaleRatios string
 }
 
 // GetWorkspaceBillingInfo resolves the org that pays for a token via its
@@ -511,13 +618,23 @@ func GetWorkspaceBillingInfo(tokenId int) (*WorkspaceBillingInfo, error) {
 	if org == nil {
 		return nil, nil
 	}
-	return &WorkspaceBillingInfo{
+	info := &WorkspaceBillingInfo{
 		WorkspaceId:     wsId,
 		OrgId:           ws.OrgId,
 		OrgStatus:       org.Status,
 		WorkspaceStatus: ws.Status,
 		RetailDiscounts: org.RetailDiscounts,
-	}, nil
+	}
+	// Route-2: if this org is a reseller's customer, carry the reseller id and
+	// its per-model wholesale map so the hot path can debit the reseller wallet
+	// at wholesale alongside the customer wallet at retail.
+	if resellerId, ok := ResellerOrgIdForCustomer(ws.OrgId); ok && resellerId > 0 {
+		info.ResellerOrgId = resellerId
+		if reseller, rErr := GetOrganizationById(resellerId); rErr == nil && reseller != nil {
+			info.WholesaleRatios = reseller.WholesaleRatios
+		}
+	}
+	return info, nil
 }
 
 func GetTokenWorkspaceId(tokenId int) (int, error) {
@@ -625,6 +742,63 @@ func TransferOrgCredit(fromOrgId, toOrgId, quota, operatorId int, ledgerType, re
 			return err
 		}
 		return insertLedger(tx, fromOrgId, toOrgId, quota, operatorId, ledgerType, "", remark)
+	})
+}
+
+// GrantCustomerQuota credits a customer org's wallet as a spending cap WITHOUT
+// debiting the reseller's wallet. Under route-2 two-pool billing the reseller
+// wallet is its platform-cost balance (drained per call at wholesale), never the
+// source of customer allocations — so allocating to a customer is a free grant,
+// bounded only by the reseller's real balance at call time. An allocate ledger
+// row records the grant (from reseller → customer) so NetAllocatedBetween stays
+// correct.
+func GrantCustomerQuota(resellerOrgId, customerOrgId, quota, operatorId int, remark string) error {
+	if quota <= 0 {
+		return errors.New("allocation quota must be positive")
+	}
+	if resellerOrgId == customerOrgId {
+		return errors.New("cannot allocate to the same organization")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&Organization{}).Where("id = ?", customerOrgId).
+			Updates(map[string]interface{}{
+				"wallet_quota": gorm.Expr("wallet_quota + ?", quota),
+				"updated_time": common.GetTimestamp(),
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return errors.New("customer organization not found")
+		}
+		return insertLedger(tx, resellerOrgId, customerOrgId, quota, operatorId, LedgerTypeAllocate, "", remark)
+	})
+}
+
+// RevokeCustomerQuota reduces a customer org's wallet cap (bounded by its
+// remaining balance) WITHOUT crediting the reseller's wallet — the mirror of
+// GrantCustomerQuota. A revoke ledger row (from customer → reseller) records it.
+func RevokeCustomerQuota(resellerOrgId, customerOrgId, quota, operatorId int, remark string) error {
+	if quota <= 0 {
+		return errors.New("revoke quota must be positive")
+	}
+	if resellerOrgId == customerOrgId {
+		return errors.New("cannot revoke from the same organization")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&Organization{}).
+			Where("id = ? AND wallet_quota >= ?", customerOrgId, quota).
+			Updates(map[string]interface{}{
+				"wallet_quota": gorm.Expr("wallet_quota - ?", quota),
+				"updated_time": common.GetTimestamp(),
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return fmt.Errorf("insufficient unconsumed balance in organization %d", customerOrgId)
+		}
+		return insertLedger(tx, customerOrgId, resellerOrgId, quota, operatorId, LedgerTypeRevoke, "", remark)
 	})
 }
 

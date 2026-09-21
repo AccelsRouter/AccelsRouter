@@ -138,6 +138,7 @@ export function CustomersTab(props: { walletQuota: number }) {
             <thead className='bg-muted/40 text-muted-foreground text-xs'>
               <tr>
                 <Th>{t('Name')}</Th>
+                <Th>{t('Owner')}</Th>
                 <Th className='text-right'>{t('Wallet Balance')}</Th>
                 <Th className='text-right'>{t('Net Allocated')}</Th>
                 <Th>{t('Price Group')}</Th>
@@ -157,6 +158,9 @@ export function CustomersTab(props: { walletQuota: number }) {
                         {t('Suspended')}
                       </Badge>
                     )}
+                  </Td>
+                  <Td className='text-muted-foreground'>
+                    {c.owner_email || '-'}
                   </Td>
                   <Td className='text-right tabular-nums'>
                     {formatQuotaWithCurrency(c.org.wallet_quota)}
@@ -462,7 +466,7 @@ function CustomerInviteDialog(props: {
             )}
           </DialogDescription>
         </DialogHeader>
-        <div className='flex flex-col gap-3'>
+        <div className='flex min-w-0 flex-col gap-3'>
           <Field label={t('Invited email')}>
             <div className='flex gap-2'>
               <Input
@@ -470,7 +474,7 @@ function CustomerInviteDialog(props: {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder='owner@customer.com'
-                className='min-w-0'
+                className='min-w-0 flex-1'
               />
               <Button
                 onClick={() => inviteMutation.mutate()}
@@ -608,12 +612,9 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label={t('Price Group')}>
-            <Input
-              value={priceGroup}
-              onChange={(e) => setPriceGroup(e.target.value)}
-            />
+            <Input value={priceGroup} disabled readOnly />
             <span className='text-muted-foreground text-xs'>
-              {t('The customer\'s retail price group. Defaults to "default".')}
+              {t('Fixed to "default"; pricing is driven by your discounts.')}
             </span>
           </Field>
           <Field label={t('Initial amount (USD)')}>

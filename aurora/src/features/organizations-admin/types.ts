@@ -31,9 +31,11 @@ export type Organization = {
   wallet_quota: number
   price_group: string
   wholesale_ratio?: number
+  wholesale_ratios?: Record<string, number>
   is_customer?: boolean
   allowed_models?: string
   owner_user_id: number
+  owner_email?: string
   remark: string
   created_time: number
   updated_time: number
@@ -72,6 +74,7 @@ export type UpdateOrgPayload = {
   status?: OrgStatus
   remark?: string
   wholesale_ratio?: number
+  wholesale_ratios?: Record<string, number>
   allowed_models?: string[]
 }
 

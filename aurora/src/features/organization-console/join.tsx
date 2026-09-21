@@ -21,7 +21,7 @@ Accept-invitation page reachable at /organization/join?code=... An invited
 user previews which organization and role they would be joining and must click
 "Join" to consent. On success they are routed to the "My Organization" console.
 */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Building2, Loader2 } from 'lucide-react'
@@ -77,6 +77,25 @@ export function JoinOrganization({ code }: { code?: string }) {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
+
+  // Arriving via the invite link with a matching email is itself consent: accept
+  // automatically so the invited customer is joined on entry, without a manual
+  // click. When the email is missing/mismatched we don't auto-join — the
+  // guidance below is shown and the button stays as a manual fallback.
+  const autoAttempted = useRef(false)
+  useEffect(() => {
+    if (
+      !autoAttempted.current &&
+      activeCode.length > 0 &&
+      !!preview &&
+      !emailBlocked &&
+      !acceptMutation.isPending &&
+      !acceptMutation.isSuccess
+    ) {
+      autoAttempted.current = true
+      acceptMutation.mutate()
+    }
+  }, [activeCode, preview, emailBlocked, acceptMutation])
 
   return (
     <SectionPageLayout>

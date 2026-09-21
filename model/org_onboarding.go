@@ -100,7 +100,7 @@ func CreateOrgApplication(app *OrgApplication) error {
 	// versa). Each role is guarded against duplication on its own table.
 	if app.Type == OrgTypeReseller {
 		if isAdmin, _ := IsResellerAdmin(app.UserId); isAdmin {
-			return errors.New("你已是代理商管理员，无法重复申请")
+			return errors.New("你已是分销商管理员，无法重复申请")
 		}
 	} else if existing, _ := GetOrgAccountByUser(app.UserId); existing != nil {
 		return errors.New("你已归属某个组织，无法申请开通")
@@ -182,7 +182,7 @@ func ApproveOrgApplication(appId, reviewerId int, priceGroup, note string) (*Org
 				return err
 			}
 			if already > 0 {
-				return errors.New("申请人已是代理商管理员")
+				return errors.New("申请人已是分销商管理员")
 			}
 		} else {
 			var managed int64

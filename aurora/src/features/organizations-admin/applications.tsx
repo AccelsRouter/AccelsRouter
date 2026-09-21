@@ -43,8 +43,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ModelRatioRows } from '@/components/model-ratio-rows'
 import {
   NativeSelect,
   NativeSelectOption,
@@ -283,9 +283,15 @@ function ReviewDialog(props: {
   const isApprove = review?.mode === 'approve'
   const isReseller = review?.app.type === 'reseller'
   const [priceGroup, setPriceGroup] = useState('')
-  const [wholesaleRatio, setWholesaleRatio] = useState('')
+  const [wholesaleRatios, setWholesaleRatios] = useState<
+    Record<string, number>
+  >({})
+  const [wholesaleValid, setWholesaleValid] = useState(true)
   const [note, setNote] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
+
+  const wholesaleCount = Object.keys(wholesaleRatios).length
 
   const { data: groups } = useQuery({
     queryKey: ['admin-groups'],
@@ -298,7 +304,8 @@ function ReviewDialog(props: {
   if (review && key !== loadedKey) {
     setLoadedKey(key)
     setPriceGroup('')
-    setWholesaleRatio('')
+    setWholesaleRatios({})
+    setWholesaleValid(true)
     setNote('')
   }
 
@@ -307,10 +314,8 @@ function ReviewDialog(props: {
       isApprove
         ? approveApplication(review!.app.id, {
             price_group: priceGroup.trim() || undefined,
-            wholesale_ratio:
-              isReseller && wholesaleRatio.trim() !== ''
-                ? Number(wholesaleRatio)
-                : undefined,
+            wholesale_ratios:
+              isReseller && wholesaleCount > 0 ? wholesaleRatios : undefined,
             note: note.trim() || undefined,
           })
         : rejectApplication(review!.app.id, {
@@ -320,11 +325,26 @@ function ReviewDialog(props: {
       toast.success(isApprove ? t('Application approved') : t('Application rejected'))
       queryClient.invalidateQueries({ queryKey: ['admin-org-applications'] })
       queryClient.invalidateQueries({ queryKey: ['admin-organizations'] })
+      setConfirmOpen(false)
       setLoadedKey(null)
       props.onClose()
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
+
+  // Reseller approval goes through a second confirmation summarizing the
+  // per-model wholesale (the floor every customer discount must beat).
+  const handlePrimary = () => {
+    if (isApprove && isReseller) {
+      if (!wholesaleValid) {
+        toast.error(t('Each ratio must be in (0,1] with at most 2 decimals'))
+        return
+      }
+      setConfirmOpen(true)
+      return
+    }
+    mutation.mutate()
+  }
 
   return (
     <Dialog open={!!review} onOpenChange={(o) => !o && props.onClose()}>
@@ -375,19 +395,18 @@ function ReviewDialog(props: {
           )}
           {isApprove && isReseller && (
             <div className='flex flex-col gap-1.5'>
-              <Label className='text-xs'>{t('Wholesale ratio')}</Label>
-              <Input
-                type='number'
-                min={0}
-                max={1}
-                step='0.01'
-                placeholder='1.0'
-                value={wholesaleRatio}
-                onChange={(e) => setWholesaleRatio(e.target.value)}
+              <Label className='text-xs'>{t('Per-model wholesale ratios')}</Label>
+              <ModelRatioRows
+                key={key ?? 'none'}
+                initial={{}}
+                onChange={(map, valid) => {
+                  setWholesaleRatios(map)
+                  setWholesaleValid(valid)
+                }}
               />
               <span className='text-muted-foreground text-xs'>
                 {t(
-                  'The reseller pays this fraction of face value when buying credit (e.g. 0.85 = 15% off). Blank = no discount.'
+                  'Optional: the reseller pays standard × this ratio per call for matching models (e.g. 0.85 = 15% off). Unset = no discount. You can adjust anytime.'
                 )}
               </span>
             </div>
@@ -410,8 +429,8 @@ function ReviewDialog(props: {
             {t('Cancel')}
           </Button>
           <Button
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
+            onClick={handlePrimary}
+            disabled={mutation.isPending || (isReseller && !wholesaleValid)}
             className='gap-1.5'
           >
             {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
@@ -419,6 +438,45 @@ function ReviewDialog(props: {
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>{t('Confirm wholesale pricing')}</DialogTitle>
+            <DialogDescription>
+              {wholesaleCount > 0
+                ? t(
+                    'Approve {{name}} with wholesale ratios for {{count}} model(s)? Customer discounts must be at least these, and you can adjust them later.',
+                    {
+                      name: review?.app.org_name ?? '',
+                      count: wholesaleCount,
+                    }
+                  )
+                : t(
+                    'Approve {{name}} with no wholesale discount (the reseller pays full standard per call)? You can set per-model wholesale later.',
+                    { name: review?.app.org_name ?? '' }
+                  )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className='gap-2'>
+            <Button
+              variant='outline'
+              onClick={() => setConfirmOpen(false)}
+              disabled={mutation.isPending}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending}
+              className='gap-1.5'
+            >
+              {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
+              {t('Confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

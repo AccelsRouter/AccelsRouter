@@ -7,12 +7,12 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,7 +27,7 @@ func callerReseller(c *gin.Context) (*model.Organization, bool) {
 		return nil, false
 	}
 	if org == nil {
-		common.ApiErrorMsg(c, "仅代理商组织可访问")
+		common.ApiErrorMsg(c, "仅分销商组织可访问")
 		return nil, false
 	}
 	if org.Status == model.OrgStatusSuspended {
@@ -58,14 +58,10 @@ func CreateMyCustomer(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	// The retail price group must be a configured group (or the default), so a
-	// customer can't be assigned a non-existent group with undefined pricing.
-	priceGroup := strings.TrimSpace(req.PriceGroup)
-	if priceGroup != "" && priceGroup != "default" && !ratio_setting.ContainsGroupRatio(priceGroup) {
-		common.ApiErrorMsg(c, "价格组不存在")
-		return
-	}
-	customer, err := model.CreateResellerCustomer(reseller.Id, strings.TrimSpace(req.Name), priceGroup, req.InitialQuota, c.GetInt("id"))
+	// A reseller customer always uses the default price group: its pricing is
+	// driven by the reseller's retail discounts, not a per-group base rate. The
+	// client field is ignored so it can never be assigned a divergent group.
+	customer, err := model.CreateResellerCustomer(reseller.Id, strings.TrimSpace(req.Name), "default", req.InitialQuota, c.GetInt("id"))
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
@@ -110,17 +106,83 @@ func GetMyCustomerUsage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	report, err := model.GetOrgUsage(customerId, from, to)
+	// Immutable rollup already carries the actual charged (retail) per row.
+	report, err := model.GetOrgUsageFromDaily(customerId, from, to)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	// Overlay the reseller's retail discount so the statement shows what the
-	// customer owes (standard × per-model-series ratio). Reporting only.
-	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
-		report.ApplyRetailDiscounts(model.ParseRetailDiscounts(customer.RetailDiscounts))
+	common.ApiSuccess(c, report)
+}
+
+// GetMyResellerUsage — GET /api/organization/reseller/usage
+// The reseller's aggregated usage across ALL its own customers (per-customer in
+// ByWorkspace, merged by model/member), with each customer's retail overlay.
+// callerReseller scopes it to the caller's own reseller org.
+func GetMyResellerUsage(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	report, err := model.GetResellerUsageFromDaily(reseller.Id, from, to)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	common.ApiSuccess(c, report)
+}
+
+// ListMyResellerLogs — GET /api/organization/reseller/logs
+// The reseller's aggregated call records across all its customers, or scoped to
+// one customer when customer_id is a valid customer of it.
+func ListMyResellerLogs(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	customerId, _ := strconv.Atoi(c.Query("customer_id"))
+	var logs []*model.Log
+	var total int64
+	var err error
+	if customerId > 0 {
+		if isCust, _ := model.IsResellerCustomer(reseller.Id, customerId); !isCust {
+			common.ApiErrorMsg(c, "该组织不是你的客户")
+			return
+		}
+		logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+	} else {
+		logs, total, err = model.ListResellerLogs(reseller.Id, from, to, page.GetStartIdx(), page.GetPageSize())
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(logs)
+	common.ApiSuccess(c, page)
+}
+
+// ExportMyResellerLogs — GET /api/organization/reseller/logs/export (CSV)
+func ExportMyResellerLogs(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	from, to, ok := parseUsageWindow(c)
+	if !ok {
+		return
+	}
+	customerId, _ := strconv.Atoi(c.Query("customer_id"))
+	writeOrgLogsCSV(c, reseller.Id, customerId, reseller.Name, from, to)
 }
 
 // GetMyCustomerPricing — GET /api/reseller/customers/:id/pricing
@@ -152,9 +214,23 @@ func SetMyCustomerPricing(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// A customer's per-model retail ratio must be at least the reseller's own
+	// per-model wholesale ratio for that model (the reseller must not resell below
+	// its cost — equal is allowed = zero margin), have at most two decimals, and
+	// stay within (0,1]. The floor is resolved per model (exact name beats prefix).
+	wholesale := model.ParseRetailDiscounts(reseller.WholesaleRatios)
 	for token, ratio := range req.Discounts {
 		if ratio <= 0 || ratio > 1 {
 			common.ApiErrorMsg(c, "折扣比例必须在 (0,1] 之间: "+token)
+			return
+		}
+		if !ratioAtMost2Decimals(ratio) {
+			common.ApiErrorMsg(c, "折扣最多保留两位小数: "+token)
+			return
+		}
+		floor := model.WholesaleRatioFor(token, wholesale)
+		if ratio < floor {
+			common.ApiErrorMsg(c, fmt.Sprintf("客户折扣不能低于该模型的批发折 %.2f: %s", floor, token))
 			return
 		}
 	}
@@ -406,7 +482,7 @@ func ExportMyCustomerLogs(c *gin.Context) {
 	if org, err := model.GetOrganizationById(customerId); err == nil && org != nil {
 		name = org.Name
 	}
-	writeOrgLogsCSV(c, customerId, name, from, to)
+	writeOrgLogsCSV(c, customerId, 0, name, from, to)
 }
 
 func GetMyCustomerLogs(c *gin.Context) {
@@ -443,14 +519,23 @@ func GetMyResellerOrg(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, gin.H{
-		"id":           reseller.Id,
-		"name":         reseller.Name,
-		"type":         reseller.Type,
-		"status":       reseller.Status,
-		"wallet_quota": reseller.WalletQuota,
-		"price_group":  reseller.PriceGroup,
-		"is_owner":     true,
+		"id":               reseller.Id,
+		"name":             reseller.Name,
+		"type":             reseller.Type,
+		"status":           reseller.Status,
+		"wallet_quota":     reseller.WalletQuota,
+		"price_group":      reseller.PriceGroup,
+		"wholesale_ratio":  reseller.WholesaleRatio,
+		"wholesale_ratios": model.ParseRetailDiscounts(reseller.WholesaleRatios),
+		"is_owner":         true,
 	})
+}
+
+// ratioAtMost2Decimals reports whether a discount ratio has at most two decimal
+// places (e.g. 0.85 ok, 0.855 not), tolerating float representation noise.
+func ratioAtMost2Decimals(r float64) bool {
+	scaled := r * 100
+	return math.Abs(scaled-math.Round(scaled)) < 1e-6
 }
 
 // GetMyResellerAudit — GET /api/reseller/audit
@@ -581,12 +666,11 @@ func PurchaseMyResellerCredit(c *gin.Context) {
 		common.ApiErrorMsg(c, "单次购买额度超过上限")
 		return
 	}
-	// cost (personal quota spent) = credit × wholesale ratio, rounded via the
-	// centralized quota rounding helper. ratio ≤ 1 ⇒ cost ≤ credit.
-	cost := common.QuotaRound(float64(req.Quota) * reseller.EffectiveWholesaleRatio())
-	if cost <= 0 {
-		cost = req.Quota
-	}
+	// Route-2: the reseller tops up its cost balance 1:1 (personal quota spent =
+	// credit bought). The wholesale discount is no longer realized at top-up — it
+	// is applied per call, per model, against the reseller wallet (see
+	// service/org_funding.go). ratio-at-purchase is gone.
+	cost := req.Quota
 	tradeNo := "rspur-" + common.GetUUID()
 	if err := model.PurchaseResellerCredit(reseller.Id, c.GetInt("id"), req.Quota, cost, tradeNo, "reseller wallet purchase"); err != nil {
 		common.ApiErrorMsg(c, err.Error())

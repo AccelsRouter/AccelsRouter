@@ -16,25 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
-import { z } from 'zod'
+import { createFileRoute } from '@tanstack/react-router'
 
-import { SignUp } from '@/features/auth/sign-up'
-import { useAuthStore } from '@/stores/auth-store'
+import { Reconciliation } from '@/features/reconciliation'
 
-const searchSchema = z.object({
-  redirect: z.string().optional(),
-})
-
-export const Route = createFileRoute('/(auth)/sign-up')({
-  component: SignUp,
-  validateSearch: searchSchema,
-  beforeLoad: async ({ search }) => {
-    const { auth } = useAuthStore.getState()
-
-    // 如果已经有用户信息，说明已登录，注册页对其无意义，跳转到目标页（保留 redirect）
-    if (auth.user) {
-      throw redirect({ to: search?.redirect || '/dashboard' })
-    }
-  },
+export const Route = createFileRoute('/_authenticated/reconciliation/')({
+  component: Reconciliation,
 })

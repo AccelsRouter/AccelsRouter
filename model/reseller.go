@@ -57,23 +57,43 @@ func MarshalRetailDiscounts(m map[string]float64) (string, error) {
 	return string(b), nil
 }
 
-// RetailDiscountFor returns the ratio to apply to a model, matching the longest
-// series token that is a substring of the (lowercased) model name; 1.0 (no
-// discount) when nothing matches.
-func RetailDiscountFor(modelName string, discounts map[string]float64) float64 {
-	if len(discounts) == 0 {
+// discountRatioFor resolves the ratio for a model from a {token -> ratio} map
+// with a fixed precedence: an exact full-model-name key wins over any prefix,
+// and among prefixes the longest (most specific) wins; 1.0 (no discount) when
+// nothing matches. Matching is case-insensitive. Shared by the retail and
+// wholesale sides so both honor the same "exact beats prefix" rule.
+func discountRatioFor(modelName string, ratios map[string]float64) float64 {
+	if len(ratios) == 0 {
 		return 1.0
 	}
 	name := strings.ToLower(modelName)
+	// 1. Exact full-model-name match takes priority over any prefix.
+	if r, ok := ratios[name]; ok {
+		return r
+	}
+	// 2. Otherwise the longest matching prefix wins.
 	best := 1.0
 	bestLen := -1
-	for token, ratio := range discounts {
-		if strings.Contains(name, token) && len(token) > bestLen {
+	for token, ratio := range ratios {
+		if strings.HasPrefix(name, token) && len(token) > bestLen {
 			best = ratio
 			bestLen = len(token)
 		}
 	}
 	return best
+}
+
+// RetailDiscountFor returns the reseller's retail (customer-side) ratio for a
+// model. Exact model name beats prefix; 1.0 when nothing matches.
+func RetailDiscountFor(modelName string, discounts map[string]float64) float64 {
+	return discountRatioFor(modelName, discounts)
+}
+
+// WholesaleRatioFor returns the platform's wholesale (reseller-cost) ratio for a
+// model. Exact model name beats prefix; 1.0 (reseller pays full standard) when
+// nothing matches — an unset wholesale means no discount.
+func WholesaleRatioFor(modelName string, ratios map[string]float64) float64 {
+	return discountRatioFor(modelName, ratios)
 }
 
 // EffectiveWholesaleRatio returns the reseller's wholesale price ratio, clamped
@@ -112,7 +132,7 @@ func PurchaseResellerCredit(resellerOrgId, userId, quota, cost int, tradeNo, rem
 		// Verify the credit landed (parity with PlatformCreditOrg/TransferOrgCredit):
 		// if the org row is gone, roll back rather than silently debiting the buyer.
 		if cred.RowsAffected != 1 {
-			return errors.New("代理商组织不存在")
+			return errors.New("分销商组织不存在")
 		}
 		return insertLedger(tx, 0, resellerOrgId, quota, userId, LedgerTypePurchase, tradeNo, remark)
 	})
@@ -144,6 +164,9 @@ type ResellerCustomerLink struct {
 type ResellerCustomer struct {
 	Org          *Organization `json:"org"`
 	NetAllocated int           `json:"net_allocated"`
+	// OwnerEmail is the customer org's operator (the invited admin) email, so a
+	// reseller can identify the contact behind each customer.
+	OwnerEmail string `json:"owner_email,omitempty"`
 }
 
 // CreateResellerCustomer provisions a customer org (type enterprise, retail
@@ -158,14 +181,14 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 		return nil, err
 	}
 	if reseller == nil || reseller.Type != OrgTypeReseller {
-		return nil, errors.New("只有代理商组织可以创建客户")
+		return nil, errors.New("只有分销商组织可以创建客户")
 	}
 	if initialQuota <= 0 {
 		return nil, errors.New("初始划拨额度必须为正")
 	}
-	if reseller.WalletQuota < initialQuota {
-		return nil, errors.New("代理商钱包余额不足")
-	}
+	// Route-2: the initial allocation is a spending-cap grant to the customer, not
+	// a transfer funded from the reseller wallet (that wallet is the reseller's
+	// per-call cost balance), so no reseller-balance precheck is needed.
 	if priceGroup == "" {
 		priceGroup = "default"
 	}
@@ -178,14 +201,14 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 		DB.Delete(&Organization{}, customer.Id)
 		return nil, err
 	}
-	// Fund it (atomic wallet move + ledger). On failure — e.g. a race drained
-	// the reseller wallet after the pre-check — remove the orphan shell + link.
-	if err := TransferOrgCredit(resellerOrgId, customer.Id, initialQuota, operatorId, LedgerTypeAllocate, "initial allocation"); err != nil {
+	// Grant the customer its initial spending cap (+ledger). On failure remove the
+	// orphan shell + link.
+	if err := GrantCustomerQuota(resellerOrgId, customer.Id, initialQuota, operatorId, "initial allocation"); err != nil {
 		DB.Where("customer_org_id = ?", customer.Id).Delete(&ResellerCustomerLink{})
 		DB.Delete(&Organization{}, customer.Id)
 		return nil, err
 	}
-	// Re-fetch so the returned org reflects the funded wallet (TransferOrgCredit
+	// Re-fetch so the returned org reflects the granted cap (GrantCustomerQuota
 	// updated the DB row, not the in-memory struct).
 	if fresh, err := GetOrganizationById(customer.Id); err == nil && fresh != nil {
 		customer = fresh
@@ -200,6 +223,30 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Order("id ASC").Find(&links).Error; err != nil {
 		return nil, err
 	}
+	// Resolve each customer org's operator (owner/admin) email in a couple of
+	// batch queries rather than per-row.
+	custIds := make([]int, 0, len(links))
+	for _, l := range links {
+		custIds = append(custIds, l.CustomerOrgId)
+	}
+	ownerByOrg := map[int]int{}
+	if len(custIds) > 0 {
+		var accts []OrgAccount
+		if err := DB.Where("org_id IN ?", custIds).Find(&accts).Error; err == nil {
+			for _, a := range accts {
+				// Prefer an explicit owner, else the first admin/member seen.
+				if cur, ok := ownerByOrg[a.OrgId]; !ok || (a.Role == OrgRoleOwner && cur != 0) {
+					ownerByOrg[a.OrgId] = a.UserId
+				}
+			}
+		}
+	}
+	ownerIds := make([]int, 0, len(ownerByOrg))
+	for _, uid := range ownerByOrg {
+		ownerIds = append(ownerIds, uid)
+	}
+	emails := UserEmailsByIds(ownerIds)
+
 	out := make([]*ResellerCustomer, 0, len(links))
 	for _, link := range links {
 		org, err := GetOrganizationById(link.CustomerOrgId)
@@ -210,7 +257,11 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, &ResellerCustomer{Org: org, NetAllocated: net})
+		out = append(out, &ResellerCustomer{
+			Org:          org,
+			NetAllocated: net,
+			OwnerEmail:   emails[ownerByOrg[link.CustomerOrgId]],
+		})
 	}
 	return out, nil
 }

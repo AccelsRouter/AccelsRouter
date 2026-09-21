@@ -72,6 +72,14 @@ func ListMyOrgAccounts(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	ids := make([]int, 0, len(accounts))
+	for _, a := range accounts {
+		ids = append(ids, a.UserId)
+	}
+	emails := model.UserEmailsByIds(ids)
+	for _, a := range accounts {
+		a.Email = emails[a.UserId]
+	}
 	common.ApiSuccess(c, accounts)
 }
 
@@ -211,7 +219,7 @@ func ExportMyOrgLogs(c *gin.Context) {
 	if !ok {
 		return
 	}
-	writeOrgLogsCSV(c, org.Id, org.Name, from, to)
+	writeOrgLogsCSV(c, org.Id, 0, org.Name, from, to)
 }
 
 func ListMyOrgLedger(c *gin.Context) {
@@ -263,7 +271,7 @@ func AllocateFromMyOrg(c *gin.Context) {
 	if r := []rune(req.Remark); len(r) > 255 {
 		req.Remark = string(r[:255])
 	}
-	if err := model.TransferOrgCredit(org.Id, req.ToOrgId, req.Quota, c.GetInt("id"), model.LedgerTypeAllocate, req.Remark); err != nil {
+	if err := model.GrantCustomerQuota(org.Id, req.ToOrgId, req.Quota, c.GetInt("id"), req.Remark); err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
@@ -304,12 +312,13 @@ func RevokeFromMyOrg(c *gin.Context) {
 		common.ApiErrorMsg(c, "回收额度不能超过对该组织的净划拨额")
 		return
 	}
-	// from = customer, to = reseller; the customer's own unconsumed balance
-	// still bounds the actual pull (TransferOrgCredit's conditional deduct).
+	// The customer's own unconsumed balance still bounds the actual pull
+	// (RevokeCustomerQuota's conditional deduct); the reseller wallet is untouched
+	// (route-2: allocations are caps, not funded from the reseller wallet).
 	if r := []rune(req.Remark); len(r) > 255 {
 		req.Remark = string(r[:255])
 	}
-	if err := model.TransferOrgCredit(req.ToOrgId, org.Id, req.Quota, c.GetInt("id"), model.LedgerTypeRevoke, req.Remark); err != nil {
+	if err := model.RevokeCustomerQuota(org.Id, req.ToOrgId, req.Quota, c.GetInt("id"), req.Remark); err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}

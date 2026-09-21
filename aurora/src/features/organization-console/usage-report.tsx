@@ -27,7 +27,7 @@ import { useTranslation } from 'react-i18next'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import { formatNumber } from '@/lib/format'
 
-import { Td, Th } from './shared'
+import { MONEY_OPTS, Td, Th } from './shared'
 import type { OrgUsageReport, UsageBucket } from './types'
 
 function StatCard(props: { label: string; value: string }) {
@@ -82,11 +82,14 @@ function BucketTable(props: {
                 <tr key={b.key} className='hover:bg-muted/30'>
                   <Td className='font-medium'>{b.key || '-'}</Td>
                   <Td className='text-right tabular-nums'>
-                    {formatQuotaWithCurrency(b.quota)}
+                    {formatQuotaWithCurrency(b.quota, MONEY_OPTS)}
                   </Td>
                   {props.showRetail && (
                     <Td className='text-right tabular-nums'>
-                      {formatQuotaWithCurrency(b.retail_quota ?? b.quota)}
+                      {formatQuotaWithCurrency(
+                        b.retail_quota ?? b.quota,
+                        MONEY_OPTS
+                      )}
                     </Td>
                   )}
                   <Td className='text-right tabular-nums'>
@@ -136,7 +139,7 @@ export function UsageReport(props: {
       <div className='grid grid-cols-2 gap-3 lg:grid-cols-4'>
         <StatCard
           label={t('Total Quota')}
-          value={formatQuotaWithCurrency(report.total_quota)}
+          value={formatQuotaWithCurrency(report.total_quota, MONEY_OPTS)}
         />
         <StatCard
           label={t('Requests')}
@@ -153,7 +156,7 @@ export function UsageReport(props: {
         {report.total_retail_quota != null && (
           <StatCard
             label={t('Total Retail')}
-            value={formatQuotaWithCurrency(report.total_retail_quota)}
+            value={formatQuotaWithCurrency(report.total_retail_quota, MONEY_OPTS)}
           />
         )}
       </div>

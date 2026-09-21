@@ -20,8 +20,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { ratioForModel } from '@/components/model-ratio-rows'
 
-import { getCustomerPricing, setCustomerPricing } from './api'
+import {
+  getCustomerPricing,
+  getResellerSelf,
+  setCustomerPricing,
+} from './api'
 import type { ResellerCustomer } from './types'
 
 type Row = { token: string; ratio: string }
@@ -41,6 +46,24 @@ export function CustomerPricingDialog(props: {
     queryFn: () => getCustomerPricing(customer!.org.id),
     enabled: !!customer,
   })
+  // The reseller's per-model wholesale ratio is the floor for that model: a
+  // customer discount must be at least the wholesale (the reseller can't resell
+  // below its cost; equal = zero margin is allowed).
+  const { data: self } = useQuery({
+    queryKey: ['reseller-self'],
+    queryFn: getResellerSelf,
+    staleTime: 60_000,
+  })
+  const wholesale = self?.wholesale_ratios ?? {}
+  const hasWholesale = Object.keys(wholesale).length > 0
+  const twoDecimals = (s: string) => /^\d+(\.\d{1,2})?$/.test(s.trim())
+  const rowValid = (r: Row) => {
+    const ratio = Number(r.ratio)
+    const floor = ratioForModel(r.token.trim().toLowerCase(), wholesale)
+    return (
+      twoDecimals(r.ratio) && ratio > 0 && ratio <= 1 && ratio >= floor
+    )
+  }
 
   if (customer && data && loadedId !== customer.org.id) {
     setLoadedId(customer.org.id)
@@ -56,8 +79,7 @@ export function CustomerPricingDialog(props: {
       const discounts: Record<string, number> = {}
       for (const r of rows) {
         const token = r.token.trim().toLowerCase()
-        const ratio = Number(r.ratio)
-        if (token && ratio > 0 && ratio <= 1) discounts[token] = ratio
+        if (token && rowValid(r)) discounts[token] = Number(r.ratio)
       }
       return setCustomerPricing(customer!.org.id, discounts)
     },
@@ -72,9 +94,23 @@ export function CustomerPricingDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
-  const invalid = rows.some(
-    (r) => r.token.trim() && !(Number(r.ratio) > 0 && Number(r.ratio) <= 1)
-  )
+  const invalid = rows.some((r) => r.token.trim() && !rowValid(r))
+
+  // A specific, per-row reason so the reseller understands WHY a row is blocked
+  // (out of range vs below the model's wholesale floor — including the floor 1.00
+  // case where the platform gave no wholesale discount for that model).
+  const rowError = (r: Row): string => {
+    if (!r.token.trim()) return ''
+    const ratio = Number(r.ratio)
+    if (!twoDecimals(r.ratio) || ratio <= 0 || ratio > 1)
+      return t('Ratio must be within (0, 1].')
+    const floor = ratioForModel(r.token.trim().toLowerCase(), wholesale)
+    if (ratio < floor)
+      return t('Must be ≥ {{floor}} (your wholesale for this model)', {
+        floor: floor.toFixed(2),
+      })
+    return ''
+  }
 
   const update = (i: number, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
@@ -86,46 +122,64 @@ export function CustomerPricingDialog(props: {
           <DialogTitle>{t('Discount pricing')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Set a discount ratio per model series (e.g. deepseek 0.6 = 40% off). This sets the retail price the customer owes you — the platform still bills the customer at standard price.'
+              'Set a discount ratio per model series (e.g. deepseek 0.6 = 40% off). The customer is charged at this ratio from their org wallet.'
             )}
           </DialogDescription>
         </DialogHeader>
+        {hasWholesale && (
+          <div className='rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-500/25 dark:text-amber-400'>
+            {t(
+              "Each model's ratio must be at least your wholesale ratio for that model (exact name beats prefix)."
+            )}
+          </div>
+        )}
         <div className='flex flex-col gap-2'>
           <div className='text-muted-foreground flex gap-2 px-1 text-xs'>
             <span className='flex-1'>{t('Model series')}</span>
             <span className='w-28'>{t('Ratio (0-1)')}</span>
             <span className='w-8' />
           </div>
-          {rows.map((r, i) => (
-            <div key={i} className='flex items-center gap-2'>
-              <Input
-                className='flex-1'
-                placeholder='deepseek'
-                value={r.token}
-                onChange={(e) => update(i, { token: e.target.value })}
-              />
-              <Input
-                className='w-28'
-                type='number'
-                min={0}
-                max={1}
-                step='0.05'
-                placeholder='0.6'
-                value={r.ratio}
-                onChange={(e) => update(i, { ratio: e.target.value })}
-              />
-              <Button
-                size='icon'
-                variant='ghost'
-                className='h-8 w-8'
-                onClick={() =>
-                  setRows((prev) => prev.filter((_, idx) => idx !== i))
-                }
-              >
-                <X className='h-4 w-4' />
-              </Button>
-            </div>
-          ))}
+          {rows.map((r, i) => {
+            const err = rowError(r)
+            return (
+              <div key={i} className='flex flex-col gap-1'>
+                <div className='flex items-center gap-2'>
+                  <Input
+                    className='min-w-0 flex-1'
+                    placeholder='deepseek'
+                    value={r.token}
+                    onChange={(e) => update(i, { token: e.target.value })}
+                  />
+                  <Input
+                    className='w-28'
+                    type='number'
+                    min={0}
+                    max={1}
+                    step='0.05'
+                    placeholder='0.6'
+                    value={r.ratio}
+                    onChange={(e) => update(i, { ratio: e.target.value })}
+                    aria-invalid={err ? true : undefined}
+                  />
+                  <Button
+                    size='icon'
+                    variant='ghost'
+                    className='h-8 w-8 shrink-0'
+                    onClick={() =>
+                      setRows((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                  >
+                    <X className='h-4 w-4' />
+                  </Button>
+                </div>
+                {err && (
+                  <span className='text-destructive px-1 text-xs'>
+                    {r.token.trim()}: {err}
+                  </span>
+                )}
+              </div>
+            )
+          })}
           <Button
             size='sm'
             variant='outline'
@@ -135,11 +189,6 @@ export function CustomerPricingDialog(props: {
             <Plus className='h-3.5 w-3.5' />
             {t('Add series')}
           </Button>
-          {invalid && (
-            <p className='text-destructive text-xs'>
-              {t('Ratio must be within (0, 1].')}
-            </p>
-          )}
         </div>
         <DialogFooter className='gap-2'>
           <Button variant='outline' onClick={props.onClose}>

@@ -39,6 +39,10 @@ var (
 	// that sentinel into a personal-quota message, which would mislead managed
 	// users; this one flows through untouched and is mapped below.
 	errOrgWalletInsufficient = errors.New("organization wallet quota insufficient")
+	// Route-2: the reseller's own cost balance (its wallet) could not cover the
+	// per-model wholesale cost of this call, so the platform cannot be paid — the
+	// call is refused rather than served at a loss.
+	errResellerBalanceInsufficient = errors.New("reseller cost balance insufficient")
 )
 
 // OrgWalletFunding charges the managing organization's wallet.
@@ -53,18 +57,41 @@ type OrgWalletFunding struct {
 	// platform's price computation, consume log and channel stats stay standard.
 	// This is the only place a reseller customer's discount reaches actual money.
 	discountRatio float64
+	// Route-2 (two-pool billing): when this customer belongs to a reseller,
+	// resellerOrgId is that reseller's org and wholesaleRatio is the per-model
+	// wholesale ratio (in (0,1]; 1.0 = reseller pays full standard). Each call
+	// debits the reseller's wallet by standard × wholesaleRatio in addition to
+	// the customer wallet at retail. resellerConsumed tracks the reserved amount
+	// so Refund/Settle can unwind it exactly (same discipline as `consumed`).
+	resellerOrgId    int
+	wholesaleRatio   float64
+	resellerConsumed int
 }
 
 func (o *OrgWalletFunding) Source() string { return BillingSourceOrgWallet }
 
-// charge scales a standard quota amount by the retail discount, truncating via
-// the shared quota-math helper (never a bare cast). Sign is preserved so a
-// refund delta discounts symmetrically. A ratio outside (0,1] means no discount.
+// charge scales a standard quota amount by the retail discount, rounding
+// (half-away-from-zero) via the shared quota-math helper (never a bare cast) so
+// the charged amount stays closest to standard × ratio — truncating made a 0.4
+// discount read as ~0.35 on tiny requests. Sign is preserved so a refund delta
+// discounts symmetrically. A ratio outside (0,1] means no discount.
 func (o *OrgWalletFunding) charge(amount int) int {
 	if o.discountRatio <= 0 || o.discountRatio >= 1 {
 		return amount
 	}
-	return common.QuotaFromFloat(float64(amount) * o.discountRatio)
+	return common.QuotaRound(float64(amount) * o.discountRatio)
+}
+
+// wholesaleCharge scales a standard amount by the reseller's per-model wholesale
+// ratio — what the reseller pays the platform for this call. A ratio outside
+// (0,1) means no wholesale discount, i.e. the reseller pays the full standard
+// amount. Uses the shared rounding helper (never a bare cast); sign preserved so
+// a settle refund unwinds symmetrically.
+func (o *OrgWalletFunding) wholesaleCharge(amount int) int {
+	if o.wholesaleRatio <= 0 || o.wholesaleRatio >= 1 {
+		return amount
+	}
+	return common.QuotaRound(float64(amount) * o.wholesaleRatio)
 }
 
 func (o *OrgWalletFunding) PreConsume(stdAmount int) error {
@@ -105,58 +132,106 @@ func (o *OrgWalletFunding) PreConsume(stdAmount int) error {
 		}
 		return err
 	}
+	// 4. Reseller cost balance reserve (route-2 two-pool). The reseller pays the
+	// platform at the per-model wholesale ratio. On failure, unwind the customer
+	// wallet reserve and both budget counters so nothing is left charged.
+	if o.resellerOrgId > 0 {
+		wAmount := o.wholesaleCharge(stdAmount)
+		if wAmount > 0 {
+			reservedR, rErr := model.TryReserveOrgQuota(o.resellerOrgId, wAmount)
+			if rErr == nil && !reservedR {
+				rErr = errResellerBalanceInsufficient
+			}
+			if rErr != nil {
+				if e := model.IncreaseOrgQuota(o.orgId, amount); e != nil {
+					common.SysError("org funding: unwind customer wallet reserve failed: " + e.Error())
+				}
+				if e := model.ReduceOrgAccountSpend(o.orgId, o.userId, amount); e != nil {
+					common.SysError("org funding: unwind member spend failed: " + e.Error())
+				}
+				if e := model.ReduceWorkspaceSpend(o.workspaceId, amount); e != nil {
+					common.SysError("org funding: unwind workspace spend failed: " + e.Error())
+				}
+				return rErr
+			}
+			o.resellerConsumed = wAmount
+		}
+	}
 	o.consumed = amount
 	return nil
 }
 
 func (o *OrgWalletFunding) Settle(stdDelta int) error {
 	delta := o.charge(stdDelta)
-	if delta == 0 {
-		return nil
-	}
-	// Track the charged amount so a later Refund (only reachable before Settle,
-	// e.g. a failed mid-stream reserve) returns exactly what was charged. This
-	// is why billing_session.go must NOT also adjust o.consumed for org funding.
-	o.consumed += delta
-	if delta > 0 {
-		// Overshoot: the upstream tokens are consumed; record unconditionally.
-		if err := model.DecreaseOrgQuota(o.orgId, delta); err != nil {
-			return err
+	// Customer wallet + budgets (retail side).
+	if delta != 0 {
+		// Track the charged amount so a later Refund (only reachable before Settle,
+		// e.g. a failed mid-stream reserve) returns exactly what was charged. This
+		// is why billing_session.go must NOT also adjust o.consumed for org funding.
+		o.consumed += delta
+		if delta > 0 {
+			// Overshoot: the upstream tokens are consumed; record unconditionally.
+			if err := model.DecreaseOrgQuota(o.orgId, delta); err != nil {
+				return err
+			}
+			if _, err := model.AddOrgAccountSpend(o.orgId, o.userId, delta, false); err != nil {
+				common.SysError("org funding: settle member spend failed: " + err.Error())
+			}
+			if _, err := model.AddWorkspaceSpend(o.workspaceId, delta, false); err != nil {
+				common.SysError("org funding: settle workspace spend failed: " + err.Error())
+			}
+		} else {
+			refund := -delta
+			if err := model.IncreaseOrgQuota(o.orgId, refund); err != nil {
+				return err
+			}
+			if err := model.ReduceOrgAccountSpend(o.orgId, o.userId, refund); err != nil {
+				common.SysError("org funding: settle member spend reduce failed: " + err.Error())
+			}
+			if err := model.ReduceWorkspaceSpend(o.workspaceId, refund); err != nil {
+				common.SysError("org funding: settle workspace spend reduce failed: " + err.Error())
+			}
 		}
-		if _, err := model.AddOrgAccountSpend(o.orgId, o.userId, delta, false); err != nil {
-			common.SysError("org funding: settle member spend failed: " + err.Error())
+	}
+	// Reseller cost balance (wholesale side) — route-2. Mirrors the customer
+	// adjustment on the reseller wallet; resellerConsumed tracks it for Refund.
+	if o.resellerOrgId > 0 {
+		wDelta := o.wholesaleCharge(stdDelta)
+		if wDelta != 0 {
+			o.resellerConsumed += wDelta
+			if wDelta > 0 {
+				if err := model.DecreaseOrgQuota(o.resellerOrgId, wDelta); err != nil {
+					return err
+				}
+			} else if err := model.IncreaseOrgQuota(o.resellerOrgId, -wDelta); err != nil {
+				return err
+			}
 		}
-		if _, err := model.AddWorkspaceSpend(o.workspaceId, delta, false); err != nil {
-			common.SysError("org funding: settle workspace spend failed: " + err.Error())
-		}
-		return nil
-	}
-	refund := -delta
-	if err := model.IncreaseOrgQuota(o.orgId, refund); err != nil {
-		return err
-	}
-	if err := model.ReduceOrgAccountSpend(o.orgId, o.userId, refund); err != nil {
-		common.SysError("org funding: settle member spend reduce failed: " + err.Error())
-	}
-	if err := model.ReduceWorkspaceSpend(o.workspaceId, refund); err != nil {
-		common.SysError("org funding: settle workspace spend reduce failed: " + err.Error())
 	}
 	return nil
 }
 
 func (o *OrgWalletFunding) Refund() error {
-	if o.consumed <= 0 {
-		return nil
+	// Customer wallet + budgets.
+	if o.consumed > 0 {
+		// Like WalletFunding.Refund: quota += N is non-idempotent, never retry.
+		if err := model.IncreaseOrgQuota(o.orgId, o.consumed); err != nil {
+			return err
+		}
+		if err := model.ReduceOrgAccountSpend(o.orgId, o.userId, o.consumed); err != nil {
+			common.SysError("org funding: refund member spend failed: " + err.Error())
+		}
+		if err := model.ReduceWorkspaceSpend(o.workspaceId, o.consumed); err != nil {
+			common.SysError("org funding: refund workspace spend failed: " + err.Error())
+		}
+		o.consumed = 0
 	}
-	// Like WalletFunding.Refund: quota += N is non-idempotent, never retry.
-	if err := model.IncreaseOrgQuota(o.orgId, o.consumed); err != nil {
-		return err
-	}
-	if err := model.ReduceOrgAccountSpend(o.orgId, o.userId, o.consumed); err != nil {
-		common.SysError("org funding: refund member spend failed: " + err.Error())
-	}
-	if err := model.ReduceWorkspaceSpend(o.workspaceId, o.consumed); err != nil {
-		common.SysError("org funding: refund workspace spend failed: " + err.Error())
+	// Reseller cost balance (route-2): return the reserved wholesale amount.
+	if o.resellerOrgId > 0 && o.resellerConsumed > 0 {
+		if err := model.IncreaseOrgQuota(o.resellerOrgId, o.resellerConsumed); err != nil {
+			return err
+		}
+		o.resellerConsumed = 0
 	}
 	return nil
 }
@@ -204,13 +279,31 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 	// Surface the applied discount so the consume log can show the discounted
 	// price (see attachOrgRetailDiscount).
 	relayInfo.OrgDiscountRatio = discountRatio
+	// Route-2: resolve the reseller's per-model wholesale ratio for this call, so
+	// the funding source also debits the reseller wallet at wholesale. The
+	// wholesale map is parsed with the same {token->ratio} validator as retail.
+	wholesaleRatio := 1.0
+	if info.ResellerOrgId > 0 && info.WholesaleRatios != "" {
+		wholesaleRatio = model.WholesaleRatioFor(
+			relayInfo.OriginModelName,
+			model.ParseRetailDiscounts(info.WholesaleRatios),
+		)
+	}
+	// Carry the org-billing context so the settle path can record the immutable
+	// usage rollup (org_usage_daily) with actual standard/charged/cost amounts.
+	relayInfo.OrgId = info.OrgId
+	relayInfo.OrgWorkspaceId = info.WorkspaceId
+	relayInfo.ResellerOrgId = info.ResellerOrgId
+	relayInfo.OrgWholesaleRatio = wholesaleRatio
 	session := &BillingSession{
 		relayInfo: relayInfo,
 		funding: &OrgWalletFunding{
-			orgId:         info.OrgId,
-			userId:        relayInfo.UserId,
-			workspaceId:   info.WorkspaceId,
-			discountRatio: discountRatio,
+			orgId:          info.OrgId,
+			userId:         relayInfo.UserId,
+			workspaceId:    info.WorkspaceId,
+			discountRatio:  discountRatio,
+			resellerOrgId:  info.ResellerOrgId,
+			wholesaleRatio: wholesaleRatio,
 		},
 	}
 	if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
@@ -222,6 +315,9 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 			notifyOrgOwnerBudget(info.OrgId, "member")
 		case errors.Is(apiErr.Err, errWorkspaceBudgetExceeded):
 			notifyOrgOwnerBudget(info.OrgId, "workspace")
+		case errors.Is(apiErr.Err, errResellerBalanceInsufficient):
+			// The reseller (upstream) is out of balance; alert the reseller owner.
+			notifyOrgOwnerBudget(info.ResellerOrgId, "wallet")
 		}
 		return nil, orgFundingError(apiErr)
 	}
@@ -239,6 +335,8 @@ func orgFundingError(apiErr *types.NewAPIError) *types.NewAPIError {
 		msg = "本月 workspace 预算已用尽，请联系组织管理员调整"
 	case errors.Is(apiErr.Err, errOrgWalletInsufficient):
 		msg = "组织钱包余额不足，请联系组织管理员充值"
+	case errors.Is(apiErr.Err, errResellerBalanceInsufficient):
+		msg = "上游分销商余额不足，请联系分销商充值"
 	default:
 		return apiErr
 	}

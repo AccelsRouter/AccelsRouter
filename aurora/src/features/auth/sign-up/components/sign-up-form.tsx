@@ -17,6 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -39,6 +41,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { register, wechatLoginByCode } from '@/features/auth/api'
+import { previewInvitation } from '@/features/organization-console/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { registerFormSchema } from '@/features/auth/constants'
@@ -55,9 +58,11 @@ import type { AuthBundle } from '@/stores/auth-store'
 
 export function SignUpForm({
   className,
+  redirectTo,
   ...props
-}: React.HTMLAttributes<HTMLFormElement>) {
+}: React.HTMLAttributes<HTMLFormElement> & { redirectTo?: string }) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
   const [agreedToLegal, setAgreedToLegal] = useState(false)
@@ -96,6 +101,27 @@ export function SignUpForm({
       confirmPassword: '',
     },
   })
+
+  // When arriving from an organization invite link, prefill the invited email so
+  // the new account matches the invitation and is auto-joined on return.
+  const inviteCode = useMemo(() => {
+    if (!redirectTo || !redirectTo.includes('/organization/join')) return ''
+    const qs = redirectTo.split('?')[1]
+    if (!qs) return ''
+    return new URLSearchParams(qs).get('code')?.trim() ?? ''
+  }, [redirectTo])
+  const { data: invitePreview } = useQuery({
+    queryKey: ['invitation-preview', inviteCode],
+    queryFn: () => previewInvitation(inviteCode),
+    enabled: inviteCode.length > 0,
+    retry: false,
+  })
+  useEffect(() => {
+    const invited = invitePreview?.invited_email?.trim()
+    if (invited && !form.getValues('email')) {
+      form.setValue('email', invited)
+    }
+  }, [invitePreview, form])
 
   const emailValue = form.watch('email')
   const emailVerificationRequired = !!status?.email_verification
@@ -171,7 +197,17 @@ export function SignUpForm({
 
       if (res?.success) {
         toast.success(t('Account created! Please sign in'))
-        redirectToLogin()
+        // Preserve the post-login destination (e.g. an invite join link) so the
+        // user lands back there after signing in instead of the dashboard.
+        if (redirectTo) {
+          navigate({
+            to: '/sign-in',
+            search: { redirect: redirectTo },
+            replace: true,
+          })
+        } else {
+          redirectToLogin()
+        }
       } else {
         toast.error(res?.message || t('Failed to create account'))
       }

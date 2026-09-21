@@ -118,18 +118,30 @@ export async function adminListOrgLogs(params: {
   to?: number
   page: number
   pageSize: number
+  customerId?: number
 }): Promise<PagedResponse<OrgLog>> {
   const qs = new URLSearchParams()
   if (params.from != null) qs.set('from', String(params.from))
   if (params.to != null) qs.set('to', String(params.to))
   qs.set('p', String(params.page))
   qs.set('page_size', String(params.pageSize))
+  if (params.customerId) qs.set('customer_id', String(params.customerId))
   const res = await api.get<ApiResp<PagedResponse<OrgLog>>>(
     `/api/admin/organizations/${params.id}/logs?${qs.toString()}`
   )
   if (!res.data?.success || !res.data.data)
     throw new Error(res.data?.message || 'Failed to load call records')
   return res.data.data
+}
+
+// A reseller org's downstream customers (id + name) for the per-customer filter.
+export async function adminListOrgCustomers(
+  id: number
+): Promise<{ id: number; name: string }[]> {
+  const res = await api.get<ApiResp<{ id: number; name: string }[]>>(
+    `/api/admin/organizations/${id}/customers`
+  )
+  return res.data?.data ?? []
 }
 
 export async function adminListOrgAudit(params: {
@@ -190,7 +202,7 @@ export async function approveApplication(
   id: number,
   payload: {
     price_group?: string
-    wholesale_ratio?: number
+    wholesale_ratios?: Record<string, number>
     note?: string
   }
 ): Promise<void> {

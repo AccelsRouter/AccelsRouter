@@ -45,6 +45,7 @@ import { Route as AuthenticatedSystemInfoIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
 import { Route as AuthenticatedResellerIndexRouteImport } from './routes/_authenticated/reseller/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
+import { Route as AuthenticatedReconciliationIndexRouteImport } from './routes/_authenticated/reconciliation/index'
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedPersonalByokIndexRouteImport } from './routes/_authenticated/personal-byok/index'
@@ -263,6 +264,12 @@ const AuthenticatedRedemptionCodesIndexRoute =
   AuthenticatedRedemptionCodesIndexRouteImport.update({
     id: '/redemption-codes/',
     path: '/redemption-codes/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedReconciliationIndexRoute =
+  AuthenticatedReconciliationIndexRouteImport.update({
+    id: '/reconciliation/',
+    path: '/reconciliation/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedProfileIndexRoute =
@@ -502,6 +509,7 @@ export interface FileRoutesByFullPath {
   '/personal-byok/': typeof AuthenticatedPersonalByokIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
+  '/reconciliation/': typeof AuthenticatedReconciliationIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/reseller/': typeof AuthenticatedResellerIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
@@ -570,6 +578,7 @@ export interface FileRoutesByTo {
   '/personal-byok': typeof AuthenticatedPersonalByokIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
+  '/reconciliation': typeof AuthenticatedReconciliationIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
   '/reseller': typeof AuthenticatedResellerIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
@@ -642,6 +651,7 @@ export interface FileRoutesById {
   '/_authenticated/personal-byok/': typeof AuthenticatedPersonalByokIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
+  '/_authenticated/reconciliation/': typeof AuthenticatedReconciliationIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
   '/_authenticated/reseller/': typeof AuthenticatedResellerIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
@@ -713,6 +723,7 @@ export interface FileRouteTypes {
     | '/personal-byok/'
     | '/playground/'
     | '/profile/'
+    | '/reconciliation/'
     | '/redemption-codes/'
     | '/reseller/'
     | '/subscriptions/'
@@ -781,6 +792,7 @@ export interface FileRouteTypes {
     | '/personal-byok'
     | '/playground'
     | '/profile'
+    | '/reconciliation'
     | '/redemption-codes'
     | '/reseller'
     | '/subscriptions'
@@ -852,6 +864,7 @@ export interface FileRouteTypes {
     | '/_authenticated/personal-byok/'
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
+    | '/_authenticated/reconciliation/'
     | '/_authenticated/redemption-codes/'
     | '/_authenticated/reseller/'
     | '/_authenticated/subscriptions/'
@@ -1155,6 +1168,13 @@ declare module '@tanstack/react-router' {
       path: '/redemption-codes'
       fullPath: '/redemption-codes/'
       preLoaderRoute: typeof AuthenticatedRedemptionCodesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/reconciliation/': {
+      id: '/_authenticated/reconciliation/'
+      path: '/reconciliation'
+      fullPath: '/reconciliation/'
+      preLoaderRoute: typeof AuthenticatedReconciliationIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/profile/': {
@@ -1503,6 +1523,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedPersonalByokIndexRoute: typeof AuthenticatedPersonalByokIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
+  AuthenticatedReconciliationIndexRoute: typeof AuthenticatedReconciliationIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
   AuthenticatedResellerIndexRoute: typeof AuthenticatedResellerIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
@@ -1530,6 +1551,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedPersonalByokIndexRoute: AuthenticatedPersonalByokIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,
+  AuthenticatedReconciliationIndexRoute: AuthenticatedReconciliationIndexRoute,
   AuthenticatedRedemptionCodesIndexRoute:
     AuthenticatedRedemptionCodesIndexRoute,
   AuthenticatedResellerIndexRoute: AuthenticatedResellerIndexRoute,

@@ -44,11 +44,12 @@ export function ResellerTopUpDialog({
     enabled: open,
   })
 
-  // The user buys in dollars; the API works in raw quota units.
+  // The user buys in dollars; the API works in raw quota units. Route-2: the
+  // reseller tops up its cost balance 1:1 (the wholesale discount is applied per
+  // call, per model, not at top-up), so cost = credit.
   const usd = Number(dollars) || 0
   const credit = quotaFromUSD(usd)
-  const ratio = wallet?.wholesale_ratio ?? 1
-  const cost = Math.round(credit * ratio)
+  const cost = credit
   const personal = wallet?.personal_quota ?? 0
   const insufficient = cost > personal
   const canSubmit = credit > 0 && !insufficient
@@ -74,7 +75,7 @@ export function ResellerTopUpDialog({
           <DialogTitle>{t('Buy wallet credit')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Buy wallet credit at your wholesale price, paid from your personal balance. Resell it to your customers at your own price.'
+              'Top up your wallet 1:1 from your personal balance. It is your cost balance: each customer call debits it at your per-model wholesale ratio.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -100,10 +101,6 @@ export function ResellerTopUpDialog({
             )}
           </Field>
           <div className='border-border/60 bg-muted/30 flex flex-col gap-1.5 rounded-lg border p-3 text-sm'>
-            <Row
-              label={t('Wholesale price')}
-              value={`× ${ratio} (${Math.round(ratio * 100)}%)`}
-            />
             <Row
               label={t('Cost from personal balance')}
               value={formatQuotaWithCurrency(cost)}

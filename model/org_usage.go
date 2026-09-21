@@ -9,6 +9,7 @@ package model
 // workspace/member attribution back together in Go.
 
 import (
+	"math"
 	"sort"
 
 	"github.com/QuantumNous/new-api/common"
@@ -26,6 +27,10 @@ type OrgUsageBucket struct {
 	// customer's matched model-series discount. Populated only on the reseller's
 	// customer statement (see ApplyRetailDiscounts); 0/omitted otherwise.
 	RetailQuota int64 `json:"retail_quota,omitempty"`
+	// CostQuota is the reseller's own cost for this line = Quota × the platform's
+	// per-model wholesale ratio. Populated only on the reseller aggregate view
+	// (GetResellerUsageFromDaily); lets the reseller see cost/profit per dimension.
+	CostQuota int64 `json:"cost_quota,omitempty"`
 }
 
 // OrgUsageReport is the full breakdown over a time window.
@@ -44,6 +49,9 @@ type OrgUsageReport struct {
 	// (each model's standard quota × its matched discount). Populated only on a
 	// reseller customer statement.
 	TotalRetailQuota int64 `json:"total_retail_quota,omitempty"`
+	// TotalCostQuota is the reseller's total cost = sum of per-model cost (standard
+	// quota × wholesale ratio). Populated only on the reseller aggregate view.
+	TotalCostQuota int64 `json:"total_cost_quota,omitempty"`
 }
 
 // ApplyRetailDiscounts overlays a reseller's per-model-series retail discount
@@ -57,7 +65,7 @@ func (r *OrgUsageReport) ApplyRetailDiscounts(discounts map[string]float64) {
 	var total int64
 	for i := range r.ByModel {
 		ratio := RetailDiscountFor(r.ByModel[i].Key, discounts)
-		retail := int64(float64(r.ByModel[i].Quota) * ratio)
+		retail := int64(math.Round(float64(r.ByModel[i].Quota) * ratio))
 		r.ByModel[i].RetailQuota = retail
 		total += retail
 	}
@@ -124,9 +132,83 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 					continue // model has no configured discount
 				}
 				l.RetailRatio = ratio
-				l.RetailQuota = common.QuotaFromFloat(float64(l.Quota) * ratio)
+				l.RetailQuota = common.QuotaRound(float64(l.Quota) * ratio)
 			}
 		}
+	}
+	return logs, total, nil
+}
+
+// ListResellerLogs returns the per-request call log across ALL of a reseller's
+// customer orgs (a reseller has no bound tokens of its own). Each row's retail
+// overlay uses the discount of the customer that owns the row's token.
+func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*Log, int64, error) {
+	var links []ResellerCustomerLink
+	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Find(&links).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(links) == 0 {
+		return []*Log{}, 0, nil
+	}
+	custIds := make([]int, 0, len(links))
+	for _, l := range links {
+		custIds = append(custIds, l.CustomerOrgId)
+	}
+	var bindings []WorkspaceToken
+	if err := DB.Where("org_id IN ?", custIds).Find(&bindings).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(bindings) == 0 {
+		return []*Log{}, 0, nil
+	}
+	tokenIds := make([]int, 0, len(bindings))
+	tokenToOrg := make(map[int]int, len(bindings))
+	for _, b := range bindings {
+		tokenIds = append(tokenIds, b.TokenId)
+		tokenToOrg[b.TokenId] = b.OrgId
+	}
+	tx := LOG_DB.Model(&Log{}).Where("token_id IN ?", tokenIds).
+		Where("type IN ?", []int{LogTypeConsume, LogTypeError})
+	if from > 0 {
+		tx = tx.Where("created_at >= ?", from)
+	}
+	if to > 0 {
+		tx = tx.Where("created_at <= ?", to)
+	}
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var logs []*Log
+	if err := tx.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+	formatUserLogs(logs, startIdx)
+	// Per customer: the retail discount (for the overlay) and the org name (for
+	// the aggregated call log's customer column).
+	discountsByOrg := map[int]map[string]float64{}
+	nameByOrg := map[int]string{}
+	for _, l := range links {
+		if org, err := GetOrganizationById(l.CustomerOrgId); err == nil && org != nil {
+			nameByOrg[l.CustomerOrgId] = org.Name
+			if org.RetailDiscounts != "" {
+				discountsByOrg[l.CustomerOrgId] = ParseRetailDiscounts(org.RetailDiscounts)
+			}
+		}
+	}
+	for _, lg := range logs {
+		orgId := tokenToOrg[lg.TokenId]
+		lg.CustomerName = nameByOrg[orgId]
+		d := discountsByOrg[orgId]
+		if len(d) == 0 {
+			continue
+		}
+		ratio := RetailDiscountFor(lg.ModelName, d)
+		if ratio >= 1 {
+			continue
+		}
+		lg.RetailRatio = ratio
+		lg.RetailQuota = common.QuotaRound(float64(lg.Quota) * ratio)
 	}
 	return logs, total, nil
 }
@@ -279,6 +361,7 @@ func queryOrgUsageLogs(tokenIds []int, from, to int64) ([]logUsageRow, error) {
 	}
 	return rows, nil
 }
+
 
 func sortedBuckets(m map[string]*OrgUsageBucket) []OrgUsageBucket {
 	out := make([]OrgUsageBucket, 0, len(m))

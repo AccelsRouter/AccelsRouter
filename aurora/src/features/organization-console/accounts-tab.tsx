@@ -48,7 +48,7 @@ import {
   removeOrgAccount,
   updateOrgAccount,
 } from './api'
-import { Field, Td, Th } from './shared'
+import { Field, MONEY_OPTS, Td, Th } from './shared'
 import type { AccountStatus, OrgAccount, OrgType } from './types'
 
 function budgetLabel(budget: number, unlimited: string): string {
@@ -97,7 +97,7 @@ export function AccountsTab({ orgType }: { orgType: OrgType }) {
           <table className='w-full text-sm'>
             <thead className='bg-muted/40 text-muted-foreground text-xs'>
               <tr>
-                <Th>{t('User ID')}</Th>
+                <Th>{t('User')}</Th>
                 <Th>{t('Role')}</Th>
                 <Th className='text-right'>{t('Monthly Budget')}</Th>
                 <Th className='text-right'>{t('Period Spend')}</Th>
@@ -108,13 +108,15 @@ export function AccountsTab({ orgType }: { orgType: OrgType }) {
             <tbody className='divide-border/60 divide-y'>
               {accounts.map((a) => (
                 <tr key={a.user_id} className='hover:bg-muted/30'>
-                  <Td className='font-medium'>#{a.user_id}</Td>
+                  <Td className='font-medium'>
+                    {a.email || `#${a.user_id}`}
+                  </Td>
                   <Td className='text-muted-foreground'>{a.role || '-'}</Td>
                   <Td className='text-right tabular-nums'>
                     {budgetLabel(a.monthly_budget, t('Unlimited'))}
                   </Td>
                   <Td className='text-right tabular-nums'>
-                    {formatQuotaWithCurrency(a.period_spend)}
+                    {formatQuotaWithCurrency(a.period_spend, MONEY_OPTS)}
                   </Td>
                   <Td>
                     <Badge

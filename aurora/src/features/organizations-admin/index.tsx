@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ModelRatioRows } from '@/components/model-ratio-rows'
 import {
   NativeSelect,
   NativeSelectOption,
@@ -54,15 +55,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { exportAdminOrgLogs } from '@/features/organization-console/api'
-import { CallRecords } from '@/features/organization-console/call-records'
+import { CustomerFilteredCallRecords } from '@/features/organization-console/customer-filtered-call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
+import { ResellerUsageReport } from '@/features/reseller-console/usage-report'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
-import { formatQuotaWithCurrency } from '@/lib/currency'
+import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 
 import {
   addSsoDomain,
   adminListOrgAudit,
+  adminListOrgCustomers,
   adminListOrgLogs,
   createOrganization,
   creditOrganization,
@@ -88,8 +91,11 @@ export function OrganizationsAdmin() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [view, setView] = useState<'orgs' | 'applications'>('orgs')
+  // Default to platform-managed orgs (enterprise direct + resellers), hiding
+  // reseller customers — those are a reseller's private clients; the admin can
+  // still switch to "All organizations" or "Reseller customers" to see them.
   const [category, setCategory] = useState<'all' | 'enterprise' | 'customer'>(
-    'all'
+    'enterprise'
   )
   const [page, setPage] = useState(1)
   const [createOpen, setCreateOpen] = useState(false)
@@ -138,7 +144,7 @@ export function OrganizationsAdmin() {
               {t('All organizations')}
             </NativeSelectOption>
             <NativeSelectOption value='enterprise'>
-              {t('Enterprise direct')}
+              {t('Enterprise & resellers')}
             </NativeSelectOption>
             <NativeSelectOption value='customer'>
               {t('Reseller customers')}
@@ -204,6 +210,7 @@ export function OrganizationsAdmin() {
                     <Th>{t('Status')}</Th>
                     <Th className='text-right'>{t('Wallet Balance')}</Th>
                     <Th>{t('Price Group')}</Th>
+                    <Th>{t('Wholesale ratio')}</Th>
                     <Th>{t('Owner')}</Th>
                     <Th className='text-right'>{t('Action')}</Th>
                   </tr>
@@ -218,7 +225,7 @@ export function OrganizationsAdmin() {
                         </span>
                       </Td>
                       <Td>
-                        <OrgTypeBadge type={o.type} />
+                        <OrgTypeBadge type={o.type} isCustomer={o.is_customer} />
                       </Td>
                       <Td>
                         <OrgStatusBadge status={o.status} />
@@ -229,8 +236,29 @@ export function OrganizationsAdmin() {
                       <Td className='text-muted-foreground'>
                         {o.price_group || '-'}
                       </Td>
+                      <Td>
+                        {o.type === 'reseller' &&
+                        o.wholesale_ratios &&
+                        Object.keys(o.wholesale_ratios).length > 0 ? (
+                          <span
+                            className='inline-block max-w-[180px] truncate rounded bg-amber-500/15 px-1.5 py-0.5 align-middle text-xs font-semibold text-amber-600 dark:text-amber-400'
+                            title={Object.entries(o.wholesale_ratios)
+                              .map(([m, r]) => `${m}: ${r.toFixed(2)}`)
+                              .join('\n')}
+                          >
+                            {Object.keys(o.wholesale_ratios).join(', ')}
+                          </span>
+                        ) : (
+                          <span className='text-muted-foreground'>-</span>
+                        )}
+                      </Td>
                       <Td className='text-muted-foreground text-xs'>
-                        #{o.owner_user_id}
+                        <div className='flex flex-col'>
+                          <span>#{o.owner_user_id}</span>
+                          {o.owner_email && (
+                            <span className='text-[11px]'>{o.owner_email}</span>
+                          )}
+                        </div>
                       </Td>
                       <Td className='text-right'>
                         <div className='flex justify-end gap-2'>
@@ -244,23 +272,9 @@ export function OrganizationsAdmin() {
                           <Button
                             size='sm'
                             variant='outline'
-                            onClick={() => setAttachOrg(o)}
-                          >
-                            {t('Attach Account')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline'
                             onClick={() => setUsageOrg(o)}
                           >
                             {t('Usage')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setSsoOrg(o)}
-                          >
-                            {t('SSO Domains')}
                           </Button>
                           <Button
                             size='sm'
@@ -364,7 +378,7 @@ function CreateOrgDialog(props: {
       createOrganization({
         name: name.trim(),
         type,
-        price_group: priceGroup.trim(),
+        price_group: type === 'reseller' ? 'default' : priceGroup.trim(),
         owner_user_id: Number(ownerUserId) || 0,
         remark: remark.trim(),
       }),
@@ -429,9 +443,16 @@ function CreateOrgDialog(props: {
           </Field>
           <Field label={t('Price Group')}>
             <Input
-              value={priceGroup}
+              value={type === 'reseller' ? 'default' : priceGroup}
               onChange={(e) => setPriceGroup(e.target.value)}
+              disabled={type === 'reseller'}
+              readOnly={type === 'reseller'}
             />
+            {type === 'reseller' && (
+              <span className='text-muted-foreground text-xs'>
+                {t('Fixed to "default"; distributor pricing is driven by the wholesale ratio.')}
+              </span>
+            )}
           </Field>
           <Field label={t('Remark')}>
             <Textarea
@@ -486,7 +507,10 @@ function EditOrgDialog(props: {
   const [priceGroup, setPriceGroup] = useState('')
   const [status, setStatus] = useState<OrgStatus>('active')
   const [remark, setRemark] = useState('')
-  const [wholesaleRatio, setWholesaleRatio] = useState('')
+  const [wholesaleRatios, setWholesaleRatios] = useState<Record<string, number>>(
+    {}
+  )
+  const [wholesaleValid, setWholesaleValid] = useState(true)
   const [allowedModels, setAllowedModels] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
   const isReseller = org?.type === 'reseller'
@@ -498,7 +522,8 @@ function EditOrgDialog(props: {
     setPriceGroup(org.price_group)
     setStatus(org.status)
     setRemark(org.remark)
-    setWholesaleRatio(org.wholesale_ratio ? String(org.wholesale_ratio) : '')
+    setWholesaleRatios(org.wholesale_ratios ?? {})
+    setWholesaleValid(true)
     setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
   }
 
@@ -506,14 +531,12 @@ function EditOrgDialog(props: {
     mutationFn: () =>
       updateOrganization(org!.id, {
         name: name.trim(),
-        price_group: priceGroup.trim(),
+        price_group: isReseller ? 'default' : priceGroup.trim(),
         status,
         remark: remark.trim(),
         ...(isReseller
           ? {
-              wholesale_ratio: wholesaleRatio.trim()
-                ? Number(wholesaleRatio)
-                : 0,
+              wholesale_ratios: wholesaleRatios,
               allowed_models: allowedModels
                 .split(/[\n,]/)
                 .map((m) => m.trim())
@@ -541,9 +564,16 @@ function EditOrgDialog(props: {
           </Field>
           <Field label={t('Price Group')}>
             <Input
-              value={priceGroup}
+              value={isReseller ? 'default' : priceGroup}
               onChange={(e) => setPriceGroup(e.target.value)}
+              disabled={isReseller}
+              readOnly={isReseller}
             />
+            {isReseller && (
+              <span className='text-muted-foreground text-xs'>
+                {t('Fixed to "default"; distributor pricing is driven by the wholesale ratio.')}
+              </span>
+            )}
           </Field>
           <Field label={t('Status')}>
             <NativeSelect
@@ -569,17 +599,21 @@ function EditOrgDialog(props: {
           {isReseller && (
             <>
               <Field
-                label={t('Wholesale ratio (0–1, blank = no discount)')}
+                label={t('Per-model wholesale ratios (blank = no discount)')}
               >
-                <Input
-                  type='number'
-                  step='0.01'
-                  min='0'
-                  max='1'
-                  value={wholesaleRatio}
-                  onChange={(e) => setWholesaleRatio(e.target.value)}
-                  placeholder='e.g. 0.85'
+                <ModelRatioRows
+                  key={org?.id}
+                  initial={org?.wholesale_ratios ?? {}}
+                  onChange={(map, valid) => {
+                    setWholesaleRatios(map)
+                    setWholesaleValid(valid)
+                  }}
                 />
+                <span className='text-muted-foreground text-xs'>
+                  {t(
+                    'The reseller pays standard × this ratio per call for matching models. Exact model name beats prefix.'
+                  )}
+                </span>
               </Field>
               <Field
                 label={t('Offerable models (one per line; blank = all)')}
@@ -604,7 +638,11 @@ function EditOrgDialog(props: {
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={name.trim().length === 0 || mutation.isPending}
+            disabled={
+              name.trim().length === 0 ||
+              (isReseller && !wholesaleValid) ||
+              mutation.isPending
+            }
             className='gap-1.5'
           >
             {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
@@ -623,22 +661,27 @@ function CreditOrgDialog(props: {
 }) {
   const { t } = useTranslation()
   const org = props.org
-  const [quota, setQuota] = useState('')
+  const [dollars, setDollars] = useState('')
   const [tradeNo, setTradeNo] = useState('')
   const [remark, setRemark] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
 
   if (org && org.id !== loadedId) {
     setLoadedId(org.id)
-    setQuota('')
+    setDollars('')
     setTradeNo('')
     setRemark('')
   }
 
+  // Admins record top-ups by the invoiced dollar amount; the API works in raw
+  // quota units, so convert before submitting.
+  const usd = Number(dollars) || 0
+  const credit = quotaFromUSD(usd)
+
   const mutation = useMutation({
     mutationFn: () =>
       creditOrganization(org!.id, {
-        quota: Number(quota) || 0,
+        quota: credit,
         trade_no: tradeNo.trim(),
         remark: remark.trim(),
       }),
@@ -650,7 +693,7 @@ function CreditOrgDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
-  const canSubmit = Number(quota) > 0 && tradeNo.trim().length > 0
+  const canSubmit = credit > 0 && tradeNo.trim().length > 0
 
   return (
     <Dialog open={!!org} onOpenChange={(o) => !o && props.onClose()}>
@@ -659,7 +702,7 @@ function CreditOrgDialog(props: {
           <DialogTitle>{t('Credit Organization')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Record an invoiced top-up to this organization wallet. Enter the raw quota amount.'
+              'Record an invoiced top-up to this organization wallet. Enter the invoiced amount in USD.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -674,12 +717,25 @@ function CreditOrgDialog(props: {
           </div>
         )}
         <div className='flex flex-col gap-3'>
-          <Field label={t('Quota (raw units)')}>
-            <Input
-              type='number'
-              value={quota}
-              onChange={(e) => setQuota(e.target.value)}
-            />
+          <Field label={t('Amount to credit (USD)')}>
+            <div className='relative'>
+              <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
+                $
+              </span>
+              <Input
+                type='number'
+                min={0}
+                step='0.01'
+                value={dollars}
+                onChange={(e) => setDollars(e.target.value)}
+                className='pl-6'
+              />
+            </div>
+            {credit > 0 && (
+              <span className='text-muted-foreground text-xs'>
+                = {credit.toLocaleString()} {t('credit units')}
+              </span>
+            )}
           </Field>
           <Field label={t('Trade No.')}>
             <Input
@@ -884,8 +940,19 @@ function Td(props: { children: React.ReactNode; className?: string }) {
   )
 }
 
-function OrgTypeBadge({ type }: { type: OrgType }) {
+function OrgTypeBadge({
+  type,
+  isCustomer,
+}: {
+  type: OrgType
+  isCustomer?: boolean
+}) {
   const { t } = useTranslation()
+  // A reseller-provisioned customer is stored as an enterprise org; label it
+  // "Customer" so the admin list distinguishes it from a direct enterprise.
+  if (isCustomer) {
+    return <Badge variant='outline'>{t('Customer')}</Badge>
+  }
   return (
     <Badge variant={type === 'reseller' ? 'default' : 'secondary'}>
       {type === 'reseller' ? t('Reseller') : t('Enterprise')}
@@ -1207,6 +1274,14 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
     placeholderData: keepPreviousData,
   })
 
+  const isReseller = org?.type === 'reseller'
+  const { data: customers } = useQuery({
+    queryKey: ['admin-org-customers', org?.id],
+    queryFn: () => adminListOrgCustomers(org!.id),
+    enabled: !!org && isReseller,
+    staleTime: 60_000,
+  })
+
   return (
     <Dialog
       open={!!org}
@@ -1214,7 +1289,7 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
         if (!o) props.onClose()
       }}
     >
-      <DialogContent className='sm:max-w-3xl'>
+      <DialogContent className='max-h-[90vh] overflow-y-auto sm:max-w-3xl'>
         <DialogHeader>
           <DialogTitle>
             {t('Usage')}
@@ -1235,18 +1310,31 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
           </TabsList>
           <TabsContent value='report' className='pt-3'>
             <div className='max-h-[55vh] overflow-auto'>
-              <UsageReport report={data} isLoading={isLoading} />
+              {isReseller ? (
+                <ResellerUsageReport
+                  report={data}
+                  isLoading={isLoading}
+                  showPlatformDiscount
+                />
+              ) : (
+                <UsageReport report={data} isLoading={isLoading} />
+              )}
             </div>
           </TabsContent>
           <TabsContent value='records' className='pt-3'>
             {org && (
-              <CallRecords
-                fetchLogs={(p) =>
-                  adminListOrgLogs({ id: org.id, from, to, ...p })
-                }
-                queryKey={`admin-org-logs-${org.id}-${from}-${to}`}
-                onExport={() => exportAdminOrgLogs(org.id, from, to)}
-              />
+              <div className='max-h-[55vh] overflow-auto'>
+                <CustomerFilteredCallRecords
+                  customers={customers ?? []}
+                  fetchLogs={(customerId, p) =>
+                    adminListOrgLogs({ id: org.id, from, to, customerId, ...p })
+                  }
+                  onExport={(customerId) =>
+                    exportAdminOrgLogs(org.id, from, to, customerId)
+                  }
+                  queryKeyBase={`admin-org-logs-${org.id}-${from}-${to}`}
+                />
+              </div>
             )}
           </TabsContent>
         </Tabs>

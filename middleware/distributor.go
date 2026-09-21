@@ -87,9 +87,13 @@ func Distribute() func(c *gin.Context) {
 			// Skip when the model name is empty: async task fetch/status routes
 			// (e.g. GET /v1/videos/:id) carry no model and were already checked on
 			// submit — enforcing here would falsely 403 a customer's own polling.
-			if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); modelRequest.Model != "" && perr == nil && payer != nil && payer.AllowedModels != nil {
+			if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); modelRequest.Model != "" && perr == nil && payer != nil && (payer.AllowedModels != nil || payer.ResellerAllowedModels != nil) {
 				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model)
-				if !payer.AllowedModels[modelRequest.Model] && !payer.AllowedModels[matchName] {
+				// A reseller customer must satisfy BOTH its own allow-list AND its
+				// reseller's offerable models (the reseller's set caps everything it
+				// may offer, even when the customer's own list is empty).
+				if !model.ModelAllowedBy(payer.AllowedModels, modelRequest.Model, matchName) ||
+					!model.ModelAllowedBy(payer.ResellerAllowedModels, modelRequest.Model, matchName) {
 					msg := i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model})
 					// Record the rejection so a reseller/customer can see the
 					// blocked model in the org call records (this org gate aborts
@@ -97,7 +101,10 @@ func Distribute() func(c *gin.Context) {
 					model.RecordErrorLog(c, c.GetInt("id"), 0, modelRequest.Model,
 						c.GetString("token_name"), msg, c.GetInt("token_id"), 0, false,
 						common.GetContextKeyString(c, constant.ContextKeyUsingGroup), nil)
-					abortWithOpenAiMessage(c, http.StatusForbidden, msg)
+					// Same error code as the platform's other model-access
+					// rejections in this gate (model_not_found) for a consistent
+					// machine-readable code instead of an empty one.
+					abortWithOpenAiMessage(c, http.StatusForbidden, msg, types.ErrorCodeModelNotFound)
 					return
 				}
 			}

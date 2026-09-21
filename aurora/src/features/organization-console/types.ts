@@ -31,11 +31,18 @@ export type OrgSelf = {
   status: OrgStatus
   wallet_quota: number
   price_group: string
+  // Reseller only: the wholesale ratio set by the platform (its cost basis and
+  // the floor every customer discount must beat).
+  wholesale_ratio?: number
+  // Reseller only: per-model wholesale ratios (the per-model cost basis; each
+  // customer discount for a model must be >= its wholesale ratio).
+  wholesale_ratios?: Record<string, number>
   is_owner: boolean
 }
 
 export type OrgAccount = {
   user_id: number
+  email?: string
   relation: string // member | customer
   role: string // owner | admin | member
   monthly_budget: number // 0 = unlimited
@@ -151,6 +158,8 @@ export type UsageBucket = {
   prompt_tokens: number
   completion_tokens: number
   retail_quota?: number
+  // Reseller aggregate only: the reseller's cost = standard × wholesale ratio.
+  cost_quota?: number
 }
 
 // Aggregated usage report for an organization over a time window. Mirrors
@@ -167,6 +176,8 @@ export type OrgUsageReport = {
   by_model: UsageBucket[]
   by_member: UsageBucket[]
   total_retail_quota?: number
+  // Reseller aggregate only: total cost = sum of standard × wholesale.
+  total_cost_quota?: number
 }
 
 // A downstream customer organization managed by a reseller. `org` is the
@@ -186,6 +197,8 @@ export type ResellerCustomerOrg = {
 export type ResellerCustomer = {
   org: ResellerCustomerOrg
   net_allocated: number
+  // Email of the customer's operator (invited admin), for reseller contact.
+  owner_email?: string
 }
 
 // A JIT-provisioning email-domain mapping. New members whose email matches an
