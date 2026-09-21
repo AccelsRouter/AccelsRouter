@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 
@@ -365,6 +366,36 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 
 func (channel *Channel) SaveChannelInfo() error {
 	return DB.Model(channel).Update("channel_info", channel.ChannelInfo).Error
+}
+
+// GetDistinctModelsFromChannels returns every distinct model name declared
+// across all enabled channels' own Models field. Reads channels directly,
+// unlike GetEnabledModels (which reads the abilities table — a derived
+// index that only reflects channels the sync step already processed) or
+// the separate model marketplace catalog (model.SearchModels), which may
+// be entirely unpopulated in a fresh setup regardless of what channels
+// actually serve.
+func GetDistinctModelsFromChannels() ([]string, error) {
+	var channels []*Channel
+	if err := DB.Select("models").Where("status = ?", common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	result := make([]string, 0)
+	for _, ch := range channels {
+		for _, m := range ch.GetModels() {
+			m = strings.TrimSpace(m)
+			if m == "" {
+				continue
+			}
+			if _, ok := seen[m]; !ok {
+				seen[m] = struct{}{}
+				result = append(result, m)
+			}
+		}
+	}
+	sort.Strings(result)
+	return result, nil
 }
 
 func (channel *Channel) GetModels() []string {

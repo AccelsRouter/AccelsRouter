@@ -19,8 +19,8 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -349,6 +349,22 @@ func EnabledListModels(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
 		"data":    model.GetEnabledModels(),
+	})
+}
+
+// ChannelModelsList returns every distinct model name declared across all
+// enabled channels' own Models field — reads channels directly, not the
+// abilities index or the (possibly unpopulated) model marketplace catalog.
+// Used by the channel-pricing-mode binding UI's "search a model" flow.
+func ChannelModelsList(c *gin.Context) {
+	models, err := model.GetDistinctModelsFromChannels()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(200, gin.H{
+		"success": true,
+		"data":    models,
 	})
 }
 
