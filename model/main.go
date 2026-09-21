@@ -300,7 +300,6 @@ func migrateDB() error {
 		&OrgAuditLog{},
 		&ResellerCustomerLink{},
 		&ResellerAdmin{},
-		&OrgUsageDaily{},
 		&UserChannel{},
 		&SystemInstance{},
 		&SystemTask{},
@@ -308,6 +307,7 @@ func migrateDB() error {
 		&CasbinRule{},
 		&AuthzRole{},
 		&UserChannelBinding{},
+		&ChannelModel{},
 	)
 	if err != nil {
 		return err

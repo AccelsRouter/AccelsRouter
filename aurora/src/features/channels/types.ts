@@ -130,14 +130,14 @@ export interface AdvancedCustomRouteAuth {
 }
 
 export type AdvancedCustomConverter =
-  | 'none'
-  | 'anthropic_messages_to_openai_chat_completions'
-  | 'openai_chat_completions_to_anthropic_messages'
-  | 'openai_chat_completions_to_openai_responses'
-  | 'openai_responses_to_openai_chat_completions'
-  | 'openai_responses_to_gemini_generate_content'
-  | 'gemini_generate_content_to_openai_chat_completions'
-  | 'openai_chat_completions_to_gemini_generate_content'
+    | 'none'
+    | 'anthropic_messages_to_openai_chat_completions'
+    | 'openai_chat_completions_to_anthropic_messages'
+    | 'openai_chat_completions_to_openai_responses'
+    | 'openai_responses_to_openai_chat_completions'
+    | 'openai_responses_to_gemini_generate_content'
+    | 'gemini_generate_content_to_openai_chat_completions'
+    | 'openai_chat_completions_to_gemini_generate_content'
 
 export type AdvancedCustomAuthType = 'none' | 'header' | 'query'
 
@@ -228,12 +228,12 @@ export interface KeyStatus {
 
 export type MultiKeyConfirmAction = {
   type:
-    | 'enable'
-    | 'disable'
-    | 'delete'
-    | 'enable-all'
-    | 'disable-all'
-    | 'delete-disabled'
+      | 'enable'
+      | 'disable'
+      | 'delete'
+      | 'enable-all'
+      | 'disable-all'
+      | 'delete-disabled'
   keyIndex?: number
 }
 
@@ -257,12 +257,12 @@ export interface MultiKeyStatusResponse {
 // ============================================================================
 
 export type ChannelSortBy =
-  | 'id'
-  | 'name'
-  | 'priority'
-  | 'balance'
-  | 'response_time'
-  | 'test_time'
+    | 'id'
+    | 'name'
+    | 'priority'
+    | 'balance'
+    | 'response_time'
+    | 'test_time'
 
 export type ChannelSortOrder = 'asc' | 'desc'
 
@@ -304,13 +304,13 @@ export interface CopyChannelParams {
 export interface MultiKeyManageParams {
   channel_id: number
   action:
-    | 'get_key_status'
-    | 'disable_key'
-    | 'enable_key'
-    | 'enable_all_keys'
-    | 'disable_all_keys'
-    | 'delete_key'
-    | 'delete_disabled_keys'
+      | 'get_key_status'
+      | 'disable_key'
+      | 'enable_key'
+      | 'enable_all_keys'
+      | 'disable_all_keys'
+      | 'delete_key'
+      | 'delete_disabled_keys'
   key_index?: number
   page?: number
   page_size?: number

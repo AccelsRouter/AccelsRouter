@@ -110,6 +110,7 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 }
 
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	common.SysLog(fmt.Sprintf("[DEBUG] GetChannel (DB path) called: group=%s model=%s retry=%d", group, model, retry))
 	var abilities []Ability
 
 	var err error = nil
@@ -125,8 +126,16 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 	if err != nil {
 		return nil, err
 	}
+	common.SysLog(fmt.Sprintf("[DEBUG] GetChannel: %d abilities from priority/weight query, channel_ids=%v", len(abilities), func() []int {
+		ids := make([]int, len(abilities))
+		for i, a := range abilities {
+			ids[i] = a.ChannelId
+		}
+		return ids
+	}()))
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
 	abilities = filterAbilitiesByTokenBudget(abilities)
+	common.SysLog(fmt.Sprintf("[DEBUG] GetChannel: %d abilities remain after path/model + token-budget filtering", len(abilities)))
 	channel := Channel{}
 	if len(abilities) > 0 {
 		// Randomly choose one
@@ -208,7 +217,9 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 // budget (resets at 00:00 UTC); channels with no limit configured, or whose
 // budget check fails/times out, are kept (fail open).
 func filterAbilitiesByTokenBudget(abilities []Ability) []Ability {
+	common.SysLog(fmt.Sprintf("[DEBUG] filterAbilitiesByTokenBudget: called with %d candidate abilities, ChannelDailyTokenLimitEnabled=%v", len(abilities), setting.ChannelDailyTokenLimitEnabled))
 	if !setting.ChannelDailyTokenLimitEnabled || len(abilities) == 0 {
+		common.SysLog("[DEBUG] filterAbilitiesByTokenBudget: skipping (enabled=false or no candidates)")
 		return abilities
 	}
 
@@ -221,6 +232,7 @@ func filterAbilitiesByTokenBudget(abilities []Ability) []Ability {
 		seen[ability.ChannelId] = struct{}{}
 		channelIds = append(channelIds, ability.ChannelId)
 	}
+	common.SysLog(fmt.Sprintf("[DEBUG] filterAbilitiesByTokenBudget: checking channel ids %v", channelIds))
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
@@ -263,6 +275,7 @@ func filterAbilitiesByTokenBudget(abilities []Ability) []Ability {
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
+	modelPriorities, _ := GetChannelModelPriorities(channel.Id)
 	models_ := strings.Split(channel.Models, ",")
 	groups_ := strings.Split(channel.Group, ",")
 	abilitySet := make(map[string]struct{})
@@ -279,7 +292,7 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 				Model:     model,
 				ChannelId: channel.Id,
 				Enabled:   channel.Status == common.ChannelStatusEnabled,
-				Priority:  channel.Priority,
+				Priority:  common.GetPointer(channel.PriorityForModel(model, modelPriorities)),
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
 			}
@@ -335,6 +348,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 	}
 
 	// Then add new abilities
+	modelPriorities, _ := GetChannelModelPriorities(channel.Id)
 	models_ := strings.Split(channel.Models, ",")
 	groups_ := strings.Split(channel.Group, ",")
 	abilitySet := make(map[string]struct{})
@@ -351,7 +365,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 				Model:     model,
 				ChannelId: channel.Id,
 				Enabled:   channel.Status == common.ChannelStatusEnabled,
-				Priority:  channel.Priority,
+				Priority:  common.GetPointer(channel.PriorityForModel(model, modelPriorities)),
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
 			}

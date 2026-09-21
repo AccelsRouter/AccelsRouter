@@ -405,6 +405,26 @@ func (channel *Channel) GetModels() []string {
 	return strings.Split(strings.Trim(channel.Models, ","), ",")
 }
 
+// PriorityForModel returns the priority to use for modelName on this
+// channel, given a preloaded map of this channel's per-model overrides
+// (from GetChannelModelPriorities — the channel_models table). A model
+// with no entry in overrides falls back to the channel's own base
+// Priority (0 if that's unset too). AddAbilities/UpdateAbilities call this
+// once per model when generating each Ability row, so "priority per
+// model" only ever needs to be resolved at write time — channel
+// selection's existing ORDER BY priority DESC then picks the right
+// channel among several serving the same model without any changes of
+// its own.
+func (channel *Channel) PriorityForModel(modelName string, overrides map[string]int64) int64 {
+	if p, ok := overrides[modelName]; ok {
+		return p
+	}
+	if channel.Priority != nil {
+		return *channel.Priority
+	}
+	return 0
+}
+
 func (channel *Channel) GetGroups() []string {
 	if channel.Group == "" {
 		return []string{}

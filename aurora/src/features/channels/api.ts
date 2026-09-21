@@ -606,6 +606,67 @@ export async function getChannelModels(): Promise<{
   return res.data
 }
 
+export interface ChannelModelPriority {
+  id: number
+  channel_id: number
+  model_name: string
+  priority: number
+  created_at: number
+}
+
+/**
+ * List a channel's per-model priority overrides (see
+ * model.ChannelModel on the backend). A model with no row here uses the
+ * channel's own base Priority instead.
+ */
+export async function listChannelModelPriorities(
+    channelId: number
+): Promise<ChannelModelPriority[]> {
+  const res = await api.get<{
+    success: boolean
+    message?: string
+    data?: ChannelModelPriority[]
+  }>(`/api/channel/${channelId}/model-priorities`)
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'Failed to load model priorities')
+  }
+  return res.data.data ?? []
+}
+
+/**
+ * Set (or update) a channel's priority override for one model. Other
+ * models on the same channel are untouched.
+ */
+export async function upsertChannelModelPriority(
+    channelId: number,
+    modelName: string,
+    priority: number
+): Promise<void> {
+  const res = await api.post<{ success: boolean; message?: string }>(
+      `/api/channel/${channelId}/model-priorities`,
+      { model_name: modelName, priority }
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'Failed to save model priority')
+  }
+}
+
+/**
+ * Remove a channel's priority override for one model, reverting it back
+ * to the channel's own base Priority.
+ */
+export async function deleteChannelModelPriority(
+    channelId: number,
+    modelName: string
+): Promise<void> {
+  const res = await api.delete<{ success: boolean; message?: string }>(
+      `/api/channel/${channelId}/model-priorities/${encodeURIComponent(modelName)}`
+  )
+  if (!res.data?.success) {
+    throw new Error(res.data?.message || 'Failed to remove model priority')
+  }
+}
+
 /**
  * Get all enabled models
  */

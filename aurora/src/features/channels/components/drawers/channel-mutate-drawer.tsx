@@ -168,6 +168,7 @@ import {
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
 import type { Channel } from '../../types'
+import { ChannelModelPrioritiesDialog } from '../channel-model-priorities-dialog'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
@@ -228,7 +229,7 @@ const createEmptyModelMappingGuardrail = (): ModelMappingGuardrail => ({
 })
 
 const formatModelNames = (models: string[]): string =>
-  models.map((model) => `"${model}"`).join(', ')
+    models.map((model) => `"${model}"`).join(', ')
 
 const MODEL_MAPPING_PREVIEW_FALLBACK: Array<{
   source: string
@@ -257,7 +258,7 @@ const ADVANCED_SETTINGS_SECTION_IDS = {
   upstreamModelDetection: 'channel-section-advanced-upstream-model-detection',
 } as const
 const ADVANCED_SETTINGS_CHILD_SECTION_IDS: string[] = Object.values(
-  ADVANCED_SETTINGS_SECTION_IDS
+    ADVANCED_SETTINGS_SECTION_IDS
 )
 const ADVANCED_CUSTOM_ROUTE_TYPE_PREVIEW_LIMIT = 3
 const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8
@@ -324,33 +325,33 @@ function hasConfiguredOverrideValue(value: unknown): boolean {
 
 function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
   return Boolean(
-    hasConfiguredOverrideValue(values.param_override) ||
-    hasConfiguredOverrideValue(values.header_override) ||
-    values.advanced_custom?.trim() ||
-    hasConfiguredOverrideValue(values.status_code_mapping) ||
-    values.tag?.trim() ||
-    values.remark?.trim() ||
-    values.priority ||
-    values.weight ||
-    values.proxy?.trim() ||
-    values.system_prompt?.trim() ||
-    values.force_format ||
-    values.thinking_to_content ||
-    values.pass_through_body_enabled ||
-    values.system_prompt_override ||
-    (values.daily_token_limit != null && values.daily_token_limit > 0) ||
-    (values.http_protocol && values.http_protocol !== 'auto') ||
-    (values.http2_connection_shards != null &&
-      values.http2_connection_shards > 1) ||
-    values.claude_beta_query ||
-    values.upstream_model_update_check_enabled ||
-    values.upstream_model_update_auto_sync_enabled ||
-    values.upstream_model_update_ignored_models?.trim()
+      hasConfiguredOverrideValue(values.param_override) ||
+      hasConfiguredOverrideValue(values.header_override) ||
+      values.advanced_custom?.trim() ||
+      hasConfiguredOverrideValue(values.status_code_mapping) ||
+      values.tag?.trim() ||
+      values.remark?.trim() ||
+      values.priority ||
+      values.weight ||
+      values.proxy?.trim() ||
+      values.system_prompt?.trim() ||
+      values.force_format ||
+      values.thinking_to_content ||
+      values.pass_through_body_enabled ||
+      values.system_prompt_override ||
+      (values.daily_token_limit != null && values.daily_token_limit > 0) ||
+      (values.http_protocol && values.http_protocol !== 'auto') ||
+      (values.http2_connection_shards != null &&
+          values.http2_connection_shards > 1) ||
+      values.claude_beta_query ||
+      values.upstream_model_update_check_enabled ||
+      values.upstream_model_update_auto_sync_enabled ||
+      values.upstream_model_update_ignored_models?.trim()
   )
 }
 
 function parseSettingsRecord(
-  settings: string | undefined
+    settings: string | undefined
 ): Record<string, unknown> {
   if (!settings?.trim()) return {}
   try {
@@ -372,36 +373,36 @@ function formatUnixTime(timestamp: unknown): string {
 
 function CardHeading({ title, icon }: { title: string; icon?: ReactNode }) {
   return (
-    <div className='flex items-center gap-3'>
-      {icon && (
-        <span className='bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md'>
+      <div className='flex items-center gap-3'>
+        {icon && (
+            <span className='bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md'>
           {icon}
         </span>
-      )}
-      <h3 className='text-sm font-semibold tracking-tight'>{title}</h3>
-    </div>
+        )}
+        <h3 className='text-sm font-semibold tracking-tight'>{title}</h3>
+      </div>
   )
 }
 
 function SubHeading({ title, icon }: { title: string; icon?: ReactNode }) {
   return (
-    <div className='flex items-center gap-2'>
-      {icon && <span className='text-muted-foreground'>{icon}</span>}
-      <h4 className='text-muted-foreground text-xs font-medium tracking-wide uppercase'>
-        {title}
-      </h4>
-    </div>
+      <div className='flex items-center gap-2'>
+        {icon && <span className='text-muted-foreground'>{icon}</span>}
+        <h4 className='text-muted-foreground text-xs font-medium tracking-wide uppercase'>
+          {title}
+        </h4>
+      </div>
   )
 }
 
 function configuredAdvancedSectionClassName(
-  className: string,
-  configured: boolean
+    className: string,
+    configured: boolean
 ) {
   return cn(
-    className,
-    'border-border/60 rounded-lg border p-3 transition-colors',
-    configured && 'border-primary/35 ring-primary/20 ring-1'
+      className,
+      'border-border/60 rounded-lg border p-3 transition-colors',
+      configured && 'border-primary/35 ring-primary/20 ring-1'
   )
 }
 
@@ -411,24 +412,24 @@ function ChannelTypeLogo(props: {
   className?: string
 }) {
   const isKnownType = CHANNEL_TYPE_OPTIONS.some(
-    (option) => option.value === props.type
+      (option) => option.value === props.type
   )
 
   if (!isKnownType) {
     return (
-      <Server
-        className={cn('text-muted-foreground shrink-0', props.className)}
-        style={{
-          width: props.size ?? 16,
-          height: props.size ?? 16,
-        }}
-        aria-hidden='true'
-      />
+        <Server
+            className={cn('text-muted-foreground shrink-0', props.className)}
+            style={{
+              width: props.size ?? 16,
+              height: props.size ?? 16,
+            }}
+            aria-hidden='true'
+        />
     )
   }
 
   return (
-    <span className={cn('inline-flex shrink-0', props.className)}>
+      <span className={cn('inline-flex shrink-0', props.className)}>
       {getLobeIcon(`${getChannelTypeIcon(props.type)}.Color`, props.size ?? 16)}
     </span>
   )
@@ -445,8 +446,8 @@ function getSectionStatusIcon(status: ChannelEditorSectionStatus): ReactNode {
 }
 
 function getCompletionStatus(
-  hasErrors: boolean,
-  isComplete: boolean
+    hasErrors: boolean,
+    isComplete: boolean
 ): ChannelEditorSectionStatus {
   if (hasErrors) return 'error'
   if (isComplete) return 'complete'
@@ -454,8 +455,8 @@ function getCompletionStatus(
 }
 
 function getSectionStatusLabel(
-  status: ChannelEditorSectionStatus,
-  t: (key: string) => string
+    status: ChannelEditorSectionStatus,
+    t: (key: string) => string
 ): string {
   if (status === 'error') return t('Error')
   if (status === 'complete' || status === 'configured') return t('Ready')
@@ -474,168 +475,168 @@ function ChannelEditorNav(props: {
   onNavigate: (targetId: string) => void
 }) {
   return (
-    <aside className='hidden self-start lg:sticky lg:top-4 lg:z-20 lg:block'>
-      <div className='flex max-h-[calc(100dvh-12rem)] flex-col gap-3 overflow-y-auto overscroll-contain pr-1'>
-        <div className='border-border/60 bg-muted/20 rounded-lg border p-3'>
-          <div className='flex min-w-0 items-center gap-2'>
+      <aside className='hidden self-start lg:sticky lg:top-4 lg:z-20 lg:block'>
+        <div className='flex max-h-[calc(100dvh-12rem)] flex-col gap-3 overflow-y-auto overscroll-contain pr-1'>
+          <div className='border-border/60 bg-muted/20 rounded-lg border p-3'>
+            <div className='flex min-w-0 items-center gap-2'>
             <span className='bg-background flex size-8 shrink-0 items-center justify-center rounded-md border'>
               {props.providerLogo}
             </span>
-            <div className='min-w-0'>
-              <p className='truncate text-sm font-medium'>
-                {props.providerLabel}
-              </p>
-              <p className='text-muted-foreground truncate text-xs'>
-                {props.statusLabel} · {props.progressLabel}
-              </p>
+              <div className='min-w-0'>
+                <p className='truncate text-sm font-medium'>
+                  {props.providerLabel}
+                </p>
+                <p className='text-muted-foreground truncate text-xs'>
+                  {props.statusLabel} · {props.progressLabel}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <nav
-          className='border-border/60 bg-background rounded-lg border p-1'
-          aria-label={props.navigationLabel}
-        >
-          {props.items.map((item) => {
-            const isError = item.status === 'error'
-            const isDone =
-              item.status === 'complete' || item.status === 'configured'
-            const isConfigured = Boolean(item.configured)
-            const isActive = props.activeItemId === item.id
-            const isExpanded = props.expandedItemId === item.id
-            return (
-              <div key={item.id}>
-                <button
-                  type='button'
-                  className={cn(
-                    'hover:bg-muted/60 flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors',
-                    isActive && 'bg-muted/70',
-                    isConfigured && !isError && 'text-primary',
-                    isError && 'text-destructive hover:bg-destructive/10'
-                  )}
-                  onClick={() => props.onNavigate(item.id)}
-                  aria-current={isActive ? 'true' : undefined}
-                >
+          <nav
+              className='border-border/60 bg-background rounded-lg border p-1'
+              aria-label={props.navigationLabel}
+          >
+            {props.items.map((item) => {
+              const isError = item.status === 'error'
+              const isDone =
+                  item.status === 'complete' || item.status === 'configured'
+              const isConfigured = Boolean(item.configured)
+              const isActive = props.activeItemId === item.id
+              const isExpanded = props.expandedItemId === item.id
+              return (
+                  <div key={item.id}>
+                    <button
+                        type='button'
+                        className={cn(
+                            'hover:bg-muted/60 flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors',
+                            isActive && 'bg-muted/70',
+                            isConfigured && !isError && 'text-primary',
+                            isError && 'text-destructive hover:bg-destructive/10'
+                        )}
+                        onClick={() => props.onNavigate(item.id)}
+                        aria-current={isActive ? 'true' : undefined}
+                    >
                   <span
-                    className={cn(
-                      'bg-muted text-muted-foreground mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md',
-                      isConfigured && !isError && 'bg-primary/10 text-primary',
-                      isError && 'bg-destructive/10 text-destructive',
-                      isDone && !isError && 'text-primary'
-                    )}
+                      className={cn(
+                          'bg-muted text-muted-foreground mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md',
+                          isConfigured && !isError && 'bg-primary/10 text-primary',
+                          isError && 'bg-destructive/10 text-destructive',
+                          isDone && !isError && 'text-primary'
+                      )}
                   >
                     {item.icon}
                   </span>
-                  <span className='min-w-0 flex-1'>
+                      <span className='min-w-0 flex-1'>
                     <span className='block truncate text-sm font-medium'>
                       {item.title}
                     </span>
-                    {item.description && (
-                      <span className='text-muted-foreground block truncate text-xs'>
+                        {item.description && (
+                            <span className='text-muted-foreground block truncate text-xs'>
                         {item.description}
                       </span>
-                    )}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-muted-foreground mt-1 shrink-0',
-                      isError && 'text-destructive',
-                      isDone && !isError && 'text-primary',
-                      isConfigured && !isError && 'pt-1.5'
-                    )}
-                    aria-label={item.statusLabel}
-                  >
-                    {isConfigured && !isError && !isDone ? (
-                      <span
-                        className='bg-success block size-2 rounded-full'
-                        aria-hidden='true'
-                      />
-                    ) : (
-                      getSectionStatusIcon(item.status)
-                    )}
-                  </span>
-                </button>
-                {item.children && isExpanded && (
-                  <div className='border-border/60 ml-5 flex flex-col gap-0.5 border-l py-1 pl-3'>
-                    {item.children.map((child) => (
-                      <button
-                        key={child.id}
-                        type='button'
-                        className={cn(
-                          'text-muted-foreground hover:bg-muted/50 hover:text-foreground flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors',
-                          child.configured && 'text-primary'
                         )}
-                        onClick={() => props.onNavigate(child.id)}
+                  </span>
+                      <span
+                          className={cn(
+                              'text-muted-foreground mt-1 shrink-0',
+                              isError && 'text-destructive',
+                              isDone && !isError && 'text-primary',
+                              isConfigured && !isError && 'pt-1.5'
+                          )}
+                          aria-label={item.statusLabel}
                       >
+                    {isConfigured && !isError && !isDone ? (
+                        <span
+                            className='bg-success block size-2 rounded-full'
+                            aria-hidden='true'
+                        />
+                    ) : (
+                        getSectionStatusIcon(item.status)
+                    )}
+                  </span>
+                    </button>
+                    {item.children && isExpanded && (
+                        <div className='border-border/60 ml-5 flex flex-col gap-0.5 border-l py-1 pl-3'>
+                          {item.children.map((child) => (
+                              <button
+                                  key={child.id}
+                                  type='button'
+                                  className={cn(
+                                      'text-muted-foreground hover:bg-muted/50 hover:text-foreground flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors',
+                                      child.configured && 'text-primary'
+                                  )}
+                                  onClick={() => props.onNavigate(child.id)}
+                              >
                         <span className='min-w-0 flex-1 truncate'>
                           {child.title}
                         </span>
-                        {child.configured && (
-                          <span
-                            className='bg-success size-1.5 shrink-0 rounded-full'
-                            aria-hidden='true'
-                          />
-                        )}
-                      </button>
-                    ))}
+                                {child.configured && (
+                                    <span
+                                        className='bg-success size-1.5 shrink-0 rounded-full'
+                                        aria-hidden='true'
+                                    />
+                                )}
+                              </button>
+                          ))}
+                        </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </nav>
-      </div>
-    </aside>
+              )
+            })}
+          </nav>
+        </div>
+      </aside>
   )
 }
 
 export function ChannelMutateDrawer({
-  open,
-  onOpenChange,
-  currentRow,
-}: ChannelMutateDrawerProps) {
+                                      open,
+                                      onOpenChange,
+                                      currentRow,
+                                    }: ChannelMutateDrawerProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { setOpen } = useChannels()
   const currentUser = useAuthStore((s) => s.auth.user)
   const canEditSensitive = hasPermission(
-    currentUser,
-    ADMIN_PERMISSION_RESOURCES.CHANNEL,
-    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+      currentUser,
+      ADMIN_PERMISSION_RESOURCES.CHANNEL,
+      ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
   const canRevealChannelKey = currentUser?.role === ROLE.SUPER_ADMIN
   const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
   const [channelKey, setChannelKey] = useState<string | null>(null)
   const [isChannelKeyLoading, setIsChannelKeyLoading] = useState(false)
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
-    useState(false)
+      useState(false)
   const initialModelsRef = useRef<string[]>([])
   const initialModelMappingRef = useRef<string>('')
   const initialStatusCodeMappingRef = useRef<string>('')
   const [statusCodeRiskOpen, setStatusCodeRiskOpen] = useState(false)
   const [statusCodeRiskDetailItems, setStatusCodeRiskDetailItems] = useState<
-    string[]
+      string[]
   >([])
   const statusCodeRiskResolveRef = useRef<
-    ((confirmed: boolean) => void) | null
+      ((confirmed: boolean) => void) | null
   >(null)
   const [missingModelsDialogOpen, setMissingModelsDialogOpen] = useState(false)
   const [missingModelsList, setMissingModelsList] = useState<string[]>([])
   const missingModelsResolveRef = useRef<
-    ((action: MissingModelsAction) => void) | null
+      ((action: MissingModelsAction) => void) | null
   >(null)
   const channelFormRef = useRef<HTMLFormElement>(null)
   const advancedNavScrollPendingRef = useRef(false)
   const [activeEditorSectionId, setActiveEditorSectionId] = useState<string>(
-    CHANNEL_EDITOR_SECTION_IDS.identity
+      CHANNEL_EDITOR_SECTION_IDS.identity
   )
   const [expandedEditorNavItemId, setExpandedEditorNavItemId] = useState<
-    string | undefined
+      string | undefined
   >()
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
   const [paramOverrideEditorOpen, setParamOverrideEditorOpen] = useState(false)
   const [advancedCustomEditorOpen, setAdvancedCustomEditorOpen] =
-    useState(false)
+      useState(false)
 
   const isEditing = Boolean(currentRow)
   const channelId = currentRow?.id ?? null
@@ -690,7 +691,7 @@ export function ChannelMutateDrawer({
 
   // Check if this is a multi-key channel
   const isMultiKeyChannel =
-    isEditing && channelData?.data?.channel_info?.is_multi_key === true
+      isEditing && channelData?.data?.channel_info?.is_multi_key === true
 
   // Form setup
   const form = useForm<ChannelFormValues>({
@@ -714,7 +715,7 @@ export function ChannelMutateDrawer({
   const awsKeyType = form.watch('aws_key_type')
   const vertexKeyType = form.watch('vertex_key_type')
   const upstreamModelUpdateCheckEnabled = form.watch(
-    'upstream_model_update_check_enabled'
+      'upstream_model_update_check_enabled'
   )
   const currentSettings = form.watch('settings')
   const currentAdvancedCustom = form.watch('advanced_custom')
@@ -731,7 +732,7 @@ export function ChannelMutateDrawer({
   const currentThinkingToContent = form.watch('thinking_to_content')
   const currentPassThroughBodyEnabled = form.watch('pass_through_body_enabled')
   const currentDisableTaskPollingSleep = form.watch(
-    'disable_task_polling_sleep'
+      'disable_task_polling_sleep'
   )
   const currentProxy = form.watch('proxy')
   const currentHttpProtocol = form.watch('http_protocol')
@@ -746,10 +747,10 @@ export function ChannelMutateDrawer({
   const currentAllowSpeed = form.watch('allow_speed')
   const currentClaudeBetaQuery = form.watch('claude_beta_query')
   const currentUpstreamModelUpdateAutoSyncEnabled = form.watch(
-    'upstream_model_update_auto_sync_enabled'
+      'upstream_model_update_auto_sync_enabled'
   )
   const currentUpstreamModelUpdateIgnoredModels = form.watch(
-    'upstream_model_update_ignored_models'
+      'upstream_model_update_ignored_models'
   )
   const {
     unlocked: doubaoApiEditUnlocked,
@@ -771,39 +772,39 @@ export function ChannelMutateDrawer({
 
   // Helper computed values
   const isBatchMode =
-    multiKeyMode === 'batch' || multiKeyMode === 'multi_to_single'
+      multiKeyMode === 'batch' || multiKeyMode === 'multi_to_single'
   const isChannelDetailLoading = isEditing && isChannelLoading
   const supportsMultiKeyAddMode =
-    currentType !== 57 && !(currentType === 41 && vertexKeyType === 'api_key')
+      currentType !== 57 && !(currentType === 41 && vertexKeyType === 'api_key')
   const addModeOptions = useMemo(
-    () =>
-      supportsMultiKeyAddMode
-        ? ADD_MODE_OPTIONS
-        : ADD_MODE_OPTIONS.filter((option) => option.value === 'single'),
-    [supportsMultiKeyAddMode]
+      () =>
+          supportsMultiKeyAddMode
+              ? ADD_MODE_OPTIONS
+              : ADD_MODE_OPTIONS.filter((option) => option.value === 'single'),
+      [supportsMultiKeyAddMode]
   )
 
   const advancedCustomStats = useMemo(
-    () => getAdvancedCustomStats(currentAdvancedCustom),
-    [currentAdvancedCustom]
+      () => getAdvancedCustomStats(currentAdvancedCustom),
+      [currentAdvancedCustom]
   )
   const advancedCustomRouteTypeLabels =
-    advancedCustomStats.routeTypeLabels.slice(
-      0,
-      ADVANCED_CUSTOM_ROUTE_TYPE_PREVIEW_LIMIT
-    )
+      advancedCustomStats.routeTypeLabels.slice(
+          0,
+          ADVANCED_CUSTOM_ROUTE_TYPE_PREVIEW_LIMIT
+      )
   const hiddenAdvancedCustomRouteTypeCount =
-    advancedCustomStats.routeTypeLabels.length -
-    advancedCustomRouteTypeLabels.length
+      advancedCustomStats.routeTypeLabels.length -
+      advancedCustomRouteTypeLabels.length
   const advancedCustomRouteTypeTitle =
-    hiddenAdvancedCustomRouteTypeCount > 0
-      ? advancedCustomStats.routeTypeLabels.join(', ')
-      : undefined
+      hiddenAdvancedCustomRouteTypeCount > 0
+          ? advancedCustomStats.routeTypeLabels.join(', ')
+          : undefined
 
   // Get all models list
   const allModelsList = useMemo(
-    () => allModelsData?.data?.map((model) => model.id).filter(Boolean) || [],
-    [allModelsData]
+      () => allModelsData?.data?.map((model) => model.id).filter(Boolean) || [],
+      [allModelsData]
   )
 
   // Get basic models for the current channel type
@@ -812,7 +813,7 @@ export function ChannelMutateDrawer({
     // Filter models based on common patterns for specific types
     if (currentType === 1) {
       return allModelsList.filter(
-        (model) => model.startsWith('gpt-') || model.startsWith('text-')
+          (model) => model.startsWith('gpt-') || model.startsWith('text-')
       )
     }
     return allModelsList
@@ -820,8 +821,8 @@ export function ChannelMutateDrawer({
 
   // Get prefill groups
   const prefillGroups = useMemo(
-    () => prefillGroupsData?.data || [],
-    [prefillGroupsData]
+      () => prefillGroupsData?.data || [],
+      [prefillGroupsData]
   )
 
   // Transform groups to multi-select options
@@ -836,15 +837,15 @@ export function ChannelMutateDrawer({
 
   // Parse current models as array
   const currentModelsArray = useMemo(
-    () => parseModelsString(currentModels),
-    [currentModels]
+      () => parseModelsString(currentModels),
+      [currentModels]
   )
 
   const currentTypeLabel = useMemo(
-    () =>
-      CHANNEL_TYPE_OPTIONS.find((option) => option.value === currentType)
-        ?.label || `#${currentType}`,
-    [currentType]
+      () =>
+          CHANNEL_TYPE_OPTIONS.find((option) => option.value === currentType)
+              ?.label || `#${currentType}`,
+      [currentType]
   )
 
   const channelTypeOptions = useMemo(() => {
@@ -865,37 +866,37 @@ export function ChannelMutateDrawer({
 
   const formErrors = form.formState.errors
   const identityHasErrors = Boolean(
-    formErrors.name ||
-    formErrors.type ||
-    formErrors.status ||
-    formErrors.openai_organization
+      formErrors.name ||
+      formErrors.type ||
+      formErrors.status ||
+      formErrors.openai_organization
   )
   const credentialsHaveErrors = Boolean(
-    formErrors.key ||
-    formErrors.base_url ||
-    formErrors.other ||
-    formErrors.multi_key_mode ||
-    formErrors.multi_key_type ||
-    formErrors.key_mode ||
-    formErrors.vertex_key_type ||
-    formErrors.aws_key_type ||
-    formErrors.azure_responses_version
+      formErrors.key ||
+      formErrors.base_url ||
+      formErrors.other ||
+      formErrors.multi_key_mode ||
+      formErrors.multi_key_type ||
+      formErrors.key_mode ||
+      formErrors.vertex_key_type ||
+      formErrors.aws_key_type ||
+      formErrors.azure_responses_version
   )
   const modelsHaveErrors = Boolean(
-    formErrors.models || formErrors.group || formErrors.model_mapping
+      formErrors.models || formErrors.group || formErrors.model_mapping
   )
   const advancedHaveErrors =
-    hasAdvancedSettingsErrors(formErrors) || Boolean(formErrors.advanced_custom)
+      hasAdvancedSettingsErrors(formErrors) || Boolean(formErrors.advanced_custom)
   const providerRequiresBaseUrl = [3, 8, 36, 45].includes(currentType)
   const providerRequiresOther = [3, 18, 21, 39, 41, 49].includes(currentType)
   const identityComplete = Boolean(currentName?.trim() && currentType > 0)
   const credentialsComplete = Boolean(
-    (isEditing || currentKey?.trim()) &&
-    (!providerRequiresBaseUrl || currentBaseUrl?.trim()) &&
-    (!providerRequiresOther || currentOther?.trim())
+      (isEditing || currentKey?.trim()) &&
+      (!providerRequiresBaseUrl || currentBaseUrl?.trim()) &&
+      (!providerRequiresOther || currentOther?.trim())
   )
   const modelsComplete = Boolean(
-    currentModelsArray.length > 0 && currentGroups?.length
+      currentModelsArray.length > 0 && currentGroups?.length
   )
   const requiredCompletedCount = [
     identityComplete,
@@ -903,80 +904,80 @@ export function ChannelMutateDrawer({
     modelsComplete,
   ].filter(Boolean).length
   const currentStatusLabel =
-    CHANNEL_STATUS_LABELS[
-      currentStatus as keyof typeof CHANNEL_STATUS_LABELS
-    ] || 'Unknown'
+      CHANNEL_STATUS_LABELS[
+          currentStatus as keyof typeof CHANNEL_STATUS_LABELS
+          ] || 'Unknown'
   const progressLabel = `${requiredCompletedCount}/3`
   const identityStatus = getCompletionStatus(
-    identityHasErrors,
-    identityComplete
+      identityHasErrors,
+      identityComplete
   )
   const credentialsStatus = getCompletionStatus(
-    credentialsHaveErrors,
-    credentialsComplete
+      credentialsHaveErrors,
+      credentialsComplete
   )
   const modelsStatus = getCompletionStatus(modelsHaveErrors, modelsComplete)
   const advancedStatus: ChannelEditorSectionStatus = advancedHaveErrors
-    ? 'error'
-    : 'idle'
+      ? 'error'
+      : 'idle'
   const advancedSummary = advancedHaveErrors ? t('Error') : undefined
   const routingStrategyConfigured = Boolean(
-    currentPriority ||
-    currentWeight ||
-    currentTestModel?.trim() ||
-    (currentAutoBan ?? 1) !== 1
+      currentPriority ||
+      currentWeight ||
+      currentTestModel?.trim() ||
+      (currentAutoBan ?? 1) !== 1
   )
   const internalNotesConfigured = Boolean(
-    currentTag?.trim() || currentRemark?.trim()
+      currentTag?.trim() || currentRemark?.trim()
   )
   const overrideRulesConfigured = Boolean(
-    hasConfiguredOverrideValue(currentStatusCodeMapping) ||
-    hasConfiguredOverrideValue(currentParamOverride) ||
-    hasConfiguredOverrideValue(currentHeaderOverride)
+      hasConfiguredOverrideValue(currentStatusCodeMapping) ||
+      hasConfiguredOverrideValue(currentParamOverride) ||
+      hasConfiguredOverrideValue(currentHeaderOverride)
   )
   const extraSettingsConfigured = Boolean(
-    currentForceFormat ||
-    currentThinkingToContent ||
-    currentPassThroughBodyEnabled ||
-    currentDisableTaskPollingSleep ||
-    currentProxy?.trim() ||
-    currentSystemPrompt?.trim() ||
-    currentSystemPromptOverride ||
-    (currentHttpProtocol && currentHttpProtocol !== 'auto') ||
-    (currentHttp2ConnectionShards != null && currentHttp2ConnectionShards > 1)
+      currentForceFormat ||
+      currentThinkingToContent ||
+      currentPassThroughBodyEnabled ||
+      currentDisableTaskPollingSleep ||
+      currentProxy?.trim() ||
+      currentSystemPrompt?.trim() ||
+      currentSystemPromptOverride ||
+      (currentHttpProtocol && currentHttpProtocol !== 'auto') ||
+      (currentHttp2ConnectionShards != null && currentHttp2ConnectionShards > 1)
   )
   let fieldPassthroughConfigured = false
   if (OPENAI_FIELD_PASSTHROUGH_TYPES.has(currentType)) {
     fieldPassthroughConfigured = Boolean(
-      currentAllowServiceTier ||
-      currentDisableStore ||
-      currentAllowSafetyIdentifier ||
-      currentAllowIncludeObfuscation ||
-      currentAllowInferenceGeo
+        currentAllowServiceTier ||
+        currentDisableStore ||
+        currentAllowSafetyIdentifier ||
+        currentAllowIncludeObfuscation ||
+        currentAllowInferenceGeo
     )
   }
   if (CLAUDE_FIELD_PASSTHROUGH_TYPES.has(currentType)) {
     fieldPassthroughConfigured =
-      fieldPassthroughConfigured ||
-      Boolean(
-        currentAllowServiceTier ||
-        currentAllowInferenceGeo ||
-        currentAllowSpeed ||
-        (currentType === 14 && currentClaudeBetaQuery)
-      )
+        fieldPassthroughConfigured ||
+        Boolean(
+            currentAllowServiceTier ||
+            currentAllowInferenceGeo ||
+            currentAllowSpeed ||
+            (currentType === 14 && currentClaudeBetaQuery)
+        )
   }
   const upstreamModelDetectionConfigured = Boolean(
-    upstreamModelUpdateCheckEnabled ||
-    currentUpstreamModelUpdateAutoSyncEnabled ||
-    currentUpstreamModelUpdateIgnoredModels?.trim()
+      upstreamModelUpdateCheckEnabled ||
+      currentUpstreamModelUpdateAutoSyncEnabled ||
+      currentUpstreamModelUpdateIgnoredModels?.trim()
   )
   const advancedConfigured = Boolean(
-    routingStrategyConfigured ||
-    internalNotesConfigured ||
-    overrideRulesConfigured ||
-    extraSettingsConfigured ||
-    fieldPassthroughConfigured ||
-    upstreamModelDetectionConfigured
+      routingStrategyConfigured ||
+      internalNotesConfigured ||
+      overrideRulesConfigured ||
+      extraSettingsConfigured ||
+      fieldPassthroughConfigured ||
+      upstreamModelDetectionConfigured
   )
   const advancedNavChildren: ChannelEditorNavChildItem[] = [
     {
@@ -1053,14 +1054,14 @@ export function ChannelMutateDrawer({
 
   // Extract redirect models from model_mapping (target values)
   const redirectModelList = useMemo(
-    () => extractRedirectModels(currentModelMapping || ''),
-    [currentModelMapping]
+      () => extractRedirectModels(currentModelMapping || ''),
+      [currentModelMapping]
   )
 
   // Extract source keys from model_mapping (models being remapped FROM)
   const redirectModelKeyList = useMemo(
-    () => extractMappingSourceModels(currentModelMapping || ''),
-    [currentModelMapping]
+      () => extractMappingSourceModels(currentModelMapping || ''),
+      [currentModelMapping]
   )
 
   // Transform models to multi-select options
@@ -1084,7 +1085,7 @@ export function ChannelMutateDrawer({
       }
 
       const entries = Object.entries(parsed).reduce<
-        Array<{ source: string; target: string }>
+          Array<{ source: string; target: string }>
       >((acc, [rawSource, rawTarget]) => {
         const source = String(rawSource).trim()
         const target = String(rawTarget ?? '').trim()
@@ -1099,25 +1100,25 @@ export function ChannelMutateDrawer({
 
       const missingSourceModels = [
         ...new Set(
-          entries
-            .filter(
-              (entry) =>
-                Boolean(entry.source) &&
-                !currentModelsArray.includes(entry.source)
-            )
-            .map((entry) => entry.source)
+            entries
+                .filter(
+                    (entry) =>
+                        Boolean(entry.source) &&
+                        !currentModelsArray.includes(entry.source)
+                )
+                .map((entry) => entry.source)
         ),
       ]
 
       const exposedTargetModels = [
         ...new Set(
-          entries
-            .filter(
-              (entry) =>
-                Boolean(entry.target) &&
-                currentModelsArray.includes(entry.target)
-            )
-            .map((entry) => entry.target)
+            entries
+                .filter(
+                    (entry) =>
+                        Boolean(entry.target) &&
+                        currentModelsArray.includes(entry.target)
+                )
+                .map((entry) => entry.target)
         ),
       ]
 
@@ -1133,23 +1134,23 @@ export function ChannelMutateDrawer({
   }, [currentModelMapping, currentModelsArray])
 
   const mappingPreviewPairs =
-    modelMappingGuardrail.entries.length > 0
-      ? modelMappingGuardrail.entries.slice(0, 3)
-      : MODEL_MAPPING_PREVIEW_FALLBACK
+      modelMappingGuardrail.entries.length > 0
+          ? modelMappingGuardrail.entries.slice(0, 3)
+          : MODEL_MAPPING_PREVIEW_FALLBACK
   const remainingMappingCount =
-    modelMappingGuardrail.entries.length > 3
-      ? modelMappingGuardrail.entries.length - 3
-      : 0
+      modelMappingGuardrail.entries.length > 3
+          ? modelMappingGuardrail.entries.length - 3
+          : 0
 
   const upstreamUpdateMeta = useMemo(() => {
     const settings = parseSettingsRecord(currentSettings)
     const detectedModels = Array.isArray(
-      settings.upstream_model_update_last_detected_models
+        settings.upstream_model_update_last_detected_models
     )
-      ? settings.upstream_model_update_last_detected_models
-          .map((model) => String(model || '').trim())
-          .filter(Boolean)
-      : []
+        ? settings.upstream_model_update_last_detected_models
+            .map((model) => String(model || '').trim())
+            .filter(Boolean)
+        : []
 
     return {
       lastCheckTime: settings.upstream_model_update_last_check_time,
@@ -1158,12 +1159,12 @@ export function ChannelMutateDrawer({
   }, [currentSettings])
 
   const upstreamDetectedModelsPreview = upstreamUpdateMeta.detectedModels.slice(
-    0,
-    UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT
+      0,
+      UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT
   )
   const upstreamDetectedModelsOmittedCount =
-    upstreamUpdateMeta.detectedModels.length -
-    upstreamDetectedModelsPreview.length
+      upstreamUpdateMeta.detectedModels.length -
+      upstreamDetectedModelsPreview.length
 
   // Load channel data into form when editing
   useEffect(() => {
@@ -1171,15 +1172,15 @@ export function ChannelMutateDrawer({
       const defaults = transformChannelToFormDefaults(channelData.data)
       form.reset(defaults)
       setAdvancedSettingsOpen(
-        readAdvancedSettingsPreference() || hasAdvancedSettingsValues(defaults)
+          readAdvancedSettingsPreference() || hasAdvancedSettingsValues(defaults)
       )
       // Store initial values for comparison
       initialModelsRef.current = parseModelsString(
-        channelData.data.models || ''
+          channelData.data.models || ''
       )
       initialModelMappingRef.current = channelData.data.model_mapping || ''
       initialStatusCodeMappingRef.current =
-        channelData.data.status_code_mapping || ''
+          channelData.data.status_code_mapping || ''
     } else if (!isEditing) {
       form.reset(CHANNEL_FORM_DEFAULT_VALUES)
       setAdvancedSettingsOpen(false)
@@ -1236,10 +1237,10 @@ export function ChannelMutateDrawer({
     // Show warning toast
     const timer = setTimeout(() => {
       toast.warning(
-        t(
-          'Warning: Base URL should not end with /v1. New API will handle it automatically. This may cause request failures.'
-        ),
-        { duration: 5000 }
+          t(
+              'Warning: Base URL should not end with /v1. New API will handle it automatically. This may cause request failures.'
+          ),
+          { duration: 5000 }
       )
     }, 500)
 
@@ -1262,14 +1263,14 @@ export function ChannelMutateDrawer({
     } else {
       form.setValue('key', result.deduplicatedText)
       toast.success(
-        t(
-          'Removed {{removed}} duplicate key(s). Before: {{before}}, After: {{after}}',
-          {
-            removed: result.removedCount,
-            before: result.beforeCount,
-            after: result.afterCount,
-          }
-        )
+          t(
+              'Removed {{removed}} duplicate key(s). Before: {{before}}, After: {{after}}',
+              {
+                removed: result.removedCount,
+                before: result.beforeCount,
+                after: result.afterCount,
+              }
+          )
       )
     }
   }
@@ -1303,7 +1304,7 @@ export function ChannelMutateDrawer({
         preferredMethod: 'passkey',
         title: 'Verify to view channel key',
         description:
-          'Use Passkey or 2FA to confirm your identity before revealing this channel key.',
+            'Use Passkey or 2FA to confirm your identity before revealing this channel key.',
       })
     } catch (error) {
       if (error instanceof Error) {
@@ -1333,14 +1334,14 @@ export function ChannelMutateDrawer({
 
   // Unified function to update models
   const updateModels = useCallback(
-    (newModels: string[], merge: boolean = false) => {
-      const finalModels = merge
-        ? formatModelsArray([...currentModelsArray, ...newModels])
-        : formatModelsArray(newModels)
-      form.setValue('models', finalModels)
-      return newModels.length
-    },
-    [currentModelsArray, form]
+      (newModels: string[], merge: boolean = false) => {
+        const finalModels = merge
+            ? formatModelsArray([...currentModelsArray, ...newModels])
+            : formatModelsArray(newModels)
+        form.setValue('models', finalModels)
+        return newModels.length
+      },
+      [currentModelsArray, form]
   )
 
   // Handle fetching models from upstream
@@ -1395,7 +1396,7 @@ export function ChannelMutateDrawer({
     }
     updateModels(basicModels)
     toast.success(
-      t('Filled {{count}} related model(s)', { count: basicModels.length })
+        t('Filled {{count}} related model(s)', { count: basicModels.length })
     )
   }, [basicModels, updateModels, t])
 
@@ -1406,7 +1407,7 @@ export function ChannelMutateDrawer({
     }
     updateModels(allModelsList)
     toast.success(
-      t('Filled {{count}} model(s)', { count: allModelsList.length })
+        t('Filled {{count}} model(s)', { count: allModelsList.length })
     )
   }, [allModelsList, updateModels, t])
 
@@ -1426,36 +1427,36 @@ export function ChannelMutateDrawer({
 
   // Handle adding prefill group models
   const handleAddPrefillGroup = useCallback(
-    (group: { id: number; name: string; items: string | string[] }) => {
-      try {
-        const items = Array.isArray(group.items)
-          ? group.items
-          : JSON.parse(group.items)
+      (group: { id: number; name: string; items: string | string[] }) => {
+        try {
+          const items = Array.isArray(group.items)
+              ? group.items
+              : JSON.parse(group.items)
 
-        if (!Array.isArray(items)) {
-          throw new Error('Invalid items format')
+          if (!Array.isArray(items)) {
+            throw new Error('Invalid items format')
+          }
+
+          const count = updateModels(items, true)
+          toast.success(
+              t('Added {{count}} models from "{{name}}"', {
+                count,
+                name: group.name,
+              })
+          )
+        } catch {
+          toast.error(t('Failed to parse group items'))
         }
-
-        const count = updateModels(items, true)
-        toast.success(
-          t('Added {{count}} models from "{{name}}"', {
-            count,
-            name: group.name,
-          })
-        )
-      } catch {
-        toast.error(t('Failed to parse group items'))
-      }
-    },
-    [updateModels, t]
+      },
+      [updateModels, t]
   )
 
   // Handle model selection change from MultiSelect
   const handleModelsChange = useCallback(
-    (selected: string[]) => {
-      form.setValue('models', selected.join(','))
-    },
-    [form]
+      (selected: string[]) => {
+        form.setValue('models', selected.join(','))
+      },
+      [form]
   )
 
   // Handle successful submission
@@ -1472,36 +1473,36 @@ export function ChannelMutateDrawer({
 
   // Show missing models confirmation dialog
   const confirmMissingModelMappings = useCallback(
-    (missingModels: string[]): Promise<MissingModelsAction> => {
-      return new Promise((resolve) => {
-        setMissingModelsList(missingModels)
-        setMissingModelsDialogOpen(true)
-        missingModelsResolveRef.current = resolve
-      })
-    },
-    []
+      (missingModels: string[]): Promise<MissingModelsAction> => {
+        return new Promise((resolve) => {
+          setMissingModelsList(missingModels)
+          setMissingModelsDialogOpen(true)
+          missingModelsResolveRef.current = resolve
+        })
+      },
+      []
   )
 
   // Handle missing models dialog action
   const handleMissingModelsAction = useCallback(
-    (action: MissingModelsAction) => {
-      setMissingModelsDialogOpen(false)
-      if (missingModelsResolveRef.current) {
-        missingModelsResolveRef.current(action)
-        missingModelsResolveRef.current = null
-      }
-    },
-    []
+      (action: MissingModelsAction) => {
+        setMissingModelsDialogOpen(false)
+        if (missingModelsResolveRef.current) {
+          missingModelsResolveRef.current(action)
+          missingModelsResolveRef.current = null
+        }
+      },
+      []
   )
 
   const confirmStatusCodeRisk = useCallback(
-    (detailItems: string[]): Promise<boolean> =>
-      new Promise((resolve) => {
-        statusCodeRiskResolveRef.current = resolve
-        setStatusCodeRiskDetailItems(detailItems)
-        setStatusCodeRiskOpen(true)
-      }),
-    []
+      (detailItems: string[]): Promise<boolean> =>
+          new Promise((resolve) => {
+            statusCodeRiskResolveRef.current = resolve
+            setStatusCodeRiskDetailItems(detailItems)
+            setStatusCodeRiskOpen(true)
+          }),
+      []
   )
 
   const handleStatusCodeRiskAction = useCallback((confirmed: boolean) => {
@@ -1533,114 +1534,114 @@ export function ChannelMutateDrawer({
 
   // Submit handler
   const onSubmit = useCallback(
-    async (data: ChannelFormValues) => {
-      // Validate key is required when creating
-      if (!isEditing && !data.key?.trim()) {
-        form.setError('key', {
-          type: 'manual',
-          message: ERROR_MESSAGES.REQUIRED_KEY,
-        })
-        return
-      }
-
-      if (sensitiveLocked) {
-        const dirtyFields = form.formState.dirtyFields as Partial<
-          Record<keyof ChannelFormValues, unknown>
-        >
-        const hasSensitiveChanges = SENSITIVE_FORM_FIELDS.some((field) =>
-          Boolean(dirtyFields[field])
-        )
-        if (hasSensitiveChanges) {
-          toast.error(
-            t('You do not have permission to edit sensitive channel settings.')
-          )
-          return
-        }
-      }
-
-      // Validate status_code_mapping entries
-      if (data.status_code_mapping?.trim()) {
-        const invalidEntries = collectInvalidStatusCodeEntries(
-          data.status_code_mapping
-        )
-        if (invalidEntries.length > 0) {
-          toast.error(
-            t('Invalid status code mapping entries: {{entries}}', {
-              entries: invalidEntries.join(', '),
-            })
-          )
+      async (data: ChannelFormValues) => {
+        // Validate key is required when creating
+        if (!isEditing && !data.key?.trim()) {
+          form.setError('key', {
+            type: 'manual',
+            message: ERROR_MESSAGES.REQUIRED_KEY,
+          })
           return
         }
 
-        const riskyRedirects = collectNewDisallowedStatusCodeRedirects(
-          initialStatusCodeMappingRef.current,
-          data.status_code_mapping
-        )
-        if (riskyRedirects.length > 0) {
-          const confirmed = await confirmStatusCodeRisk(riskyRedirects)
-          if (!confirmed) return
-        }
-      }
-
-      // Validate model_mapping JSON format
-      const hasModelMapping =
-        typeof data.model_mapping === 'string' &&
-        data.model_mapping.trim() !== ''
-      const modelMappingValue = data.model_mapping || ''
-
-      if (hasModelMapping) {
-        const validation = validateModelMappingJson(modelMappingValue)
-        if (!validation.valid) {
-          toast.error(t(validation.error || 'Invalid model mapping'))
-          return
-        }
-      }
-
-      // Normalize models array
-      const normalizedModels = parseModelsString(data.models || '')
-
-      // Check for missing models in model_mapping
-      if (hasModelMapping) {
-        const missingModels = findMissingModelsInMapping(
-          modelMappingValue,
-          normalizedModels
-        )
-
-        const shouldPromptMissing =
-          missingModels.length > 0 &&
-          hasModelConfigChanged(
-            normalizedModels,
-            data.model_mapping || '',
-            initialModelsRef.current,
-            initialModelMappingRef.current
+        if (sensitiveLocked) {
+          const dirtyFields = form.formState.dirtyFields as Partial<
+              Record<keyof ChannelFormValues, unknown>
+          >
+          const hasSensitiveChanges = SENSITIVE_FORM_FIELDS.some((field) =>
+              Boolean(dirtyFields[field])
           )
-
-        if (shouldPromptMissing) {
-          const confirmAction = await confirmMissingModelMappings(missingModels)
-          if (confirmAction === 'cancel') {
+          if (hasSensitiveChanges) {
+            toast.error(
+                t('You do not have permission to edit sensitive channel settings.')
+            )
             return
           }
-          if (confirmAction === 'add') {
-            const updatedModels = [
-              ...new Set([...normalizedModels, ...missingModels]),
-            ]
-            data.models = formatModelsArray(updatedModels)
-            form.setValue('models', data.models)
+        }
+
+        // Validate status_code_mapping entries
+        if (data.status_code_mapping?.trim()) {
+          const invalidEntries = collectInvalidStatusCodeEntries(
+              data.status_code_mapping
+          )
+          if (invalidEntries.length > 0) {
+            toast.error(
+                t('Invalid status code mapping entries: {{entries}}', {
+                  entries: invalidEntries.join(', '),
+                })
+            )
+            return
+          }
+
+          const riskyRedirects = collectNewDisallowedStatusCodeRedirects(
+              initialStatusCodeMappingRef.current,
+              data.status_code_mapping
+          )
+          if (riskyRedirects.length > 0) {
+            const confirmed = await confirmStatusCodeRisk(riskyRedirects)
+            if (!confirmed) return
           }
         }
-      }
 
-      await channelMutation.mutateAsync(data)
-    },
-    [
-      isEditing,
-      sensitiveLocked,
-      form,
-      confirmMissingModelMappings,
-      confirmStatusCodeRisk,
-      channelMutation,
-      t,
-    ]
+        // Validate model_mapping JSON format
+        const hasModelMapping =
+            typeof data.model_mapping === 'string' &&
+            data.model_mapping.trim() !== ''
+        const modelMappingValue = data.model_mapping || ''
+
+        if (hasModelMapping) {
+          const validation = validateModelMappingJson(modelMappingValue)
+          if (!validation.valid) {
+            toast.error(t(validation.error || 'Invalid model mapping'))
+            return
+          }
+        }
+
+        // Normalize models array
+        const normalizedModels = parseModelsString(data.models || '')
+
+        // Check for missing models in model_mapping
+        if (hasModelMapping) {
+          const missingModels = findMissingModelsInMapping(
+              modelMappingValue,
+              normalizedModels
+          )
+
+          const shouldPromptMissing =
+              missingModels.length > 0 &&
+              hasModelConfigChanged(
+                  normalizedModels,
+                  data.model_mapping || '',
+                  initialModelsRef.current,
+                  initialModelMappingRef.current
+              )
+
+          if (shouldPromptMissing) {
+            const confirmAction = await confirmMissingModelMappings(missingModels)
+            if (confirmAction === 'cancel') {
+              return
+            }
+            if (confirmAction === 'add') {
+              const updatedModels = [
+                ...new Set([...normalizedModels, ...missingModels]),
+              ]
+              data.models = formatModelsArray(updatedModels)
+              form.setValue('models', data.models)
+            }
+          }
+        }
+
+        await channelMutation.mutateAsync(data)
+      },
+      [
+        isEditing,
+        sensitiveLocked,
+        form,
+        confirmMissingModelMappings,
+        confirmStatusCodeRisk,
+        channelMutation,
+        t,
+      ]
   )
 
   const handleAdvancedSettingsOpenChange = useCallback((nextOpen: boolean) => {
@@ -1651,43 +1652,43 @@ export function ChannelMutateDrawer({
     setAdvancedSettingsOpen(nextOpen)
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(
-        ADVANCED_SETTINGS_EXPANDED_KEY,
-        String(nextOpen)
+          ADVANCED_SETTINGS_EXPANDED_KEY,
+          String(nextOpen)
       )
     }
   }, [])
 
   const handleEditorNavNavigate = useCallback(
-    (targetId: string) => {
-      const isAdvancedTarget =
-        targetId === CHANNEL_EDITOR_SECTION_IDS.advanced ||
-        ADVANCED_SETTINGS_CHILD_SECTION_IDS.includes(targetId)
+      (targetId: string) => {
+        const isAdvancedTarget =
+            targetId === CHANNEL_EDITOR_SECTION_IDS.advanced ||
+            ADVANCED_SETTINGS_CHILD_SECTION_IDS.includes(targetId)
 
-      if (isAdvancedTarget) {
-        advancedNavScrollPendingRef.current = true
-        handleAdvancedSettingsOpenChange(true)
-        setActiveEditorSectionId(CHANNEL_EDITOR_SECTION_IDS.advanced)
-        setExpandedEditorNavItemId(CHANNEL_EDITOR_SECTION_IDS.advanced)
-      } else {
-        advancedNavScrollPendingRef.current = false
-        setActiveEditorSectionId(targetId)
-        setExpandedEditorNavItemId(undefined)
-      }
+        if (isAdvancedTarget) {
+          advancedNavScrollPendingRef.current = true
+          handleAdvancedSettingsOpenChange(true)
+          setActiveEditorSectionId(CHANNEL_EDITOR_SECTION_IDS.advanced)
+          setExpandedEditorNavItemId(CHANNEL_EDITOR_SECTION_IDS.advanced)
+        } else {
+          advancedNavScrollPendingRef.current = false
+          setActiveEditorSectionId(targetId)
+          setExpandedEditorNavItemId(undefined)
+        }
 
-      const scrollTargetIntoView = () => {
-        document
-          .querySelector<HTMLElement>(`#${targetId}`)
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
+        const scrollTargetIntoView = () => {
+          document
+              .querySelector<HTMLElement>(`#${targetId}`)
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
 
-      if (isAdvancedTarget && !advancedSettingsOpen) {
-        window.requestAnimationFrame(scrollTargetIntoView)
-        return
-      }
+        if (isAdvancedTarget && !advancedSettingsOpen) {
+          window.requestAnimationFrame(scrollTargetIntoView)
+          return
+        }
 
-      scrollTargetIntoView()
-    },
-    [advancedSettingsOpen, handleAdvancedSettingsOpenChange]
+        scrollTargetIntoView()
+      },
+      [advancedSettingsOpen, handleAdvancedSettingsOpenChange]
   )
 
   const updateActiveEditorSection = useCallback(() => {
@@ -1699,7 +1700,7 @@ export function ChannelMutateDrawer({
 
     for (const sectionId of CHANNEL_EDITOR_MAIN_SECTION_IDS) {
       const sectionElement = document.querySelector<HTMLElement>(
-        `#${sectionId}`
+          `#${sectionId}`
       )
       if (!sectionElement) continue
       if (sectionElement.getBoundingClientRect().top <= activationY) {
@@ -1710,7 +1711,7 @@ export function ChannelMutateDrawer({
     }
 
     setActiveEditorSectionId((current) =>
-      current === nextActiveSectionId ? current : nextActiveSectionId
+        current === nextActiveSectionId ? current : nextActiveSectionId
     )
 
     if (nextActiveSectionId === CHANNEL_EDITOR_SECTION_IDS.advanced) {
@@ -1742,3040 +1743,3047 @@ export function ChannelMutateDrawer({
   }, [isChannelDetailLoading, open, updateActiveEditorSection])
 
   const onInvalid: SubmitErrorHandler<ChannelFormValues> = useCallback(
-    (errors) => {
-      if (hasAdvancedSettingsErrors(errors)) {
-        handleAdvancedSettingsOpenChange(true)
-      }
-      toast.error(t('Please fix the highlighted fields before saving'))
-    },
-    [handleAdvancedSettingsOpenChange, t]
+      (errors) => {
+        if (hasAdvancedSettingsErrors(errors)) {
+          handleAdvancedSettingsOpenChange(true)
+        }
+        toast.error(t('Please fix the highlighted fields before saving'))
+      },
+      [handleAdvancedSettingsOpenChange, t]
   )
 
   // Handle drawer close
   const handleOpenChange = useCallback(
-    (v: boolean) => {
-      onOpenChange(v)
-      if (!v) {
-        form.reset(CHANNEL_FORM_DEFAULT_VALUES)
-        advancedNavScrollPendingRef.current = false
-        setActiveEditorSectionId(CHANNEL_EDITOR_SECTION_IDS.identity)
-        setExpandedEditorNavItemId(undefined)
-        setAdvancedSettingsOpen(false)
-      }
-    },
-    [onOpenChange, form]
+      (v: boolean) => {
+        onOpenChange(v)
+        if (!v) {
+          form.reset(CHANNEL_FORM_DEFAULT_VALUES)
+          advancedNavScrollPendingRef.current = false
+          setActiveEditorSectionId(CHANNEL_EDITOR_SECTION_IDS.identity)
+          setExpandedEditorNavItemId(undefined)
+          setAdvancedSettingsOpen(false)
+        }
+      },
+      [onOpenChange, form]
   )
 
   return (
-    <>
-      <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent className={sideDrawerContentClassName('sm:max-w-5xl')}>
-          <SheetHeader className={sideDrawerHeaderClassName()}>
-            <SheetTitle className='flex items-center gap-3'>
+      <>
+        <Sheet open={open} onOpenChange={handleOpenChange}>
+          <SheetContent className={sideDrawerContentClassName('sm:max-w-5xl')}>
+            <SheetHeader className={sideDrawerHeaderClassName()}>
+              <SheetTitle className='flex items-center gap-3'>
               <span className='bg-muted flex size-9 shrink-0 items-center justify-center rounded-md'>
                 <ChannelTypeLogo type={currentType} size={22} />
               </span>
-              <span>
+                <span>
                 {isEditing ? t('Edit Channel') : t('Create Channel')}
-                <span className='text-muted-foreground ml-2 text-sm font-normal'>
+                  <span className='text-muted-foreground ml-2 text-sm font-normal'>
                   {t(currentTypeLabel)}
                 </span>
               </span>
-            </SheetTitle>
-            <SheetDescription>
-              {isEditing
-                ? t(
-                    "Update channel configuration and click save when you're done."
-                  )
-                : t(
-                    'Add a new channel by providing the necessary information.'
-                  )}
-            </SheetDescription>
-          </SheetHeader>
+              </SheetTitle>
+              <SheetDescription>
+                {isEditing
+                    ? t(
+                        "Update channel configuration and click save when you're done."
+                    )
+                    : t(
+                        'Add a new channel by providing the necessary information.'
+                    )}
+              </SheetDescription>
+            </SheetHeader>
 
-          {sensitiveLocked && (
-            <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
-              <AlertDescription>
-                {t(
-                  'Sensitive channel settings are read-only for your account.'
-                )}{' '}
-                {t(
-                  'You can still edit non-sensitive operations fields such as models, groups, priority, and weight.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
+            {sensitiveLocked && (
+                <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                  <AlertDescription>
+                    {t(
+                        'Sensitive channel settings are read-only for your account.'
+                    )}{' '}
+                    {t(
+                        'You can still edit non-sensitive operations fields such as models, groups, priority, and weight.'
+                    )}
+                  </AlertDescription>
+                </Alert>
+            )}
 
-          <Form {...form}>
-            <form
-              id='channel-form'
-              ref={channelFormRef}
-              onSubmit={form.handleSubmit(onSubmit, onInvalid)}
-              className={sideDrawerFormClassName('gap-5')}
-            >
-              {isChannelDetailLoading ? (
-                <ChannelEditorLoadingState />
-              ) : (
-                <div className='grid gap-5 lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start'>
-                  <ChannelEditorNav
-                    providerLogo={
-                      <ChannelTypeLogo type={currentType} size={18} />
-                    }
-                    providerLabel={t(currentTypeLabel)}
-                    statusLabel={t(currentStatusLabel)}
-                    progressLabel={progressLabel}
-                    navigationLabel={t('Channels')}
-                    items={editorNavItems}
-                    activeItemId={activeEditorSectionId}
-                    expandedItemId={expandedEditorNavItemId}
-                    onNavigate={handleEditorNavNavigate}
-                  />
-                  <div className='flex min-w-0 flex-col gap-5'>
-                    {/* ── Basic Information ── */}
-                    <div
-                      id={CHANNEL_EDITOR_SECTION_IDS.identity}
-                      className='scroll-mt-4'
-                    >
-                      <ChannelBasicSection>
-                        <div className='grid gap-4 sm:grid-cols-2'>
-                          <fieldset
-                            disabled={sensitiveLocked}
-                            className='min-w-0 disabled:opacity-60'
-                          >
-                            <FormField
-                              control={form.control}
-                              name='type'
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('Type *')}</FormLabel>
-                                  <FormControl>
-                                    <div className='relative'>
+            <Form {...form}>
+              <form
+                  id='channel-form'
+                  ref={channelFormRef}
+                  onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+                  className={sideDrawerFormClassName('gap-5')}
+              >
+                {isChannelDetailLoading ? (
+                    <ChannelEditorLoadingState />
+                ) : (
+                    <div className='grid gap-5 lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start'>
+                      <ChannelEditorNav
+                          providerLogo={
+                            <ChannelTypeLogo type={currentType} size={18} />
+                          }
+                          providerLabel={t(currentTypeLabel)}
+                          statusLabel={t(currentStatusLabel)}
+                          progressLabel={progressLabel}
+                          navigationLabel={t('Channels')}
+                          items={editorNavItems}
+                          activeItemId={activeEditorSectionId}
+                          expandedItemId={expandedEditorNavItemId}
+                          onNavigate={handleEditorNavNavigate}
+                      />
+                      <div className='flex min-w-0 flex-col gap-5'>
+                        {/* ── Basic Information ── */}
+                        <div
+                            id={CHANNEL_EDITOR_SECTION_IDS.identity}
+                            className='scroll-mt-4'
+                        >
+                          <ChannelBasicSection>
+                            <div className='grid gap-4 sm:grid-cols-2'>
+                              <fieldset
+                                  disabled={sensitiveLocked}
+                                  className='min-w-0 disabled:opacity-60'
+                              >
+                                <FormField
+                                    control={form.control}
+                                    name='type'
+                                    render={({ field }) => (
+                                        <FormItem>
+                                          <FormLabel>{t('Type *')}</FormLabel>
+                                          <FormControl>
+                                            <div className='relative'>
                                       <span className='pointer-events-none absolute top-1/2 left-3 z-10 flex -translate-y-1/2'>
                                         <ChannelTypeLogo
-                                          type={Number(field.value)}
-                                          size={18}
+                                            type={Number(field.value)}
+                                            size={18}
                                         />
                                       </span>
-                                      <Combobox
-                                        options={channelTypeOptions}
-                                        value={String(field.value)}
-                                        onValueChange={(value) => {
-                                          const nextType = Number(value)
-                                          if (
-                                            Number.isInteger(nextType) &&
-                                            nextType > 0
-                                          ) {
-                                            field.onChange(nextType)
-                                          }
-                                        }}
-                                        placeholder={t('Select channel type')}
-                                        searchPlaceholder={t(
-                                          'Search channel type...'
-                                        )}
-                                        emptyText={t('No channel type found.')}
-                                        className='pl-10'
-                                        allowCustomValue
-                                        openOnFocus={false}
-                                      />
-                                    </div>
-                                  </FormControl>
-                                  {sensitiveLocked && (
-                                    <FormDescription>
-                                      {t(
-                                        'No permission to perform this action'
-                                      )}
-                                    </FormDescription>
-                                  )}
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </fieldset>
+                                              <Combobox
+                                                  options={channelTypeOptions}
+                                                  value={String(field.value)}
+                                                  onValueChange={(value) => {
+                                                    const nextType = Number(value)
+                                                    if (
+                                                        Number.isInteger(nextType) &&
+                                                        nextType > 0
+                                                    ) {
+                                                      field.onChange(nextType)
+                                                    }
+                                                  }}
+                                                  placeholder={t('Select channel type')}
+                                                  searchPlaceholder={t(
+                                                      'Search channel type...'
+                                                  )}
+                                                  emptyText={t('No channel type found.')}
+                                                  className='pl-10'
+                                                  allowCustomValue
+                                                  openOnFocus={false}
+                                              />
+                                            </div>
+                                          </FormControl>
+                                          {sensitiveLocked && (
+                                              <FormDescription>
+                                                {t(
+                                                    'No permission to perform this action'
+                                                )}
+                                              </FormDescription>
+                                          )}
+                                          <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                              </fieldset>
 
-                          <FormField
-                            control={form.control}
-                            name='name'
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('Name *')}</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    placeholder={t(FIELD_PLACEHOLDERS.NAME)}
-                                    {...field}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
+                              <FormField
+                                  control={form.control}
+                                  name='name'
+                                  render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel>{t('Name *')}</FormLabel>
+                                        <FormControl>
+                                          <Input
+                                              placeholder={t(FIELD_PLACEHOLDERS.NAME)}
+                                              {...field}
+                                          />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                  )}
+                              />
+                            </div>
+
+                            {!isEditing && (
+                                <FormField
+                                    control={form.control}
+                                    name='status'
+                                    render={({ field }) => (
+                                        <FormItem
+                                            className={sideDrawerSwitchItemClassName()}
+                                        >
+                                          <div className='flex flex-col gap-0.5'>
+                                            <FormLabel>{t('Enabled')}</FormLabel>
+                                            <FormDescription className='text-xs'>
+                                              {t('Enable or disable this channel')}
+                                            </FormDescription>
+                                          </div>
+                                          <FormControl>
+                                            <Switch
+                                                checked={field.value === 1}
+                                                onCheckedChange={(checked) =>
+                                                    field.onChange(checked ? 1 : 2)
+                                                }
+                                            />
+                                          </FormControl>
+                                        </FormItem>
+                                    )}
+                                />
                             )}
-                          />
+
+                            {currentType === 1 && (
+                                <fieldset
+                                    disabled={sensitiveLocked}
+                                    className='disabled:opacity-60'
+                                >
+                                  <FormField
+                                      control={form.control}
+                                      name='openai_organization'
+                                      render={({ field }) => (
+                                          <FormItem>
+                                            <FormLabel>
+                                              {t('OpenAI Organization')}
+                                            </FormLabel>
+                                            <FormControl>
+                                              <Input
+                                                  placeholder={t('org-...')}
+                                                  {...field}
+                                              />
+                                            </FormControl>
+                                            <FormDescription>
+                                              {sensitiveLocked
+                                                  ? t(
+                                                      'No permission to perform this action'
+                                                  )
+                                                  : t(FIELD_DESCRIPTIONS.OPENAI_ORG)}
+                                            </FormDescription>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )}
+                                  />
+                                </fieldset>
+                            )}
+                          </ChannelBasicSection>
                         </div>
 
-                        {!isEditing && (
-                          <FormField
-                            control={form.control}
-                            name='status'
-                            render={({ field }) => (
-                              <FormItem
-                                className={sideDrawerSwitchItemClassName()}
+                        {/* ── API Access ── */}
+                        <div
+                            id={CHANNEL_EDITOR_SECTION_IDS.credentials}
+                            className='scroll-mt-4'
+                        >
+                          <ChannelApiAccessSection>
+                            {CHANNEL_TYPE_WARNINGS[currentType] && (
+                                <Alert>
+                                  <AlertDescription>
+                                    {t(CHANNEL_TYPE_WARNINGS[currentType])}
+                                  </AlertDescription>
+                                </Alert>
+                            )}
+
+                            {sensitiveLocked && (
+                                <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                                  <AlertDescription>
+                                    {t('No permission to perform this action')}
+                                  </AlertDescription>
+                                </Alert>
+                            )}
+
+                            <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
+                              <fieldset
+                                  disabled={sensitiveLocked}
+                                  className='space-y-4 disabled:opacity-60'
                               >
-                                <div className='flex flex-col gap-0.5'>
-                                  <FormLabel>{t('Enabled')}</FormLabel>
-                                  <FormDescription className='text-xs'>
-                                    {t('Enable or disable this channel')}
-                                  </FormDescription>
-                                </div>
-                                <FormControl>
-                                  <Switch
-                                    checked={field.value === 1}
-                                    onCheckedChange={(checked) =>
-                                      field.onChange(checked ? 1 : 2)
-                                    }
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                        )}
+                                {/* Azure (type 3) */}
+                                {currentType === 3 && (
+                                    <>
+                                      <FormField
+                                          control={form.control}
+                                          name='base_url'
+                                          render={({ field }) => (
+                                              <FormItem>
+                                                <FormLabel>
+                                                  {t('AZURE_OPENAI_ENDPOINT *')}
+                                                </FormLabel>
+                                                <FormControl>
+                                                  <Input
+                                                      placeholder={t(
+                                                          'e.g., https://docs-test-001.openai.azure.com'
+                                                      )}
+                                                      {...field}
+                                                  />
+                                                </FormControl>
+                                                <FormDescription>
+                                                  {t('Your Azure OpenAI endpoint URL')}
+                                                </FormDescription>
+                                                <FormMessage />
+                                              </FormItem>
+                                          )}
+                                      />
+                                      <FormField
+                                          control={form.control}
+                                          name='other'
+                                          render={({ field }) => (
+                                              <FormItem>
+                                                <FormLabel>
+                                                  {t('Default API Version *')}
+                                                </FormLabel>
+                                                <FormControl>
+                                                  <Input
+                                                      placeholder={t(
+                                                          'e.g., 2025-04-01-preview'
+                                                      )}
+                                                      {...field}
+                                                  />
+                                                </FormControl>
+                                                <FormDescription>
+                                                  {t(
+                                                      'Default API version for this channel'
+                                                  )}
+                                                </FormDescription>
+                                                <FormMessage />
+                                              </FormItem>
+                                          )}
+                                      />
+                                      <FormField
+                                          control={form.control}
+                                          name='azure_responses_version'
+                                          render={({ field }) => (
+                                              <FormItem>
+                                                <FormLabel>
+                                                  {t('Responses API Version')}
+                                                </FormLabel>
+                                                <FormControl>
+                                                  <Input
+                                                      placeholder={t('e.g., preview')}
+                                                      {...field}
+                                                  />
+                                                </FormControl>
+                                                <FormDescription>
+                                                  {t(
+                                                      'Default Responses API version, if empty, will use the API version above'
+                                                  )}
+                                                </FormDescription>
+                                                <FormMessage />
+                                              </FormItem>
+                                          )}
+                                      />
+                                    </>
+                                )}
 
-                        {currentType === 1 && (
-                          <fieldset
-                            disabled={sensitiveLocked}
-                            className='disabled:opacity-60'
-                          >
-                            <FormField
-                              control={form.control}
-                              name='openai_organization'
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>
-                                    {t('OpenAI Organization')}
-                                  </FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      placeholder={t('org-...')}
-                                      {...field}
+                                {/* Custom (type 8) */}
+                                {currentType === 8 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='base_url'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>
+                                                {t('Full Base URL (supports')} {'{'}
+                                                {t('model')}
+                                                {'}'} {t('variable) *')}
+                                              </FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t(
+                                                        'e.g., https://api.openai.com/v1/chat/completions'
+                                                    )}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t('Enter the complete URL, supports')}{' '}
+                                                {'{'}
+                                                {t('model')}
+                                                {'}'} {t('variable')}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
                                     />
-                                  </FormControl>
-                                  <FormDescription>
-                                    {sensitiveLocked
-                                      ? t(
-                                          'No permission to perform this action'
-                                        )
-                                      : t(FIELD_DESCRIPTIONS.OPENAI_ORG)}
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </fieldset>
-                        )}
-                      </ChannelBasicSection>
-                    </div>
+                                )}
 
-                    {/* ── API Access ── */}
-                    <div
-                      id={CHANNEL_EDITOR_SECTION_IDS.credentials}
-                      className='scroll-mt-4'
-                    >
-                      <ChannelApiAccessSection>
-                        {CHANNEL_TYPE_WARNINGS[currentType] && (
-                          <Alert>
-                            <AlertDescription>
-                              {t(CHANNEL_TYPE_WARNINGS[currentType])}
-                            </AlertDescription>
-                          </Alert>
-                        )}
-
-                        {sensitiveLocked && (
-                          <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
-                            <AlertDescription>
-                              {t('No permission to perform this action')}
-                            </AlertDescription>
-                          </Alert>
-                        )}
-
-                        <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
-                          <fieldset
-                            disabled={sensitiveLocked}
-                            className='space-y-4 disabled:opacity-60'
-                          >
-                            {/* Azure (type 3) */}
-                            {currentType === 3 && (
-                              <>
-                                <FormField
-                                  control={form.control}
-                                  name='base_url'
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>
-                                        {t('AZURE_OPENAI_ENDPOINT *')}
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          placeholder={t(
-                                            'e.g., https://docs-test-001.openai.azure.com'
-                                          )}
-                                          {...field}
-                                        />
-                                      </FormControl>
-                                      <FormDescription>
-                                        {t('Your Azure OpenAI endpoint URL')}
-                                      </FormDescription>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                                <FormField
-                                  control={form.control}
-                                  name='other'
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>
-                                        {t('Default API Version *')}
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          placeholder={t(
-                                            'e.g., 2025-04-01-preview'
-                                          )}
-                                          {...field}
-                                        />
-                                      </FormControl>
-                                      <FormDescription>
-                                        {t(
-                                          'Default API version for this channel'
+                                {/* Xunfei/Spark (type 18) */}
+                                {currentType === 18 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='other'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>
+                                                {t('Model Version *')}
+                                              </FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t('e.g., v2.1')}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t(
+                                                    'Spark model version, e.g., v2.1 (version number in API URL)'
+                                                )}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
                                         )}
-                                      </FormDescription>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                                <FormField
-                                  control={form.control}
-                                  name='azure_responses_version'
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>
-                                        {t('Responses API Version')}
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          placeholder={t('e.g., preview')}
-                                          {...field}
-                                        />
-                                      </FormControl>
-                                      <FormDescription>
-                                        {t(
-                                          'Default Responses API version, if empty, will use the API version above'
+                                    />
+                                )}
+
+                                {/* OpenRouter (type 20) */}
+                                {currentType === 20 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='is_enterprise_account'
+                                        render={({ field }) => (
+                                            <FormItem className='flex items-center justify-between'>
+                                              <div className='space-y-0.5'>
+                                                <FormLabel>
+                                                  {t('Enterprise Account')}
+                                                </FormLabel>
+                                                <FormDescription>
+                                                  {t(
+                                                      'Enable if this is an OpenRouter enterprise account with special response format'
+                                                  )}
+                                                </FormDescription>
+                                              </div>
+                                              <FormControl>
+                                                <Switch
+                                                    checked={field.value}
+                                                    onCheckedChange={field.onChange}
+                                                />
+                                              </FormControl>
+                                            </FormItem>
                                         )}
-                                      </FormDescription>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                              </>
-                            )}
-
-                            {/* Custom (type 8) */}
-                            {currentType === 8 && (
-                              <FormField
-                                control={form.control}
-                                name='base_url'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>
-                                      {t('Full Base URL (supports')} {'{'}
-                                      {t('model')}
-                                      {'}'} {t('variable) *')}
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(
-                                          'e.g., https://api.openai.com/v1/chat/completions'
-                                        )}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t('Enter the complete URL, supports')}{' '}
-                                      {'{'}
-                                      {t('model')}
-                                      {'}'} {t('variable')}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
+                                    />
                                 )}
-                              />
-                            )}
 
-                            {/* Xunfei/Spark (type 18) */}
-                            {currentType === 18 && (
-                              <FormField
-                                control={form.control}
-                                name='other'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>
-                                      {t('Model Version *')}
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t('e.g., v2.1')}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(
-                                        'Spark model version, e.g., v2.1 (version number in API URL)'
-                                      )}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* OpenRouter (type 20) */}
-                            {currentType === 20 && (
-                              <FormField
-                                control={form.control}
-                                name='is_enterprise_account'
-                                render={({ field }) => (
-                                  <FormItem className='flex items-center justify-between'>
-                                    <div className='space-y-0.5'>
-                                      <FormLabel>
-                                        {t('Enterprise Account')}
-                                      </FormLabel>
-                                      <FormDescription>
-                                        {t(
-                                          'Enable if this is an OpenRouter enterprise account with special response format'
-                                        )}
-                                      </FormDescription>
-                                    </div>
-                                    <FormControl>
-                                      <Switch
-                                        checked={field.value}
-                                        onCheckedChange={field.onChange}
-                                      />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* AWS (type 33) */}
-                            {currentType === 33 && (
-                              <FormField
-                                control={form.control}
-                                name='aws_key_type'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('AWS Key Format')}</FormLabel>
-                                    <Select
-                                      items={[
-                                        {
-                                          value: 'ak_sk',
-                                          label: t(
-                                            'AccessKey / SecretAccessKey'
-                                          ),
-                                        },
-                                        {
-                                          value: 'api_key',
-                                          label: t('API Key'),
-                                        },
-                                      ]}
-                                      onValueChange={field.onChange}
-                                      value={field.value}
-                                    >
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue
-                                            placeholder={t('Select key format')}
-                                          />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent
-                                        alignItemWithTrigger={false}
-                                      >
-                                        <SelectGroup>
-                                          <SelectItem value='ak_sk'>
-                                            {t('AccessKey / SecretAccessKey')}
-                                          </SelectItem>
-                                          <SelectItem value='api_key'>
-                                            {t('API Key')}
-                                          </SelectItem>
-                                        </SelectGroup>
-                                      </SelectContent>
-                                    </Select>
-                                    <FormDescription>
-                                      {field.value === 'api_key'
-                                        ? t('API Key mode: use APIKey|Region')
-                                        : t(
-                                            'AK/SK mode: use AccessKey|SecretAccessKey|Region'
-                                          )}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* AI Proxy Library (type 21) */}
-                            {currentType === 21 && (
-                              <FormField
-                                control={form.control}
-                                name='other'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>
-                                      {t('Knowledge Base ID *')}
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t('e.g., 123456')}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t('Enter the knowledge base ID')}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* FastGPT (type 22) */}
-                            {currentType === 22 && (
-                              <FormField
-                                control={form.control}
-                                name='base_url'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>
-                                      {t('Private Deployment URL')}
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(
-                                          'e.g., https://fastgpt.run/api/openapi'
-                                        )}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(
-                                        'For private deployments, format: https://fastgpt.run/api/openapi'
-                                      )}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* SunoAPI (type 36) */}
-                            {currentType === 36 && (
-                              <FormField
-                                control={form.control}
-                                name='base_url'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>
-                                      {t(
-                                        'API Base URL (Important: Not Chat API) *'
-                                      )}
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(
-                                          'e.g., https://api.example.com (path before /suno)'
-                                        )}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(
-                                        'Enter the path before /suno, usually just the domain'
-                                      )}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* Cloudflare Workers AI (type 39) */}
-                            {currentType === 39 && (
-                              <FormField
-                                control={form.control}
-                                name='other'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Account ID *')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(
-                                          'e.g., d6b5da8hk1awo8nap34ube6gh'
-                                        )}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t('Your Cloudflare Account ID')}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* SiliconFlow (type 40) */}
-                            {currentType === 40 && (
-                              <Alert>
-                                <AlertDescription>
-                                  {t('Referral link:')}{' '}
-                                  <a
-                                    href='https://cloud.siliconflow.cn/i/hij0YNTZ'
-                                    target='_blank'
-                                    rel='noopener noreferrer'
-                                    className='text-primary underline'
-                                  >
-                                    {t(
-                                      'https://cloud.siliconflow.cn/i/hij0YNTZ'
-                                    )}
-                                  </a>
-                                </AlertDescription>
-                              </Alert>
-                            )}
-
-                            {/* Vertex AI (type 41) */}
-                            {currentType === 41 && (
-                              <>
-                                <FormField
-                                  control={form.control}
-                                  name='vertex_key_type'
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>
-                                        {t('Vertex AI Key Format')}
-                                      </FormLabel>
-                                      <Select
-                                        items={[
-                                          { value: 'json', label: t('JSON') },
-                                          {
-                                            value: 'api_key',
-                                            label: t('API Key'),
-                                          },
-                                        ]}
-                                        onValueChange={field.onChange}
-                                        value={field.value}
-                                      >
-                                        <FormControl>
-                                          <SelectTrigger>
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent
-                                          alignItemWithTrigger={false}
-                                        >
-                                          <SelectGroup>
-                                            <SelectItem value='json'>
-                                              {t('JSON')}
-                                            </SelectItem>
-                                            <SelectItem value='api_key'>
-                                              {t('API Key')}
-                                            </SelectItem>
-                                          </SelectGroup>
-                                        </SelectContent>
-                                      </Select>
-                                      <FormDescription>
-                                        {field.value === 'json'
-                                          ? t(
-                                              'JSON format supports service account JSON files'
-                                            )
-                                          : t(
-                                              'API Key mode (does not support batch creation)'
-                                            )}
-                                      </FormDescription>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                                {vertexKeyType === 'json' && (
-                                  <FormItem>
-                                    <FormLabel>
-                                      {t('Service account JSON file(s)')}
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type='file'
-                                        accept='.json,application/json'
-                                        multiple={isBatchMode}
-                                        onChange={async (e) => {
-                                          const fileList = e.target.files
-                                          const files = fileList
-                                            ? [...fileList]
-                                            : []
-                                          // allow re-selecting the same file
-                                          e.target.value = ''
-
-                                          if (files.length === 0) {
-                                            toast.info(
-                                              t('Please upload key file(s)')
-                                            )
-                                            return
-                                          }
-
-                                          const keys: unknown[] = []
-                                          for (const file of files) {
-                                            try {
-                                              const txt = await file.text()
-                                              keys.push(JSON.parse(txt))
-                                            } catch {
-                                              toast.error(
-                                                t(
-                                                  'Failed to parse JSON file: {{name}}',
-                                                  {
-                                                    name: file.name,
-                                                  }
-                                                )
-                                              )
-                                              return
-                                            }
-                                          }
-
-                                          if (keys.length === 0) {
-                                            toast.info(
-                                              t('Please upload key file(s)')
-                                            )
-                                            return
-                                          }
-
-                                          const keyValue = isBatchMode
-                                            ? JSON.stringify(keys)
-                                            : JSON.stringify(keys[0])
-
-                                          form.setValue('key', keyValue, {
-                                            shouldDirty: true,
-                                            shouldValidate: true,
-                                          })
-
-                                          toast.success(
-                                            t(
-                                              'Parsed {{count}} service account file(s)',
-                                              {
-                                                count: keys.length,
-                                              }
-                                            )
-                                          )
-                                        }}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {isBatchMode
-                                        ? t(
-                                            'Upload multiple JSON files in batch modes'
-                                          )
-                                        : t(
-                                            'Upload a single service account JSON file'
-                                          )}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                                <FormField
-                                  control={form.control}
-                                  name='other'
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>
-                                        {t('Deployment Region *')}
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Textarea
-                                          placeholder={t(
-                                            'e.g., us-central1 or JSON format for model-specific regions'
-                                          )}
-                                          rows={3}
-                                          {...field}
-                                        />
-                                      </FormControl>
-                                      <FormDescription>
-                                        {t(
-                                          'Enter deployment region or JSON mapping:'
-                                        )}{' '}
-                                        {'{'}
-                                        {t(
-                                          '"default": "us-central1", "claude-3-5-sonnet-20240620": "europe-west1"'
-                                        )}
-                                        {'}'}
-                                      </FormDescription>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                              </>
-                            )}
-
-                            {/* VolcEngine (type 45) */}
-                            {currentType === 45 && !doubaoApiEditUnlocked && (
-                              <FormField
-                                control={form.control}
-                                name='base_url'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel
-                                      className='cursor-pointer select-none'
-                                      onClick={handleApiConfigSecretClick}
-                                    >
-                                      {t('API Base URL *')}
-                                    </FormLabel>
-                                    <Select
-                                      items={[
-                                        {
-                                          value:
-                                            'https://ark.cn-beijing.volces.com',
-                                          label: t(
-                                            'https://ark.cn-beijing.volces.com'
-                                          ),
-                                        },
-                                        {
-                                          value:
-                                            'https://ark.ap-southeast.bytepluses.com',
-                                          label: t(
-                                            'https://ark.ap-southeast.bytepluses.com'
-                                          ),
-                                        },
-                                      ]}
-                                      onValueChange={field.onChange}
-                                      value={
-                                        field.value === 'doubao-coding-plan'
-                                          ? 'https://ark.cn-beijing.volces.com'
-                                          : field.value ||
-                                            'https://ark.cn-beijing.volces.com'
-                                      }
-                                    >
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent
-                                        alignItemWithTrigger={false}
-                                      >
-                                        <SelectGroup>
-                                          <SelectItem value='https://ark.cn-beijing.volces.com'>
-                                            {t(
-                                              'https://ark.cn-beijing.volces.com'
-                                            )}
-                                          </SelectItem>
-                                          <SelectItem value='https://ark.ap-southeast.bytepluses.com'>
-                                            {t(
-                                              'https://ark.ap-southeast.bytepluses.com'
-                                            )}
-                                          </SelectItem>
-                                        </SelectGroup>
-                                      </SelectContent>
-                                    </Select>
-                                    <FormDescription>
-                                      {t('Select the API endpoint region')}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* VolcEngine (type 45) - Custom API URL (unlocked) */}
-                            {currentType === 45 && doubaoApiEditUnlocked && (
-                              <FormField
-                                control={form.control}
-                                name='base_url'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('API Base URL *')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(
-                                          'e.g., https://ark.cn-beijing.volces.com'
-                                        )}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t('Enter custom API endpoint URL')}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* Coze (type 49) */}
-                            {currentType === 49 && (
-                              <FormField
-                                control={form.control}
-                                name='other'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Agent ID *')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t('e.g., 7342866812345')}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t('Enter the Coze agent ID')}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {/* General base_url for other types */}
-                            {![3, 8, 22, 36, 45].includes(currentType) && (
-                              <FormField
-                                control={form.control}
-                                name='base_url'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Base URL')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(
-                                          FIELD_PLACEHOLDERS.BASE_URL
-                                        )}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(
-                                        'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
-                                      )}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            {currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && (
-                              <FormField
-                                control={form.control}
-                                name='advanced_custom'
-                                render={({ field }) => (
-                                  <FormItem className='space-y-3 border-y py-4'>
-                                    <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
-                                      <div className='space-y-2'>
-                                        <FormLabel>
-                                          {t('Advanced Custom Routes')}
-                                        </FormLabel>
-                                        <div className='flex flex-wrap gap-2'>
-                                          <Badge variant='secondary'>
-                                            {t('Routes')}:{' '}
-                                            {advancedCustomStats.routeCount}
-                                          </Badge>
-                                          {advancedCustomRouteTypeLabels.map(
-                                            (label) => (
-                                              <Badge
-                                                key={label}
-                                                variant='outline'
-                                                className='max-w-[12rem]'
-                                                title={label}
+                                {/* AWS (type 33) */}
+                                {currentType === 33 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='aws_key_type'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>{t('AWS Key Format')}</FormLabel>
+                                              <Select
+                                                  items={[
+                                                    {
+                                                      value: 'ak_sk',
+                                                      label: t(
+                                                          'AccessKey / SecretAccessKey'
+                                                      ),
+                                                    },
+                                                    {
+                                                      value: 'api_key',
+                                                      label: t('API Key'),
+                                                    },
+                                                  ]}
+                                                  onValueChange={field.onChange}
+                                                  value={field.value}
                                               >
+                                                <FormControl>
+                                                  <SelectTrigger>
+                                                    <SelectValue
+                                                        placeholder={t('Select key format')}
+                                                    />
+                                                  </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent
+                                                    alignItemWithTrigger={false}
+                                                >
+                                                  <SelectGroup>
+                                                    <SelectItem value='ak_sk'>
+                                                      {t('AccessKey / SecretAccessKey')}
+                                                    </SelectItem>
+                                                    <SelectItem value='api_key'>
+                                                      {t('API Key')}
+                                                    </SelectItem>
+                                                  </SelectGroup>
+                                                </SelectContent>
+                                              </Select>
+                                              <FormDescription>
+                                                {field.value === 'api_key'
+                                                    ? t('API Key mode: use APIKey|Region')
+                                                    : t(
+                                                        'AK/SK mode: use AccessKey|SecretAccessKey|Region'
+                                                    )}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {/* AI Proxy Library (type 21) */}
+                                {currentType === 21 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='other'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>
+                                                {t('Knowledge Base ID *')}
+                                              </FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t('e.g., 123456')}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t('Enter the knowledge base ID')}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {/* FastGPT (type 22) */}
+                                {currentType === 22 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='base_url'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>
+                                                {t('Private Deployment URL')}
+                                              </FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t(
+                                                        'e.g., https://fastgpt.run/api/openapi'
+                                                    )}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t(
+                                                    'For private deployments, format: https://fastgpt.run/api/openapi'
+                                                )}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {/* SunoAPI (type 36) */}
+                                {currentType === 36 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='base_url'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>
+                                                {t(
+                                                    'API Base URL (Important: Not Chat API) *'
+                                                )}
+                                              </FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t(
+                                                        'e.g., https://api.example.com (path before /suno)'
+                                                    )}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t(
+                                                    'Enter the path before /suno, usually just the domain'
+                                                )}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {/* Cloudflare Workers AI (type 39) */}
+                                {currentType === 39 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='other'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>{t('Account ID *')}</FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t(
+                                                        'e.g., d6b5da8hk1awo8nap34ube6gh'
+                                                    )}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t('Your Cloudflare Account ID')}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {/* SiliconFlow (type 40) */}
+                                {currentType === 40 && (
+                                    <Alert>
+                                      <AlertDescription>
+                                        {t('Referral link:')}{' '}
+                                        <a
+                                            href='https://cloud.siliconflow.cn/i/hij0YNTZ'
+                                            target='_blank'
+                                            rel='noopener noreferrer'
+                                            className='text-primary underline'
+                                        >
+                                          {t(
+                                              'https://cloud.siliconflow.cn/i/hij0YNTZ'
+                                          )}
+                                        </a>
+                                      </AlertDescription>
+                                    </Alert>
+                                )}
+
+                                {/* Vertex AI (type 41) */}
+                                {currentType === 41 && (
+                                    <>
+                                      <FormField
+                                          control={form.control}
+                                          name='vertex_key_type'
+                                          render={({ field }) => (
+                                              <FormItem>
+                                                <FormLabel>
+                                                  {t('Vertex AI Key Format')}
+                                                </FormLabel>
+                                                <Select
+                                                    items={[
+                                                      { value: 'json', label: t('JSON') },
+                                                      {
+                                                        value: 'api_key',
+                                                        label: t('API Key'),
+                                                      },
+                                                    ]}
+                                                    onValueChange={field.onChange}
+                                                    value={field.value}
+                                                >
+                                                  <FormControl>
+                                                    <SelectTrigger>
+                                                      <SelectValue />
+                                                    </SelectTrigger>
+                                                  </FormControl>
+                                                  <SelectContent
+                                                      alignItemWithTrigger={false}
+                                                  >
+                                                    <SelectGroup>
+                                                      <SelectItem value='json'>
+                                                        {t('JSON')}
+                                                      </SelectItem>
+                                                      <SelectItem value='api_key'>
+                                                        {t('API Key')}
+                                                      </SelectItem>
+                                                    </SelectGroup>
+                                                  </SelectContent>
+                                                </Select>
+                                                <FormDescription>
+                                                  {field.value === 'json'
+                                                      ? t(
+                                                          'JSON format supports service account JSON files'
+                                                      )
+                                                      : t(
+                                                          'API Key mode (does not support batch creation)'
+                                                      )}
+                                                </FormDescription>
+                                                <FormMessage />
+                                              </FormItem>
+                                          )}
+                                      />
+                                      {vertexKeyType === 'json' && (
+                                          <FormItem>
+                                            <FormLabel>
+                                              {t('Service account JSON file(s)')}
+                                            </FormLabel>
+                                            <FormControl>
+                                              <Input
+                                                  type='file'
+                                                  accept='.json,application/json'
+                                                  multiple={isBatchMode}
+                                                  onChange={async (e) => {
+                                                    const fileList = e.target.files
+                                                    const files = fileList
+                                                        ? [...fileList]
+                                                        : []
+                                                    // allow re-selecting the same file
+                                                    e.target.value = ''
+
+                                                    if (files.length === 0) {
+                                                      toast.info(
+                                                          t('Please upload key file(s)')
+                                                      )
+                                                      return
+                                                    }
+
+                                                    const keys: unknown[] = []
+                                                    for (const file of files) {
+                                                      try {
+                                                        const txt = await file.text()
+                                                        keys.push(JSON.parse(txt))
+                                                      } catch {
+                                                        toast.error(
+                                                            t(
+                                                                'Failed to parse JSON file: {{name}}',
+                                                                {
+                                                                  name: file.name,
+                                                                }
+                                                            )
+                                                        )
+                                                        return
+                                                      }
+                                                    }
+
+                                                    if (keys.length === 0) {
+                                                      toast.info(
+                                                          t('Please upload key file(s)')
+                                                      )
+                                                      return
+                                                    }
+
+                                                    const keyValue = isBatchMode
+                                                        ? JSON.stringify(keys)
+                                                        : JSON.stringify(keys[0])
+
+                                                    form.setValue('key', keyValue, {
+                                                      shouldDirty: true,
+                                                      shouldValidate: true,
+                                                    })
+
+                                                    toast.success(
+                                                        t(
+                                                            'Parsed {{count}} service account file(s)',
+                                                            {
+                                                              count: keys.length,
+                                                            }
+                                                        )
+                                                    )
+                                                  }}
+                                              />
+                                            </FormControl>
+                                            <FormDescription>
+                                              {isBatchMode
+                                                  ? t(
+                                                      'Upload multiple JSON files in batch modes'
+                                                  )
+                                                  : t(
+                                                      'Upload a single service account JSON file'
+                                                  )}
+                                            </FormDescription>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )}
+                                      <FormField
+                                          control={form.control}
+                                          name='other'
+                                          render={({ field }) => (
+                                              <FormItem>
+                                                <FormLabel>
+                                                  {t('Deployment Region *')}
+                                                </FormLabel>
+                                                <FormControl>
+                                                  <Textarea
+                                                      placeholder={t(
+                                                          'e.g., us-central1 or JSON format for model-specific regions'
+                                                      )}
+                                                      rows={3}
+                                                      {...field}
+                                                  />
+                                                </FormControl>
+                                                <FormDescription>
+                                                  {t(
+                                                      'Enter deployment region or JSON mapping:'
+                                                  )}{' '}
+                                                  {'{'}
+                                                  {t(
+                                                      '"default": "us-central1", "claude-3-5-sonnet-20240620": "europe-west1"'
+                                                  )}
+                                                  {'}'}
+                                                </FormDescription>
+                                                <FormMessage />
+                                              </FormItem>
+                                          )}
+                                      />
+                                    </>
+                                )}
+
+                                {/* VolcEngine (type 45) */}
+                                {currentType === 45 && !doubaoApiEditUnlocked && (
+                                    <FormField
+                                        control={form.control}
+                                        name='base_url'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel
+                                                  className='cursor-pointer select-none'
+                                                  onClick={handleApiConfigSecretClick}
+                                              >
+                                                {t('API Base URL *')}
+                                              </FormLabel>
+                                              <Select
+                                                  items={[
+                                                    {
+                                                      value:
+                                                          'https://ark.cn-beijing.volces.com',
+                                                      label: t(
+                                                          'https://ark.cn-beijing.volces.com'
+                                                      ),
+                                                    },
+                                                    {
+                                                      value:
+                                                          'https://ark.ap-southeast.bytepluses.com',
+                                                      label: t(
+                                                          'https://ark.ap-southeast.bytepluses.com'
+                                                      ),
+                                                    },
+                                                  ]}
+                                                  onValueChange={field.onChange}
+                                                  value={
+                                                    field.value === 'doubao-coding-plan'
+                                                        ? 'https://ark.cn-beijing.volces.com'
+                                                        : field.value ||
+                                                        'https://ark.cn-beijing.volces.com'
+                                                  }
+                                              >
+                                                <FormControl>
+                                                  <SelectTrigger>
+                                                    <SelectValue />
+                                                  </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent
+                                                    alignItemWithTrigger={false}
+                                                >
+                                                  <SelectGroup>
+                                                    <SelectItem value='https://ark.cn-beijing.volces.com'>
+                                                      {t(
+                                                          'https://ark.cn-beijing.volces.com'
+                                                      )}
+                                                    </SelectItem>
+                                                    <SelectItem value='https://ark.ap-southeast.bytepluses.com'>
+                                                      {t(
+                                                          'https://ark.ap-southeast.bytepluses.com'
+                                                      )}
+                                                    </SelectItem>
+                                                  </SelectGroup>
+                                                </SelectContent>
+                                              </Select>
+                                              <FormDescription>
+                                                {t('Select the API endpoint region')}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {/* VolcEngine (type 45) - Custom API URL (unlocked) */}
+                                {currentType === 45 && doubaoApiEditUnlocked && (
+                                    <FormField
+                                        control={form.control}
+                                        name='base_url'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>{t('API Base URL *')}</FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t(
+                                                        'e.g., https://ark.cn-beijing.volces.com'
+                                                    )}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t('Enter custom API endpoint URL')}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {/* Coze (type 49) */}
+                                {currentType === 49 && (
+                                    <FormField
+                                        control={form.control}
+                                        name='other'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>{t('Agent ID *')}</FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t('e.g., 7342866812345')}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t('Enter the Coze agent ID')}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {/* General base_url for other types */}
+                                {![3, 8, 22, 36, 45].includes(currentType) && (
+                                    <FormField
+                                        control={form.control}
+                                        name='base_url'
+                                        render={({ field }) => (
+                                            <FormItem>
+                                              <FormLabel>{t('Base URL')}</FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t(
+                                                        FIELD_PLACEHOLDERS.BASE_URL
+                                                    )}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                {t(
+                                                    'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
+                                                )}
+                                              </FormDescription>
+                                              <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
+
+                                {currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && (
+                                    <FormField
+                                        control={form.control}
+                                        name='advanced_custom'
+                                        render={({ field }) => (
+                                            <FormItem className='space-y-3 border-y py-4'>
+                                              <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
+                                                <div className='space-y-2'>
+                                                  <FormLabel>
+                                                    {t('Advanced Custom Routes')}
+                                                  </FormLabel>
+                                                  <div className='flex flex-wrap gap-2'>
+                                                    <Badge variant='secondary'>
+                                                      {t('Routes')}:{' '}
+                                                      {advancedCustomStats.routeCount}
+                                                    </Badge>
+                                                    {advancedCustomRouteTypeLabels.map(
+                                                        (label) => (
+                                                            <Badge
+                                                                key={label}
+                                                                variant='outline'
+                                                                className='max-w-[12rem]'
+                                                                title={label}
+                                                            >
                                                 <span className='truncate'>
                                                   {label}
                                                 </span>
-                                              </Badge>
-                                            )
-                                          )}
-                                          {hiddenAdvancedCustomRouteTypeCount >
-                                            0 && (
-                                            <Badge
-                                              variant='outline'
-                                              title={
-                                                advancedCustomRouteTypeTitle
-                                              }
-                                            >
-                                              +
-                                              {
-                                                hiddenAdvancedCustomRouteTypeCount
-                                              }
-                                            </Badge>
-                                          )}
-                                          {!advancedCustomStats.valid && (
-                                            <Badge variant='destructive'>
-                                              {t('Incomplete')}
-                                            </Badge>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <Button
-                                        type='button'
-                                        variant='outline'
-                                        size='sm'
-                                        onClick={() =>
-                                          setAdvancedCustomEditorOpen(true)
-                                        }
-                                      >
-                                        <Route className='mr-2 h-4 w-4' />
-                                        {t('Configure routes')}
-                                      </Button>
-                                    </div>
-                                    <FormControl>
-                                      <input type='hidden' {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-
-                            <ChannelAuthSection>
-                              {!isEditing && (
-                                <FormField
-                                  control={form.control}
-                                  name='multi_key_mode'
-                                  render={({ field }) => (
-                                    <FormItem className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                                      <FormLabel className='text-muted-foreground text-xs font-medium'>
-                                        {t('Add Mode')}
-                                      </FormLabel>
-                                      <Select
-                                        items={addModeOptions.map((option) => ({
-                                          value: option.value,
-                                          label: t(option.label),
-                                        }))}
-                                        onValueChange={field.onChange}
-                                        value={field.value}
-                                      >
-                                        <FormControl>
-                                          <SelectTrigger
-                                            size='sm'
-                                            className='w-full sm:w-56'
-                                          >
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent
-                                          alignItemWithTrigger={false}
-                                        >
-                                          <SelectGroup>
-                                            {addModeOptions.map((option) => (
-                                              <SelectItem
-                                                key={option.value}
-                                                value={option.value}
-                                              >
-                                                {t(option.label)}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectGroup>
-                                        </SelectContent>
-                                      </Select>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                              )}
-
-                              <FormField
-                                control={form.control}
-                                name='key'
-                                render={({ field }) => {
-                                  let keyPlaceholder = t(
-                                    getKeyPromptForType(currentType)
-                                  )
-                                  if (isEditing) {
-                                    keyPlaceholder = t(
-                                      'Leave empty to keep existing key'
-                                    )
-                                  } else if (
-                                    currentType === 33 &&
-                                    awsKeyType === 'api_key' &&
-                                    isBatchMode
-                                  ) {
-                                    keyPlaceholder = t(
-                                      'Enter API Key, one per line, format: APIKey|Region'
-                                    )
-                                  } else if (
-                                    currentType === 33 &&
-                                    awsKeyType === 'api_key'
-                                  ) {
-                                    keyPlaceholder = t(
-                                      'Enter API Key, format: APIKey|Region'
-                                    )
-                                  } else if (
-                                    currentType === 33 &&
-                                    isBatchMode
-                                  ) {
-                                    keyPlaceholder = t(
-                                      'Enter key, one per line, format: AccessKey|SecretAccessKey|Region'
-                                    )
-                                  } else if (currentType === 33) {
-                                    keyPlaceholder = t(
-                                      'Enter key, format: AccessKey|SecretAccessKey|Region'
-                                    )
-                                  } else if (isBatchMode) {
-                                    keyPlaceholder = t(
-                                      'Enter one key per line for batch creation'
-                                    )
-                                  }
-
-                                  let keyDescription: ReactNode = t(
-                                    FIELD_DESCRIPTIONS.KEY
-                                  )
-                                  if (isEditing) {
-                                    let keyModeDescription = t(
-                                      'Append mode: New keys will be added to the end of the existing key list'
-                                    )
-                                    if (keyMode === 'replace') {
-                                      keyModeDescription = t(
-                                        'Replace mode: Will completely replace all existing keys'
-                                      )
-                                    }
-                                    keyDescription = (
-                                      <>
-                                        {t(
-                                          'Enter new key to update, or leave empty to keep current key'
+                                                            </Badge>
+                                                        )
+                                                    )}
+                                                    {hiddenAdvancedCustomRouteTypeCount >
+                                                        0 && (
+                                                            <Badge
+                                                                variant='outline'
+                                                                title={
+                                                                  advancedCustomRouteTypeTitle
+                                                                }
+                                                            >
+                                                              +
+                                                              {
+                                                                hiddenAdvancedCustomRouteTypeCount
+                                                              }
+                                                            </Badge>
+                                                        )}
+                                                    {!advancedCustomStats.valid && (
+                                                        <Badge variant='destructive'>
+                                                          {t('Incomplete')}
+                                                        </Badge>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                                <Button
+                                                    type='button'
+                                                    variant='outline'
+                                                    size='sm'
+                                                    onClick={() =>
+                                                        setAdvancedCustomEditorOpen(true)
+                                                    }
+                                                >
+                                                  <Route className='mr-2 h-4 w-4' />
+                                                  {t('Configure routes')}
+                                                </Button>
+                                              </div>
+                                              <FormControl>
+                                                <input type='hidden' {...field} />
+                                              </FormControl>
+                                              <FormMessage />
+                                            </FormItem>
                                         )}
-                                        {isMultiKeyChannel && (
-                                          <span className='text-warning mt-1 block'>
+                                    />
+                                )}
+
+                                <ChannelAuthSection>
+                                  {!isEditing && (
+                                      <FormField
+                                          control={form.control}
+                                          name='multi_key_mode'
+                                          render={({ field }) => (
+                                              <FormItem className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                                                <FormLabel className='text-muted-foreground text-xs font-medium'>
+                                                  {t('Add Mode')}
+                                                </FormLabel>
+                                                <Select
+                                                    items={addModeOptions.map((option) => ({
+                                                      value: option.value,
+                                                      label: t(option.label),
+                                                    }))}
+                                                    onValueChange={field.onChange}
+                                                    value={field.value}
+                                                >
+                                                  <FormControl>
+                                                    <SelectTrigger
+                                                        size='sm'
+                                                        className='w-full sm:w-56'
+                                                    >
+                                                      <SelectValue />
+                                                    </SelectTrigger>
+                                                  </FormControl>
+                                                  <SelectContent
+                                                      alignItemWithTrigger={false}
+                                                  >
+                                                    <SelectGroup>
+                                                      {addModeOptions.map((option) => (
+                                                          <SelectItem
+                                                              key={option.value}
+                                                              value={option.value}
+                                                          >
+                                                            {t(option.label)}
+                                                          </SelectItem>
+                                                      ))}
+                                                    </SelectGroup>
+                                                  </SelectContent>
+                                                </Select>
+                                                <FormMessage />
+                                              </FormItem>
+                                          )}
+                                      />
+                                  )}
+
+                                  <FormField
+                                      control={form.control}
+                                      name='key'
+                                      render={({ field }) => {
+                                        let keyPlaceholder = t(
+                                            getKeyPromptForType(currentType)
+                                        )
+                                        if (isEditing) {
+                                          keyPlaceholder = t(
+                                              'Leave empty to keep existing key'
+                                          )
+                                        } else if (
+                                            currentType === 33 &&
+                                            awsKeyType === 'api_key' &&
+                                            isBatchMode
+                                        ) {
+                                          keyPlaceholder = t(
+                                              'Enter API Key, one per line, format: APIKey|Region'
+                                          )
+                                        } else if (
+                                            currentType === 33 &&
+                                            awsKeyType === 'api_key'
+                                        ) {
+                                          keyPlaceholder = t(
+                                              'Enter API Key, format: APIKey|Region'
+                                          )
+                                        } else if (
+                                            currentType === 33 &&
+                                            isBatchMode
+                                        ) {
+                                          keyPlaceholder = t(
+                                              'Enter key, one per line, format: AccessKey|SecretAccessKey|Region'
+                                          )
+                                        } else if (currentType === 33) {
+                                          keyPlaceholder = t(
+                                              'Enter key, format: AccessKey|SecretAccessKey|Region'
+                                          )
+                                        } else if (isBatchMode) {
+                                          keyPlaceholder = t(
+                                              'Enter one key per line for batch creation'
+                                          )
+                                        }
+
+                                        let keyDescription: ReactNode = t(
+                                            FIELD_DESCRIPTIONS.KEY
+                                        )
+                                        if (isEditing) {
+                                          let keyModeDescription = t(
+                                              'Append mode: New keys will be added to the end of the existing key list'
+                                          )
+                                          if (keyMode === 'replace') {
+                                            keyModeDescription = t(
+                                                'Replace mode: Will completely replace all existing keys'
+                                            )
+                                          }
+                                          keyDescription = (
+                                              <>
+                                                {t(
+                                                    'Enter new key to update, or leave empty to keep current key'
+                                                )}
+                                                {isMultiKeyChannel && (
+                                                    <span className='text-warning mt-1 block'>
                                             {keyModeDescription}
                                           </span>
-                                        )}
-                                      </>
-                                    )
-                                  } else if (isBatchMode) {
-                                    keyDescription = t(
-                                      'Enter one API key per line for batch creation'
-                                    )
-                                  }
-                                  return (
-                                    <FormItem>
-                                      <FormLabel>{t('API Key *')}</FormLabel>
-                                      <FormControl>
-                                        <Textarea
-                                          placeholder={keyPlaceholder}
-                                          rows={isBatchMode ? 8 : 4}
-                                          {...field}
-                                        />
-                                      </FormControl>
-                                      <FormDescription>
-                                        <div className='flex flex-col gap-2'>
-                                          <span>{keyDescription}</span>
-                                          {isBatchMode && (
-                                            <Button
-                                              type='button'
-                                              variant='outline'
-                                              size='sm'
-                                              onClick={handleDeduplicateKeys}
-                                              className='w-fit'
-                                            >
-                                              <Trash2 className='mr-2 h-4 w-4' />
-                                              {t('Remove Duplicates')}
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </FormDescription>
-                                      {isEditing && canRevealChannelKey && (
-                                        <div className='border-border/60 mt-4 flex flex-col gap-3 border-y border-dashed py-4'>
-                                          <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                                            <div>
-                                              <p className='text-sm font-medium'>
-                                                {t('Current key')}
-                                              </p>
-                                              <p className='text-muted-foreground text-xs'>
-                                                {t(
-                                                  'Verification required to reveal the saved key.'
                                                 )}
-                                              </p>
-                                            </div>
-                                            <div className='flex items-center gap-2'>
-                                              <Button
-                                                type='button'
-                                                variant='outline'
-                                                size='sm'
-                                                onClick={handleRevealKey}
-                                                disabled={
-                                                  isChannelKeyLoading ||
-                                                  verificationState.loading
-                                                }
-                                              >
-                                                {isChannelKeyLoading ||
-                                                verificationState.loading ? (
-                                                  <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                                                ) : (
-                                                  <Eye className='mr-2 h-4 w-4' />
-                                                )}
-                                                {t('Reveal key')}
-                                              </Button>
-                                              <Button
-                                                type='button'
-                                                variant='ghost'
-                                                size='sm'
-                                                onClick={async () => {
-                                                  if (channelKey) {
-                                                    await copyToClipboard(
-                                                      channelKey
-                                                    )
-                                                  }
-                                                }}
-                                                disabled={!channelKey}
-                                              >
-                                                <Copy className='mr-2 h-4 w-4' />
-                                                {t('Copy')}
-                                              </Button>
-                                            </div>
+                                              </>
+                                          )
+                                        } else if (isBatchMode) {
+                                          keyDescription = t(
+                                              'Enter one API key per line for batch creation'
+                                          )
+                                        }
+                                        return (
+                                            <FormItem>
+                                              <FormLabel>{t('API Key *')}</FormLabel>
+                                              <FormControl>
+                                                <Textarea
+                                                    placeholder={keyPlaceholder}
+                                                    rows={isBatchMode ? 8 : 4}
+                                                    {...field}
+                                                />
+                                              </FormControl>
+                                              <FormDescription>
+                                                <div className='flex flex-col gap-2'>
+                                                  <span>{keyDescription}</span>
+                                                  {isBatchMode && (
+                                                      <Button
+                                                          type='button'
+                                                          variant='outline'
+                                                          size='sm'
+                                                          onClick={handleDeduplicateKeys}
+                                                          className='w-fit'
+                                                      >
+                                                        <Trash2 className='mr-2 h-4 w-4' />
+                                                        {t('Remove Duplicates')}
+                                                      </Button>
+                                                  )}
+                                                </div>
+                                              </FormDescription>
+                                              {isEditing && canRevealChannelKey && (
+                                                  <div className='border-border/60 mt-4 flex flex-col gap-3 border-y border-dashed py-4'>
+                                                    <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                                                      <div>
+                                                        <p className='text-sm font-medium'>
+                                                          {t('Current key')}
+                                                        </p>
+                                                        <p className='text-muted-foreground text-xs'>
+                                                          {t(
+                                                              'Verification required to reveal the saved key.'
+                                                          )}
+                                                        </p>
+                                                      </div>
+                                                      <div className='flex items-center gap-2'>
+                                                        <Button
+                                                            type='button'
+                                                            variant='outline'
+                                                            size='sm'
+                                                            onClick={handleRevealKey}
+                                                            disabled={
+                                                                isChannelKeyLoading ||
+                                                                verificationState.loading
+                                                            }
+                                                        >
+                                                          {isChannelKeyLoading ||
+                                                          verificationState.loading ? (
+                                                              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                                          ) : (
+                                                              <Eye className='mr-2 h-4 w-4' />
+                                                          )}
+                                                          {t('Reveal key')}
+                                                        </Button>
+                                                        <Button
+                                                            type='button'
+                                                            variant='ghost'
+                                                            size='sm'
+                                                            onClick={async () => {
+                                                              if (channelKey) {
+                                                                await copyToClipboard(
+                                                                    channelKey
+                                                                )
+                                                              }
+                                                            }}
+                                                            disabled={!channelKey}
+                                                        >
+                                                          <Copy className='mr-2 h-4 w-4' />
+                                                          {t('Copy')}
+                                                        </Button>
+                                                      </div>
+                                                    </div>
+                                                    <Input
+                                                        readOnly
+                                                        value={channelKey ?? ''}
+                                                        placeholder={t(
+                                                            'Hidden — verify to reveal'
+                                                        )}
+                                                        className='font-mono'
+                                                    />
+                                                  </div>
+                                              )}
+                                              <FormMessage />
+                                            </FormItem>
+                                        )
+                                      }}
+                                  />
+
+                                  {currentType === 57 && (
+                                      <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
+                                        <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                                          <div className='text-muted-foreground text-xs'>
+                                            {t(
+                                                'Codex channels use an OAuth JSON credential as the key.'
+                                            )}
                                           </div>
-                                          <Input
-                                            readOnly
-                                            value={channelKey ?? ''}
-                                            placeholder={t(
-                                              'Hidden — verify to reveal'
+                                          <div className='flex flex-wrap items-center gap-2'>
+                                            {isEditing && channelId && (
+                                                <Button
+                                                    type='button'
+                                                    variant='outline'
+                                                    size='sm'
+                                                    onClick={handleRefreshCodexCredential}
+                                                    disabled={
+                                                        sensitiveLocked ||
+                                                        isCodexCredentialRefreshing
+                                                    }
+                                                >
+                                                  {isCodexCredentialRefreshing ? (
+                                                      <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                                  ) : (
+                                                      <RefreshCw className='mr-2 h-4 w-4' />
+                                                  )}
+                                                  {isCodexCredentialRefreshing
+                                                      ? t('Refreshing...')
+                                                      : t('Refresh credential')}
+                                                </Button>
                                             )}
-                                            className='font-mono'
-                                          />
+                                          </div>
                                         </div>
-                                      )}
-                                      <FormMessage />
-                                    </FormItem>
-                                  )
-                                }}
-                              />
-
-                              {currentType === 57 && (
-                                <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
-                                  <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                                    <div className='text-muted-foreground text-xs'>
-                                      {t(
-                                        'Codex channels use an OAuth JSON credential as the key.'
-                                      )}
-                                    </div>
-                                    <div className='flex flex-wrap items-center gap-2'>
-                                      {isEditing && channelId && (
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={handleRefreshCodexCredential}
-                                          disabled={
-                                            sensitiveLocked ||
-                                            isCodexCredentialRefreshing
-                                          }
-                                        >
-                                          {isCodexCredentialRefreshing ? (
-                                            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                                          ) : (
-                                            <RefreshCw className='mr-2 h-4 w-4' />
-                                          )}
-                                          {isCodexCredentialRefreshing
-                                            ? t('Refreshing...')
-                                            : t('Refresh credential')}
-                                        </Button>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
-                                    <AlertDescription>
-                                      {t(
-                                        "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel has prerequisites and requires prior setup; use it only if you understand the flow and risks, and comply with OpenAI's terms and policies. Credentials and configuration are for Codex CLI integration only, and are not intended for any other client, platform, or channel."
-                                      )}
-                                    </AlertDescription>
-                                  </Alert>
-                                </div>
-                              )}
-
-                              {isEditing && isMultiKeyChannel && (
-                                <FormField
-                                  control={form.control}
-                                  name='key_mode'
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>
-                                        {t('Key Update Mode')}
-                                      </FormLabel>
-                                      <Select
-                                        items={[
-                                          {
-                                            value: 'append',
-                                            label: t('Append to existing keys'),
-                                          },
-                                          {
-                                            value: 'replace',
-                                            label: t(
-                                              'Replace all existing keys'
-                                            ),
-                                          },
-                                        ]}
-                                        onValueChange={field.onChange}
-                                        value={field.value}
-                                      >
-                                        <FormControl>
-                                          <SelectTrigger>
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent
-                                          alignItemWithTrigger={false}
-                                        >
-                                          <SelectGroup>
-                                            <SelectItem value='append'>
-                                              {t('Append to existing keys')}
-                                            </SelectItem>
-                                            <SelectItem value='replace'>
-                                              {t('Replace all existing keys')}
-                                            </SelectItem>
-                                          </SelectGroup>
-                                        </SelectContent>
-                                      </Select>
-                                      <FormDescription>
-                                        {field.value === 'replace'
-                                          ? t(
-                                              'Replace mode: Will completely replace all existing keys'
-                                            )
-                                          : t(
-                                              'Append mode: New keys will be added to the end of the existing key list'
+                                        <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                                          <AlertDescription>
+                                            {t(
+                                                "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel has prerequisites and requires prior setup; use it only if you understand the flow and risks, and comply with OpenAI's terms and policies. Credentials and configuration are for Codex CLI integration only, and are not intended for any other client, platform, or channel."
                                             )}
-                                      </FormDescription>
-                                      <FormMessage />
-                                    </FormItem>
+                                          </AlertDescription>
+                                        </Alert>
+                                      </div>
                                   )}
-                                />
-                              )}
 
-                              {!isEditing &&
-                                multiKeyMode === 'multi_to_single' && (
-                                  <FormField
-                                    control={form.control}
-                                    name='multi_key_type'
-                                    render={({ field }) => (
-                                      <FormItem>
-                                        <FormLabel>
-                                          {t('Multi-Key Strategy')}
-                                        </FormLabel>
-                                        <Select
-                                          items={[
-                                            {
-                                              value: 'random',
-                                              label: t('Random'),
-                                            },
-                                            {
-                                              value: 'polling',
-                                              label: t('Polling'),
-                                            },
-                                          ]}
-                                          onValueChange={field.onChange}
-                                          value={field.value}
-                                        >
-                                          <FormControl>
-                                            <SelectTrigger>
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                          </FormControl>
-                                          <SelectContent
-                                            alignItemWithTrigger={false}
-                                          >
-                                            <SelectGroup>
-                                              <SelectItem value='random'>
-                                                {t('Random')}
-                                              </SelectItem>
-                                              <SelectItem value='polling'>
-                                                {t('Polling')}
-                                              </SelectItem>
-                                            </SelectGroup>
-                                          </SelectContent>
-                                        </Select>
-                                        <FormDescription>
-                                          {multiKeyType === 'polling' ? (
-                                            <span className='text-warning'>
+                                  {isEditing && isMultiKeyChannel && (
+                                      <FormField
+                                          control={form.control}
+                                          name='key_mode'
+                                          render={({ field }) => (
+                                              <FormItem>
+                                                <FormLabel>
+                                                  {t('Key Update Mode')}
+                                                </FormLabel>
+                                                <Select
+                                                    items={[
+                                                      {
+                                                        value: 'append',
+                                                        label: t('Append to existing keys'),
+                                                      },
+                                                      {
+                                                        value: 'replace',
+                                                        label: t(
+                                                            'Replace all existing keys'
+                                                        ),
+                                                      },
+                                                    ]}
+                                                    onValueChange={field.onChange}
+                                                    value={field.value}
+                                                >
+                                                  <FormControl>
+                                                    <SelectTrigger>
+                                                      <SelectValue />
+                                                    </SelectTrigger>
+                                                  </FormControl>
+                                                  <SelectContent
+                                                      alignItemWithTrigger={false}
+                                                  >
+                                                    <SelectGroup>
+                                                      <SelectItem value='append'>
+                                                        {t('Append to existing keys')}
+                                                      </SelectItem>
+                                                      <SelectItem value='replace'>
+                                                        {t('Replace all existing keys')}
+                                                      </SelectItem>
+                                                    </SelectGroup>
+                                                  </SelectContent>
+                                                </Select>
+                                                <FormDescription>
+                                                  {field.value === 'replace'
+                                                      ? t(
+                                                          'Replace mode: Will completely replace all existing keys'
+                                                      )
+                                                      : t(
+                                                          'Append mode: New keys will be added to the end of the existing key list'
+                                                      )}
+                                                </FormDescription>
+                                                <FormMessage />
+                                              </FormItem>
+                                          )}
+                                      />
+                                  )}
+
+                                  {!isEditing &&
+                                      multiKeyMode === 'multi_to_single' && (
+                                          <FormField
+                                              control={form.control}
+                                              name='multi_key_type'
+                                              render={({ field }) => (
+                                                  <FormItem>
+                                                    <FormLabel>
+                                                      {t('Multi-Key Strategy')}
+                                                    </FormLabel>
+                                                    <Select
+                                                        items={[
+                                                          {
+                                                            value: 'random',
+                                                            label: t('Random'),
+                                                          },
+                                                          {
+                                                            value: 'polling',
+                                                            label: t('Polling'),
+                                                          },
+                                                        ]}
+                                                        onValueChange={field.onChange}
+                                                        value={field.value}
+                                                    >
+                                                      <FormControl>
+                                                        <SelectTrigger>
+                                                          <SelectValue />
+                                                        </SelectTrigger>
+                                                      </FormControl>
+                                                      <SelectContent
+                                                          alignItemWithTrigger={false}
+                                                      >
+                                                        <SelectGroup>
+                                                          <SelectItem value='random'>
+                                                            {t('Random')}
+                                                          </SelectItem>
+                                                          <SelectItem value='polling'>
+                                                            {t('Polling')}
+                                                          </SelectItem>
+                                                        </SelectGroup>
+                                                      </SelectContent>
+                                                    </Select>
+                                                    <FormDescription>
+                                                      {multiKeyType === 'polling' ? (
+                                                          <span className='text-warning'>
                                               {t(
-                                                'Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded'
+                                                  'Polling mode requires Redis and memory cache, otherwise performance will be significantly degraded'
                                               )}
                                             </span>
-                                          ) : (
-                                            t(
-                                              'Randomly select a key from the pool for each request'
-                                            )
-                                          )}
-                                        </FormDescription>
+                                                      ) : (
+                                                          t(
+                                                              'Randomly select a key from the pool for each request'
+                                                          )
+                                                      )}
+                                                    </FormDescription>
+                                                    <FormMessage />
+                                                  </FormItem>
+                                              )}
+                                          />
+                                      )}
+                                </ChannelAuthSection>
+                              </fieldset>
+                            </div>
+                          </ChannelApiAccessSection>
+                        </div>
+
+                        {/* ── Models & Groups ── */}
+                        <div
+                            id={CHANNEL_EDITOR_SECTION_IDS.models}
+                            className='scroll-mt-4'
+                        >
+                          <ChannelModelsSection>
+                            <div className='space-y-5'>
+                              <FormField
+                                  control={form.control}
+                                  name='models'
+                                  render={() => (
+                                      <FormItem className='space-y-3'>
+                                        <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                                          <div className='space-y-1'>
+                                            <FormLabel>{t('Models *')}</FormLabel>
+                                            <FormDescription>
+                                              {t(FIELD_DESCRIPTIONS.MODELS)}
+                                            </FormDescription>
+                                          </div>
+                                          <div className='flex items-center gap-2'>
+                                            <Badge variant='outline' className='w-fit'>
+                                              {t('Selected {{count}}', {
+                                                count: currentModelsArray.length,
+                                              })}
+                                            </Badge>
+                                            {isEditing && channelId && (
+                                                <ChannelModelPrioritiesDialog
+                                                    channelId={channelId}
+                                                    models={form.watch('models')}
+                                                    basePriority={currentPriority || 0}
+                                                />
+                                            )}
+                                          </div>
+                                        </div>
+                                        <FormControl>
+                                          <MultiSelect
+                                              options={modelOptions}
+                                              selected={currentModelsArray}
+                                              onChange={handleModelsChange}
+                                              placeholder={t(
+                                                  'Select models or add custom ones'
+                                              )}
+                                              allowCreate
+                                              createLabel='Add custom model "{{value}}"'
+                                              maxVisibleChips={8}
+                                              copyChipOnClick
+                                          />
+                                        </FormControl>
+                                        {modelMappingGuardrail.exposedTargetModels
+                                            .length > 0 && (
+                                            <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                                              <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                                      <span>
+                                        {t('The mapped upstream model(s)')}{' '}
+                                        {formatModelNames(
+                                            modelMappingGuardrail.exposedTargetModels
+                                        )}{' '}
+                                        {t(
+                                            'are also listed here. Remove them from Models to keep the `/v1/models` response user-friendly and hide vendor-specific names.'
+                                        )}
+                                      </span>
+                                                <Button
+                                                    type='button'
+                                                    variant='outline'
+                                                    size='sm'
+                                                    onClick={() => {
+                                                      const hiddenTargets = new Set(
+                                                          modelMappingGuardrail.exposedTargetModels
+                                                      )
+                                                      updateModels(
+                                                          currentModelsArray.filter(
+                                                              (model) =>
+                                                                  !hiddenTargets.has(model)
+                                                          )
+                                                      )
+                                                    }}
+                                                >
+                                                  {t('Remove mapped targets')}
+                                                </Button>
+                                              </AlertDescription>
+                                            </Alert>
+                                        )}
                                         <FormMessage />
                                       </FormItem>
+                                  )}
+                              />
+
+                              <Separator className='my-4' />
+
+                              <div className='space-y-3'>
+                                <div>
+                                  <p className='text-sm font-medium'>
+                                    {t('Quick actions')}
+                                  </p>
+                                  <p className='text-muted-foreground text-xs'>
+                                    {t(
+                                        'Use presets or upstream discovery to populate the model list faster.'
                                     )}
-                                  />
-                                )}
-                            </ChannelAuthSection>
-                          </fieldset>
-                        </div>
-                      </ChannelApiAccessSection>
-                    </div>
-
-                    {/* ── Models & Groups ── */}
-                    <div
-                      id={CHANNEL_EDITOR_SECTION_IDS.models}
-                      className='scroll-mt-4'
-                    >
-                      <ChannelModelsSection>
-                        <div className='space-y-5'>
-                          <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
-                            <FormField
-                              control={form.control}
-                              name='models'
-                              render={() => (
-                                <FormItem className='space-y-3'>
-                                  <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                                    <div className='space-y-1'>
-                                      <FormLabel>{t('Models *')}</FormLabel>
-                                      <FormDescription>
-                                        {t(FIELD_DESCRIPTIONS.MODELS)}
-                                      </FormDescription>
-                                    </div>
-                                    <Badge variant='outline' className='w-fit'>
-                                      {t('Selected {{count}}', {
-                                        count: currentModelsArray.length,
-                                      })}
-                                    </Badge>
-                                  </div>
-                                  <FormControl>
-                                    <MultiSelect
-                                      options={modelOptions}
-                                      selected={currentModelsArray}
-                                      onChange={handleModelsChange}
-                                      placeholder={t(
-                                        'Select models or add custom ones'
-                                      )}
-                                      allowCreate
-                                      createLabel='Add custom model "{{value}}"'
-                                      maxVisibleChips={8}
-                                      copyChipOnClick
-                                    />
-                                  </FormControl>
-                                  {modelMappingGuardrail.exposedTargetModels
-                                    .length > 0 && (
-                                    <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
-                                      <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-                                        <span>
-                                          {t('The mapped upstream model(s)')}{' '}
-                                          {formatModelNames(
-                                            modelMappingGuardrail.exposedTargetModels
-                                          )}{' '}
-                                          {t(
-                                            'are also listed here. Remove them from Models to keep the `/v1/models` response user-friendly and hide vendor-specific names.'
-                                          )}
-                                        </span>
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={() => {
-                                            const hiddenTargets = new Set(
-                                              modelMappingGuardrail.exposedTargetModels
-                                            )
-                                            updateModels(
-                                              currentModelsArray.filter(
-                                                (model) =>
-                                                  !hiddenTargets.has(model)
-                                              )
-                                            )
-                                          }}
-                                        >
-                                          {t('Remove mapped targets')}
-                                        </Button>
-                                      </AlertDescription>
-                                    </Alert>
-                                  )}
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-
-                            <Separator className='my-4' />
-
-                            <div className='space-y-3'>
-                              <div>
-                                <p className='text-sm font-medium'>
-                                  {t('Quick actions')}
-                                </p>
-                                <p className='text-muted-foreground text-xs'>
-                                  {t(
-                                    'Use presets or upstream discovery to populate the model list faster.'
-                                  )}
-                                </p>
-                              </div>
-                              <div className='flex flex-wrap gap-2'>
-                                <Button
-                                  type='button'
-                                  variant='outline'
-                                  size='sm'
-                                  onClick={handleFillRelatedModels}
-                                  disabled={!basicModels.length}
-                                >
-                                  <FileText
-                                    className='mr-2 h-4 w-4'
-                                    aria-hidden='true'
-                                  />
-                                  {t('Fill Related Models')}
-                                </Button>
-                                <Button
-                                  type='button'
-                                  variant='outline'
-                                  size='sm'
-                                  onClick={handleFillAllModels}
-                                  disabled={!allModelsList.length}
-                                >
-                                  <Plus
-                                    className='mr-2 h-4 w-4'
-                                    aria-hidden='true'
-                                  />
-                                  {t('Fill All Models')}
-                                </Button>
-                                {MODEL_FETCHABLE_TYPES.has(currentType) && (
-                                  <>
-                                    <Button
+                                  </p>
+                                </div>
+                                <div className='flex flex-wrap gap-2'>
+                                  <Button
                                       type='button'
                                       variant='outline'
                                       size='sm'
-                                      onClick={handleFetchModels}
-                                      disabled={!isEditing && !canEditSensitive}
-                                    >
-                                      <Sparkles
+                                      onClick={handleFillRelatedModels}
+                                      disabled={!basicModels.length}
+                                  >
+                                    <FileText
                                         className='mr-2 h-4 w-4'
                                         aria-hidden='true'
-                                      />
-                                      {t('Fetch from Upstream')}
-                                    </Button>
-                                    {!isEditing && !canEditSensitive && (
-                                      <span className='text-muted-foreground basis-full text-xs'>
-                                        {t(
-                                          'No permission to perform this action'
-                                        )}
-                                      </span>
-                                    )}
-                                  </>
-                                )}
-                                <Button
-                                  type='button'
-                                  variant='outline'
-                                  size='sm'
-                                  onClick={handleCopyModels}
-                                  disabled={currentModelsArray.length === 0}
-                                >
-                                  <Copy
-                                    className='mr-2 h-4 w-4'
-                                    aria-hidden='true'
-                                  />
-                                  {t('Copy All')}
-                                </Button>
-                                <Button
-                                  type='button'
-                                  variant='ghost'
-                                  size='sm'
-                                  onClick={handleClearModels}
-                                  disabled={currentModelsArray.length === 0}
-                                >
-                                  <Eraser
-                                    className='mr-2 h-4 w-4'
-                                    aria-hidden='true'
-                                  />
-                                  {t('Clear All')}
-                                </Button>
-                              </div>
-                              {prefillGroups.length > 0 && (
-                                <div className='flex flex-wrap items-center gap-2'>
-                                  <span className='text-muted-foreground text-xs'>
-                                    {t('Preset groups')}:
-                                  </span>
-                                  {prefillGroups.map((group) => (
-                                    <Button
-                                      key={group.id}
-                                      type='button'
-                                      variant='secondary'
-                                      size='sm'
-                                      onClick={() =>
-                                        handleAddPrefillGroup(group)
-                                      }
-                                    >
-                                      {group.name}
-                                    </Button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className='border-border/60 rounded-lg border p-4'>
-                            <FormField
-                              control={form.control}
-                              name='model_mapping'
-                              render={({ field }) => (
-                                <FormItem className='space-y-3'>
-                                  <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
-                                    <div className='space-y-1'>
-                                      <div className='flex items-center gap-2'>
-                                        <FormLabel className='mb-0'>
-                                          {t('Model Mapping')}
-                                        </FormLabel>
-                                        <Tooltip>
-                                          <TooltipTrigger
-                                            render={
-                                              <Button
-                                                type='button'
-                                                variant='ghost'
-                                                size='icon-sm'
-                                                className='text-muted-foreground hover:text-foreground size-auto p-0'
-                                                aria-label={t(
-                                                  'How model mapping works'
-                                                )}
-                                              />
-                                            }
-                                          >
-                                            <HelpCircle
-                                              className='h-4 w-4'
-                                              aria-hidden='true'
-                                            />
-                                          </TooltipTrigger>
-                                          <TooltipContent
-                                            side='top'
-                                            align='start'
-                                            className='max-w-xs space-y-2 text-left'
-                                          >
-                                            <p className='text-xs font-semibold tracking-wide uppercase'>
-                                              {t('Request flow')}
-                                            </p>
-                                            <div className='space-y-1 font-mono text-xs'>
-                                              {mappingPreviewPairs.map(
-                                                (pair) => (
-                                                  <div
-                                                    key={`${pair.source}-${pair.target}`}
-                                                    className='flex items-center gap-1'
-                                                  >
-                                                    <span>{pair.source}</span>
-                                                    <ArrowRight
-                                                      className='h-3.5 w-3.5 opacity-70'
-                                                      aria-hidden='true'
-                                                    />
-                                                    <span>{pair.target}</span>
-                                                  </div>
-                                                )
-                                              )}
-                                              {remainingMappingCount > 0 && (
-                                                <div className='text-[11px] opacity-70'>
-                                                  +{remainingMappingCount}{' '}
-                                                  {t('more mapping')}
-                                                  {remainingMappingCount > 1
-                                                    ? 's'
-                                                    : ''}
-                                                </div>
-                                              )}
-                                            </div>
-                                            <p className='text-[11px] leading-relaxed opacity-80'>
-                                              {t(
-                                                'Users call the model on the left. The platform forwards the request to the upstream model on the right.'
-                                              )}
-                                            </p>
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </div>
-                                      <FormDescription>
-                                        {t(FIELD_DESCRIPTIONS.MODEL_MAPPING)}
-                                      </FormDescription>
-                                    </div>
-                                  </div>
-                                  <FormControl>
-                                    <ModelMappingEditor
-                                      value={field.value || ''}
-                                      onChange={field.onChange}
-                                      disabled={isSubmitting}
-                                      sourceModelOptions={currentModelsArray}
-                                      targetModelOptions={modelOptions.map(
-                                        (option) => option.value
-                                      )}
                                     />
-                                  </FormControl>
-                                  {modelMappingGuardrail.invalidJson && (
-                                    <Alert variant='destructive'>
-                                      <AlertDescription>
-                                        {t(
-                                          'Model Mapping must be a JSON object like'
-                                        )}{' '}
-                                        <code className='font-mono'>
-                                          {'{"gpt-4":"Azure-GPT4"}'}
-                                        </code>
-                                        {t(
-                                          '. Please fix the JSON before saving.'
+                                    {t('Fill Related Models')}
+                                  </Button>
+                                  <Button
+                                      type='button'
+                                      variant='outline'
+                                      size='sm'
+                                      onClick={handleFillAllModels}
+                                      disabled={!allModelsList.length}
+                                  >
+                                    <Plus
+                                        className='mr-2 h-4 w-4'
+                                        aria-hidden='true'
+                                    />
+                                    {t('Fill All Models')}
+                                  </Button>
+                                  {MODEL_FETCHABLE_TYPES.has(currentType) && (
+                                      <>
+                                        <Button
+                                            type='button'
+                                            variant='outline'
+                                            size='sm'
+                                            onClick={handleFetchModels}
+                                            disabled={!isEditing && !canEditSensitive}
+                                        >
+                                          <Sparkles
+                                              className='mr-2 h-4 w-4'
+                                              aria-hidden='true'
+                                          />
+                                          {t('Fetch from Upstream')}
+                                        </Button>
+                                        {!isEditing && !canEditSensitive && (
+                                            <span className='text-muted-foreground basis-full text-xs'>
+                                      {t(
+                                          'No permission to perform this action'
+                                      )}
+                                    </span>
                                         )}
-                                      </AlertDescription>
-                                    </Alert>
+                                      </>
                                   )}
-                                  {modelMappingGuardrail.missingSourceModels
-                                    .length > 0 && (
-                                    <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
-                                      <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                                  <Button
+                                      type='button'
+                                      variant='outline'
+                                      size='sm'
+                                      onClick={handleCopyModels}
+                                      disabled={currentModelsArray.length === 0}
+                                  >
+                                    <Copy
+                                        className='mr-2 h-4 w-4'
+                                        aria-hidden='true'
+                                    />
+                                    {t('Copy All')}
+                                  </Button>
+                                  <Button
+                                      type='button'
+                                      variant='ghost'
+                                      size='sm'
+                                      onClick={handleClearModels}
+                                      disabled={currentModelsArray.length === 0}
+                                  >
+                                    <Eraser
+                                        className='mr-2 h-4 w-4'
+                                        aria-hidden='true'
+                                    />
+                                    {t('Clear All')}
+                                  </Button>
+                                </div>
+                                {prefillGroups.length > 0 && (
+                                    <div className='flex flex-wrap items-center gap-2'>
+                                <span className='text-muted-foreground text-xs'>
+                                  {t('Preset groups')}:
+                                </span>
+                                      {prefillGroups.map((group) => (
+                                          <Button
+                                              key={group.id}
+                                              type='button'
+                                              variant='secondary'
+                                              size='sm'
+                                              onClick={() =>
+                                                  handleAddPrefillGroup(group)
+                                              }
+                                          >
+                                            {group.name}
+                                          </Button>
+                                      ))}
+                                    </div>
+                                )}
+                              </div>
+
+                              <div className='border-border/60 rounded-lg border p-4'>
+                                <FormField
+                                    control={form.control}
+                                    name='model_mapping'
+                                    render={({ field }) => (
+                                        <FormItem className='space-y-3'>
+                                          <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+                                            <div className='space-y-1'>
+                                              <div className='flex items-center gap-2'>
+                                                <FormLabel className='mb-0'>
+                                                  {t('Model Mapping')}
+                                                </FormLabel>
+                                                <Tooltip>
+                                                  <TooltipTrigger
+                                                      render={
+                                                        <Button
+                                                            type='button'
+                                                            variant='ghost'
+                                                            size='icon-sm'
+                                                            className='text-muted-foreground hover:text-foreground size-auto p-0'
+                                                            aria-label={t(
+                                                                'How model mapping works'
+                                                            )}
+                                                        />
+                                                      }
+                                                  >
+                                                    <HelpCircle
+                                                        className='h-4 w-4'
+                                                        aria-hidden='true'
+                                                    />
+                                                  </TooltipTrigger>
+                                                  <TooltipContent
+                                                      side='top'
+                                                      align='start'
+                                                      className='max-w-xs space-y-2 text-left'
+                                                  >
+                                                    <p className='text-xs font-semibold tracking-wide uppercase'>
+                                                      {t('Request flow')}
+                                                    </p>
+                                                    <div className='space-y-1 font-mono text-xs'>
+                                                      {mappingPreviewPairs.map(
+                                                          (pair) => (
+                                                              <div
+                                                                  key={`${pair.source}-${pair.target}`}
+                                                                  className='flex items-center gap-1'
+                                                              >
+                                                                <span>{pair.source}</span>
+                                                                <ArrowRight
+                                                                    className='h-3.5 w-3.5 opacity-70'
+                                                                    aria-hidden='true'
+                                                                />
+                                                                <span>{pair.target}</span>
+                                                              </div>
+                                                          )
+                                                      )}
+                                                      {remainingMappingCount > 0 && (
+                                                          <div className='text-[11px] opacity-70'>
+                                                            +{remainingMappingCount}{' '}
+                                                            {t('more mapping')}
+                                                            {remainingMappingCount > 1
+                                                                ? 's'
+                                                                : ''}
+                                                          </div>
+                                                      )}
+                                                    </div>
+                                                    <p className='text-[11px] leading-relaxed opacity-80'>
+                                                      {t(
+                                                          'Users call the model on the left. The platform forwards the request to the upstream model on the right.'
+                                                      )}
+                                                    </p>
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </div>
+                                              <FormDescription>
+                                                {t(FIELD_DESCRIPTIONS.MODEL_MAPPING)}
+                                              </FormDescription>
+                                            </div>
+                                          </div>
+                                          <FormControl>
+                                            <ModelMappingEditor
+                                                value={field.value || ''}
+                                                onChange={field.onChange}
+                                                disabled={isSubmitting}
+                                                sourceModelOptions={currentModelsArray}
+                                                targetModelOptions={modelOptions.map(
+                                                    (option) => option.value
+                                                )}
+                                            />
+                                          </FormControl>
+                                          {modelMappingGuardrail.invalidJson && (
+                                              <Alert variant='destructive'>
+                                                <AlertDescription>
+                                                  {t(
+                                                      'Model Mapping must be a JSON object like'
+                                                  )}{' '}
+                                                  <code className='font-mono'>
+                                                    {'{"gpt-4":"Azure-GPT4"}'}
+                                                  </code>
+                                                  {t(
+                                                      '. Please fix the JSON before saving.'
+                                                  )}
+                                                </AlertDescription>
+                                              </Alert>
+                                          )}
+                                          {modelMappingGuardrail.missingSourceModels
+                                              .length > 0 && (
+                                              <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                                                <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
                                         <span>
                                           {t('Add')}{' '}
                                           {formatModelNames(
-                                            modelMappingGuardrail.missingSourceModels
+                                              modelMappingGuardrail.missingSourceModels
                                           )}{' '}
                                           {t(
-                                            'to the Models list so users can use them before the mapping sends traffic upstream.'
+                                              'to the Models list so users can use them before the mapping sends traffic upstream.'
                                           )}
                                         </span>
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={() => {
-                                            updateModels([
-                                              ...currentModelsArray,
-                                              ...modelMappingGuardrail.missingSourceModels,
-                                            ])
-                                          }}
-                                        >
-                                          {t('Add missing models')}
-                                        </Button>
-                                      </AlertDescription>
-                                    </Alert>
-                                  )}
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-
-                          <div className='border-border/60 rounded-lg border p-4'>
-                            <FormField
-                              control={form.control}
-                              name='group'
-                              render={({ field }) => (
-                                <FormItem className='space-y-3'>
-                                  <div className='space-y-1'>
-                                    <FormLabel>{t('Groups *')}</FormLabel>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.GROUP)}
-                                    </FormDescription>
-                                  </div>
-                                  <FormControl>
-                                    {isLoadingGroups ? (
-                                      <Skeleton className='h-10 w-full' />
-                                    ) : (
-                                      <MultiSelect
-                                        options={groupOptions}
-                                        selected={field.value}
-                                        onChange={field.onChange}
-                                        placeholder={t(
-                                          FIELD_PLACEHOLDERS.GROUP
-                                        )}
-                                      />
+                                                  <Button
+                                                      type='button'
+                                                      variant='outline'
+                                                      size='sm'
+                                                      onClick={() => {
+                                                        updateModels([
+                                                          ...currentModelsArray,
+                                                          ...modelMappingGuardrail.missingSourceModels,
+                                                        ])
+                                                      }}
+                                                  >
+                                                    {t('Add missing models')}
+                                                  </Button>
+                                                </AlertDescription>
+                                              </Alert>
+                                          )}
+                                          <FormMessage />
+                                        </FormItem>
                                     )}
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                        </div>
-                      </ChannelModelsSection>
-                    </div>
-
-                    <div
-                      id={CHANNEL_EDITOR_SECTION_IDS.advanced}
-                      className='scroll-mt-4'
-                    >
-                      <ChannelAdvancedSection
-                        open={advancedSettingsOpen}
-                        onOpenChange={handleAdvancedSettingsOpenChange}
-                        summary={advancedSummary}
-                      >
-                        {/* ── Routing & Overrides ── */}
-                        <div className={sideDrawerSectionClassName()}>
-                          <CardHeading
-                            title={t('Routing & Overrides')}
-                            icon={<Route className='h-4 w-4' />}
-                          />
-                          <div
-                            id={ADVANCED_SETTINGS_SECTION_IDS.routingStrategy}
-                            className={configuredAdvancedSectionClassName(
-                              'flex scroll-mt-4 flex-col gap-4',
-                              routingStrategyConfigured
-                            )}
-                          >
-                            <SubHeading
-                              title={t('Routing Strategy')}
-                              icon={<Route className='h-3.5 w-3.5' />}
-                            />
-                            <div className='grid gap-4 sm:grid-cols-2'>
-                              <FormField
-                                control={form.control}
-                                name='priority'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Priority')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type='number'
-                                        placeholder='0'
-                                        {...field}
-                                        onChange={(e) =>
-                                          field.onChange(Number(e.target.value))
-                                        }
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.PRIORITY)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-
-                              <FormField
-                                control={form.control}
-                                name='weight'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Weight')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type='number'
-                                        placeholder='0'
-                                        {...field}
-                                        onChange={(e) =>
-                                          field.onChange(Number(e.target.value))
-                                        }
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.WEIGHT)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-
-                            <FormField
-                              control={form.control}
-                              name='test_model'
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('Test Model')}</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      placeholder={t(
-                                        FIELD_PLACEHOLDERS.TEST_MODEL
-                                      )}
-                                      {...field}
-                                    />
-                                  </FormControl>
-                                  <FormDescription>
-                                    {t(FIELD_DESCRIPTIONS.TEST_MODEL)}
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-
-                            <FormField
-                              control={form.control}
-                              name='auto_ban'
-                              render={({ field }) => (
-                                <FormItem className='flex items-center justify-between'>
-                                  <div className='space-y-0.5'>
-                                    <FormLabel>{t('Auto Ban')}</FormLabel>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.AUTO_BAN)}
-                                    </FormDescription>
-                                  </div>
-                                  <FormControl>
-                                    <Switch
-                                      checked={field.value === 1}
-                                      onCheckedChange={(checked) =>
-                                        field.onChange(checked ? 1 : 0)
-                                      }
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-
-                          <div
-                            id={ADVANCED_SETTINGS_SECTION_IDS.internalNotes}
-                            className={configuredAdvancedSectionClassName(
-                              'flex scroll-mt-4 flex-col gap-4 border-t pt-4',
-                              internalNotesConfigured
-                            )}
-                          >
-                            <SubHeading
-                              title={t('Internal Notes')}
-                              icon={<FileText className='h-3.5 w-3.5' />}
-                            />
-                            <div className='grid gap-4 sm:grid-cols-2'>
-                              <FormField
-                                control={form.control}
-                                name='tag'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Tag')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(FIELD_PLACEHOLDERS.TAG)}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.TAG)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-
-                              <FormField
-                                control={form.control}
-                                name='remark'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>{t('Remark')}</FormLabel>
-                                    <FormControl>
-                                      <Textarea
-                                        placeholder={t(
-                                          FIELD_PLACEHOLDERS.REMARK
-                                        )}
-                                        rows={2}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(FIELD_DESCRIPTIONS.REMARK)}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-                          </div>
-
-                          <div
-                            id={ADVANCED_SETTINGS_SECTION_IDS.overrideRules}
-                            className={configuredAdvancedSectionClassName(
-                              'flex scroll-mt-4 flex-col gap-4 border-t pt-4',
-                              overrideRulesConfigured
-                            )}
-                          >
-                            <SubHeading
-                              title={t('Override Rules')}
-                              icon={<Code className='h-3.5 w-3.5' />}
-                            />
-
-                            <FormField
-                              control={form.control}
-                              name='status_code_mapping'
-                              render={({ field }) => (
-                                <FormItem className='space-y-3'>
-                                  <div className='space-y-1'>
-                                    <FormLabel>
-                                      {t('Status Code Mapping')}
-                                    </FormLabel>
-                                    <FormDescription>
-                                      {t(
-                                        'Map upstream status codes to different codes'
-                                      )}
-                                    </FormDescription>
-                                  </div>
-                                  <FormControl>
-                                    <JsonEditor
-                                      value={field.value || ''}
-                                      onChange={field.onChange}
-                                      disabled={isSubmitting}
-                                      keyPlaceholder='400'
-                                      valuePlaceholder='500'
-                                      keyLabel='Original Code'
-                                      valueLabel='Mapped Code'
-                                      emptyMessage={t(
-                                        'No status code mappings configured.'
-                                      )}
-                                      template={{ '400': '500', '429': '503' }}
-                                      valueType='string'
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-
-                            {sensitiveLocked && (
-                              <p className='text-muted-foreground text-xs'>
-                                {t('No permission to perform this action')}
-                              </p>
-                            )}
-                            <fieldset
-                              disabled={sensitiveLocked}
-                              className='space-y-4 disabled:opacity-60'
-                            >
-                              <FormField
-                                control={form.control}
-                                name='param_override'
-                                render={({ field }) => (
-                                  <FormItem className='space-y-3 border-t pt-4'>
-                                    <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
-                                      <div className='space-y-1'>
-                                        <FormLabel>
-                                          {t('Parameter Override')}
-                                        </FormLabel>
-                                        <FormDescription>
-                                          {t(
-                                            'Override request parameters. Cannot override stream parameter.'
-                                          )}
-                                        </FormDescription>
-                                      </div>
-                                      <div className='flex flex-wrap gap-2'>
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={() =>
-                                            setParamOverrideEditorOpen(true)
-                                          }
-                                        >
-                                          <Wand2 className='mr-2 h-4 w-4' />
-                                          {t('Visual edit')}
-                                        </Button>
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={() => {
-                                            field.onChange(
-                                              JSON.stringify(
-                                                {
-                                                  operations: [
-                                                    {
-                                                      path: 'temperature',
-                                                      mode: 'set',
-                                                      value: 0.7,
-                                                      conditions: [
-                                                        {
-                                                          path: 'model',
-                                                          mode: 'prefix',
-                                                          value: 'gpt',
-                                                        },
-                                                      ],
-                                                      logic: 'AND',
-                                                    },
-                                                  ],
-                                                },
-                                                null,
-                                                2
-                                              )
-                                            )
-                                          }}
-                                        >
-                                          <Code className='mr-2 h-4 w-4' />
-                                          {t('New Format Template')}
-                                        </Button>
-                                        <Button
-                                          type='button'
-                                          variant='ghost'
-                                          size='sm'
-                                          onClick={() => field.onChange('')}
-                                        >
-                                          {t('Clear')}
-                                        </Button>
-                                      </div>
-                                    </div>
-                                    <FormControl>
-                                      <Textarea
-                                        value={field.value || ''}
-                                        onChange={field.onChange}
-                                        disabled={
-                                          sensitiveLocked || isSubmitting
-                                        }
-                                        rows={8}
-                                        placeholder={t(
-                                          'Override request parameters. Cannot override stream parameter.'
-                                        )}
-                                        className='max-h-72 min-h-40 resize-y overflow-auto font-mono text-xs'
-                                      />
-                                    </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-
-                              <FormField
-                                control={form.control}
-                                name='header_override'
-                                render={({ field }) => (
-                                  <FormItem className='space-y-3 border-t pt-4'>
-                                    <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
-                                      <div className='space-y-1'>
-                                        <FormLabel>
-                                          {t('Request Header Override')}
-                                        </FormLabel>
-                                        <FormDescription>
-                                          {t('Override request headers')}
-                                        </FormDescription>
-                                      </div>
-                                      <div className='flex flex-wrap gap-2'>
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={() =>
-                                            field.onChange(
-                                              JSON.stringify(
-                                                {
-                                                  '*': true,
-                                                  're:^X-Trace-.*$': true,
-                                                  'X-Foo':
-                                                    '{client_header:X-Foo}',
-                                                  Authorization:
-                                                    'Bearer {api_key}',
-                                                },
-                                                null,
-                                                2
-                                              )
-                                            )
-                                          }
-                                        >
-                                          {t('Fill Template')}
-                                        </Button>
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={() =>
-                                            field.onChange(
-                                              JSON.stringify(
-                                                { '*': true },
-                                                null,
-                                                2
-                                              )
-                                            )
-                                          }
-                                        >
-                                          {t('Passthrough Template')}
-                                        </Button>
-                                        <Button
-                                          type='button'
-                                          variant='outline'
-                                          size='sm'
-                                          onClick={() => {
-                                            try {
-                                              const parsed = JSON.parse(
-                                                field.value || '{}'
-                                              )
-                                              field.onChange(
-                                                JSON.stringify(parsed, null, 2)
-                                              )
-                                            } catch {
-                                              /* ignore invalid JSON */
-                                            }
-                                          }}
-                                        >
-                                          {t('Format')}
-                                        </Button>
-                                        <Button
-                                          type='button'
-                                          variant='ghost'
-                                          size='sm'
-                                          onClick={() => field.onChange('')}
-                                        >
-                                          {t('Clear')}
-                                        </Button>
-                                      </div>
-                                    </div>
-                                    <FormControl>
-                                      <Textarea
-                                        className='font-mono text-sm'
-                                        rows={6}
-                                        value={field.value || ''}
-                                        onChange={field.onChange}
-                                        disabled={
-                                          sensitiveLocked || isSubmitting
-                                        }
-                                        placeholder={t(
-                                          'Enter JSON to override request headers'
-                                        )}
-                                      />
-                                    </FormControl>
-                                    <FormDescription className='text-xs'>
-                                      {t('Supported variables')}:{' '}
-                                      <code className='bg-muted rounded px-1 py-0.5'>
-                                        {'{api_key}'}
-                                      </code>{' '}
-                                      — {t('Channel key')},{' '}
-                                      <code className='bg-muted rounded px-1 py-0.5'>
-                                        {'{client_header:NAME}'}
-                                      </code>{' '}
-                                      — {t('Client header value')}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </fieldset>
-                          </div>
-                        </div>
-
-                        {/* ── Extra Settings ── */}
-                        <div
-                          id={ADVANCED_SETTINGS_SECTION_IDS.extraSettings}
-                          className={sideDrawerSectionClassName(
-                            configuredAdvancedSectionClassName(
-                              'scroll-mt-4',
-                              extraSettingsConfigured
-                            )
-                          )}
-                        >
-                          <CardHeading
-                            title={t('Channel Extra Settings')}
-                            icon={<Settings className='h-4 w-4' />}
-                          />
-                          {sensitiveLocked && (
-                            <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
-                              <AlertDescription>
-                                {t('No permission to perform this action')}
-                              </AlertDescription>
-                            </Alert>
-                          )}
-                          <fieldset
-                            disabled={sensitiveLocked}
-                            className='space-y-4 disabled:opacity-60'
-                          >
-                            <div className='divide-border space-y-0 divide-y border-y'>
-                              {currentType === 1 && (
-                                <FormField
-                                  control={form.control}
-                                  name='force_format'
-                                  render={({ field }) => (
-                                    <FormItem className='flex items-center justify-between px-4 py-3'>
-                                      <div className='space-y-0.5'>
-                                        <FormLabel>
-                                          {t('Force Format')}
-                                        </FormLabel>
-                                        <FormDescription>
-                                          {t(
-                                            'Force format response to OpenAI standard (OpenAI channel only)'
-                                          )}
-                                        </FormDescription>
-                                      </div>
-                                      <FormControl>
-                                        <Switch
-                                          checked={field.value}
-                                          onCheckedChange={field.onChange}
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
                                 />
-                              )}
+                              </div>
 
-                              <FormField
-                                control={form.control}
-                                name='thinking_to_content'
-                                render={({ field }) => (
-                                  <FormItem className='flex items-center justify-between px-4 py-3'>
-                                    <div className='space-y-0.5'>
-                                      <FormLabel>
-                                        {t('Thinking to Content')}
-                                      </FormLabel>
-                                      <FormDescription>
-                                        {t(
-                                          'Convert reasoning_content to <think> tag in content'
-                                        )}
-                                      </FormDescription>
-                                    </div>
-                                    <FormControl>
-                                      <Switch
-                                        checked={field.value}
-                                        onCheckedChange={field.onChange}
-                                      />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
-                              />
+                              <div className='border-border/60 rounded-lg border p-4'>
+                                <FormField
+                                    control={form.control}
+                                    name='group'
+                                    render={({ field }) => (
+                                        <FormItem className='space-y-3'>
+                                          <div className='space-y-1'>
+                                            <FormLabel>{t('Groups *')}</FormLabel>
+                                            <FormDescription>
+                                              {t(FIELD_DESCRIPTIONS.GROUP)}
+                                            </FormDescription>
+                                          </div>
+                                          <FormControl>
+                                            {isLoadingGroups ? (
+                                                <Skeleton className='h-10 w-full' />
+                                            ) : (
+                                                <MultiSelect
+                                                    options={groupOptions}
+                                                    selected={field.value}
+                                                    onChange={field.onChange}
+                                                    placeholder={t(
+                                                        FIELD_PLACEHOLDERS.GROUP
+                                                    )}
+                                                />
+                                            )}
+                                          </FormControl>
+                                          <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                              </div>
+                            </div>
+                          </ChannelModelsSection>
+                        </div>
 
-                              <FormField
-                                control={form.control}
-                                name='pass_through_body_enabled'
-                                render={({ field }) => (
-                                  <FormItem className='flex items-center justify-between px-4 py-3'>
-                                    <div className='space-y-0.5'>
-                                      <FormLabel>
-                                        {t('Pass Through Body')}
-                                      </FormLabel>
-                                      <FormDescription>
-                                        {t(
-                                          'Pass request body directly to upstream'
-                                        )}
-                                      </FormDescription>
-                                    </div>
-                                    <FormControl>
-                                      <Switch
-                                        checked={field.value}
-                                        onCheckedChange={field.onChange}
-                                      />
-                                    </FormControl>
-                                  </FormItem>
-                                )}
+                        <div
+                            id={CHANNEL_EDITOR_SECTION_IDS.advanced}
+                            className='scroll-mt-4'
+                        >
+                          <ChannelAdvancedSection
+                              open={advancedSettingsOpen}
+                              onOpenChange={handleAdvancedSettingsOpenChange}
+                              summary={advancedSummary}
+                          >
+                            {/* ── Routing & Overrides ── */}
+                            <div className={sideDrawerSectionClassName()}>
+                              <CardHeading
+                                  title={t('Routing & Overrides')}
+                                  icon={<Route className='h-4 w-4' />}
                               />
+                              <div
+                                  id={ADVANCED_SETTINGS_SECTION_IDS.routingStrategy}
+                                  className={configuredAdvancedSectionClassName(
+                                      'flex scroll-mt-4 flex-col gap-4',
+                                      routingStrategyConfigured
+                                  )}
+                              >
+                                <SubHeading
+                                    title={t('Routing Strategy')}
+                                    icon={<Route className='h-3.5 w-3.5' />}
+                                />
+                                <div className='grid gap-4 sm:grid-cols-2'>
+                                  <FormField
+                                      control={form.control}
+                                      name='priority'
+                                      render={({ field }) => (
+                                          <FormItem>
+                                            <FormLabel>{t('Priority')}</FormLabel>
+                                            <FormControl>
+                                              <Input
+                                                  type='number'
+                                                  placeholder='0'
+                                                  {...field}
+                                                  onChange={(e) =>
+                                                      field.onChange(Number(e.target.value))
+                                                  }
+                                              />
+                                            </FormControl>
+                                            <FormDescription>
+                                              {t(FIELD_DESCRIPTIONS.PRIORITY)}
+                                            </FormDescription>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )}
+                                  />
 
-                              <FormField
-                                control={form.control}
-                                name='disable_task_polling_sleep'
-                                render={({ field }) => (
-                                  <FormItem className='flex items-center justify-between px-4 py-3'>
-                                    <div className='space-y-0.5'>
-                                      <FormLabel>
-                                        {t('Skip async task polling delay')}
-                                      </FormLabel>
-                                      <FormDescription>
-                                        {t(
-                                          'Do not wait one second between polling async tasks for this channel'
-                                        )}
-                                      </FormDescription>
-                                    </div>
-                                    <FormControl>
-                                      <Switch
-                                        checked={field.value}
-                                        onCheckedChange={field.onChange}
-                                      />
-                                    </FormControl>
-                                  </FormItem>
+                                  <FormField
+                                      control={form.control}
+                                      name='weight'
+                                      render={({ field }) => (
+                                          <FormItem>
+                                            <FormLabel>{t('Weight')}</FormLabel>
+                                            <FormControl>
+                                              <Input
+                                                  type='number'
+                                                  placeholder='0'
+                                                  {...field}
+                                                  onChange={(e) =>
+                                                      field.onChange(Number(e.target.value))
+                                                  }
+                                              />
+                                            </FormControl>
+                                            <FormDescription>
+                                              {t(FIELD_DESCRIPTIONS.WEIGHT)}
+                                            </FormDescription>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )}
+                                  />
+                                </div>
+
+                                <FormField
+                                    control={form.control}
+                                    name='test_model'
+                                    render={({ field }) => (
+                                        <FormItem>
+                                          <FormLabel>{t('Test Model')}</FormLabel>
+                                          <FormControl>
+                                            <Input
+                                                placeholder={t(
+                                                    FIELD_PLACEHOLDERS.TEST_MODEL
+                                                )}
+                                                {...field}
+                                            />
+                                          </FormControl>
+                                          <FormDescription>
+                                            {t(FIELD_DESCRIPTIONS.TEST_MODEL)}
+                                          </FormDescription>
+                                          <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name='auto_ban'
+                                    render={({ field }) => (
+                                        <FormItem className='flex items-center justify-between'>
+                                          <div className='space-y-0.5'>
+                                            <FormLabel>{t('Auto Ban')}</FormLabel>
+                                            <FormDescription>
+                                              {t(FIELD_DESCRIPTIONS.AUTO_BAN)}
+                                            </FormDescription>
+                                          </div>
+                                          <FormControl>
+                                            <Switch
+                                                checked={field.value === 1}
+                                                onCheckedChange={(checked) =>
+                                                    field.onChange(checked ? 1 : 0)
+                                                }
+                                            />
+                                          </FormControl>
+                                        </FormItem>
+                                    )}
+                                />
+                              </div>
+
+                              <div
+                                  id={ADVANCED_SETTINGS_SECTION_IDS.internalNotes}
+                                  className={configuredAdvancedSectionClassName(
+                                      'flex scroll-mt-4 flex-col gap-4 border-t pt-4',
+                                      internalNotesConfigured
+                                  )}
+                              >
+                                <SubHeading
+                                    title={t('Internal Notes')}
+                                    icon={<FileText className='h-3.5 w-3.5' />}
+                                />
+                                <div className='grid gap-4 sm:grid-cols-2'>
+                                  <FormField
+                                      control={form.control}
+                                      name='tag'
+                                      render={({ field }) => (
+                                          <FormItem>
+                                            <FormLabel>{t('Tag')}</FormLabel>
+                                            <FormControl>
+                                              <Input
+                                                  placeholder={t(FIELD_PLACEHOLDERS.TAG)}
+                                                  {...field}
+                                              />
+                                            </FormControl>
+                                            <FormDescription>
+                                              {t(FIELD_DESCRIPTIONS.TAG)}
+                                            </FormDescription>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )}
+                                  />
+
+                                  <FormField
+                                      control={form.control}
+                                      name='remark'
+                                      render={({ field }) => (
+                                          <FormItem>
+                                            <FormLabel>{t('Remark')}</FormLabel>
+                                            <FormControl>
+                                              <Textarea
+                                                  placeholder={t(
+                                                      FIELD_PLACEHOLDERS.REMARK
+                                                  )}
+                                                  rows={2}
+                                                  {...field}
+                                              />
+                                            </FormControl>
+                                            <FormDescription>
+                                              {t(FIELD_DESCRIPTIONS.REMARK)}
+                                            </FormDescription>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )}
+                                  />
+                                </div>
+                              </div>
+
+                              <div
+                                  id={ADVANCED_SETTINGS_SECTION_IDS.overrideRules}
+                                  className={configuredAdvancedSectionClassName(
+                                      'flex scroll-mt-4 flex-col gap-4 border-t pt-4',
+                                      overrideRulesConfigured
+                                  )}
+                              >
+                                <SubHeading
+                                    title={t('Override Rules')}
+                                    icon={<Code className='h-3.5 w-3.5' />}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name='status_code_mapping'
+                                    render={({ field }) => (
+                                        <FormItem className='space-y-3'>
+                                          <div className='space-y-1'>
+                                            <FormLabel>
+                                              {t('Status Code Mapping')}
+                                            </FormLabel>
+                                            <FormDescription>
+                                              {t(
+                                                  'Map upstream status codes to different codes'
+                                              )}
+                                            </FormDescription>
+                                          </div>
+                                          <FormControl>
+                                            <JsonEditor
+                                                value={field.value || ''}
+                                                onChange={field.onChange}
+                                                disabled={isSubmitting}
+                                                keyPlaceholder='400'
+                                                valuePlaceholder='500'
+                                                keyLabel='Original Code'
+                                                valueLabel='Mapped Code'
+                                                emptyMessage={t(
+                                                    'No status code mappings configured.'
+                                                )}
+                                                template={{ '400': '500', '429': '503' }}
+                                                valueType='string'
+                                            />
+                                          </FormControl>
+                                          <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                {sensitiveLocked && (
+                                    <p className='text-muted-foreground text-xs'>
+                                      {t('No permission to perform this action')}
+                                    </p>
                                 )}
-                              />
+                                <fieldset
+                                    disabled={sensitiveLocked}
+                                    className='space-y-4 disabled:opacity-60'
+                                >
+                                  <FormField
+                                      control={form.control}
+                                      name='param_override'
+                                      render={({ field }) => (
+                                          <FormItem className='space-y-3 border-t pt-4'>
+                                            <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+                                              <div className='space-y-1'>
+                                                <FormLabel>
+                                                  {t('Parameter Override')}
+                                                </FormLabel>
+                                                <FormDescription>
+                                                  {t(
+                                                      'Override request parameters. Cannot override stream parameter.'
+                                                  )}
+                                                </FormDescription>
+                                              </div>
+                                              <div className='flex flex-wrap gap-2'>
+                                                <Button
+                                                    type='button'
+                                                    variant='outline'
+                                                    size='sm'
+                                                    onClick={() =>
+                                                        setParamOverrideEditorOpen(true)
+                                                    }
+                                                >
+                                                  <Wand2 className='mr-2 h-4 w-4' />
+                                                  {t('Visual edit')}
+                                                </Button>
+                                                <Button
+                                                    type='button'
+                                                    variant='outline'
+                                                    size='sm'
+                                                    onClick={() => {
+                                                      field.onChange(
+                                                          JSON.stringify(
+                                                              {
+                                                                operations: [
+                                                                  {
+                                                                    path: 'temperature',
+                                                                    mode: 'set',
+                                                                    value: 0.7,
+                                                                    conditions: [
+                                                                      {
+                                                                        path: 'model',
+                                                                        mode: 'prefix',
+                                                                        value: 'gpt',
+                                                                      },
+                                                                    ],
+                                                                    logic: 'AND',
+                                                                  },
+                                                                ],
+                                                              },
+                                                              null,
+                                                              2
+                                                          )
+                                                      )
+                                                    }}
+                                                >
+                                                  <Code className='mr-2 h-4 w-4' />
+                                                  {t('New Format Template')}
+                                                </Button>
+                                                <Button
+                                                    type='button'
+                                                    variant='ghost'
+                                                    size='sm'
+                                                    onClick={() => field.onChange('')}
+                                                >
+                                                  {t('Clear')}
+                                                </Button>
+                                              </div>
+                                            </div>
+                                            <FormControl>
+                                              <Textarea
+                                                  value={field.value || ''}
+                                                  onChange={field.onChange}
+                                                  disabled={
+                                                      sensitiveLocked || isSubmitting
+                                                  }
+                                                  rows={8}
+                                                  placeholder={t(
+                                                      'Override request parameters. Cannot override stream parameter.'
+                                                  )}
+                                                  className='max-h-72 min-h-40 resize-y overflow-auto font-mono text-xs'
+                                              />
+                                            </FormControl>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )}
+                                  />
+
+                                  <FormField
+                                      control={form.control}
+                                      name='header_override'
+                                      render={({ field }) => (
+                                          <FormItem className='space-y-3 border-t pt-4'>
+                                            <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+                                              <div className='space-y-1'>
+                                                <FormLabel>
+                                                  {t('Request Header Override')}
+                                                </FormLabel>
+                                                <FormDescription>
+                                                  {t('Override request headers')}
+                                                </FormDescription>
+                                              </div>
+                                              <div className='flex flex-wrap gap-2'>
+                                                <Button
+                                                    type='button'
+                                                    variant='outline'
+                                                    size='sm'
+                                                    onClick={() =>
+                                                        field.onChange(
+                                                            JSON.stringify(
+                                                                {
+                                                                  '*': true,
+                                                                  're:^X-Trace-.*$': true,
+                                                                  'X-Foo':
+                                                                      '{client_header:X-Foo}',
+                                                                  Authorization:
+                                                                      'Bearer {api_key}',
+                                                                },
+                                                                null,
+                                                                2
+                                                            )
+                                                        )
+                                                    }
+                                                >
+                                                  {t('Fill Template')}
+                                                </Button>
+                                                <Button
+                                                    type='button'
+                                                    variant='outline'
+                                                    size='sm'
+                                                    onClick={() =>
+                                                        field.onChange(
+                                                            JSON.stringify(
+                                                                { '*': true },
+                                                                null,
+                                                                2
+                                                            )
+                                                        )
+                                                    }
+                                                >
+                                                  {t('Passthrough Template')}
+                                                </Button>
+                                                <Button
+                                                    type='button'
+                                                    variant='outline'
+                                                    size='sm'
+                                                    onClick={() => {
+                                                      try {
+                                                        const parsed = JSON.parse(
+                                                            field.value || '{}'
+                                                        )
+                                                        field.onChange(
+                                                            JSON.stringify(parsed, null, 2)
+                                                        )
+                                                      } catch {
+                                                        /* ignore invalid JSON */
+                                                      }
+                                                    }}
+                                                >
+                                                  {t('Format')}
+                                                </Button>
+                                                <Button
+                                                    type='button'
+                                                    variant='ghost'
+                                                    size='sm'
+                                                    onClick={() => field.onChange('')}
+                                                >
+                                                  {t('Clear')}
+                                                </Button>
+                                              </div>
+                                            </div>
+                                            <FormControl>
+                                              <Textarea
+                                                  className='font-mono text-sm'
+                                                  rows={6}
+                                                  value={field.value || ''}
+                                                  onChange={field.onChange}
+                                                  disabled={
+                                                      sensitiveLocked || isSubmitting
+                                                  }
+                                                  placeholder={t(
+                                                      'Enter JSON to override request headers'
+                                                  )}
+                                              />
+                                            </FormControl>
+                                            <FormDescription className='text-xs'>
+                                              {t('Supported variables')}:{' '}
+                                              <code className='bg-muted rounded px-1 py-0.5'>
+                                                {'{api_key}'}
+                                              </code>{' '}
+                                              — {t('Channel key')},{' '}
+                                              <code className='bg-muted rounded px-1 py-0.5'>
+                                                {'{client_header:NAME}'}
+                                              </code>{' '}
+                                              — {t('Client header value')}
+                                            </FormDescription>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )}
+                                  />
+                                </fieldset>
+                              </div>
                             </div>
 
-                            <FormField
-                              control={form.control}
-                              name='proxy'
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('Proxy Address')}</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      placeholder={t(
-                                        'socks5://user:pass@host:port'
-                                      )}
-                                      {...field}
-                                    />
-                                  </FormControl>
-                                  <FormDescription>
-                                    {t(
-                                      'Network proxy for this channel (supports socks5 protocol)'
-                                    )}
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
+                            {/* ── Extra Settings ── */}
+                            <div
+                                id={ADVANCED_SETTINGS_SECTION_IDS.extraSettings}
+                                className={sideDrawerSectionClassName(
+                                    configuredAdvancedSectionClassName(
+                                        'scroll-mt-4',
+                                        extraSettingsConfigured
+                                    )
+                                )}
+                            >
+                              <CardHeading
+                                  title={t('Channel Extra Settings')}
+                                  icon={<Settings className='h-4 w-4' />}
+                              />
+                              {sensitiveLocked && (
+                                  <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                                    <AlertDescription>
+                                      {t('No permission to perform this action')}
+                                    </AlertDescription>
+                                  </Alert>
                               )}
-                            />
-
-                            <FormField
-                              control={form.control}
-                              name='http_protocol'
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('HTTP Protocol')}</FormLabel>
-                                  <Select
-                                    items={[
-                                      {
-                                        value: 'auto',
-                                        label: t('Auto'),
-                                      },
-                                      {
-                                        value: 'http1',
-                                        label: t('HTTP/1.1'),
-                                      },
-                                    ]}
-                                    value={field.value || 'auto'}
-                                    onValueChange={(value) => {
-                                      const nextProtocol =
-                                        value === 'http1' ? 'http1' : 'auto'
-                                      field.onChange(nextProtocol)
-                                      if (nextProtocol === 'http1') {
-                                        form.setValue(
-                                          'http2_connection_shards',
-                                          1,
-                                          {
-                                            shouldDirty: true,
-                                            shouldValidate: true,
-                                          }
-                                        )
-                                      }
-                                    }}
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent alignItemWithTrigger={false}>
-                                      <SelectGroup>
-                                        <SelectItem value='auto'>
-                                          {t('Auto')}
-                                        </SelectItem>
-                                        <SelectItem value='http1'>
-                                          {t('HTTP/1.1')}
-                                        </SelectItem>
-                                      </SelectGroup>
-                                    </SelectContent>
-                                  </Select>
-                                  <FormDescription>
-                                    {t(
-                                      'Auto negotiates HTTP/2 when available. HTTP/1.1 forces multiple keep-alive connections under concurrency.'
-                                    )}
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-
-                            <FormField
-                              control={form.control}
-                              name='http2_connection_shards'
-                              render={({ field }) => {
-                                const http1Selected =
-                                  currentHttpProtocol === 'http1'
-                                const shardItems = Array.from(
-                                  { length: 8 },
-                                  (_, index) => {
-                                    const value = String(index + 1)
-                                    return { value, label: value }
-                                  }
-                                )
-                                return (
-                                  <FormItem>
-                                    <FormLabel>
-                                      {t('HTTP/2 Connection Shards')}
-                                    </FormLabel>
-                                    <Select
-                                      items={shardItems}
-                                      value={String(field.value || 1)}
-                                      disabled={http1Selected}
-                                      onValueChange={(value) => {
-                                        field.onChange(Number(value))
-                                      }}
-                                    >
-                                      <FormControl>
-                                        <SelectTrigger disabled={http1Selected}>
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent
-                                        alignItemWithTrigger={false}
-                                      >
-                                        <SelectGroup>
-                                          {shardItems.map((item) => (
-                                            <SelectItem
-                                              key={item.value}
-                                              value={item.value}
-                                            >
-                                              {item.label}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectGroup>
-                                      </SelectContent>
-                                    </Select>
-                                    <FormDescription>
-                                      {http1Selected
-                                        ? t(
-                                            'HTTP/2 connection shards are unavailable when HTTP/1.1 is selected.'
-                                          )
-                                        : t(
-                                            'Spread HTTP/2 traffic across multiple reusable connections to the same upstream origin (1-8).'
+                              <fieldset
+                                  disabled={sensitiveLocked}
+                                  className='space-y-4 disabled:opacity-60'
+                              >
+                                <div className='divide-border space-y-0 divide-y border-y'>
+                                  {currentType === 1 && (
+                                      <FormField
+                                          control={form.control}
+                                          name='force_format'
+                                          render={({ field }) => (
+                                              <FormItem className='flex items-center justify-between px-4 py-3'>
+                                                <div className='space-y-0.5'>
+                                                  <FormLabel>
+                                                    {t('Force Format')}
+                                                  </FormLabel>
+                                                  <FormDescription>
+                                                    {t(
+                                                        'Force format response to OpenAI standard (OpenAI channel only)'
+                                                    )}
+                                                  </FormDescription>
+                                                </div>
+                                                <FormControl>
+                                                  <Switch
+                                                      checked={field.value}
+                                                      onCheckedChange={field.onChange}
+                                                  />
+                                                </FormControl>
+                                              </FormItem>
                                           )}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )
-                              }}
-                            />
-
-                            <FormField
-                              control={form.control}
-                              name='system_prompt'
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('System Prompt')}</FormLabel>
-                                  <FormControl>
-                                    <Textarea
-                                      placeholder={t(
-                                        'Enter system prompt (user prompt takes priority)'
-                                      )}
-                                      rows={3}
-                                      {...field}
-                                    />
-                                  </FormControl>
-                                  <FormDescription>
-                                    {t(
-                                      'Default system prompt for this channel'
-                                    )}
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-
-                            <FormField
-                              control={form.control}
-                              name='system_prompt_override'
-                              render={({ field }) => (
-                                <FormItem className='flex items-center justify-between'>
-                                  <div className='space-y-0.5'>
-                                    <FormLabel>
-                                      {t('System Prompt Concatenation')}
-                                    </FormLabel>
-                                    <FormDescription>
-                                      {t(
-                                        'Concatenate channel system prompt with user&apos;s prompt'
-                                      )}
-                                    </FormDescription>
-                                  </div>
-                                  <FormControl>
-                                    <Switch
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-
-                            <FormField
-                              control={form.control}
-                              name='daily_token_limit'
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>{t('Daily Token Limit')}</FormLabel>
-                                  <FormControl>
-                                    <div className='flex items-center gap-2'>
-                                      <Input
-                                        type='number'
-                                        min={0}
-                                        step={1}
-                                        placeholder='0'
-                                        {...field}
-                                        onChange={(e) =>
-                                          field.onChange(
-                                            parseInt(e.target.value) || 0
-                                          )
-                                        }
                                       />
-                                      <span className='text-muted-foreground text-sm'>
+                                  )}
+
+                                  <FormField
+                                      control={form.control}
+                                      name='thinking_to_content'
+                                      render={({ field }) => (
+                                          <FormItem className='flex items-center justify-between px-4 py-3'>
+                                            <div className='space-y-0.5'>
+                                              <FormLabel>
+                                                {t('Thinking to Content')}
+                                              </FormLabel>
+                                              <FormDescription>
+                                                {t(
+                                                    'Convert reasoning_content to <think> tag in content'
+                                                )}
+                                              </FormDescription>
+                                            </div>
+                                            <FormControl>
+                                              <Switch
+                                                  checked={field.value}
+                                                  onCheckedChange={field.onChange}
+                                              />
+                                            </FormControl>
+                                          </FormItem>
+                                      )}
+                                  />
+
+                                  <FormField
+                                      control={form.control}
+                                      name='pass_through_body_enabled'
+                                      render={({ field }) => (
+                                          <FormItem className='flex items-center justify-between px-4 py-3'>
+                                            <div className='space-y-0.5'>
+                                              <FormLabel>
+                                                {t('Pass Through Body')}
+                                              </FormLabel>
+                                              <FormDescription>
+                                                {t(
+                                                    'Pass request body directly to upstream'
+                                                )}
+                                              </FormDescription>
+                                            </div>
+                                            <FormControl>
+                                              <Switch
+                                                  checked={field.value}
+                                                  onCheckedChange={field.onChange}
+                                              />
+                                            </FormControl>
+                                          </FormItem>
+                                      )}
+                                  />
+
+                                  <FormField
+                                      control={form.control}
+                                      name='disable_task_polling_sleep'
+                                      render={({ field }) => (
+                                          <FormItem className='flex items-center justify-between px-4 py-3'>
+                                            <div className='space-y-0.5'>
+                                              <FormLabel>
+                                                {t('Skip async task polling delay')}
+                                              </FormLabel>
+                                              <FormDescription>
+                                                {t(
+                                                    'Do not wait one second between polling async tasks for this channel'
+                                                )}
+                                              </FormDescription>
+                                            </div>
+                                            <FormControl>
+                                              <Switch
+                                                  checked={field.value}
+                                                  onCheckedChange={field.onChange}
+                                              />
+                                            </FormControl>
+                                          </FormItem>
+                                      )}
+                                  />
+                                </div>
+
+                                <FormField
+                                    control={form.control}
+                                    name='proxy'
+                                    render={({ field }) => (
+                                        <FormItem>
+                                          <FormLabel>{t('Proxy Address')}</FormLabel>
+                                          <FormControl>
+                                            <Input
+                                                placeholder={t(
+                                                    'socks5://user:pass@host:port'
+                                                )}
+                                                {...field}
+                                            />
+                                          </FormControl>
+                                          <FormDescription>
+                                            {t(
+                                                'Network proxy for this channel (supports socks5 protocol)'
+                                            )}
+                                          </FormDescription>
+                                          <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name='http_protocol'
+                                    render={({ field }) => (
+                                        <FormItem>
+                                          <FormLabel>{t('HTTP Protocol')}</FormLabel>
+                                          <Select
+                                              items={[
+                                                {
+                                                  value: 'auto',
+                                                  label: t('Auto'),
+                                                },
+                                                {
+                                                  value: 'http1',
+                                                  label: t('HTTP/1.1'),
+                                                },
+                                              ]}
+                                              value={field.value || 'auto'}
+                                              onValueChange={(value) => {
+                                                const nextProtocol =
+                                                    value === 'http1' ? 'http1' : 'auto'
+                                                field.onChange(nextProtocol)
+                                                if (nextProtocol === 'http1') {
+                                                  form.setValue(
+                                                      'http2_connection_shards',
+                                                      1,
+                                                      {
+                                                        shouldDirty: true,
+                                                        shouldValidate: true,
+                                                      }
+                                                  )
+                                                }
+                                              }}
+                                          >
+                                            <FormControl>
+                                              <SelectTrigger>
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent alignItemWithTrigger={false}>
+                                              <SelectGroup>
+                                                <SelectItem value='auto'>
+                                                  {t('Auto')}
+                                                </SelectItem>
+                                                <SelectItem value='http1'>
+                                                  {t('HTTP/1.1')}
+                                                </SelectItem>
+                                              </SelectGroup>
+                                            </SelectContent>
+                                          </Select>
+                                          <FormDescription>
+                                            {t(
+                                                'Auto negotiates HTTP/2 when available. HTTP/1.1 forces multiple keep-alive connections under concurrency.'
+                                            )}
+                                          </FormDescription>
+                                          <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name='http2_connection_shards'
+                                    render={({ field }) => {
+                                      const http1Selected =
+                                          currentHttpProtocol === 'http1'
+                                      const shardItems = Array.from(
+                                          { length: 8 },
+                                          (_, index) => {
+                                            const value = String(index + 1)
+                                            return { value, label: value }
+                                          }
+                                      )
+                                      return (
+                                          <FormItem>
+                                            <FormLabel>
+                                              {t('HTTP/2 Connection Shards')}
+                                            </FormLabel>
+                                            <Select
+                                                items={shardItems}
+                                                value={String(field.value || 1)}
+                                                disabled={http1Selected}
+                                                onValueChange={(value) => {
+                                                  field.onChange(Number(value))
+                                                }}
+                                            >
+                                              <FormControl>
+                                                <SelectTrigger disabled={http1Selected}>
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                              </FormControl>
+                                              <SelectContent
+                                                  alignItemWithTrigger={false}
+                                              >
+                                                <SelectGroup>
+                                                  {shardItems.map((item) => (
+                                                      <SelectItem
+                                                          key={item.value}
+                                                          value={item.value}
+                                                      >
+                                                        {item.label}
+                                                      </SelectItem>
+                                                  ))}
+                                                </SelectGroup>
+                                              </SelectContent>
+                                            </Select>
+                                            <FormDescription>
+                                              {http1Selected
+                                                  ? t(
+                                                      'HTTP/2 connection shards are unavailable when HTTP/1.1 is selected.'
+                                                  )
+                                                  : t(
+                                                      'Spread HTTP/2 traffic across multiple reusable connections to the same upstream origin (1-8).'
+                                                  )}
+                                            </FormDescription>
+                                            <FormMessage />
+                                          </FormItem>
+                                      )
+                                    }}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name='system_prompt'
+                                    render={({ field }) => (
+                                        <FormItem>
+                                          <FormLabel>{t('System Prompt')}</FormLabel>
+                                          <FormControl>
+                                            <Textarea
+                                                placeholder={t(
+                                                    'Enter system prompt (user prompt takes priority)'
+                                                )}
+                                                rows={3}
+                                                {...field}
+                                            />
+                                          </FormControl>
+                                          <FormDescription>
+                                            {t(
+                                                'Default system prompt for this channel'
+                                            )}
+                                          </FormDescription>
+                                          <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name='system_prompt_override'
+                                    render={({ field }) => (
+                                        <FormItem className='flex items-center justify-between'>
+                                          <div className='space-y-0.5'>
+                                            <FormLabel>
+                                              {t('System Prompt Concatenation')}
+                                            </FormLabel>
+                                            <FormDescription>
+                                              {t(
+                                                  'Concatenate channel system prompt with user&apos;s prompt'
+                                              )}
+                                            </FormDescription>
+                                          </div>
+                                          <FormControl>
+                                            <Switch
+                                                checked={field.value}
+                                                onCheckedChange={field.onChange}
+                                            />
+                                          </FormControl>
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name='daily_token_limit'
+                                    render={({ field }) => (
+                                        <FormItem>
+                                          <FormLabel>{t('Daily Token Limit')}</FormLabel>
+                                          <FormControl>
+                                            <div className='flex items-center gap-2'>
+                                              <Input
+                                                  type='number'
+                                                  min={0}
+                                                  step={1}
+                                                  placeholder='0'
+                                                  {...field}
+                                                  onChange={(e) =>
+                                                      field.onChange(
+                                                          parseInt(e.target.value) || 0
+                                                      )
+                                                  }
+                                              />
+                                              <span className='text-muted-foreground text-sm'>
                                         {t('tokens/day')}
                                       </span>
+                                            </div>
+                                          </FormControl>
+                                          <FormDescription>
+                                            {t(
+                                                'Max tokens (prompt+completion) this channel may process per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires channel-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit; an over-budget channel is automatically skipped in favor of the next available channel.'
+                                            )}
+                                          </FormDescription>
+                                          <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                              </fieldset>
+                            </div>
+
+                            {FIELD_PASSTHROUGH_TYPES.has(currentType) && (
+                                <div
+                                    id={ADVANCED_SETTINGS_SECTION_IDS.fieldPassthrough}
+                                    className={sideDrawerSectionClassName(
+                                        configuredAdvancedSectionClassName(
+                                            'scroll-mt-4',
+                                            fieldPassthroughConfigured
+                                        )
+                                    )}
+                                >
+                                  <CardHeading
+                                      title={t('Field passthrough controls')}
+                                      icon={<SlidersHorizontal className='h-4 w-4' />}
+                                  />
+                                  <fieldset
+                                      disabled={sensitiveLocked}
+                                      className='disabled:opacity-60'
+                                  >
+                                    <div className='divide-border space-y-0 divide-y border-y'>
+                                      <FormField
+                                          control={form.control}
+                                          name='allow_service_tier'
+                                          render={({ field }) => (
+                                              <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                                <div className='space-y-0.5'>
+                                                  <FormLabel className='text-sm'>
+                                                    {t('Allow service_tier passthrough')}
+                                                  </FormLabel>
+                                                  <FormDescription>
+                                                    {t(
+                                                        'Pass through the service_tier field'
+                                                    )}
+                                                  </FormDescription>
+                                                </div>
+                                                <FormControl>
+                                                  <Switch
+                                                      checked={field.value}
+                                                      onCheckedChange={field.onChange}
+                                                  />
+                                                </FormControl>
+                                              </FormItem>
+                                          )}
+                                      />
+
+                                      {OPENAI_FIELD_PASSTHROUGH_TYPES.has(
+                                          currentType
+                                      ) && (
+                                          <>
+                                            <FormField
+                                                control={form.control}
+                                                name='disable_store'
+                                                render={({ field }) => (
+                                                    <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                                      <div className='space-y-0.5'>
+                                                        <FormLabel className='text-sm'>
+                                                          {t('Disable store passthrough')}
+                                                        </FormLabel>
+                                                        <FormDescription>
+                                                          {t(
+                                                              'When enabled, the store field will be blocked'
+                                                          )}
+                                                        </FormDescription>
+                                                      </div>
+                                                      <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={field.onChange}
+                                                        />
+                                                      </FormControl>
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <FormField
+                                                control={form.control}
+                                                name='allow_safety_identifier'
+                                                render={({ field }) => (
+                                                    <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                                      <div className='space-y-0.5'>
+                                                        <FormLabel className='text-sm'>
+                                                          {t(
+                                                              'Allow safety_identifier passthrough'
+                                                          )}
+                                                        </FormLabel>
+                                                        <FormDescription>
+                                                          {t(
+                                                              'Pass through the safety_identifier field'
+                                                          )}
+                                                        </FormDescription>
+                                                      </div>
+                                                      <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={field.onChange}
+                                                        />
+                                                      </FormControl>
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <FormField
+                                                control={form.control}
+                                                name='allow_include_obfuscation'
+                                                render={({ field }) => (
+                                                    <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                                      <div className='space-y-0.5'>
+                                                        <FormLabel className='text-sm'>
+                                                          {t(
+                                                              'Allow include usage obfuscation passthrough'
+                                                          )}
+                                                        </FormLabel>
+                                                        <FormDescription>
+                                                          {t(
+                                                              'Pass through the include field for usage obfuscation'
+                                                          )}
+                                                        </FormDescription>
+                                                      </div>
+                                                      <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={field.onChange}
+                                                        />
+                                                      </FormControl>
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <FormField
+                                                control={form.control}
+                                                name='allow_inference_geo'
+                                                render={({ field }) => (
+                                                    <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                                      <div className='space-y-0.5'>
+                                                        <FormLabel className='text-sm'>
+                                                          {t(
+                                                              'Allow inference geography passthrough'
+                                                          )}
+                                                        </FormLabel>
+                                                        <FormDescription>
+                                                          {t(
+                                                              'Pass through the inference_geo field for geographic routing'
+                                                          )}
+                                                        </FormDescription>
+                                                      </div>
+                                                      <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={field.onChange}
+                                                        />
+                                                      </FormControl>
+                                                    </FormItem>
+                                                )}
+                                            />
+                                          </>
+                                      )}
+
+                                      {CLAUDE_FIELD_PASSTHROUGH_TYPES.has(
+                                          currentType
+                                      ) && (
+                                          <>
+                                            {currentType === 14 && (
+                                                <FormField
+                                                    control={form.control}
+                                                    name='allow_inference_geo'
+                                                    render={({ field }) => (
+                                                        <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                                          <div className='space-y-0.5'>
+                                                            <FormLabel className='text-sm'>
+                                                              {t(
+                                                                  'Allow inference_geo passthrough'
+                                                              )}
+                                                            </FormLabel>
+                                                            <FormDescription>
+                                                              {t(
+                                                                  'Pass through the inference_geo field for Claude data residency region control'
+                                                              )}
+                                                            </FormDescription>
+                                                          </div>
+                                                          <FormControl>
+                                                            <Switch
+                                                                checked={field.value}
+                                                                onCheckedChange={field.onChange}
+                                                            />
+                                                          </FormControl>
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            )}
+
+                                            <FormField
+                                                control={form.control}
+                                                name='allow_speed'
+                                                render={({ field }) => (
+                                                    <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                                      <div className='space-y-0.5'>
+                                                        <FormLabel className='text-sm'>
+                                                          {t('Allow speed passthrough')}
+                                                        </FormLabel>
+                                                        <FormDescription>
+                                                          {t(
+                                                              'Pass through the speed field for Claude inference speed mode control'
+                                                          )}
+                                                        </FormDescription>
+                                                      </div>
+                                                      <FormControl>
+                                                        <Switch
+                                                            checked={field.value}
+                                                            onCheckedChange={field.onChange}
+                                                        />
+                                                      </FormControl>
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            {currentType === 14 && (
+                                                <FormField
+                                                    control={form.control}
+                                                    name='claude_beta_query'
+                                                    render={({ field }) => (
+                                                        <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                                          <div className='space-y-0.5'>
+                                                            <FormLabel className='text-sm'>
+                                                              {t(
+                                                                  'Allow Claude beta query passthrough'
+                                                              )}
+                                                            </FormLabel>
+                                                            <FormDescription>
+                                                              {t(
+                                                                  'Pass through the anthropic-beta header for beta features'
+                                                              )}
+                                                            </FormDescription>
+                                                          </div>
+                                                          <FormControl>
+                                                            <Switch
+                                                                checked={field.value}
+                                                                onCheckedChange={field.onChange}
+                                                            />
+                                                          </FormControl>
+                                                        </FormItem>
+                                                    )}
+                                                />
+                                            )}
+                                          </>
+                                      )}
                                     </div>
-                                  </FormControl>
-                                  <FormDescription>
-                                    {t(
-                                      'Max tokens (prompt+completion) this channel may process per calendar day (resets at 00:00 UTC). 0 = unlimited. Requires channel-level daily token limiting to be enabled in Settings -> Security -> Daily Token Limit; an over-budget channel is automatically skipped in favor of the next available channel.'
-                                    )}
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </fieldset>
-                        </div>
-
-                        {FIELD_PASSTHROUGH_TYPES.has(currentType) && (
-                          <div
-                            id={ADVANCED_SETTINGS_SECTION_IDS.fieldPassthrough}
-                            className={sideDrawerSectionClassName(
-                              configuredAdvancedSectionClassName(
-                                'scroll-mt-4',
-                                fieldPassthroughConfigured
-                              )
+                                  </fieldset>
+                                </div>
                             )}
-                          >
-                            <CardHeading
-                              title={t('Field passthrough controls')}
-                              icon={<SlidersHorizontal className='h-4 w-4' />}
-                            />
-                            <fieldset
-                              disabled={sensitiveLocked}
-                              className='disabled:opacity-60'
-                            >
-                              <div className='divide-border space-y-0 divide-y border-y'>
-                                <FormField
-                                  control={form.control}
-                                  name='allow_service_tier'
-                                  render={({ field }) => (
-                                    <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                      <div className='space-y-0.5'>
-                                        <FormLabel className='text-sm'>
-                                          {t('Allow service_tier passthrough')}
-                                        </FormLabel>
-                                        <FormDescription>
-                                          {t(
-                                            'Pass through the service_tier field'
-                                          )}
-                                        </FormDescription>
-                                      </div>
-                                      <FormControl>
-                                        <Switch
-                                          checked={field.value}
-                                          onCheckedChange={field.onChange}
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
 
-                                {OPENAI_FIELD_PASSTHROUGH_TYPES.has(
-                                  currentType
-                                ) && (
-                                  <>
-                                    <FormField
-                                      control={form.control}
-                                      name='disable_store'
-                                      render={({ field }) => (
-                                        <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                          <div className='space-y-0.5'>
-                                            <FormLabel className='text-sm'>
-                                              {t('Disable store passthrough')}
-                                            </FormLabel>
-                                            <FormDescription>
-                                              {t(
-                                                'When enabled, the store field will be blocked'
-                                              )}
-                                            </FormDescription>
-                                          </div>
-                                          <FormControl>
-                                            <Switch
-                                              checked={field.value}
-                                              onCheckedChange={field.onChange}
-                                            />
-                                          </FormControl>
-                                        </FormItem>
-                                      )}
-                                    />
-
-                                    <FormField
-                                      control={form.control}
-                                      name='allow_safety_identifier'
-                                      render={({ field }) => (
-                                        <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                          <div className='space-y-0.5'>
-                                            <FormLabel className='text-sm'>
-                                              {t(
-                                                'Allow safety_identifier passthrough'
-                                              )}
-                                            </FormLabel>
-                                            <FormDescription>
-                                              {t(
-                                                'Pass through the safety_identifier field'
-                                              )}
-                                            </FormDescription>
-                                          </div>
-                                          <FormControl>
-                                            <Switch
-                                              checked={field.value}
-                                              onCheckedChange={field.onChange}
-                                            />
-                                          </FormControl>
-                                        </FormItem>
-                                      )}
-                                    />
-
-                                    <FormField
-                                      control={form.control}
-                                      name='allow_include_obfuscation'
-                                      render={({ field }) => (
-                                        <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                          <div className='space-y-0.5'>
-                                            <FormLabel className='text-sm'>
-                                              {t(
-                                                'Allow include usage obfuscation passthrough'
-                                              )}
-                                            </FormLabel>
-                                            <FormDescription>
-                                              {t(
-                                                'Pass through the include field for usage obfuscation'
-                                              )}
-                                            </FormDescription>
-                                          </div>
-                                          <FormControl>
-                                            <Switch
-                                              checked={field.value}
-                                              onCheckedChange={field.onChange}
-                                            />
-                                          </FormControl>
-                                        </FormItem>
-                                      )}
-                                    />
-
-                                    <FormField
-                                      control={form.control}
-                                      name='allow_inference_geo'
-                                      render={({ field }) => (
-                                        <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                          <div className='space-y-0.5'>
-                                            <FormLabel className='text-sm'>
-                                              {t(
-                                                'Allow inference geography passthrough'
-                                              )}
-                                            </FormLabel>
-                                            <FormDescription>
-                                              {t(
-                                                'Pass through the inference_geo field for geographic routing'
-                                              )}
-                                            </FormDescription>
-                                          </div>
-                                          <FormControl>
-                                            <Switch
-                                              checked={field.value}
-                                              onCheckedChange={field.onChange}
-                                            />
-                                          </FormControl>
-                                        </FormItem>
-                                      )}
-                                    />
-                                  </>
-                                )}
-
-                                {CLAUDE_FIELD_PASSTHROUGH_TYPES.has(
-                                  currentType
-                                ) && (
-                                  <>
-                                    {currentType === 14 && (
+                            {MODEL_FETCHABLE_TYPES.has(currentType) && (
+                                <div
+                                    id={
+                                      ADVANCED_SETTINGS_SECTION_IDS.upstreamModelDetection
+                                    }
+                                    className={sideDrawerSectionClassName(
+                                        configuredAdvancedSectionClassName(
+                                            'scroll-mt-4',
+                                            upstreamModelDetectionConfigured
+                                        )
+                                    )}
+                                >
+                                  <CardHeading
+                                      title={t('Upstream Model Detection Settings')}
+                                      icon={<RefreshCw className='h-4 w-4' />}
+                                  />
+                                  <fieldset
+                                      disabled={sensitiveLocked}
+                                      className='space-y-4 disabled:opacity-60'
+                                  >
+                                    <div className='divide-border space-y-0 divide-y border-y'>
                                       <FormField
+                                          control={form.control}
+                                          name='upstream_model_update_check_enabled'
+                                          render={({ field }) => (
+                                              <FormItem className='flex items-center justify-between px-4 py-3'>
+                                                <div className='space-y-0.5'>
+                                                  <FormLabel>
+                                                    {t('Upstream Model Update Check')}
+                                                  </FormLabel>
+                                                  <FormDescription>
+                                                    {t(
+                                                        'Periodically check for upstream model changes'
+                                                    )}
+                                                  </FormDescription>
+                                                </div>
+                                                <FormControl>
+                                                  <Switch
+                                                      checked={field.value}
+                                                      onCheckedChange={field.onChange}
+                                                  />
+                                                </FormControl>
+                                              </FormItem>
+                                          )}
+                                      />
+                                      <FormField
+                                          control={form.control}
+                                          name='upstream_model_update_auto_sync_enabled'
+                                          render={({ field }) => (
+                                              <FormItem className='flex items-center justify-between px-4 py-3'>
+                                                <div className='space-y-0.5'>
+                                                  <FormLabel>
+                                                    {t('Auto Sync Upstream Models')}
+                                                  </FormLabel>
+                                                  <FormDescription>
+                                                    {t(
+                                                        'Automatically sync model list when upstream changes are detected'
+                                                    )}
+                                                  </FormDescription>
+                                                </div>
+                                                <FormControl>
+                                                  <Switch
+                                                      checked={field.value}
+                                                      disabled={
+                                                        !upstreamModelUpdateCheckEnabled
+                                                      }
+                                                      onCheckedChange={field.onChange}
+                                                  />
+                                                </FormControl>
+                                              </FormItem>
+                                          )}
+                                      />
+                                    </div>
+                                    <FormField
                                         control={form.control}
-                                        name='allow_inference_geo'
+                                        name='upstream_model_update_ignored_models'
                                         render={({ field }) => (
-                                          <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                            <div className='space-y-0.5'>
-                                              <FormLabel className='text-sm'>
-                                                {t(
-                                                  'Allow inference_geo passthrough'
-                                                )}
+                                            <FormItem>
+                                              <FormLabel>
+                                                {t('Ignored upstream models')}
                                               </FormLabel>
+                                              <FormControl>
+                                                <Input
+                                                    placeholder={t(
+                                                        'e.g., gpt-4.1-nano,regex:^claude-.*$,regex:^sora-.*$'
+                                                    )}
+                                                    {...field}
+                                                />
+                                              </FormControl>
                                               <FormDescription>
                                                 {t(
-                                                  'Pass through the inference_geo field for Claude data residency region control'
+                                                    'Comma-separated exact model names. Prefix with regex: to ignore by regular expression.'
                                                 )}
                                               </FormDescription>
-                                            </div>
-                                            <FormControl>
-                                              <Switch
-                                                checked={field.value}
-                                                onCheckedChange={field.onChange}
-                                              />
-                                            </FormControl>
-                                          </FormItem>
+                                              <FormMessage />
+                                            </FormItem>
                                         )}
-                                      />
-                                    )}
-
-                                    <FormField
-                                      control={form.control}
-                                      name='allow_speed'
-                                      render={({ field }) => (
-                                        <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                          <div className='space-y-0.5'>
-                                            <FormLabel className='text-sm'>
-                                              {t('Allow speed passthrough')}
-                                            </FormLabel>
-                                            <FormDescription>
-                                              {t(
-                                                'Pass through the speed field for Claude inference speed mode control'
-                                              )}
-                                            </FormDescription>
-                                          </div>
-                                          <FormControl>
-                                            <Switch
-                                              checked={field.value}
-                                              onCheckedChange={field.onChange}
-                                            />
-                                          </FormControl>
-                                        </FormItem>
-                                      )}
                                     />
-
-                                    {currentType === 14 && (
-                                      <FormField
-                                        control={form.control}
-                                        name='claude_beta_query'
-                                        render={({ field }) => (
-                                          <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
-                                            <div className='space-y-0.5'>
-                                              <FormLabel className='text-sm'>
-                                                {t(
-                                                  'Allow Claude beta query passthrough'
-                                                )}
-                                              </FormLabel>
-                                              <FormDescription>
-                                                {t(
-                                                  'Pass through the anthropic-beta header for beta features'
-                                                )}
-                                              </FormDescription>
-                                            </div>
-                                            <FormControl>
-                                              <Switch
-                                                checked={field.value}
-                                                onCheckedChange={field.onChange}
-                                              />
-                                            </FormControl>
-                                          </FormItem>
-                                        )}
-                                      />
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            </fieldset>
-                          </div>
-                        )}
-
-                        {MODEL_FETCHABLE_TYPES.has(currentType) && (
-                          <div
-                            id={
-                              ADVANCED_SETTINGS_SECTION_IDS.upstreamModelDetection
-                            }
-                            className={sideDrawerSectionClassName(
-                              configuredAdvancedSectionClassName(
-                                'scroll-mt-4',
-                                upstreamModelDetectionConfigured
-                              )
-                            )}
-                          >
-                            <CardHeading
-                              title={t('Upstream Model Detection Settings')}
-                              icon={<RefreshCw className='h-4 w-4' />}
-                            />
-                            <fieldset
-                              disabled={sensitiveLocked}
-                              className='space-y-4 disabled:opacity-60'
-                            >
-                              <div className='divide-border space-y-0 divide-y border-y'>
-                                <FormField
-                                  control={form.control}
-                                  name='upstream_model_update_check_enabled'
-                                  render={({ field }) => (
-                                    <FormItem className='flex items-center justify-between px-4 py-3'>
-                                      <div className='space-y-0.5'>
-                                        <FormLabel>
-                                          {t('Upstream Model Update Check')}
-                                        </FormLabel>
-                                        <FormDescription>
-                                          {t(
-                                            'Periodically check for upstream model changes'
-                                          )}
-                                        </FormDescription>
-                                      </div>
-                                      <FormControl>
-                                        <Switch
-                                          checked={field.value}
-                                          onCheckedChange={field.onChange}
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
-                                <FormField
-                                  control={form.control}
-                                  name='upstream_model_update_auto_sync_enabled'
-                                  render={({ field }) => (
-                                    <FormItem className='flex items-center justify-between px-4 py-3'>
-                                      <div className='space-y-0.5'>
-                                        <FormLabel>
-                                          {t('Auto Sync Upstream Models')}
-                                        </FormLabel>
-                                        <FormDescription>
-                                          {t(
-                                            'Automatically sync model list when upstream changes are detected'
-                                          )}
-                                        </FormDescription>
-                                      </div>
-                                      <FormControl>
-                                        <Switch
-                                          checked={field.value}
-                                          disabled={
-                                            !upstreamModelUpdateCheckEnabled
-                                          }
-                                          onCheckedChange={field.onChange}
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
-                              </div>
-                              <FormField
-                                control={form.control}
-                                name='upstream_model_update_ignored_models'
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>
-                                      {t('Ignored upstream models')}
-                                    </FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(
-                                          'e.g., gpt-4.1-nano,regex:^claude-.*$,regex:^sora-.*$'
-                                        )}
-                                        {...field}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      {t(
-                                        'Comma-separated exact model names. Prefix with regex: to ignore by regular expression.'
-                                      )}
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              <div className='text-muted-foreground space-y-2 border-t pt-3 text-xs'>
-                                <div>
+                                    <div className='text-muted-foreground space-y-2 border-t pt-3 text-xs'>
+                                      <div>
                                   <span className='text-foreground font-medium'>
                                     {t('Last check time')}:
                                   </span>{' '}
-                                  {formatUnixTime(
-                                    upstreamUpdateMeta.lastCheckTime
-                                  )}
-                                </div>
-                                <div>
+                                        {formatUnixTime(
+                                            upstreamUpdateMeta.lastCheckTime
+                                        )}
+                                      </div>
+                                      <div>
                                   <span className='text-foreground font-medium'>
                                     {t('Last detected addable models')}:
                                   </span>{' '}
-                                  {upstreamUpdateMeta.detectedModels.length ===
-                                  0 ? (
-                                    t('None')
-                                  ) : (
-                                    <>
+                                        {upstreamUpdateMeta.detectedModels.length ===
+                                        0 ? (
+                                            t('None')
+                                        ) : (
+                                            <>
                                       <span className='break-all'>
                                         {upstreamDetectedModelsPreview.join(
-                                          ', '
+                                            ', '
                                         )}
                                       </span>
-                                      {upstreamDetectedModelsOmittedCount >
-                                        0 && (
-                                        <span className='ml-1'>
+                                              {upstreamDetectedModelsOmittedCount >
+                                                  0 && (
+                                                      <span className='ml-1'>
                                           {t(
-                                            '({{total}} total, {{omit}} omitted)',
-                                            {
-                                              total:
+                                              '({{total}} total, {{omit}} omitted)',
+                                              {
+                                                total:
                                                 upstreamUpdateMeta
-                                                  .detectedModels.length,
-                                              omit: upstreamDetectedModelsOmittedCount,
-                                            }
+                                                    .detectedModels.length,
+                                                omit: upstreamDetectedModelsOmittedCount,
+                                              }
                                           )}
                                         </span>
-                                      )}
-                                    </>
-                                  )}
+                                                  )}
+                                            </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </fieldset>
                                 </div>
-                              </div>
-                            </fieldset>
-                          </div>
-                        )}
-                      </ChannelAdvancedSection>
+                            )}
+                          </ChannelAdvancedSection>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
-            </form>
-          </Form>
+                )}
+              </form>
+            </Form>
 
-          <SheetFooter className={sideDrawerFooterClassName()}>
-            <SheetClose
-              render={<Button variant='outline' disabled={isSubmitting} />}
-            >
-              {t('Cancel')}
-            </SheetClose>
-            <Button form='channel-form' type='submit' disabled={isSubmitting}>
-              {isSubmitting && (
-                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-              )}
-              {isEditing ? t('Update Channel') : t('Save changes')}
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+            <SheetFooter className={sideDrawerFooterClassName()}>
+              <SheetClose
+                  render={<Button variant='outline' disabled={isSubmitting} />}
+              >
+                {t('Cancel')}
+              </SheetClose>
+              <Button form='channel-form' type='submit' disabled={isSubmitting}>
+                {isSubmitting && (
+                    <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                )}
+                {isEditing ? t('Update Channel') : t('Save changes')}
+              </Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
 
-      {paramOverrideEditorOpen && !sensitiveLocked && (
-        <ParamOverrideEditorDialog
-          open={paramOverrideEditorOpen}
-          value={form.watch('param_override') || ''}
-          onOpenChange={setParamOverrideEditorOpen}
-          onSave={(nextValue) => {
-            form.setValue('param_override', nextValue, {
-              shouldDirty: true,
-              shouldValidate: true,
-            })
-          }}
+        {paramOverrideEditorOpen && !sensitiveLocked && (
+            <ParamOverrideEditorDialog
+                open={paramOverrideEditorOpen}
+                value={form.watch('param_override') || ''}
+                onOpenChange={setParamOverrideEditorOpen}
+                onSave={(nextValue) => {
+                  form.setValue('param_override', nextValue, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }}
+            />
+        )}
+
+        {advancedCustomEditorOpen && !sensitiveLocked && (
+            <AdvancedCustomEditorDialog
+                open={advancedCustomEditorOpen}
+                value={form.watch('advanced_custom') || ''}
+                onOpenChange={setAdvancedCustomEditorOpen}
+                onSave={(nextValue) => {
+                  form.setValue('advanced_custom', nextValue, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }}
+            />
+        )}
+
+        {/* Fetch Models Dialog */}
+        <FetchModelsDialog
+            open={fetchModelsDialogOpen}
+            onOpenChange={setFetchModelsDialogOpen}
+            onModelsSelected={(models) => {
+              form.setValue('models', formatModelsArray(models))
+            }}
+            redirectModels={redirectModelList}
+            redirectSourceModels={redirectModelKeyList}
+            customFetcher={!isEditing ? createModeFetcher : undefined}
+            channelName={!isEditing ? currentName?.trim() : undefined}
+            existingModelsOverride={
+              !isEditing
+                  ? parseModelsString(form.getValues('models') || '')
+                  : undefined
+            }
         />
-      )}
 
-      {advancedCustomEditorOpen && !sensitiveLocked && (
-        <AdvancedCustomEditorDialog
-          open={advancedCustomEditorOpen}
-          value={form.watch('advanced_custom') || ''}
-          onOpenChange={setAdvancedCustomEditorOpen}
-          onSave={(nextValue) => {
-            form.setValue('advanced_custom', nextValue, {
-              shouldDirty: true,
-              shouldValidate: true,
-            })
-          }}
+        <SecureVerificationDialog
+            open={verificationOpen}
+            onOpenChange={(open) => {
+              if (!open) {
+                cancelVerification()
+              }
+            }}
+            methods={verificationMethods}
+            state={verificationState}
+            onVerify={async (method, code) => {
+              await executeVerification(method, code)
+            }}
+            onCancel={cancelVerification}
+            onCodeChange={setVerificationCode}
+            onMethodChange={switchVerificationMethod}
         />
-      )}
 
-      {/* Fetch Models Dialog */}
-      <FetchModelsDialog
-        open={fetchModelsDialogOpen}
-        onOpenChange={setFetchModelsDialogOpen}
-        onModelsSelected={(models) => {
-          form.setValue('models', formatModelsArray(models))
-        }}
-        redirectModels={redirectModelList}
-        redirectSourceModels={redirectModelKeyList}
-        customFetcher={!isEditing ? createModeFetcher : undefined}
-        channelName={!isEditing ? currentName?.trim() : undefined}
-        existingModelsOverride={
-          !isEditing
-            ? parseModelsString(form.getValues('models') || '')
-            : undefined
-        }
-      />
+        {/* Missing Models Confirmation Dialog */}
+        <MissingModelsConfirmationDialog
+            open={missingModelsDialogOpen}
+            missingModels={missingModelsList}
+            onConfirm={handleMissingModelsAction}
+            onOpenChange={setMissingModelsDialogOpen}
+        />
 
-      <SecureVerificationDialog
-        open={verificationOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            cancelVerification()
-          }
-        }}
-        methods={verificationMethods}
-        state={verificationState}
-        onVerify={async (method, code) => {
-          await executeVerification(method, code)
-        }}
-        onCancel={cancelVerification}
-        onCodeChange={setVerificationCode}
-        onMethodChange={switchVerificationMethod}
-      />
-
-      {/* Missing Models Confirmation Dialog */}
-      <MissingModelsConfirmationDialog
-        open={missingModelsDialogOpen}
-        missingModels={missingModelsList}
-        onConfirm={handleMissingModelsAction}
-        onOpenChange={setMissingModelsDialogOpen}
-      />
-
-      <StatusCodeRiskDialog
-        open={statusCodeRiskOpen}
-        onOpenChange={(v) => {
-          if (!v) handleStatusCodeRiskAction(false)
-        }}
-        detailItems={statusCodeRiskDetailItems}
-        onConfirm={() => handleStatusCodeRiskAction(true)}
-      />
-    </>
+        <StatusCodeRiskDialog
+            open={statusCodeRiskOpen}
+            onOpenChange={(v) => {
+              if (!v) handleStatusCodeRiskAction(false)
+            }}
+            detailItems={statusCodeRiskDetailItems}
+            onConfirm={() => handleStatusCodeRiskAction(true)}
+        />
+      </>
   )
 }
