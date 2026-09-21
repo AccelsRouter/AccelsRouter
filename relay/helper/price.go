@@ -53,7 +53,7 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 	// group rate, correct at settlement").
 	if common.GetContextKeyString(ctx, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
 		channelId := common.GetContextKeyInt(ctx, constant.ContextKeyChannelId)
-		ratio, found := model.GetUserChannelBindingRatio(relayInfo.UserId, channelId)
+		ratio, found := model.GetUserChannelBindingRatio(relayInfo.UserId, channelId, relayInfo.OriginModelName)
 		if !found || ratio <= 0 {
 			ratio = 1
 		}

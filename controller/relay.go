@@ -396,7 +396,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			return nil, types.NewError(fmt.Errorf("用户 %d 没有绑定支持模型 %s 的可用渠道（retry）", userId, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 		}
 
-		ratio, found := model.GetUserChannelBindingRatio(userId, channel.Id)
+		ratio, found := model.GetUserChannelBindingRatio(userId, channel.Id, info.OriginModelName)
 		if !found || ratio <= 0 {
 			ratio = 1
 		}
