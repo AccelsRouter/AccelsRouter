@@ -19,13 +19,12 @@ For commercial licensing, please contact support@quantumnous.com
 /*
 Admin organization API client. Wraps /api/admin/organizations endpoints.
 */
+import { api } from '@/lib/api'
 import type { OrgLog } from '@/features/organization-console/api'
 import type {
   OrgAuditLog,
   OrgUsageReport,
 } from '@/features/organization-console/types'
-import { api } from '@/lib/api'
-
 import type {
   CreateOrgPayload,
   CreditOrgPayload,
@@ -33,6 +32,9 @@ import type {
   OrgApplication,
   OrgLedgerEntry,
   PagedResponse,
+  ResellerRouting,
+  ResellerRoutingChannel,
+  ResellerRoutingRule,
   SsoDomain,
   SsoProvider,
   UpdateOrgPayload,
@@ -42,6 +44,47 @@ type ApiResp<T> = {
   success: boolean
   message?: string
   data?: T
+}
+
+// Reseller upstream routing (admin-only; never surfaced to the reseller).
+export async function getResellerRouting(
+  orgId: number
+): Promise<ResellerRouting> {
+  const res = await api.get<ApiResp<ResellerRouting>>(
+    `/api/admin/organizations/${orgId}/routing`
+  )
+  if (!res.data?.success || !res.data.data)
+    throw new Error(res.data?.message || 'Failed to load upstream routing')
+  return res.data.data
+}
+
+export async function setResellerRouting(
+  orgId: number,
+  payload: {
+    channel_ids: number[]
+    rules: ResellerRoutingRule[]
+    fallback: boolean
+    affinity_off: boolean
+  }
+): Promise<ResellerRouting> {
+  const res = await api.put<ApiResp<ResellerRouting>>(
+    `/api/admin/organizations/${orgId}/routing`,
+    payload
+  )
+  if (!res.data?.success || !res.data.data)
+    throw new Error(res.data?.message || 'Failed to save upstream routing')
+  return res.data.data
+}
+
+export async function listResellerRoutingChannels(
+  orgId: number
+): Promise<ResellerRoutingChannel[]> {
+  const res = await api.get<ApiResp<ResellerRoutingChannel[]>>(
+    `/api/admin/organizations/${orgId}/routing/channels`
+  )
+  if (!res.data?.success)
+    throw new Error(res.data?.message || 'Failed to load channels')
+  return res.data.data ?? []
 }
 
 export async function listOrganizations(params: {

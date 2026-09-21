@@ -32,8 +32,8 @@ import {
 import { Inbox, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
-import { SectionPageLayout } from '@/components/layout'
+import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
+import dayjs from '@/lib/dayjs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -46,22 +46,17 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ModelRatioRows } from '@/components/model-ratio-rows'
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { AuditPanel } from '@/features/organization-console/audit-panel'
+import { SectionPageLayout } from '@/components/layout'
+import { ModelRatioRows } from '@/components/model-ratio-rows'
 import { exportAdminOrgLogs } from '@/features/organization-console/api'
+import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CustomerFilteredCallRecords } from '@/features/organization-console/customer-filtered-call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
 import { ResellerUsageReport } from '@/features/reseller-console/usage-report'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
-import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
-import dayjs from '@/lib/dayjs'
-
 import {
   addSsoDomain,
   adminListOrgAudit,
@@ -79,11 +74,8 @@ import {
   updateOrganization,
 } from './api'
 import { ApplicationsPanel } from './applications'
-import type {
-  Organization,
-  OrgStatus,
-  OrgType,
-} from './types'
+import { RoutingDialog } from './routing-dialog'
+import type { Organization, OrgStatus, OrgType } from './types'
 
 const PAGE_SIZE = 20
 
@@ -106,6 +98,7 @@ export function OrganizationsAdmin() {
   const [attachOrg, setAttachOrg] = useState<Organization | null>(null)
   const [ssoOrg, setSsoOrg] = useState<Organization | null>(null)
   const [usageOrg, setUsageOrg] = useState<Organization | null>(null)
+  const [routingOrg, setRoutingOrg] = useState<Organization | null>(null)
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['admin-organizations', page, category],
@@ -134,9 +127,7 @@ export function OrganizationsAdmin() {
           <NativeSelect
             value={category}
             onChange={(e) => {
-              setCategory(
-                e.target.value as 'all' | 'enterprise' | 'customer'
-              )
+              setCategory(e.target.value as 'all' | 'enterprise' | 'customer')
               setPage(1)
             }}
           >
@@ -188,148 +179,162 @@ export function OrganizationsAdmin() {
         {view === 'applications' ? (
           <ApplicationsPanel />
         ) : (
-        <div className='flex flex-col gap-4'>
-          {isLoading ? (
-            <div className='flex h-40 items-center justify-center'>
-              <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
-            </div>
-          ) : items.length === 0 ? (
-            <div className='border-border/40 flex h-48 flex-col items-center justify-center gap-2 rounded-md border border-dashed'>
-              <Inbox className='text-muted-foreground/60 h-8 w-8' />
-              <p className='text-muted-foreground text-sm'>
-                {t('No organizations yet.')}
-              </p>
-            </div>
-          ) : (
-            <div className='border-border/60 overflow-x-auto rounded-md border'>
-              <table className='w-full text-sm'>
-                <thead className='bg-muted/40 text-muted-foreground text-xs'>
-                  <tr>
-                    <Th>{t('Name')}</Th>
-                    <Th>{t('Type')}</Th>
-                    <Th>{t('Status')}</Th>
-                    <Th className='text-right'>{t('Wallet Balance')}</Th>
-                    <Th>{t('Price Group')}</Th>
-                    <Th>{t('Wholesale ratio')}</Th>
-                    <Th>{t('Owner')}</Th>
-                    <Th className='text-right'>{t('Action')}</Th>
-                  </tr>
-                </thead>
-                <tbody className='divide-border/60 divide-y'>
-                  {items.map((o) => (
-                    <tr key={o.id} className='hover:bg-muted/30'>
-                      <Td>
-                        <span className='font-medium'>{o.name}</span>
-                        <span className='text-muted-foreground ml-1 text-xs'>
-                          #{o.id}
-                        </span>
-                      </Td>
-                      <Td>
-                        <OrgTypeBadge type={o.type} isCustomer={o.is_customer} />
-                      </Td>
-                      <Td>
-                        <OrgStatusBadge status={o.status} />
-                      </Td>
-                      <Td className='text-right font-semibold tabular-nums'>
-                        {formatQuotaWithCurrency(o.wallet_quota)}
-                      </Td>
-                      <Td className='text-muted-foreground'>
-                        {o.price_group || '-'}
-                      </Td>
-                      <Td>
-                        {o.type === 'reseller' &&
-                        o.wholesale_ratios &&
-                        Object.keys(o.wholesale_ratios).length > 0 ? (
-                          <span
-                            className='inline-block max-w-[180px] truncate rounded bg-amber-500/15 px-1.5 py-0.5 align-middle text-xs font-semibold text-amber-600 dark:text-amber-400'
-                            title={Object.entries(o.wholesale_ratios)
-                              .map(([m, r]) => `${m}: ${r.toFixed(2)}`)
-                              .join('\n')}
-                          >
-                            {Object.keys(o.wholesale_ratios).join(', ')}
-                          </span>
-                        ) : (
-                          <span className='text-muted-foreground'>-</span>
-                        )}
-                      </Td>
-                      <Td className='text-muted-foreground text-xs'>
-                        <div className='flex flex-col'>
-                          <span>#{o.owner_user_id}</span>
-                          {o.owner_email && (
-                            <span className='text-[11px]'>{o.owner_email}</span>
-                          )}
-                        </div>
-                      </Td>
-                      <Td className='text-right'>
-                        <div className='flex justify-end gap-2'>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setCreditOrg(o)}
-                          >
-                            {t('Credit')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setUsageOrg(o)}
-                          >
-                            {t('Usage')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setLedgerOrg(o)}
-                          >
-                            {t('Ledger')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setAuditOrg(o)}
-                          >
-                            {t('Audit')}
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setEditOrg(o)}
-                          >
-                            {t('Edit')}
-                          </Button>
-                        </div>
-                      </Td>
+          <div className='flex flex-col gap-4'>
+            {isLoading ? (
+              <div className='flex h-40 items-center justify-center'>
+                <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
+              </div>
+            ) : items.length === 0 ? (
+              <div className='border-border/40 flex h-48 flex-col items-center justify-center gap-2 rounded-md border border-dashed'>
+                <Inbox className='text-muted-foreground/60 h-8 w-8' />
+                <p className='text-muted-foreground text-sm'>
+                  {t('No organizations yet.')}
+                </p>
+              </div>
+            ) : (
+              <div className='border-border/60 overflow-x-auto rounded-md border'>
+                <table className='w-full text-sm'>
+                  <thead className='bg-muted/40 text-muted-foreground text-xs'>
+                    <tr>
+                      <Th>{t('Name')}</Th>
+                      <Th>{t('Type')}</Th>
+                      <Th>{t('Status')}</Th>
+                      <Th className='text-right'>{t('Wallet Balance')}</Th>
+                      <Th>{t('Price Group')}</Th>
+                      <Th>{t('Wholesale ratio')}</Th>
+                      <Th>{t('Owner')}</Th>
+                      <Th className='text-right'>{t('Action')}</Th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className='divide-border/60 divide-y'>
+                    {items.map((o) => (
+                      <tr key={o.id} className='hover:bg-muted/30'>
+                        <Td>
+                          <span className='font-medium'>{o.name}</span>
+                          <span className='text-muted-foreground ml-1 text-xs'>
+                            #{o.id}
+                          </span>
+                        </Td>
+                        <Td>
+                          <OrgTypeBadge
+                            type={o.type}
+                            isCustomer={o.is_customer}
+                          />
+                        </Td>
+                        <Td>
+                          <OrgStatusBadge status={o.status} />
+                        </Td>
+                        <Td className='text-right font-semibold tabular-nums'>
+                          {formatQuotaWithCurrency(o.wallet_quota)}
+                        </Td>
+                        <Td className='text-muted-foreground'>
+                          {o.price_group || '-'}
+                        </Td>
+                        <Td>
+                          {o.type === 'reseller' &&
+                          o.wholesale_ratios &&
+                          Object.keys(o.wholesale_ratios).length > 0 ? (
+                            <span
+                              className='inline-block max-w-[180px] truncate rounded bg-amber-500/15 px-1.5 py-0.5 align-middle text-xs font-semibold text-amber-600 dark:text-amber-400'
+                              title={Object.entries(o.wholesale_ratios)
+                                .map(([m, r]) => `${m}: ${r.toFixed(2)}`)
+                                .join('\n')}
+                            >
+                              {Object.keys(o.wholesale_ratios).join(', ')}
+                            </span>
+                          ) : (
+                            <span className='text-muted-foreground'>-</span>
+                          )}
+                        </Td>
+                        <Td className='text-muted-foreground text-xs'>
+                          <div className='flex flex-col'>
+                            <span>#{o.owner_user_id}</span>
+                            {o.owner_email && (
+                              <span className='text-[11px]'>
+                                {o.owner_email}
+                              </span>
+                            )}
+                          </div>
+                        </Td>
+                        <Td className='text-right'>
+                          <div className='flex justify-end gap-2'>
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setCreditOrg(o)}
+                            >
+                              {t('Credit')}
+                            </Button>
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setUsageOrg(o)}
+                            >
+                              {t('Usage')}
+                            </Button>
+                            {o.type === 'reseller' && (
+                              <Button
+                                size='sm'
+                                variant='outline'
+                                onClick={() => setRoutingOrg(o)}
+                              >
+                                {t('Routing')}
+                              </Button>
+                            )}
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setLedgerOrg(o)}
+                            >
+                              {t('Ledger')}
+                            </Button>
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setAuditOrg(o)}
+                            >
+                              {t('Audit')}
+                            </Button>
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setEditOrg(o)}
+                            >
+                              {t('Edit')}
+                            </Button>
+                          </div>
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-          {total > PAGE_SIZE && (
-            <div className='flex items-center justify-center gap-3'>
-              <Button
-                variant='outline'
-                size='sm'
-                disabled={page <= 1 || isFetching}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                {t('Previous')}
-              </Button>
-              <span className='text-muted-foreground text-xs tabular-nums'>
-                {page} / {totalPages} · {total}
-              </span>
-              <Button
-                variant='outline'
-                size='sm'
-                disabled={page >= totalPages || isFetching}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              >
-                {t('Next')}
-              </Button>
-            </div>
-          )}
-        </div>
+            {total > PAGE_SIZE && (
+              <div className='flex items-center justify-center gap-3'>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  disabled={page <= 1 || isFetching}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  {t('Previous')}
+                </Button>
+                <span className='text-muted-foreground text-xs tabular-nums'>
+                  {page} / {totalPages} · {total}
+                </span>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  disabled={page >= totalPages || isFetching}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  {t('Next')}
+                </Button>
+              </div>
+            )}
+          </div>
         )}
 
         <CreateOrgDialog
@@ -356,6 +361,7 @@ export function OrganizationsAdmin() {
         <AuditDialog org={auditOrg} onClose={() => setAuditOrg(null)} />
         <SsoDomainsDialog org={ssoOrg} onClose={() => setSsoOrg(null)} />
         <UsageDialog org={usageOrg} onClose={() => setUsageOrg(null)} />
+        <RoutingDialog org={routingOrg} onClose={() => setRoutingOrg(null)} />
       </SectionPageLayout.Content>
     </SectionPageLayout>
   )
@@ -450,7 +456,9 @@ function CreateOrgDialog(props: {
             />
             {type === 'reseller' && (
               <span className='text-muted-foreground text-xs'>
-                {t('Fixed to "default"; distributor pricing is driven by the wholesale ratio.')}
+                {t(
+                  'Fixed to "default"; distributor pricing is driven by the wholesale ratio.'
+                )}
               </span>
             )}
           </Field>
@@ -490,7 +498,9 @@ function parseModelsField(s?: string): string[] {
   if (!s) return []
   try {
     const v: unknown = JSON.parse(s)
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+    return Array.isArray(v)
+      ? v.filter((x): x is string => typeof x === 'string')
+      : []
   } catch {
     return []
   }
@@ -507,9 +517,9 @@ function EditOrgDialog(props: {
   const [priceGroup, setPriceGroup] = useState('')
   const [status, setStatus] = useState<OrgStatus>('active')
   const [remark, setRemark] = useState('')
-  const [wholesaleRatios, setWholesaleRatios] = useState<Record<string, number>>(
-    {}
-  )
+  const [wholesaleRatios, setWholesaleRatios] = useState<
+    Record<string, number>
+  >({})
   const [wholesaleValid, setWholesaleValid] = useState(true)
   const [allowedModels, setAllowedModels] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
@@ -571,7 +581,9 @@ function EditOrgDialog(props: {
             />
             {isReseller && (
               <span className='text-muted-foreground text-xs'>
-                {t('Fixed to "default"; distributor pricing is driven by the wholesale ratio.')}
+                {t(
+                  'Fixed to "default"; distributor pricing is driven by the wholesale ratio.'
+                )}
               </span>
             )}
           </Field>
@@ -615,9 +627,7 @@ function EditOrgDialog(props: {
                   )}
                 </span>
               </Field>
-              <Field
-                label={t('Offerable models (one per line; blank = all)')}
-              >
+              <Field label={t('Offerable models (one per line; blank = all)')}>
                 <Textarea
                   value={allowedModels}
                   onChange={(e) => setAllowedModels(e.target.value)}
@@ -775,7 +785,10 @@ function CreditOrgDialog(props: {
 
 const LEDGER_PAGE_SIZE = 20
 
-function LedgerDialog(props: { org: Organization | null; onClose: () => void }) {
+function LedgerDialog(props: {
+  org: Organization | null
+  onClose: () => void
+}) {
   const { t } = useTranslation()
   const org = props.org
   const [page, setPage] = useState(1)
@@ -842,7 +855,7 @@ function LedgerDialog(props: { org: Organization | null; onClose: () => void }) 
                       </span>
                     </Td>
                     <Td className='text-muted-foreground'>{e.remark || '-'}</Td>
-                    <Td className='text-muted-foreground whitespace-nowrap text-xs'>
+                    <Td className='text-muted-foreground text-xs whitespace-nowrap'>
                       {fmtTime(e.created_time)}
                     </Td>
                   </tr>
@@ -1226,7 +1239,7 @@ function SsoDomainsDialog(props: {
                   <tr key={d.id} className='hover:bg-muted/30'>
                     <Td className='font-mono text-[13px]'>{d.domain}</Td>
                     <Td className='font-mono text-[13px]'>{d.provider}</Td>
-                    <Td className='text-muted-foreground whitespace-nowrap text-xs'>
+                    <Td className='text-muted-foreground text-xs whitespace-nowrap'>
                       {fmtTime(d.created_time)}
                     </Td>
                     <Td className='text-right'>

@@ -226,6 +226,35 @@ func Distribute() func(c *gin.Context) {
 						}
 					}
 
+					// Fork: reseller upstream routing. A reseller customer's request is
+					// routed only through the channels the platform admin bound to its
+					// reseller, via the reseller's private group (reseller-<id>), with
+					// per-model priority and sticky affinity. Mirrors transparent BYOK:
+					// switch BOTH UsingGroup (channel selection, and the group the
+					// channel-affinity check below is constrained to) and TokenGroup
+					// (retry/failover stays inside the reseller group). Billing does NOT
+					// follow — the origin group is stashed and relay/helper/price.go
+					// bills with it, so the customer pays exactly what it paid before.
+					// Additive and default-off: fires only for reseller customers whose
+					// reseller has bound channels, only while the global switch is on,
+					// and never for the "auto" group (whose billing group is resolved
+					// later from the auto selection).
+					if channel == nil && setting.ResellerRoutingEnabled && usingGroup != "auto" {
+						if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); perr == nil && payer != nil && payer.ResellerOrgId > 0 {
+							if cfg := model.GetResellerRoutingCached(payer.ResellerOrgId); cfg != nil && len(cfg.ChannelIdList) > 0 {
+								resellerGroup := model.ResellerRoutingGroup(payer.ResellerOrgId)
+								common.SetContextKey(c, constant.ContextKeyResellerOriginGroup, usingGroup)
+								usingGroup = resellerGroup
+								common.SetContextKey(c, constant.ContextKeyUsingGroup, resellerGroup)
+								common.SetContextKey(c, constant.ContextKeyTokenGroup, resellerGroup)
+								if !cfg.AffinityOff {
+									common.SetContextKey(c, constant.ContextKeyResellerAffinityHash,
+										service.ResellerAffinityHash(payer.ResellerOrgId, payer.OrgId, modelRequest.Model))
+								}
+							}
+						}
+					}
+
 					if channel == nil {
 						if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 							affinityUsable := false
@@ -592,7 +621,20 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 
-	key, index, newAPIError := channel.GetNextEnabledKey()
+	// Fork: a reseller-routed request with sticky affinity pins the key inside a
+	// multi-key channel too (provider prompt caches live per upstream account),
+	// instead of the channel's round-robin/random rotation. Everything else
+	// keeps the existing rotation.
+	var (
+		key         string
+		index       int
+		newAPIError = (*types.NewAPIError)(nil)
+	)
+	if affinity, ok := common.GetContextKeyType[uint64](c, constant.ContextKeyResellerAffinityHash); ok {
+		key, index, newAPIError = channel.GetAffinityKey(affinity)
+	} else {
+		key, index, newAPIError = channel.GetNextEnabledKey()
+	}
 	if newAPIError != nil {
 		return newAPIError
 	}

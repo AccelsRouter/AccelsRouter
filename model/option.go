@@ -170,6 +170,7 @@ func InitOptionMap() {
 	common.OptionMap["ModelRequestRateLimitEnabled"] = strconv.FormatBool(setting.ModelRequestRateLimitEnabled)
 	common.OptionMap["UserDailyTokenLimitEnabled"] = strconv.FormatBool(setting.UserDailyTokenLimitEnabled)
 	common.OptionMap["ChannelDailyTokenLimitEnabled"] = strconv.FormatBool(setting.ChannelDailyTokenLimitEnabled)
+	common.OptionMap["ResellerRoutingEnabled"] = strconv.FormatBool(setting.ResellerRoutingEnabled)
 	common.OptionMap["CheckSensitiveOnPromptEnabled"] = strconv.FormatBool(setting.CheckSensitiveOnPromptEnabled)
 	common.OptionMap["StopOnSensitiveEnabled"] = strconv.FormatBool(setting.StopOnSensitiveEnabled)
 	common.OptionMap["SensitiveWords"] = setting.SensitiveWordsToString()
@@ -382,6 +383,8 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.UserDailyTokenLimitEnabled = boolValue
 		case "ChannelDailyTokenLimitEnabled":
 			setting.ChannelDailyTokenLimitEnabled = boolValue
+		case "ResellerRoutingEnabled":
+			setting.ResellerRoutingEnabled = boolValue
 		case "StopOnSensitiveEnabled":
 			setting.StopOnSensitiveEnabled = boolValue
 		case "SMTPSSLEnabled":

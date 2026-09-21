@@ -20,7 +20,19 @@ const (
 	// channels on failover. It is a one-shot signal consumed by the relay retry
 	// loop, which switches routing+billing from the BYOK private group to this
 	// group so the fallback is billed at the platform rate.
-	ContextKeyByokFallbackGroup      ContextKey = "byok_fallback_group"
+	ContextKeyByokFallbackGroup ContextKey = "byok_fallback_group"
+	// ContextKeyResellerOriginGroup carries the customer's ORIGINAL group when a
+	// reseller-customer request is re-routed through its reseller's private
+	// routing group (reseller-<id>). Billing keeps using this group (see
+	// relay/helper/price.go), and it is the pool a fallback-enabled reseller
+	// drops back to once its bound channels are exhausted.
+	ContextKeyResellerOriginGroup ContextKey = "reseller_origin_group"
+	// ContextKeyResellerAffinityHash carries the sticky-routing hash for a
+	// reseller-customer request (reseller + customer org + model). Consumed by
+	// channel selection and by multi-key selection so the same customer+model
+	// keeps landing on the same upstream and the same upstream key, preserving
+	// provider-side prompt caches.
+	ContextKeyResellerAffinityHash   ContextKey = "reseller_affinity_hash"
 	ContextKeyTokenSpecificChannelId ContextKey = "specific_channel_id"
 	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
 	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"

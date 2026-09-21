@@ -75,8 +75,18 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		relayInfo.UsingGroup = autoGroup.(string)
 	}
 
+	// Fork: reseller upstream routing re-routes a reseller customer through its
+	// reseller's private group (reseller-<id>) for channel selection only. The
+	// customer must keep paying at the group it was actually on, which the
+	// distributor stashed; bill with that. No reseller group therefore needs a
+	// group-ratio entry, and the global ratio table stays untouched.
+	billingGroup := relayInfo.UsingGroup
+	if origin := common.GetContextKeyString(ctx, constant.ContextKeyResellerOriginGroup); origin != "" {
+		billingGroup = origin
+	}
+
 	// check user group special ratio
-	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
+	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, billingGroup)
 	if ok {
 		// user group special ratio
 		groupRatioInfo.GroupSpecialRatio = userGroupRatio
@@ -84,7 +94,7 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		groupRatioInfo.HasSpecialRatio = true
 	} else {
 		// normal group ratio
-		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
+		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(billingGroup)
 	}
 
 	return groupRatioInfo

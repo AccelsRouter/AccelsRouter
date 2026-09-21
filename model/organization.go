@@ -86,9 +86,9 @@ type Organization struct {
 	BrandName   string `json:"brand_name" gorm:"type:varchar(128)"`
 	BrandLogo   string `json:"brand_logo" gorm:"type:text"`
 	OwnerUserId int    `json:"owner_user_id" gorm:"index"`
-	Remark          string `json:"remark" gorm:"type:varchar(255)"`
-	CreatedTime     int64  `json:"created_time"`
-	UpdatedTime     int64  `json:"updated_time"`
+	Remark      string `json:"remark" gorm:"type:varchar(255)"`
+	CreatedTime int64  `json:"created_time"`
+	UpdatedTime int64  `json:"updated_time"`
 	// IsCustomer is a computed, non-persisted flag: true when this org is a
 	// reseller-provisioned customer (in ResellerCustomerLink). Lets the admin UI
 	// separate enterprise direct clients from reseller customers.
@@ -335,6 +335,10 @@ type OrgPayerInfo struct {
 	// everything it may offer, regardless of the customer's own (possibly empty)
 	// list. Populated only for reseller customers.
 	ResellerAllowedModels map[string]bool
+	// ResellerOrgId is the owning reseller (0 = not a reseller customer). Lets
+	// the distributor resolve reseller upstream routing from this cached record
+	// without another lookup on the hot path.
+	ResellerOrgId int
 }
 
 type orgPayerCacheEntry struct {
@@ -395,6 +399,7 @@ func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
 		// A reseller customer is also capped by its reseller's offerable models:
 		// carry the reseller's allow-list so the distributor enforces both.
 		if resellerId, ok := ResellerOrgIdForCustomer(row.OrgId); ok && resellerId > 0 {
+			info.ResellerOrgId = resellerId
 			if reseller, rErr := GetOrganizationById(resellerId); rErr == nil && reseller != nil {
 				info.ResellerAllowedModels = parseAllowedModels(reseller.AllowedModels)
 			}

@@ -187,6 +187,11 @@ func SetApiRouter(router *gin.Engine) {
 			orgAdminRoute.GET("/:id/logs", controller.AdminListOrgLogs)
 			orgAdminRoute.GET("/:id/logs/export", controller.AdminExportOrgLogs)
 			orgAdminRoute.GET("/:id/customers", controller.AdminListOrgCustomers)
+			// Reseller upstream routing: admin-only, and upstream channels are never
+			// exposed to the reseller itself.
+			orgAdminRoute.GET("/:id/routing", controller.AdminGetResellerRouting)
+			orgAdminRoute.PUT("/:id/routing", controller.AdminSetResellerRouting)
+			orgAdminRoute.GET("/:id/routing/channels", controller.AdminListResellerRoutingChannels)
 			orgAdminRoute.POST("/accounts", controller.AdminAttachOrgAccount)
 			orgAdminRoute.DELETE("/:id/accounts/:user_id", controller.AdminDetachOrgAccount)
 			// Reseller-admin management (per-admin offboarding / containment).

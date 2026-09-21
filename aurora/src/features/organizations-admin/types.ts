@@ -41,6 +41,33 @@ export type Organization = {
   updated_time: number
 }
 
+// Reseller upstream routing (admin-only; the reseller never sees channels).
+export type ResellerRoutingRule = {
+  model: string // exact model name, or a prefix for a model family
+  channel_id: number
+  priority: number
+  weight: number
+}
+
+export type ResellerRouting = {
+  reseller_org_id: number
+  channel_ids: number[]
+  rules: ResellerRoutingRule[]
+  fallback: boolean
+  affinity_off: boolean
+  updated_time?: number
+  effective_models: string[]
+  uncovered_models: string[]
+}
+
+export type ResellerRoutingChannel = {
+  id: number
+  name: string
+  type: number
+  status: number
+  models: string[]
+}
+
 export type OrgLedgerEntry = {
   id: number
   from_org_id: number

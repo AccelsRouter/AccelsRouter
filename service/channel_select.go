@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 )
 
@@ -81,6 +82,16 @@ func (p *RetryParam) ResetRetryNextTry() {
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+	// Fork: reseller upstream routing. The distributor switches a reseller
+	// customer's TokenGroup to reseller-<id> only while the global switch is on
+	// and the reseller has bound channels; such requests (including their
+	// retries, which reuse TokenGroup) are selected by the reseller selector.
+	// Every other request takes the unchanged path below, and with the switch
+	// off no request ever carries a reseller group.
+	if resellerId, ok := model.ParseResellerRoutingGroup(param.TokenGroup); ok && setting.ResellerRoutingEnabled {
+		return SelectResellerChannel(param, resellerId)
+	}
+
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup
