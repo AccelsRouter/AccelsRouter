@@ -30,6 +30,7 @@
     "Completion Tokens": "輸出 Token",
     "No data.": "暫無資料。",
     "No usage data.": "暫無用量資料。",
+    "No data in the selected time range. Try a wider range.": "所選時間範圍內無資料，可嘗試擴大時間範圍。",
     "By Workspace": "依工作區",
     "Workspace": "工作區",
     "By Model": "依模型",

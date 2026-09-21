@@ -4,7 +4,7 @@ reseller's economics per dimension: standard (list) price, the reseller's cost
 (platform wholesale), what customers pay (retail), and the resulting profit —
 plus the platform's discount to the reseller. Dimensions: by model, by customer.
 */
-import { Loader2 } from 'lucide-react'
+import { Inbox, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { MONEY_OPTS, Td, Th } from '@/features/organization-console/shared'
@@ -120,6 +120,19 @@ export function ResellerUsageReport(props: {
       <p className='text-muted-foreground py-8 text-center text-sm'>
         {t('No usage data.')}
       </p>
+    )
+  }
+  // An empty range is a normal outcome (e.g. the default "today" view before
+  // any calls), not an error: say so plainly instead of rendering zero-value
+  // cards plus two "No data." tables, which reads like something is broken.
+  if (!report.total_requests && !report.by_model?.length) {
+    return (
+      <div className='border-border/60 bg-muted/20 flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-10 text-center'>
+        <Inbox className='text-muted-foreground h-6 w-6' />
+        <p className='text-muted-foreground text-sm'>
+          {t('No data in the selected time range. Try a wider range.')}
+        </p>
+      </div>
     )
   }
   const standard = report.total_quota

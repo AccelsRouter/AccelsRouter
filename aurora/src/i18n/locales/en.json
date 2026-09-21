@@ -30,6 +30,7 @@
     "Completion Tokens": "Completion Tokens",
     "No data.": "No data.",
     "No usage data.": "No usage data.",
+    "No data in the selected time range. Try a wider range.": "No data in the selected time range. Try a wider range.",
     "By Workspace": "By Workspace",
     "Workspace": "Workspace",
     "By Model": "By Model",

@@ -1260,7 +1260,7 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
   const { t } = useTranslation()
   const org = props.org
   const [range, setRange] = useState<{ start?: Date; end?: Date }>(() => ({
-    start: dayjs().subtract(30, 'day').startOf('day').toDate(),
+    start: dayjs().startOf('day').toDate(),
     end: dayjs().endOf('day').toDate(),
   }))
 

@@ -21,7 +21,7 @@ Presentational usage report shared by the org console usage tab and the admin
 per-org usage view. Renders the four totals as summary cards and three usage
 breakdown tables (by workspace, by model, by member).
 */
-import { Loader2 } from 'lucide-react'
+import { Inbox, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { formatQuotaWithCurrency } from '@/lib/currency'
@@ -131,6 +131,20 @@ export function UsageReport(props: {
       <p className='text-muted-foreground py-8 text-center text-sm'>
         {t('No usage data.')}
       </p>
+    )
+  }
+
+  // An empty range is a normal outcome (e.g. the default "today" view before
+  // any calls), not an error: say so plainly instead of rendering zero-value
+  // cards plus three "No data." tables, which reads like something is broken.
+  if (!report.total_requests && !report.by_model?.length) {
+    return (
+      <div className='border-border/60 bg-muted/20 flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-10 text-center'>
+        <Inbox className='text-muted-foreground h-6 w-6' />
+        <p className='text-muted-foreground text-sm'>
+          {t('No data in the selected time range. Try a wider range.')}
+        </p>
+      </div>
     )
   }
 

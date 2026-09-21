@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 /*
 Usage tab of the organization console. Shows aggregated usage totals and
 breakdowns (by workspace, model, member) over a selectable date range,
-defaulting to the last 30 days, plus a CSV export of the same range.
+defaulting to today, plus a CSV export of the same range.
 */
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
@@ -41,7 +41,7 @@ function toUnix(date?: Date): number | undefined {
 export function UsageTab() {
   const { t } = useTranslation()
   const [range, setRange] = useState<{ start?: Date; end?: Date }>(() => ({
-    start: dayjs().subtract(30, 'day').startOf('day').toDate(),
+    start: dayjs().startOf('day').toDate(),
     end: dayjs().endOf('day').toDate(),
   }))
 
