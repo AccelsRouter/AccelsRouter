@@ -28,31 +28,28 @@ status) instead. The "My Organization" nav entry is shown to every non-reseller
 user so this page is reachable.
 */
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
+import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-
-import { SectionPageLayout } from '@/components/layout'
+import { formatQuotaWithCurrency } from '@/lib/currency'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { formatQuotaWithCurrency } from '@/lib/currency'
-
+import { SectionPageLayout } from '@/components/layout'
+import { OrgKeysPanel } from '@/features/org-keys'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
-
 import { AccountsTab } from './accounts-tab'
 import { exportMyOrgLogs, getOrgContext, listOrgLogs } from './api'
-import { CallRecords } from './call-records'
 import { getOrgSelf } from './api'
-import { AuditTab } from './audit-tab'
 import { ApplyPanel } from './apply-panel'
+import { AuditTab } from './audit-tab'
 import { ByokTab } from './byok-tab'
+import { CallRecords } from './call-records'
 import { InvitationsTab } from './invitations-tab'
 import { LedgerTab } from './ledger-tab'
 import { SsoTab } from './sso-tab'
 import { UsageTab } from './usage-tab'
 import { WorkspacesTab } from './workspaces-tab'
-import { OrgKeysPanel } from '@/features/org-keys'
 
 function recToUnix(date?: Date): number | undefined {
   return date ? Math.floor(date.getTime() / 1000) : undefined
@@ -104,9 +101,7 @@ export function OrganizationConsole() {
                 <div className='flex items-center gap-2'>
                   <span className='text-base font-semibold'>{self.name}</span>
                   <Badge
-                    variant={
-                      self.type === 'reseller' ? 'default' : 'secondary'
-                    }
+                    variant={self.type === 'reseller' ? 'default' : 'secondary'}
                   >
                     {self.type === 'reseller'
                       ? t('Reseller')
@@ -150,7 +145,7 @@ export function OrganizationConsole() {
                     {t('Workspaces')}
                   </TabsTrigger>
                 )}
-                {!isResellerCustomer && (
+                {!isResellerCustomer && self.type !== 'reseller' && (
                   <TabsTrigger value='byok'>{t('BYOK')}</TabsTrigger>
                 )}
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>

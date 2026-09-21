@@ -28,7 +28,7 @@ func resellerOrgFromPath(c *gin.Context) *model.Organization {
 		common.ApiErrorMsg(c, "organization not found")
 		return nil
 	}
-	if org.Type != "reseller" {
+	if org.Type != model.OrgTypeReseller {
 		common.ApiErrorMsg(c, "upstream routing applies to reseller organizations only")
 		return nil
 	}

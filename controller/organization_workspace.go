@@ -307,6 +307,13 @@ func CreateMyByokChannel(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// Reseller organizations and reseller-provisioned customer organizations
+	// must stay on platform-controlled upstreams (see reseller upstream
+	// routing): BYOK is not available to them.
+	if org.Type == model.OrgTypeReseller || model.IsCustomerOrg(org.Id) {
+		common.ApiErrorMsg(c, "BYOK is not available to reseller organizations or their customers")
+		return
+	}
 	var req byokRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)

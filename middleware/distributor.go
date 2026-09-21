@@ -189,7 +189,18 @@ func Distribute() func(c *gin.Context) {
 					// to the user's private group so pricing uses the BYOK fee
 					// (default 0). Additive: only fires for users who own a matching
 					// BYOK channel, and only while the feature is enabled.
-					if channel == nil && setting.PersonalByokEnabled {
+					// Fork: reseller parties (a reseller org's members and its customers)
+					// may not use BYOK — their traffic must stay on platform-controlled
+					// upstreams (see reseller upstream routing). The configuration APIs
+					// already refuse them; this keeps any pre-existing BYOK channel from
+					// being adopted at request time. Cheap: reuses the TTL-cached payer
+					// record, no extra lookup on the hot path.
+					byokAllowed := true
+					if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); perr == nil && payer != nil &&
+						(payer.OrgType == model.OrgTypeReseller || payer.ResellerOrgId > 0) {
+						byokAllowed = false
+					}
+					if channel == nil && setting.PersonalByokEnabled && byokAllowed {
 						if byokId, ok := model.GetUserByokChannelForModel(c.GetInt("id"), modelRequest.Model); ok {
 							byokGroup := model.UserPrivateGroup(c.GetInt("id"))
 							byokCh, bErr := model.CacheGetChannel(byokId)

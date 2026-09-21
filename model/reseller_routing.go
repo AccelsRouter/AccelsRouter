@@ -256,7 +256,7 @@ func SaveResellerRouting(r *ResellerRouting) error {
 	if err != nil || org == nil {
 		return errors.New("reseller organization not found")
 	}
-	if org.Type != "reseller" {
+	if org.Type != OrgTypeReseller {
 		return errors.New("upstream routing can only be configured for a reseller organization")
 	}
 	if len(r.ChannelIdList) > 0 {

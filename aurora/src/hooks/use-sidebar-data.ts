@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   Box,
@@ -38,18 +40,14 @@ import {
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-
-import { useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-
+import { useAuthStore } from '@/stores/auth-store'
+import { ROLE } from '@/lib/roles'
+import { useStatus } from '@/hooks/use-status'
 import { type NavItem, type SidebarData } from '@/components/layout/types'
 import {
   getOrgContext,
   type OrgContext,
 } from '@/features/organization-console/api'
-import { useStatus } from '@/hooks/use-status'
-import { ROLE } from '@/lib/roles'
-import { useAuthStore } from '@/stores/auth-store'
 
 // The org-context (member/customer type) determines which sidebar a user sees.
 // On a hard refresh the query cache is empty, so without a hint the default
@@ -133,7 +131,11 @@ export function useSidebarData(): SidebarData {
           id: 'general',
           title: t('General'),
           items: [
-            { title: t('Overview'), url: '/dashboard/overview', icon: Activity },
+            {
+              title: t('Overview'),
+              url: '/dashboard/overview',
+              icon: Activity,
+            },
             {
               title: t('Dashboard'),
               url: '/dashboard/models',
@@ -149,7 +151,11 @@ export function useSidebarData(): SidebarData {
           title: t('Personal'),
           items: [
             { title: t('Wallet'), url: '/wallet', icon: Wallet },
-            { title: t('My Organization'), url: '/organization', icon: Building2 },
+            {
+              title: t('My Organization'),
+              url: '/organization',
+              icon: Building2,
+            },
             { title: t('Profile'), url: '/profile', icon: User },
           ],
         },
@@ -187,8 +193,9 @@ export function useSidebarData(): SidebarData {
     },
     ...orgNavItems,
     // Personal BYOK is an opt-in platform feature; only surface it when the
-    // backend status flag enables it.
-    ...(status?.personal_byok_enabled
+    // backend status flag enables it — and never to reseller parties, who must
+    // stay on platform-controlled upstreams (the backend refuses them as well).
+    ...(status?.personal_byok_enabled && !isResellerAdmin && !isResellerCustomer
       ? [
           {
             title: t('Personal BYOK'),

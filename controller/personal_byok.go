@@ -28,7 +28,18 @@ func personalByokUser(c *gin.Context) (int, bool) {
 		common.ApiErrorMsg(c, "个人 BYOK 功能未开启")
 		return 0, false
 	}
-	return c.GetInt("id"), true
+	userId := c.GetInt("id")
+	// Reseller parties (reseller admins/members and reseller customers) must
+	// stay on platform-controlled upstreams (see reseller upstream routing):
+	// BYOK is not available to them. Fail closed on lookup errors.
+	if isParty, err := model.IsResellerParty(userId); err != nil {
+		common.ApiError(c, err)
+		return 0, false
+	} else if isParty {
+		common.ApiErrorMsg(c, "BYOK is not available to reseller organizations or their customers")
+		return 0, false
+	}
+	return userId, true
 }
 
 type personalByokRequest struct {
