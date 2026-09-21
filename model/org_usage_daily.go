@@ -244,6 +244,162 @@ func GetResellerUsageFromDaily(resellerOrgId int, from, to int64) (*OrgUsageRepo
 	return report, nil
 }
 
+// BackfillOrgUsageDaily seeds the rollup from historical consume logs so the
+// org/reseller usage reports show the same history the raw call records already
+// have (call records read the logs table directly; the rollup only gains rows
+// from the settle path, which started when this feature shipped). It maps a log
+// to an org via its WorkspaceToken binding (org_id -> token_id), the same link
+// the call-record queries use.
+//
+// The going-forward settle path records exact call-time actuals; this one-time
+// seed instead uses the CURRENT retail/wholesale ratios for charged/cost
+// (historical wholesale was never stored per call). That approximation is
+// acceptable only while there are no production customers — it covers
+// pre-rollup test traffic. To stay idempotent and never double-count or clobber
+// the accurate rows the settle path already wrote, it backfills only logs from
+// days STRICTLY EARLIER than the earliest existing rollup row (all days when the
+// table is empty). Re-running is then a no-op.
+func BackfillOrgUsageDaily() error {
+	var minRow struct{ Min *int64 }
+	if err := DB.Model(&OrgUsageDaily{}).
+		Select("MIN(day_bucket) as min").Scan(&minRow).Error; err != nil {
+		return err
+	}
+	cutoff := int64(0) // 0 = no existing rows, backfill every log
+	if minRow.Min != nil {
+		cutoff = *minRow.Min
+	}
+
+	var bindings []WorkspaceToken
+	if err := DB.Find(&bindings).Error; err != nil {
+		return err
+	}
+	if len(bindings) == 0 {
+		return nil
+	}
+	type owner struct{ orgId, workspaceId int }
+	tokenOwner := make(map[int]owner, len(bindings))
+	tokenIds := make([]int, 0, len(bindings))
+	for _, b := range bindings {
+		tokenOwner[b.TokenId] = owner{orgId: b.OrgId, workspaceId: b.WorkspaceId}
+		tokenIds = append(tokenIds, b.TokenId)
+	}
+
+	var links []ResellerCustomerLink
+	if err := DB.Find(&links).Error; err != nil {
+		return err
+	}
+	resellerOf := make(map[int]int, len(links))
+	for _, l := range links {
+		resellerOf[l.CustomerOrgId] = l.ResellerOrgId
+	}
+
+	// Lazily-resolved per-org ratio maps (a handful of orgs, memoized).
+	retailByOrg := map[int]map[string]float64{}
+	wholesaleByReseller := map[int]map[string]float64{}
+	retailFor := func(orgId int) map[string]float64 {
+		if m, ok := retailByOrg[orgId]; ok {
+			return m
+		}
+		var m map[string]float64
+		if org, err := GetOrganizationById(orgId); err == nil && org != nil {
+			m = ParseRetailDiscounts(org.RetailDiscounts)
+		}
+		retailByOrg[orgId] = m
+		return m
+	}
+	wholesaleFor := func(resellerId int) map[string]float64 {
+		if m, ok := wholesaleByReseller[resellerId]; ok {
+			return m
+		}
+		var m map[string]float64
+		if org, err := GetOrganizationById(resellerId); err == nil && org != nil {
+			m = ParseRetailDiscounts(org.WholesaleRatios)
+		}
+		wholesaleByReseller[resellerId] = m
+		return m
+	}
+
+	logQuery := LOG_DB.Model(&Log{}).
+		Where("token_id IN ?", tokenIds).
+		Where("type = ?", LogTypeConsume)
+	if cutoff > 0 {
+		logQuery = logQuery.Where("created_at < ?", cutoff)
+	}
+	var logs []Log
+	if err := logQuery.Find(&logs).Error; err != nil {
+		return err
+	}
+	if len(logs) == 0 {
+		return nil
+	}
+
+	type aggKey struct {
+		day         int64
+		orgId       int
+		workspaceId int
+		model       string
+		userId      int
+	}
+	agg := map[aggKey]*OrgUsageDaily{}
+	for i := range logs {
+		l := &logs[i]
+		own, ok := tokenOwner[l.TokenId]
+		if !ok || own.orgId <= 0 {
+			continue
+		}
+		modelName := l.ModelName
+		if modelName == "" {
+			modelName = "unknown"
+		}
+		day := dayBucketOf(l.CreatedAt)
+		resellerId := resellerOf[own.orgId]
+		std := int64(l.Quota)
+		charged := std
+		if r := RetailDiscountFor(modelName, retailFor(own.orgId)); r > 0 && r < 1 {
+			charged = int64(common.QuotaRound(float64(l.Quota) * r))
+		}
+		var cost int64
+		if resellerId > 0 {
+			cost = std
+			if r := WholesaleRatioFor(modelName, wholesaleFor(resellerId)); r > 0 && r < 1 {
+				cost = int64(common.QuotaRound(float64(l.Quota) * r))
+			}
+		}
+		k := aggKey{day: day, orgId: own.orgId, workspaceId: own.workspaceId, model: modelName, userId: l.UserId}
+		row := agg[k]
+		if row == nil {
+			row = &OrgUsageDaily{
+				DayBucket:     day,
+				OrgId:         own.orgId,
+				WorkspaceId:   own.workspaceId,
+				ModelName:     modelName,
+				UserId:        l.UserId,
+				ResellerOrgId: resellerId,
+			}
+			agg[k] = row
+		}
+		row.StandardQuota += std
+		row.ChargedQuota += charged
+		row.CostQuota += cost
+		row.Requests++
+		row.PromptTokens += int64(l.PromptTokens)
+		row.CompletionTokens += int64(l.CompletionTokens)
+	}
+	if len(agg) == 0 {
+		return nil
+	}
+	rows := make([]*OrgUsageDaily, 0, len(agg))
+	for _, r := range agg {
+		rows = append(rows, r)
+	}
+	if err := DB.CreateInBatches(rows, 200).Error; err != nil {
+		return err
+	}
+	common.SysLog("org_usage_daily backfill complete: " + strconv.Itoa(len(rows)) + " rows")
+	return nil
+}
+
 // --- name resolution helpers (small, bounded lookups) ---
 
 func workspaceNames(ids map[int]struct{}) map[int]string {
