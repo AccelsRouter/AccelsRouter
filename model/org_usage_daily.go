@@ -6,9 +6,13 @@
 //   - standard_quota : the platform standard-price quota
 //   - charged_quota  : what the customer actually paid (retail, ratio at call time)
 //   - cost_quota     : what it cost the reseller (wholesale, ratio at call time)
-// Day-bucketed and keyed by org/workspace/model/user so every report dimension
+// Hour-bucketed (the same grain as new-api's quota_data.created_at, see
+// usedata.go) and keyed by org/workspace/model/user so every report dimension
 // (by model, by member, by workspace, by customer, by reseller) aggregates fast
-// with plain sums, and changing a ratio only affects FUTURE calls. Lives in the
+// with plain sums, and changing a ratio only affects FUTURE calls. The hour
+// grain matters: a UTC *day* bucket made a client's local "today" (e.g. GMT+8)
+// also pull in the whole previous UTC day; an hour bucket lines up exactly with
+// any whole-hour-offset timezone's day. Lives in the
 // main DB (org tables' home); new-api's own logs/quota_data are untouched.
 package model
 
@@ -22,6 +26,9 @@ import (
 
 type OrgUsageDaily struct {
 	Id            int    `json:"id" gorm:"primarykey"`
+	// DayBucket holds the bucket START at hour grain (see usageBucketOf). The
+	// column keeps its original day_bucket name for schema stability across
+	// SQLite/MySQL/PostgreSQL; renaming would need a hand-written migration.
 	DayBucket     int64  `json:"day_bucket" gorm:"uniqueIndex:idx_oud_key,priority:1;not null"`
 	OrgId         int    `json:"org_id" gorm:"uniqueIndex:idx_oud_key,priority:2;index;not null"`
 	WorkspaceId   int    `json:"workspace_id" gorm:"uniqueIndex:idx_oud_key,priority:3;not null"`
@@ -41,12 +48,14 @@ type OrgUsageDaily struct {
 
 func (OrgUsageDaily) TableName() string { return "org_usage_daily" }
 
-// dayBucketOf floors a unix-seconds timestamp to the start of its UTC day.
-func dayBucketOf(ts int64) int64 {
+// usageBucketOf floors a unix-seconds timestamp to the start of its hour — the
+// same grain new-api's quota_data uses (usedata.go), so a whole-hour-offset
+// timezone's local day maps onto exactly 24 buckets with no spill-over.
+func usageBucketOf(ts int64) int64 {
 	if ts <= 0 {
 		ts = common.GetTimestamp()
 	}
-	return ts - (ts % 86400)
+	return ts - (ts % 3600)
 }
 
 // RecordOrgUsageDaily upserts (increments) one day/org/workspace/model/user row
@@ -59,7 +68,7 @@ func RecordOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, use
 	if modelName == "" {
 		modelName = "unknown"
 	}
-	day := dayBucketOf(createdAt)
+	day := usageBucketOf(createdAt)
 
 	increment := func() (int64, error) {
 		res := DB.Model(&OrgUsageDaily{}).
@@ -126,7 +135,7 @@ type oudRow struct {
 func fetchOrgUsageDaily(where string, args []interface{}, from, to int64) ([]oudRow, error) {
 	q := DB.Model(&OrgUsageDaily{}).Where(where, args...)
 	if from > 0 {
-		q = q.Where("day_bucket >= ?", dayBucketOf(from))
+		q = q.Where("day_bucket >= ?", usageBucketOf(from))
 	}
 	if to > 0 {
 		q = q.Where("day_bucket <= ?", to)
@@ -352,7 +361,7 @@ func BackfillOrgUsageDaily() error {
 		if modelName == "" {
 			modelName = "unknown"
 		}
-		day := dayBucketOf(l.CreatedAt)
+		day := usageBucketOf(l.CreatedAt)
 		resellerId := resellerOf[own.orgId]
 		std := int64(l.Quota)
 		charged := std
