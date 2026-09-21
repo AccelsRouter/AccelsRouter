@@ -69,7 +69,23 @@ export function CompactDateTimeRangePicker({
     return `${startText} ~ ${endText}`
   }, [end, start, t])
 
-  const handleOpenChange = (nextOpen: boolean) => {
+  const handleOpenChange = (
+    nextOpen: boolean,
+    eventDetails?: { reason?: string }
+  ) => {
+    // A native <input type="datetime-local"> opens the browser's own calendar
+    // dropdown, which lives outside the popover DOM. Base UI reads a click on it
+    // (or focus moving into it) as an outside-press / focus-out and would close
+    // the popover before the user can pick a date and confirm. Ignore those two
+    // close reasons; the popover still closes via a preset, Confirm, Escape, or
+    // clicking the trigger again.
+    if (
+      !nextOpen &&
+      (eventDetails?.reason === 'outside-press' ||
+        eventDetails?.reason === 'focus-out')
+    ) {
+      return
+    }
     if (nextOpen) {
       setDraftStart(toInputValue(start))
       setDraftEnd(toInputValue(end))
