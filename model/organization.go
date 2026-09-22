@@ -326,13 +326,20 @@ func SetOrgAllowedModels(orgId int, stored string) error {
 	if err := DB.Model(&Organization{}).Where("id = ?", orgId).Update("AllowedModels", stored).Error; err != nil {
 		return err
 	}
+	InvalidateOrgPayerCacheForOrg(orgId)
+	return nil
+}
+
+// InvalidateOrgPayerCacheForOrg drops the cached payer record of every account
+// in an org, so a change to the org's allow-list (which the distributor enforces
+// from that cache) converges within one request instead of the TTL.
+func InvalidateOrgPayerCacheForOrg(orgId int) {
 	var userIds []int
 	if err := DB.Model(&OrgAccount{}).Where("org_id = ?", orgId).Pluck("user_id", &userIds).Error; err == nil {
 		for _, uid := range userIds {
 			InvalidateOrgPayerCache(uid)
 		}
 	}
-	return nil
 }
 
 // OrgPayerInfo is everything the billing path needs to charge an organization

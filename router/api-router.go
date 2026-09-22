@@ -291,6 +291,8 @@ func SetApiRouter(router *gin.Engine) {
 			// Per-customer retail discount pricing (reporting overlay).
 			resellerRoute.GET("/customers/:id/pricing", controller.GetMyCustomerPricing)
 			resellerRoute.PUT("/customers/:id/pricing", controller.SetMyCustomerPricing)
+			// Models + pricing saved as one validated, atomic offer.
+			resellerRoute.PUT("/customers/:id/offer", controller.SetMyCustomerOffer)
 		}
 
 		personalByokRoute := apiRouter.Group("/personal_byok")

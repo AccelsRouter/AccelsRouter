@@ -286,28 +286,19 @@ export async function getCustomerPricing(
   return unwrap(res, 'Failed to load pricing').discounts ?? {}
 }
 
-export async function setCustomerPricing(
+// Models + retail discounts saved as ONE validated, atomic offer: the discount
+// floors are judged against the models being assigned, and there is no
+// half-saved state where the models changed but the pricing was rejected.
+export async function setCustomerOffer(
   customerId: number,
-  discounts: Record<string, number>
+  offer: { models: string[]; discounts: Record<string, number> }
 ): Promise<void> {
   const res = await api.put<ApiResp<unknown>>(
-    `/api/reseller/customers/${customerId}/pricing`,
-    { discounts }
+    `/api/reseller/customers/${customerId}/offer`,
+    offer
   )
   if (!res.data?.success)
-    throw new Error(res.data?.message || 'Failed to save pricing')
-}
-
-export async function setCustomerModels(
-  customerId: number,
-  models: string[]
-): Promise<void> {
-  const res = await api.put<ApiResp<unknown>>(
-    `/api/reseller/customers/${customerId}/models`,
-    { models }
-  )
-  if (!res.data?.success)
-    throw new Error(res.data?.message || 'Failed to save models')
+    throw new Error(res.data?.message || 'Failed to save models and pricing')
 }
 
 export async function revokeCustomerInvitation(

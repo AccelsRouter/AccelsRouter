@@ -219,34 +219,11 @@ func SetMyCustomerPricing(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	// A customer's retail ratio for a series/model token must be at least the
-	// reseller's own wholesale for every offerable model that token covers
-	// (exact name or prefix — the request-time rule), i.e. at least the HIGHEST
-	// wholesale among them: the reseller must not resell any covered model below
-	// its cost (equal = zero margin is allowed). A series like "claude" is thus
-	// judged against the claude-* models the reseller can actually sell, not
-	// against a literal "claude" wholesale entry. Ratios have at most two
-	// decimals and stay within (0,1].
-	wholesale := model.ParseRetailDiscounts(reseller.WholesaleRatios)
-	catalog := resellerOfferableModels(reseller, customer.PriceGroup)
-	for token, ratio := range req.Discounts {
-		if ratio <= 0 || ratio > 1 {
-			common.ApiErrorMsg(c, "折扣比例必须在 (0,1] 之间: "+token)
-			return
-		}
-		if !ratioAtMost2Decimals(ratio) {
-			common.ApiErrorMsg(c, "折扣最多保留两位小数: "+token)
-			return
-		}
-		floor, drivenBy, matched := model.RetailFloorFor(token, catalog, wholesale)
-		if ratio < floor {
-			if matched == 0 {
-				common.ApiErrorMsg(c, fmt.Sprintf("客户折扣 %s=%.2f 不能低于 %.2f：该系列未匹配任何可售模型，按条目本身的批发折校验", token, ratio, floor))
-			} else {
-				common.ApiErrorMsg(c, fmt.Sprintf("客户折扣 %s=%.2f 不能低于 %s 的批发折 %.2f（该系列命中 %d 个可售模型）", token, ratio, drivenBy, floor, matched))
-			}
-			return
-		}
+	// Judged together with the customer's current allow-list: the floor of each
+	// series is the highest wholesale among the models this customer can call.
+	if _, msg := validateCustomerOffer(reseller, resellerOfferableModels(reseller, customer.PriceGroup), customer.AllowedModelList(), req.Discounts); msg != "" {
+		common.ApiErrorMsg(c, msg)
+		return
 	}
 	stored, err := model.MarshalRetailDiscounts(req.Discounts)
 	if err != nil {
@@ -401,16 +378,12 @@ func SetMyCustomerModels(c *gin.Context) {
 		common.ApiErrorMsg(c, "客户组织不存在")
 		return
 	}
-	catalog := resellerOfferableModels(reseller, customer.PriceGroup)
-	allowed := make(map[string]bool, len(catalog))
-	for _, m := range catalog {
-		allowed[m] = true
-	}
-	for _, m := range req.Models {
-		if !allowed[strings.TrimSpace(m)] {
-			common.ApiErrorMsg(c, "模型不在可分配范围内: "+m)
-			return
-		}
+	// Judged together with the customer's existing discounts: assigning a model
+	// whose wholesale is above an existing series discount would make the
+	// reseller resell it below cost, so the pair must stay valid as a whole.
+	if _, msg := validateCustomerOffer(reseller, resellerOfferableModels(reseller, customer.PriceGroup), req.Models, model.ParseRetailDiscounts(customer.RetailDiscounts)); msg != "" {
+		common.ApiErrorMsg(c, msg)
+		return
 	}
 	stored, err := model.MarshalAllowedModels(req.Models)
 	if err != nil {
@@ -422,6 +395,103 @@ func SetMyCustomerModels(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.models", fmt.Sprintf("org:%d", customerId), fmt.Sprintf("count=%d", len(req.Models)))
+	common.ApiSuccess(c, nil)
+}
+
+// validateCustomerOffer checks a customer's model allow-list and retail
+// discounts TOGETHER, because they form one invariant: no model the customer
+// can call may be resold below the reseller's cost. Every assigned model must
+// be in the reseller's offerable catalog. Each discount token is judged against
+// the models the customer will actually be able to call — the assigned set when
+// one is given, otherwise the whole catalog — taking the highest wholesale among
+// the models it covers (exact name or prefix, the request-time rule). Ratios
+// keep at most two decimals within (0,1]. Returns the callable set and, on
+// failure, a user-facing message.
+func validateCustomerOffer(reseller *model.Organization, catalog []string, assigned []string, discounts map[string]float64) (callable []string, msg string) {
+	inCatalog := make(map[string]bool, len(catalog))
+	for _, m := range catalog {
+		inCatalog[m] = true
+	}
+	for _, m := range assigned {
+		if !inCatalog[strings.TrimSpace(m)] {
+			return nil, "模型不在可分配范围内: " + m
+		}
+	}
+	callable = catalog
+	if len(assigned) > 0 {
+		set := make(map[string]bool, len(assigned))
+		for _, m := range assigned {
+			set[strings.TrimSpace(m)] = true
+		}
+		callable = model.OfferableCatalog(catalog, set)
+	}
+	wholesale := model.ParseRetailDiscounts(reseller.WholesaleRatios)
+	for token, ratio := range discounts {
+		if ratio <= 0 || ratio > 1 {
+			return nil, "折扣比例必须在 (0,1] 之间: " + token
+		}
+		if !ratioAtMost2Decimals(ratio) {
+			return nil, "折扣最多保留两位小数: " + token
+		}
+		floor, drivenBy, matched := model.RetailFloorFor(token, callable, wholesale)
+		if ratio < floor {
+			if matched == 0 {
+				return nil, fmt.Sprintf("客户折扣 %s=%.2f 不能低于 %.2f：该系列未匹配任何该客户可调用的模型，按条目本身的批发折校验", token, ratio, floor)
+			}
+			return nil, fmt.Sprintf("客户折扣 %s=%.2f 不能低于 %s 的批发折 %.2f（该系列命中 %d 个该客户可调用的模型）", token, ratio, drivenBy, floor, matched)
+		}
+	}
+	return callable, ""
+}
+
+// SetMyCustomerOffer — PUT /api/reseller/customers/:id/offer
+// Saves the customer's model allow-list and retail discounts as ONE offer:
+// validated together (see validateCustomerOffer) and written in a single
+// UPDATE, so there is no half-saved state in which the models changed but the
+// pricing was rejected. An empty model list means unrestricted.
+func SetMyCustomerOffer(c *gin.Context) {
+	reseller, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Models    []string           `json:"models"`
+		Discounts map[string]float64 `json:"discounts"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	customer, err := model.GetOrganizationById(customerId)
+	if err != nil || customer == nil {
+		common.ApiErrorMsg(c, "客户组织不存在")
+		return
+	}
+	if _, msg := validateCustomerOffer(reseller, resellerOfferableModels(reseller, customer.PriceGroup), req.Models, req.Discounts); msg != "" {
+		common.ApiErrorMsg(c, msg)
+		return
+	}
+	storedModels, err := model.MarshalAllowedModels(req.Models)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	storedDiscounts, err := model.MarshalRetailDiscounts(req.Discounts)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.UpdateOrganizationFields(customerId, map[string]interface{}{
+		"allowed_models":   storedModels,
+		"retail_discounts": storedDiscounts,
+	}); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// The distributor enforces the allow-list from the cached payer record.
+	model.InvalidateOrgPayerCacheForOrg(customerId)
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.offer", fmt.Sprintf("org:%d", customerId),
+		fmt.Sprintf("models=%d discounts=%d", len(req.Models), len(req.Discounts)))
 	common.ApiSuccess(c, nil)
 }
 
