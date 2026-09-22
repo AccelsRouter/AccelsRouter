@@ -111,3 +111,22 @@ func TestValidateResellerRoutingNormalisesAndBounds(t *testing.T) {
 	assert.Error(t, ValidateResellerRouting(&tooMany), "channel cap")
 	assert.Error(t, ValidateResellerRouting(nil))
 }
+
+// Coverage must use the same exact-or-prefix semantics the request path uses
+// (ModelAllowedBy): an offerable entry like "deepseek-" is served by any bound
+// channel model that starts with it, and the effective list expands to those
+// concrete models. Judging by exact name flagged valid prefixes as uncovered.
+func TestSplitCoverageUsesExactOrPrefixSemantics(t *testing.T) {
+	served := []string{"deepseek-v4-flash", "deepseek-v3.2", "claude-opus-4-8", "kimi-k3"}
+	allowed := map[string]bool{"deepseek-": true, "claude-opus-4-8": true, "gpt-": true, "KIMI-K3": true}
+
+	effective, uncovered := splitCoverage(served, allowed)
+	assert.Equal(t, []string{"claude-opus-4-8", "deepseek-v3.2", "deepseek-v4-flash", "kimi-k3"}, effective,
+		"prefix expands to concrete models; matching is case-insensitive")
+	assert.Equal(t, []string{"gpt-"}, uncovered, "only the entry nothing serves is uncovered")
+
+	effective, uncovered = splitCoverage(served, nil)
+	assert.Equal(t, []string{"claude-opus-4-8", "deepseek-v3.2", "deepseek-v4-flash", "kimi-k3"}, effective,
+		"unrestricted allow-list => everything served is effective")
+	assert.Empty(t, uncovered)
+}

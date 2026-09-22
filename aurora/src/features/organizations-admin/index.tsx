@@ -74,7 +74,7 @@ import {
   updateOrganization,
 } from './api'
 import { ApplicationsPanel } from './applications'
-import { RoutingPanel } from './routing-panel'
+import { modelMatchesToken, RoutingPanel } from './routing-panel'
 import type { Organization, OrgStatus, OrgType } from './types'
 
 const PAGE_SIZE = 20
@@ -546,8 +546,10 @@ function EditOrgDialog(props: {
   const uncovered = (() => {
     if (!isReseller || covered.length === 0 || offerableList.length === 0)
       return [] as string[]
-    const lower = new Set(covered.map((m) => m.toLowerCase()))
-    return offerableList.filter((m) => !lower.has(m.toLowerCase()))
+    // Same exact-or-prefix rule the request path uses for offerable models.
+    return offerableList.filter(
+      (e) => !covered.some((m) => modelMatchesToken(e, m))
+    )
   })()
 
   const mutation = useMutation({

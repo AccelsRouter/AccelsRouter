@@ -35,6 +35,15 @@ import type {
   ResellerRoutingRule,
 } from './types'
 
+// Offerable-model entries match a model exactly or as a prefix — the same rule
+// the request path enforces — so coverage must be judged the same way.
+export function modelMatchesToken(token: string, model: string): boolean {
+  const want = token.trim().toLowerCase()
+  if (!want) return false
+  const have = model.trim().toLowerCase()
+  return have === want || have.startsWith(want)
+}
+
 // One editable matrix cell. Strings so the inputs can be blank; a blank
 // priority means "no rule, keep the channel's own priority/weight".
 type Cell = { priority: string; weight: string }
@@ -149,16 +158,18 @@ export function RoutingPanel(props: {
   }, [coveredKey])
 
   const { effective, uncovered } = useMemo(() => {
-    const lower = new Set(covered.map((m) => m.toLowerCase()))
     if (props.offerableModels.length === 0) {
       return { effective: covered, uncovered: [] as string[] }
     }
-    const eff: string[] = []
-    const unc: string[] = []
-    for (const m of props.offerableModels) {
-      if (lower.has(m.toLowerCase())) eff.push(m)
-      else unc.push(m)
-    }
+    // Effective = served models the offerable list admits (a prefix entry
+    // expands to every served model under it); uncovered = entries that admit
+    // no served model.
+    const eff = covered.filter((m) =>
+      props.offerableModels.some((e) => modelMatchesToken(e, m))
+    )
+    const unc = props.offerableModels.filter(
+      (e) => !covered.some((m) => modelMatchesToken(e, m))
+    )
     return { effective: eff, uncovered: unc }
   }, [covered, props.offerableModels])
 

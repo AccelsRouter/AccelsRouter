@@ -470,27 +470,50 @@ func ResellerEffectiveModels(reseller *Organization, boundChannelIds []int) (eff
 			}
 		}
 	}
-	allowed := parseAllowedModels(reseller.AllowedModels)
-	if allowed == nil {
-		effective = make([]string, 0, len(served))
-		for m := range served {
-			effective = append(effective, m)
-		}
-		sort.Strings(effective)
-		return effective, []string{}, nil
+	servedList := make([]string, 0, len(served))
+	for m := range served {
+		servedList = append(servedList, m)
 	}
+	effective, uncovered = splitCoverage(servedList, parseAllowedModels(reseller.AllowedModels))
+	return effective, uncovered, nil
+}
+
+// splitCoverage judges coverage with the same rule the request path enforces
+// for offerable models (ModelAllowedBy: an entry matches a model exactly or as
+// a prefix). effective = the served models the allow-list admits, so a prefix
+// entry such as "deepseek-" expands to every served deepseek-* model;
+// uncovered = allow-list entries that admit no served model. A nil allow-list
+// (unrestricted) makes every served model effective.
+func splitCoverage(served []string, allowed map[string]bool) (effective []string, uncovered []string) {
 	effective = []string{}
 	uncovered = []string{}
-	for m := range allowed {
-		if _, ok := served[m]; ok {
+	if allowed == nil {
+		effective = append(effective, served...)
+		sort.Strings(effective)
+		return effective, uncovered
+	}
+	for _, m := range served {
+		if ModelAllowedBy(allowed, m, "") {
 			effective = append(effective, m)
-		} else {
-			uncovered = append(uncovered, m)
+		}
+	}
+	for token := range allowed {
+		want := strings.ToLower(strings.TrimSpace(token))
+		hit := false
+		for _, m := range served {
+			have := strings.ToLower(m)
+			if have == want || strings.HasPrefix(have, want) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			uncovered = append(uncovered, token)
 		}
 	}
 	sort.Strings(effective)
 	sort.Strings(uncovered)
-	return effective, uncovered, nil
+	return effective, uncovered
 }
 
 func splitModelList(models string) []string {
