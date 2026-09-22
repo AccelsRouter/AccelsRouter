@@ -13,7 +13,7 @@ on save.
 */
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { ListPlus, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useStatus } from '@/hooks/use-status'
@@ -116,6 +116,12 @@ export function RoutingPanel(props: {
   const [affinity, setAffinity] = useState(true)
   const [matrix, setMatrix] = useState<Matrix>({})
   const [newModel, setNewModel] = useState('')
+  // Inline model picker (search + multi-select over the effective models).
+  // Deliberately not a nested dialog/popover: overlays inside this dialog have
+  // repeatedly been dismissed by Base UI's outside-press handling.
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [pickerSelected, setPickerSelected] = useState<string[]>([])
 
   // Hydrate the editor from the server config whenever it (re)loads.
   useEffect(() => {
@@ -236,6 +242,51 @@ export function RoutingPanel(props: {
   const addRow = () => {
     addModelRow(newModel)
     setNewModel('')
+  }
+
+  // Picker rows: every effective model with the bound channels that serve it.
+  // Typing filters by substring; prefix matches sort first so the first few
+  // letters bring the intended models to the top.
+  const pickerItems = useMemo(() => {
+    const q = pickerQuery.trim().toLowerCase()
+    const items = effective
+      .map((model) => ({
+        model,
+        inMatrix: Boolean(matrix[model.toLowerCase()]),
+        providers: boundSorted
+          .filter((id) => channelById.get(id)?.models.includes(model))
+          .map((id) => channelById.get(id)?.name ?? `#${id}`),
+      }))
+      .filter((i) => !q || i.model.toLowerCase().includes(q))
+    if (q) {
+      items.sort(
+        (a, b) =>
+          Number(b.model.toLowerCase().startsWith(q)) -
+            Number(a.model.toLowerCase().startsWith(q)) ||
+          a.model.localeCompare(b.model)
+      )
+    }
+    return items
+  }, [effective, matrix, boundSorted, channelById, pickerQuery])
+
+  const togglePick = (model: string, on: boolean) =>
+    setPickerSelected((prev) =>
+      on
+        ? prev.includes(model)
+          ? prev
+          : [...prev, model]
+        : prev.filter((m) => m !== model)
+    )
+
+  const closePicker = () => {
+    setPickerOpen(false)
+    setPickerQuery('')
+    setPickerSelected([])
+  }
+
+  const addPicked = () => {
+    for (const m of pickerSelected) addModelRow(m)
+    closePicker()
   }
 
   const removeRow = (model: string) => {
@@ -414,8 +465,133 @@ export function RoutingPanel(props: {
                   <Plus className='h-3.5 w-3.5' />
                   {t('Add')}
                 </Button>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant={pickerOpen ? 'secondary' : 'outline'}
+                  className='h-8 gap-1'
+                  disabled={boundSorted.length === 0}
+                  onClick={() =>
+                    pickerOpen ? closePicker() : setPickerOpen(true)
+                  }
+                >
+                  <ListPlus className='h-3.5 w-3.5' />
+                  {t('Pick models')}
+                </Button>
               </div>
             </div>
+
+            {/* Inline model picker: search + multi-select over effective models,
+                each with the bound channels that serve it. */}
+            {pickerOpen && (
+              <div className='border-border/60 bg-muted/20 flex flex-col gap-2 rounded-md border p-3'>
+                <div className='flex items-center gap-2'>
+                  <div className='relative flex-1'>
+                    <Search className='text-muted-foreground pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2' />
+                    <Input
+                      autoFocus
+                      placeholder={t('Search models (type the first letters)')}
+                      value={pickerQuery}
+                      onChange={(e) => setPickerQuery(e.target.value)}
+                      className='h-8 pl-7 text-sm'
+                    />
+                  </div>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='ghost'
+                    className='h-8'
+                    disabled={pickerItems.every((i) => i.inMatrix)}
+                    onClick={() =>
+                      setPickerSelected(
+                        pickerItems
+                          .filter((i) => !i.inMatrix)
+                          .map((i) => i.model)
+                      )
+                    }
+                  >
+                    {t('Select all matches')}
+                  </Button>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='ghost'
+                    className='h-8 w-8 p-0'
+                    aria-label={t('Close')}
+                    onClick={closePicker}
+                  >
+                    <X className='h-3.5 w-3.5' />
+                  </Button>
+                </div>
+                <div className='max-h-64 overflow-y-auto'>
+                  {pickerItems.length === 0 ? (
+                    <p className='text-muted-foreground px-1 py-2 text-xs'>
+                      {t('No matching models.')}
+                    </p>
+                  ) : (
+                    <ul className='divide-border/60 divide-y'>
+                      {pickerItems.map((item) => (
+                        <li key={item.model}>
+                          <label
+                            className={`flex items-center gap-2 px-1 py-1.5 text-sm ${
+                              item.inMatrix
+                                ? 'opacity-60'
+                                : 'hover:bg-muted/40 cursor-pointer'
+                            }`}
+                          >
+                            <Checkbox
+                              checked={
+                                item.inMatrix ||
+                                pickerSelected.includes(item.model)
+                              }
+                              disabled={item.inMatrix}
+                              onCheckedChange={(c) =>
+                                togglePick(item.model, Boolean(c))
+                              }
+                            />
+                            <span className='font-mono text-xs'>
+                              {item.model}
+                            </span>
+                            {item.inMatrix && (
+                              <Badge variant='outline' className='text-[10px]'>
+                                {t('Already in matrix')}
+                              </Badge>
+                            )}
+                            <span className='text-muted-foreground ml-auto truncate text-xs'>
+                              {t('Providers')}: {item.providers.join(', ')}
+                            </span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className='flex items-center justify-end gap-2'>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='outline'
+                    className='h-8'
+                    disabled={pickerSelected.length === 0}
+                    onClick={() => setPickerSelected([])}
+                  >
+                    {t('Clear')}
+                  </Button>
+                  <Button
+                    type='button'
+                    size='sm'
+                    className='h-8 gap-1'
+                    disabled={pickerSelected.length === 0}
+                    onClick={addPicked}
+                  >
+                    <ListPlus className='h-3.5 w-3.5' />
+                    {t('Add selected ({{count}})', {
+                      count: pickerSelected.length,
+                    })}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {boundSorted.length === 0 ? (
               <p className='text-muted-foreground text-xs'>
