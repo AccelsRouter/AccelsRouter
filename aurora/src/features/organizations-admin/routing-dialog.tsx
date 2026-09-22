@@ -149,6 +149,16 @@ export function RoutingDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
+  // A new matrix cell starts from the channel's own current priority/weight,
+  // so the admin sees and edits real numbers instead of blanks.
+  const defaultCell = (id: number): Cell => {
+    const ch = channelById.get(id)
+    return {
+      priority: String(ch?.priority ?? 0),
+      weight: String(ch?.weight ?? 0),
+    }
+  }
+
   const toggleChannel = (id: number, on: boolean) => {
     setChannelIds((prev) =>
       on
@@ -157,12 +167,24 @@ export function RoutingDialog(props: {
           : [...prev, id]
         : prev.filter((x) => x !== id)
     )
+    if (on) {
+      // Rows that already exist get the newly bound channel's own values too.
+      setMatrix((prev) => {
+        const next: Matrix = {}
+        for (const [model, cells] of Object.entries(prev)) {
+          next[model] = cells[id] ? cells : { ...cells, [id]: defaultCell(id) }
+        }
+        return next
+      })
+    }
   }
 
   const addModelRow = (raw: string) => {
     const m = raw.trim().toLowerCase()
     if (!m || matrix[m]) return
-    setMatrix((prev) => ({ ...prev, [m]: {} }))
+    const cells: Record<number, Cell> = {}
+    for (const id of channelIds) cells[id] = defaultCell(id)
+    setMatrix((prev) => ({ ...prev, [m]: cells }))
   }
 
   const addRow = () => {
@@ -321,11 +343,23 @@ export function RoutingDialog(props: {
                   <span className='text-sm font-medium'>
                     {t('Per-model priority matrix')}
                   </span>
-                  <span className='text-muted-foreground text-xs'>
-                    {t(
-                      'Blank = channel default. Higher priority wins; equal priorities share traffic by weight. Exact model name beats prefix.'
-                    )}
-                  </span>
+                  <div className='text-muted-foreground flex flex-col gap-0.5 text-xs'>
+                    <span>
+                      {t(
+                        'Priority: the higher number is used first. A lower priority is tried only after every channel at the higher priority has failed.'
+                      )}
+                    </span>
+                    <span>
+                      {t(
+                        'Weight: how traffic is shared among channels with the same priority (effective weight = weight + 10, so 0 still gets a share). With sticky affinity on, the share applies across customers while each customer stays on one channel.'
+                      )}
+                    </span>
+                    <span>
+                      {t(
+                        "Blank = follow the channel's own value. New rows start from each channel's current priority and weight. Exact model name beats prefix."
+                      )}
+                    </span>
+                  </div>
                 </div>
                 <div className='flex items-center gap-2'>
                   <Input

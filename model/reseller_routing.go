@@ -428,13 +428,17 @@ type ResellerRoutingChannelSummary struct {
 	Type   int      `json:"type"`
 	Status int      `json:"status"`
 	Models []string `json:"models"`
+	// The channel's own platform priority/weight: what a blank matrix cell
+	// falls back to, and the starting values the editor pre-fills.
+	Priority int64 `json:"priority"`
+	Weight   uint  `json:"weight"`
 }
 
 // ListResellerRoutingChannelSummaries returns every enabled channel in the
 // admin-safe summary form, for the routing matrix editor.
 func ListResellerRoutingChannelSummaries() ([]ResellerRoutingChannelSummary, error) {
 	var rows []Channel
-	if err := DB.Select("id", "name", "type", "status", "models").
+	if err := DB.Select("id", "name", "type", "status", "models", "priority", "weight").
 		Where("status = ?", common.ChannelStatusEnabled).
 		Order("id asc").Find(&rows).Error; err != nil {
 		return nil, err
@@ -443,6 +447,7 @@ func ListResellerRoutingChannelSummaries() ([]ResellerRoutingChannelSummary, err
 	for _, ch := range rows {
 		out = append(out, ResellerRoutingChannelSummary{
 			Id: ch.Id, Name: ch.Name, Type: ch.Type, Status: ch.Status, Models: splitModelList(ch.Models),
+			Priority: ch.GetPriority(), Weight: uint(ch.GetWeight()),
 		})
 	}
 	return out, nil

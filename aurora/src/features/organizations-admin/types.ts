@@ -66,6 +66,10 @@ export type ResellerRoutingChannel = {
   type: number
   status: number
   models: string[]
+  // The channel's own platform priority/weight — the starting values of a new
+  // matrix cell, and what a blank cell falls back to.
+  priority: number
+  weight: number
 }
 
 export type OrgLedgerEntry = {
