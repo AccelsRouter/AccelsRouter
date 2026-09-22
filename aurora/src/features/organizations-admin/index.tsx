@@ -74,7 +74,7 @@ import {
   updateOrganization,
 } from './api'
 import { ApplicationsPanel } from './applications'
-import { RoutingDialog } from './routing-dialog'
+import { RoutingPanel } from './routing-panel'
 import type { Organization, OrgStatus, OrgType } from './types'
 
 const PAGE_SIZE = 20
@@ -98,7 +98,6 @@ export function OrganizationsAdmin() {
   const [attachOrg, setAttachOrg] = useState<Organization | null>(null)
   const [ssoOrg, setSsoOrg] = useState<Organization | null>(null)
   const [usageOrg, setUsageOrg] = useState<Organization | null>(null)
-  const [routingOrg, setRoutingOrg] = useState<Organization | null>(null)
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['admin-organizations', page, category],
@@ -272,15 +271,6 @@ export function OrganizationsAdmin() {
                             >
                               {t('Usage')}
                             </Button>
-                            {o.type === 'reseller' && (
-                              <Button
-                                size='sm'
-                                variant='outline'
-                                onClick={() => setRoutingOrg(o)}
-                              >
-                                {t('Routing')}
-                              </Button>
-                            )}
                             <Button
                               size='sm'
                               variant='outline'
@@ -361,7 +351,6 @@ export function OrganizationsAdmin() {
         <AuditDialog org={auditOrg} onClose={() => setAuditOrg(null)} />
         <SsoDomainsDialog org={ssoOrg} onClose={() => setSsoOrg(null)} />
         <UsageDialog org={usageOrg} onClose={() => setUsageOrg(null)} />
-        <RoutingDialog org={routingOrg} onClose={() => setRoutingOrg(null)} />
       </SectionPageLayout.Content>
     </SectionPageLayout>
   )
@@ -492,6 +481,9 @@ function CreateOrgDialog(props: {
   )
 }
 
+// Tabs of the reseller edit dialog; enterprise orgs keep the single form.
+type EditTab = 'basics' | 'pricing' | 'routing'
+
 // The org's allowed_models is stored as a JSON array string; parse it for the
 // admin editor (empty/invalid → []).
 function parseModelsField(s?: string): string[] {
@@ -524,6 +516,12 @@ function EditOrgDialog(props: {
   const [allowedModels, setAllowedModels] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
   const isReseller = org?.type === 'reseller'
+  // Reseller edit is tabbed (basics / pricing & offerable models / upstream
+  // routing). Panels stay mounted so unsaved matrix edits survive tab switches.
+  const [tab, setTab] = useState<EditTab>('basics')
+  // Union of the bound channels' models, reported live by the routing panel so
+  // the pricing tab can flag offerable models no bound channel serves.
+  const [covered, setCovered] = useState<string[]>([])
 
   // Sync local form state when a different org is opened.
   if (org && org.id !== loadedId) {
@@ -535,7 +533,22 @@ function EditOrgDialog(props: {
     setWholesaleRatios(org.wholesale_ratios ?? {})
     setWholesaleValid(true)
     setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
+    setTab('basics')
+    setCovered([])
   }
+
+  const offerableList = allowedModels
+    .split(/[\n,]/)
+    .map((m) => m.trim())
+    .filter(Boolean)
+  // Offerable models no bound channel serves. Only meaningful once at least
+  // one channel is bound; before that the routing tab itself says so.
+  const uncovered = (() => {
+    if (!isReseller || covered.length === 0 || offerableList.length === 0)
+      return [] as string[]
+    const lower = new Set(covered.map((m) => m.toLowerCase()))
+    return offerableList.filter((m) => !lower.has(m.toLowerCase()))
+  })()
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -562,103 +575,182 @@ function EditOrgDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
+  const basicFields = (
+    <>
+      <Field label={t('Name')}>
+        <Input value={name} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label={t('Price Group')}>
+        <Input
+          value={isReseller ? 'default' : priceGroup}
+          onChange={(e) => setPriceGroup(e.target.value)}
+          disabled={isReseller}
+          readOnly={isReseller}
+        />
+        {isReseller && (
+          <span className='text-muted-foreground text-xs'>
+            {t(
+              'Fixed to "default"; distributor pricing is driven by the wholesale ratio.'
+            )}
+          </span>
+        )}
+      </Field>
+      <Field label={t('Status')}>
+        <NativeSelect
+          className='w-full'
+          value={status}
+          onChange={(e) => setStatus(e.target.value as OrgStatus)}
+        >
+          <NativeSelectOption value='active'>{t('Active')}</NativeSelectOption>
+          <NativeSelectOption value='suspended'>
+            {t('Suspended')}
+          </NativeSelectOption>
+        </NativeSelect>
+      </Field>
+      <Field label={t('Remark')}>
+        <Textarea
+          value={remark}
+          onChange={(e) => setRemark(e.target.value)}
+          rows={2}
+        />
+      </Field>
+    </>
+  )
+
+  const pricingFields = (
+    <>
+      <Field label={t('Per-model wholesale ratios (blank = no discount)')}>
+        <ModelRatioRows
+          key={org?.id}
+          initial={org?.wholesale_ratios ?? {}}
+          onChange={(map, valid) => {
+            setWholesaleRatios(map)
+            setWholesaleValid(valid)
+          }}
+        />
+        <span className='text-muted-foreground text-xs'>
+          {t(
+            'The reseller pays standard × this ratio per call for matching models. Exact model name beats prefix.'
+          )}
+        </span>
+      </Field>
+      <Field label={t('Offerable models (one per line; blank = all)')}>
+        <Textarea
+          value={allowedModels}
+          onChange={(e) => setAllowedModels(e.target.value)}
+          rows={4}
+          placeholder={'gpt-4o\nclaude-3-5-sonnet'}
+        />
+        {/* Live coverage against the routing tab's bound channels. */}
+        {offerableList.length > 0 &&
+          (covered.length === 0 ? (
+            <span className='text-muted-foreground text-xs'>
+              {t('Bind upstream channels in the routing tab to see coverage.')}
+            </span>
+          ) : uncovered.length > 0 ? (
+            <div className='flex flex-wrap items-center gap-1 text-xs'>
+              <span className='text-destructive'>
+                {t('Not served by any bound channel')}:
+              </span>
+              {uncovered.map((m) => (
+                <Badge
+                  key={m}
+                  variant='destructive'
+                  className='font-mono text-[11px]'
+                >
+                  {m}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <span className='text-xs text-emerald-600 dark:text-emerald-400'>
+              {t('All offerable models are served by a bound channel.')}
+            </span>
+          ))}
+      </Field>
+    </>
+  )
+
+  const showOrgFooter = !isReseller || tab !== 'routing'
+
   return (
     <Dialog open={!!org} onOpenChange={(o) => !o && props.onClose()}>
-      <DialogContent className='sm:max-w-md'>
+      <DialogContent
+        className={
+          isReseller
+            ? 'max-h-[90vh] overflow-y-auto sm:max-w-4xl'
+            : 'sm:max-w-md'
+        }
+      >
         <DialogHeader>
-          <DialogTitle>{t('Edit Organization')}</DialogTitle>
+          <DialogTitle>
+            {t('Edit Organization')}
+            {org ? ` — ${org.name}` : ''}
+          </DialogTitle>
         </DialogHeader>
-        <div className='flex flex-col gap-3'>
-          <Field label={t('Name')}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label={t('Price Group')}>
-            <Input
-              value={isReseller ? 'default' : priceGroup}
-              onChange={(e) => setPriceGroup(e.target.value)}
-              disabled={isReseller}
-              readOnly={isReseller}
-            />
-            {isReseller && (
-              <span className='text-muted-foreground text-xs'>
-                {t(
-                  'Fixed to "default"; distributor pricing is driven by the wholesale ratio.'
+        {isReseller ? (
+          <Tabs value={tab} onValueChange={(v) => setTab(v as EditTab)}>
+            <TabsList>
+              <TabsTrigger value='basics'>{t('Basics')}</TabsTrigger>
+              <TabsTrigger value='pricing'>
+                {t('Pricing & offerable models')}
+              </TabsTrigger>
+              <TabsTrigger value='routing' className='gap-1.5'>
+                {t('Upstream routing')}
+                {uncovered.length > 0 && (
+                  <Badge
+                    variant='destructive'
+                    className='h-4 min-w-4 px-1 text-[10px] tabular-nums'
+                  >
+                    {uncovered.length}
+                  </Badge>
                 )}
-              </span>
-            )}
-          </Field>
-          <Field label={t('Status')}>
-            <NativeSelect
-              className='w-full'
-              value={status}
-              onChange={(e) => setStatus(e.target.value as OrgStatus)}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value='basics' keepMounted className='pt-3'>
+              <div className='flex flex-col gap-3'>{basicFields}</div>
+            </TabsContent>
+            <TabsContent value='pricing' keepMounted className='pt-3'>
+              <div className='flex flex-col gap-3'>{pricingFields}</div>
+            </TabsContent>
+            <TabsContent value='routing' keepMounted className='pt-3'>
+              {org && (
+                <RoutingPanel
+                  org={org}
+                  offerableModels={offerableList}
+                  onCoverageChange={setCovered}
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className='flex flex-col gap-3'>{basicFields}</div>
+        )}
+        {showOrgFooter && (
+          <DialogFooter className='gap-2'>
+            <Button
+              variant='outline'
+              onClick={props.onClose}
+              disabled={mutation.isPending}
             >
-              <NativeSelectOption value='active'>
-                {t('Active')}
-              </NativeSelectOption>
-              <NativeSelectOption value='suspended'>
-                {t('Suspended')}
-              </NativeSelectOption>
-            </NativeSelect>
-          </Field>
-          <Field label={t('Remark')}>
-            <Textarea
-              value={remark}
-              onChange={(e) => setRemark(e.target.value)}
-              rows={2}
-            />
-          </Field>
-          {isReseller && (
-            <>
-              <Field
-                label={t('Per-model wholesale ratios (blank = no discount)')}
-              >
-                <ModelRatioRows
-                  key={org?.id}
-                  initial={org?.wholesale_ratios ?? {}}
-                  onChange={(map, valid) => {
-                    setWholesaleRatios(map)
-                    setWholesaleValid(valid)
-                  }}
-                />
-                <span className='text-muted-foreground text-xs'>
-                  {t(
-                    'The reseller pays standard × this ratio per call for matching models. Exact model name beats prefix.'
-                  )}
-                </span>
-              </Field>
-              <Field label={t('Offerable models (one per line; blank = all)')}>
-                <Textarea
-                  value={allowedModels}
-                  onChange={(e) => setAllowedModels(e.target.value)}
-                  rows={4}
-                  placeholder={'gpt-4o\nclaude-3-5-sonnet'}
-                />
-              </Field>
-            </>
-          )}
-        </div>
-        <DialogFooter className='gap-2'>
-          <Button
-            variant='outline'
-            onClick={props.onClose}
-            disabled={mutation.isPending}
-          >
-            {t('Cancel')}
-          </Button>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={
-              name.trim().length === 0 ||
-              (isReseller && !wholesaleValid) ||
-              mutation.isPending
-            }
-            className='gap-1.5'
-          >
-            {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
-            {t('Save')}
-          </Button>
-        </DialogFooter>
+              {t('Cancel')}
+            </Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={
+                name.trim().length === 0 ||
+                (isReseller && !wholesaleValid) ||
+                mutation.isPending
+              }
+              className='gap-1.5'
+            >
+              {mutation.isPending && (
+                <Loader2 className='h-4 w-4 animate-spin' />
+              )}
+              {t('Save')}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   )
