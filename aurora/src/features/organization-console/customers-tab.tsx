@@ -661,8 +661,10 @@ function CustomerUsageDialog(props: {
 }) {
   const { t } = useTranslation()
   const customer = props.customer
+  // Default to today, matching every other usage view (the picker offers
+  // 7d/30d/custom presets for wider ranges).
   const [range, setRange] = useState<{ start?: Date; end?: Date }>(() => ({
-    start: dayjs().subtract(30, 'day').startOf('day').toDate(),
+    start: dayjs().startOf('day').toDate(),
     end: dayjs().endOf('day').toDate(),
   }))
 
