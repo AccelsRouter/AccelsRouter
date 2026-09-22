@@ -29,6 +29,7 @@
     "Bind at least one channel to edit the matrix.": "至少绑定一个通道后才能编辑矩阵。",
     "No rules yet. Bound channels use their own priority and weight.": "尚无规则。已绑定通道沿用各自的优先级与权重。",
     "Effective models": "有效模型",
+    "Click a model to add it to the matrix.": "点击模型即可加入矩阵。",
     "Offerable models with no bound channel": "可售但无通道覆盖的模型",
     "No data in the selected time range. Try a wider range.": "所选时间范围内无数据，可尝试扩大时间范围。",
     "By Workspace": "按工作区",

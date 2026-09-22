@@ -49,6 +49,7 @@
     "Bind at least one channel to edit the matrix.": "Bind at least one channel to edit the matrix.",
     "No rules yet. Bound channels use their own priority and weight.": "No rules yet. Bound channels use their own priority and weight.",
     "Effective models": "Effective models",
+    "Click a model to add it to the matrix.": "Click a model to add it to the matrix.",
     "Offerable models with no bound channel": "Offerable models with no bound channel",
     "No data in the selected time range. Try a wider range.": "No data in the selected time range. Try a wider range.",
     "By Workspace": "By Workspace",

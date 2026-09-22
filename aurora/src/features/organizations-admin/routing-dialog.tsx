@@ -159,10 +159,14 @@ export function RoutingDialog(props: {
     )
   }
 
-  const addRow = () => {
-    const m = newModel.trim().toLowerCase()
+  const addModelRow = (raw: string) => {
+    const m = raw.trim().toLowerCase()
     if (!m || matrix[m]) return
     setMatrix((prev) => ({ ...prev, [m]: {} }))
+  }
+
+  const addRow = () => {
+    addModelRow(newModel)
     setNewModel('')
   }
 
@@ -325,7 +329,6 @@ export function RoutingDialog(props: {
                 </div>
                 <div className='flex items-center gap-2'>
                   <Input
-                    list='reseller-routing-models'
                     placeholder={t('Model name or prefix (e.g. claude-)')}
                     value={newModel}
                     onChange={(e) => setNewModel(e.target.value)}
@@ -337,11 +340,6 @@ export function RoutingDialog(props: {
                     }}
                     className='h-8 w-64 text-sm'
                   />
-                  <datalist id='reseller-routing-models'>
-                    {(cfg?.effective_models ?? []).map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
                   <Button
                     type='button'
                     size='sm'
@@ -455,19 +453,31 @@ export function RoutingDialog(props: {
             {cfg && (
               <section className='grid gap-3 sm:grid-cols-2'>
                 <div className='flex flex-col gap-1.5'>
-                  <Label className='text-xs'>{t('Effective models')}</Label>
+                  <Label className='text-xs'>
+                    {t('Effective models')}
+                    <span className='text-muted-foreground ml-1 font-normal'>
+                      {t('Click a model to add it to the matrix.')}
+                    </span>
+                  </Label>
                   <div className='flex flex-wrap gap-1'>
                     {cfg.effective_models.length === 0 ? (
                       <span className='text-muted-foreground text-xs'>—</span>
                     ) : (
                       cfg.effective_models.map((m) => (
-                        <Badge
+                        <button
                           key={m}
-                          variant='secondary'
-                          className='font-mono text-[11px]'
+                          type='button'
+                          onClick={() => addModelRow(m)}
+                          disabled={boundSorted.length === 0}
+                          className='disabled:cursor-not-allowed disabled:opacity-60'
                         >
-                          {m}
-                        </Badge>
+                          <Badge
+                            variant='secondary'
+                            className='cursor-pointer font-mono text-[11px] hover:opacity-80'
+                          >
+                            {m}
+                          </Badge>
+                        </button>
                       ))
                     )}
                   </div>
