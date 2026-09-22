@@ -32,12 +32,16 @@ const (
 	// channel selection and by multi-key selection so the same customer+model
 	// keeps landing on the same upstream and the same upstream key, preserving
 	// provider-side prompt caches.
-	ContextKeyResellerAffinityHash   ContextKey = "reseller_affinity_hash"
-	ContextKeyTokenSpecificChannelId ContextKey = "specific_channel_id"
-	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
-	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
-	ContextKeyTokenCrossGroupRetry   ContextKey = "token_cross_group_retry"
-	ContextKeyTokenAutoGroups        ContextKey = "token_auto_groups"
+	ContextKeyResellerAffinityHash ContextKey = "reseller_affinity_hash"
+	// ContextKeyResellerRoutingDecision records why the reseller selector (or
+	// the affinity guard) chose a channel — mode, tier, candidates — so the
+	// consume log's admin_info can explain the routing of each request.
+	ContextKeyResellerRoutingDecision ContextKey = "reseller_routing_decision"
+	ContextKeyTokenSpecificChannelId  ContextKey = "specific_channel_id"
+	ContextKeyTokenModelLimitEnabled  ContextKey = "token_model_limit_enabled"
+	ContextKeyTokenModelLimit         ContextKey = "token_model_limit"
+	ContextKeyTokenCrossGroupRetry    ContextKey = "token_cross_group_retry"
+	ContextKeyTokenAutoGroups         ContextKey = "token_auto_groups"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"

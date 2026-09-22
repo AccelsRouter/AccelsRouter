@@ -33,6 +33,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-gonic/gin"
 )
 
 // ResellerAffinityHash is the sticky-routing key for one customer org's use of
@@ -74,27 +75,14 @@ type resellerCandidate struct {
 	weight   uint
 }
 
-// SelectResellerChannel picks a channel for a reseller-routed request.
-// Return conventions match model.GetRandomSatisfiedChannel: (nil, group, nil)
-// means "no channel available" and the caller emits its generic message.
-func SelectResellerChannel(param *RetryParam, resellerOrgId int) (*model.Channel, string, error) {
+// resellerTiers resolves a reseller-routed request's candidate channels —
+// bound, enabled, serving the model in the reseller group, matching the
+// request path, under budget — and groups them into priority tiers (highest
+// first) using the reseller's matrix (exact model beats prefix; a channel with
+// no matching rule keeps its own priority/weight). Shared by selection and by
+// the platform channel-affinity guard so both judge the same tiers.
+func resellerTiers(param *RetryParam, cfg *model.ResellerRouting) [][]resellerCandidate {
 	group := param.TokenGroup
-	originGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyResellerOriginGroup)
-
-	cfg := model.GetResellerRoutingCached(resellerOrgId)
-	if cfg == nil || len(cfg.ChannelIdList) == 0 {
-		// Config vanished between distributor and selection (admin cleared it
-		// inside the cache TTL). Fail closed to the platform group the customer
-		// was on, never to some other reseller's group.
-		if originGroup == "" {
-			return nil, group, nil
-		}
-		ch, err := model.GetRandomSatisfiedChannel(originGroup, param.ModelName, param.GetRetry(), param.RequestPath)
-		return ch, originGroup, err
-	}
-
-	// Candidates: bound channels that are enabled, serve this model in the
-	// reseller group, match the request path, and are under their daily budget.
 	ids := model.FilterChannelIdsByRequestPathAndModel(cfg.ChannelIdList, param.RequestPath, param.ModelName)
 	candidates := make([]resellerCandidate, 0, len(ids))
 	for _, id := range ids {
@@ -114,18 +102,94 @@ func SelectResellerChannel(param *RetryParam, resellerOrgId int) (*model.Channel
 		}
 		candidates = append(candidates, resellerCandidate{channel: ch, priority: priority, weight: weight})
 	}
+	return groupByPriority(candidates)
+}
+
+// ResellerAffinityPreferredAllowed guards the platform channel-affinity cache
+// (enabled by default) for reseller-routed requests: a channel pinned by an
+// earlier request may be reused only while it still sits in the reseller
+// matrix's TOP priority tier for this model. Without this, stickiness would
+// silently outrank the admin's priorities — a pinned channel kept winning
+// after the matrix demoted it, until the affinity TTL expired. Non-reseller
+// groups are untouched (always true).
+func ResellerAffinityPreferredAllowed(c *gin.Context, group, modelName, requestPath string, channelId int) bool {
+	resellerId, ok := model.ParseResellerRoutingGroup(group)
+	if !ok {
+		return true
+	}
+	cfg := model.GetResellerRoutingCached(resellerId)
+	if cfg == nil || len(cfg.ChannelIdList) == 0 {
+		return false
+	}
+	tiers := resellerTiers(&RetryParam{Ctx: c, TokenGroup: group, ModelName: modelName, RequestPath: requestPath}, cfg)
+	if len(tiers) == 0 {
+		return false
+	}
+	for _, cand := range tiers[0] {
+		if cand.channel.Id == channelId {
+			recordResellerDecision(c, "platform_affinity", tiers[0], cand.channel, 0)
+			return true
+		}
+	}
+	return false
+}
+
+// recordResellerDecision stashes why a channel was chosen so the consume log's
+// admin_info can explain each reseller-routed request
+// (service/log_info_generate.go).
+func recordResellerDecision(c *gin.Context, mode string, tier []resellerCandidate, picked *model.Channel, retry int) {
+	if c == nil || picked == nil {
+		return
+	}
+	ids := make([]int, 0, len(tier))
+	var priority int64
+	for _, cand := range tier {
+		ids = append(ids, cand.channel.Id)
+		priority = cand.priority
+	}
+	common.SetContextKey(c, constant.ContextKeyResellerRoutingDecision, map[string]interface{}{
+		"mode":          mode,
+		"retry":         retry,
+		"tier_priority": priority,
+		"tier_channels": ids,
+		"channel_id":    picked.Id,
+	})
+}
+
+// SelectResellerChannel picks a channel for a reseller-routed request.
+// Return conventions match model.GetRandomSatisfiedChannel: (nil, group, nil)
+// means "no channel available" and the caller emits its generic message.
+func SelectResellerChannel(param *RetryParam, resellerOrgId int) (*model.Channel, string, error) {
+	group := param.TokenGroup
+	originGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyResellerOriginGroup)
+
+	cfg := model.GetResellerRoutingCached(resellerOrgId)
+	if cfg == nil || len(cfg.ChannelIdList) == 0 {
+		// Config vanished between distributor and selection (admin cleared it
+		// inside the cache TTL). Fail closed to the platform group the customer
+		// was on, never to some other reseller's group.
+		if originGroup == "" {
+			return nil, group, nil
+		}
+		ch, err := model.GetRandomSatisfiedChannel(originGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		return ch, originGroup, err
+	}
 
 	// Tiers by priority, highest first; retry index walks down the tiers.
-	tiers := groupByPriority(candidates)
+	tiers := resellerTiers(param, cfg)
 	retry := param.GetRetry()
 	if retry < len(tiers) {
 		tier := tiers[retry]
 		if !cfg.AffinityOff {
 			if affinity, ok := common.GetContextKeyType[uint64](param.Ctx, constant.ContextKeyResellerAffinityHash); ok {
-				return pickByRendezvous(tier, affinity), group, nil
+				picked := pickByRendezvous(tier, affinity)
+				recordResellerDecision(param.Ctx, "affinity", tier, picked, retry)
+				return picked, group, nil
 			}
 		}
-		return pickWeightedRandom(tier), group, nil
+		picked := pickWeightedRandom(tier)
+		recordResellerDecision(param.Ctx, "weighted_random", tier, picked, retry)
+		return picked, group, nil
 	}
 
 	// Bound channels exhausted (or none serve this model).
@@ -133,6 +197,9 @@ func SelectResellerChannel(param *RetryParam, resellerOrgId int) (*model.Channel
 		return nil, group, nil
 	}
 	ch, err := model.GetRandomSatisfiedChannel(originGroup, param.ModelName, retry-len(tiers), param.RequestPath)
+	if ch != nil {
+		recordResellerDecision(param.Ctx, "fallback_origin_group", nil, ch, retry)
+	}
 	return ch, originGroup, err
 }
 

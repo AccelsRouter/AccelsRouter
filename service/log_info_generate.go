@@ -128,6 +128,13 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 
 	AppendChannelAffinityAdminInfo(ctx, adminInfo)
 
+	// Fork: reseller upstream routing decision (mode / tier / candidates), so an
+	// admin can read from the call record why a reseller-routed request landed
+	// on a given channel. Admin-only via admin_info.
+	if decision, ok := common.GetContextKey(ctx, constant.ContextKeyResellerRoutingDecision); ok {
+		adminInfo["reseller_routing"] = decision
+	}
+
 	other["admin_info"] = adminInfo
 	appendRequestPath(ctx, relayInfo, other)
 	appendRequestConversionChain(relayInfo, other)

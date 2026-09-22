@@ -286,7 +286,13 @@ func Distribute() func(c *gin.Context) {
 											break
 										}
 									}
-								} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
+								} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) &&
+									// Fork: for a reseller-routed request the pinned channel is
+									// honoured only while it is still in the reseller matrix's top
+									// priority tier — stickiness must never outrank the admin's
+									// priorities. Rejecting it falls through to the clear-cache
+									// branch below, so the next selection re-pins correctly.
+									service.ResellerAffinityPreferredAllowed(c, usingGroup, modelRequest.Model, c.Request.URL.Path, preferred.Id) {
 									channel = preferred
 									selectGroup = usingGroup
 									affinityUsable = true
