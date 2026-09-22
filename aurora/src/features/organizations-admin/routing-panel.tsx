@@ -2,8 +2,11 @@
 Admin-only "Upstream routing" panel for a RESELLER organization, embedded as a
 tab of the edit dialog: bind the upstream channels its customers may be routed
 through, toggle fallback to the platform pool and sticky (cache-preserving)
-affinity, and edit the per-model priority/weight matrix. Also hosts the global
-kill switch. Upstream channels are never shown to the reseller itself.
+affinity, and edit the per-model priority/weight matrix. Binding channels is
+the intent: routing applies as soon as it is saved. The system-wide emergency
+switch (ResellerRoutingEnabled, on by default) is surfaced here only while it
+is off, with a re-enable action. Upstream channels are never shown to the
+reseller itself.
 
 Coverage is computed live in the browser from the bound channels' model lists
 (no server round trip): the panel shows which offerable models are served /
@@ -99,7 +102,9 @@ export function RoutingPanel(props: {
   const queryClient = useQueryClient()
   const org = props.org
   const { status } = useStatus()
-  const globallyEnabled = Boolean(status?.reseller_routing_enabled)
+  // Explicitly false only: an absent flag (older status payload) must not read
+  // as "disabled".
+  const globallyDisabled = status?.reseller_routing_enabled === false
 
   const routingQuery = useQuery({
     queryKey: ['reseller-routing', org.id],
@@ -311,26 +316,27 @@ export function RoutingPanel(props: {
 
   return (
     <div className='flex flex-col gap-5'>
-      {/* Global kill switch: off = every reseller customer uses the platform pool. */}
-      <div className='border-border/60 bg-muted/30 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3'>
-        <div className='flex flex-col gap-0.5'>
-          <span className='text-sm font-medium'>{t('Global switch')}</span>
-          <span className='text-muted-foreground text-xs'>
-            {globallyEnabled
-              ? t(
-                  'Reseller routing is on. Saved configurations are applied to live traffic.'
-                )
-              : t(
-                  'Reseller routing is off globally; configurations are saved but not applied.'
-                )}
+      {/* Emergency state only: someone turned the system option off. In normal
+          operation nothing is shown here — binding channels is the intent. */}
+      {globallyDisabled && (
+        <div className='border-destructive/40 bg-destructive/5 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3'>
+          <span className='text-destructive text-xs'>
+            {t(
+              'Reseller routing is globally disabled (system option ResellerRoutingEnabled). Every reseller customer is on the platform pool until it is re-enabled.'
+            )}
           </span>
+          <Button
+            type='button'
+            size='sm'
+            variant='outline'
+            className='h-8'
+            disabled={switchMutation.isPending}
+            onClick={() => switchMutation.mutate(true)}
+          >
+            {t('Re-enable reseller routing')}
+          </Button>
         </div>
-        <Switch
-          checked={globallyEnabled}
-          disabled={switchMutation.isPending}
-          onCheckedChange={(checked) => switchMutation.mutate(Boolean(checked))}
-        />
-      </div>
+      )}
 
       {loading ? (
         <div className='flex h-32 items-center justify-center'>
