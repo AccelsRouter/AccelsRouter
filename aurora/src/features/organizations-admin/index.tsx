@@ -34,6 +34,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
+import { modelMatchesToken } from '@/lib/model-match'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -74,7 +75,7 @@ import {
   updateOrganization,
 } from './api'
 import { ApplicationsPanel } from './applications'
-import { modelMatchesToken, RoutingPanel } from './routing-panel'
+import { RoutingPanel } from './routing-panel'
 import type { Organization, OrgStatus, OrgType } from './types'
 
 const PAGE_SIZE = 20

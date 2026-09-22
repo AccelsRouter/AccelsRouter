@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ListPlus, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { modelMatchesToken } from '@/lib/model-match'
 import { useStatus } from '@/hooks/use-status'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -37,15 +38,6 @@ import type {
   ResellerRoutingChannel,
   ResellerRoutingRule,
 } from './types'
-
-// Offerable-model entries match a model exactly or as a prefix — the same rule
-// the request path enforces — so coverage must be judged the same way.
-export function modelMatchesToken(token: string, model: string): boolean {
-  const want = token.trim().toLowerCase()
-  if (!want) return false
-  const have = model.trim().toLowerCase()
-  return have === want || have.startsWith(want)
-}
 
 // One editable matrix cell. Strings so the inputs can be blank; a blank
 // priority means "no rule, keep the channel's own priority/weight".

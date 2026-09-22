@@ -9,7 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
+import { modelMatchesToken } from '@/lib/model-match'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -21,8 +21,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { ratioForModel } from '@/components/model-ratio-rows'
-
 import {
+  getCustomerModels,
   getCustomerPricing,
   getResellerSelf,
   setCustomerPricing,
@@ -56,12 +56,47 @@ export function CustomerPricingDialog(props: {
   })
   const wholesale = self?.wholesale_ratios ?? {}
   const hasWholesale = Object.keys(wholesale).length > 0
+  // A series token is judged against the concrete offerable models it covers
+  // (exact or prefix — the request-time rule) and its floor is the HIGHEST
+  // wholesale among them: "claude" at 0.95 is fine while the only sellable
+  // claude model is claude-opus-4-8 (wholesale 0.80), but not once a covered
+  // claude model carries no wholesale discount (1.00). Mirrors the server's
+  // RetailFloorFor, which stays authoritative on save.
+  const { data: models } = useQuery({
+    queryKey: ['customer-models', customer?.org.id],
+    queryFn: () => getCustomerModels(customer!.org.id),
+    enabled: !!customer,
+    staleTime: 60_000,
+  })
+  const catalog = models?.catalog ?? []
+  const floorFor = (token: string) => {
+    const want = token.trim().toLowerCase()
+    let floor = 0
+    let drivenBy = ''
+    let matched = 0
+    for (const m of catalog) {
+      if (!modelMatchesToken(want, m)) continue
+      matched++
+      const r = ratioForModel(m, wholesale)
+      if (matched === 1 || r > floor) {
+        floor = r
+        drivenBy = m
+      }
+    }
+    // Nothing sellable matches: inert today, but it would go live if the
+    // offerable set grew, so fall back to judging the token itself.
+    if (matched === 0)
+      return { floor: ratioForModel(want, wholesale), drivenBy: '', matched }
+    return { floor, drivenBy, matched }
+  }
   const twoDecimals = (s: string) => /^\d+(\.\d{1,2})?$/.test(s.trim())
   const rowValid = (r: Row) => {
     const ratio = Number(r.ratio)
-    const floor = ratioForModel(r.token.trim().toLowerCase(), wholesale)
     return (
-      twoDecimals(r.ratio) && ratio > 0 && ratio <= 1 && ratio >= floor
+      twoDecimals(r.ratio) &&
+      ratio > 0 &&
+      ratio <= 1 &&
+      ratio >= floorFor(r.token).floor
     )
   }
 
@@ -104,16 +139,24 @@ export function CustomerPricingDialog(props: {
     const ratio = Number(r.ratio)
     if (!twoDecimals(r.ratio) || ratio <= 0 || ratio > 1)
       return t('Ratio must be within (0, 1].')
-    const floor = ratioForModel(r.token.trim().toLowerCase(), wholesale)
+    const { floor, drivenBy, matched } = floorFor(r.token)
     if (ratio < floor)
-      return t('Must be ≥ {{floor}} (your wholesale for this model)', {
-        floor: floor.toFixed(2),
-      })
+      return matched > 0
+        ? t(
+            'Must be ≥ {{floor}} — the wholesale ratio of {{model}} ({{count}} offerable models match this series)',
+            { floor: floor.toFixed(2), model: drivenBy, count: matched }
+          )
+        : t(
+            'Must be ≥ {{floor}} — no offerable model matches this series, so the entry itself is checked',
+            { floor: floor.toFixed(2) }
+          )
     return ''
   }
 
   const update = (i: number, patch: Partial<Row>) =>
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+    setRows((prev) =>
+      prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+    )
 
   return (
     <Dialog open={!!customer} onOpenChange={(o) => !o && props.onClose()}>
@@ -129,7 +172,7 @@ export function CustomerPricingDialog(props: {
         {hasWholesale && (
           <div className='rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-500/25 dark:text-amber-400'>
             {t(
-              "Each model's ratio must be at least your wholesale ratio for that model (exact name beats prefix)."
+              "Each series' ratio must be at least the highest wholesale ratio among the offerable models it matches (exact name beats prefix)."
             )}
           </div>
         )}
@@ -141,6 +184,7 @@ export function CustomerPricingDialog(props: {
           </div>
           {rows.map((r, i) => {
             const err = rowError(r)
+            const fl = floorFor(r.token)
             return (
               <div key={i} className='flex flex-col gap-1'>
                 <div className='flex items-center gap-2'>
@@ -177,6 +221,22 @@ export function CustomerPricingDialog(props: {
                     {r.token.trim()}: {err}
                   </span>
                 )}
+                {/* Show the implied floor up front so the reseller knows the
+                    bound before typing a ratio. */}
+                {!err && r.token.trim() && (
+                  <span className='text-muted-foreground px-1 text-xs'>
+                    {fl.matched > 0
+                      ? t(
+                          'Floor {{floor}} (set by {{model}}; {{count}} offerable models match)',
+                          {
+                            floor: fl.floor.toFixed(2),
+                            model: fl.drivenBy,
+                            count: fl.matched,
+                          }
+                        )
+                      : t('No offerable model matches this series yet.')}
+                  </span>
+                )}
               </div>
             )
           })}
@@ -184,7 +244,9 @@ export function CustomerPricingDialog(props: {
             size='sm'
             variant='outline'
             className='gap-1.5 self-start'
-            onClick={() => setRows((prev) => [...prev, { token: '', ratio: '' }])}
+            onClick={() =>
+              setRows((prev) => [...prev, { token: '', ratio: '' }])
+            }
           >
             <Plus className='h-3.5 w-3.5' />
             {t('Add series')}

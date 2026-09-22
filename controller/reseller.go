@@ -207,6 +207,11 @@ func SetMyCustomerPricing(c *gin.Context) {
 	if !ok {
 		return
 	}
+	customer, err := model.GetOrganizationById(customerId)
+	if err != nil || customer == nil {
+		common.ApiErrorMsg(c, "客户组织不存在")
+		return
+	}
 	var req struct {
 		Discounts map[string]float64 `json:"discounts"`
 	}
@@ -214,11 +219,16 @@ func SetMyCustomerPricing(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	// A customer's per-model retail ratio must be at least the reseller's own
-	// per-model wholesale ratio for that model (the reseller must not resell below
-	// its cost — equal is allowed = zero margin), have at most two decimals, and
-	// stay within (0,1]. The floor is resolved per model (exact name beats prefix).
+	// A customer's retail ratio for a series/model token must be at least the
+	// reseller's own wholesale for every offerable model that token covers
+	// (exact name or prefix — the request-time rule), i.e. at least the HIGHEST
+	// wholesale among them: the reseller must not resell any covered model below
+	// its cost (equal = zero margin is allowed). A series like "claude" is thus
+	// judged against the claude-* models the reseller can actually sell, not
+	// against a literal "claude" wholesale entry. Ratios have at most two
+	// decimals and stay within (0,1].
 	wholesale := model.ParseRetailDiscounts(reseller.WholesaleRatios)
+	catalog := resellerOfferableModels(reseller, customer.PriceGroup)
 	for token, ratio := range req.Discounts {
 		if ratio <= 0 || ratio > 1 {
 			common.ApiErrorMsg(c, "折扣比例必须在 (0,1] 之间: "+token)
@@ -228,9 +238,13 @@ func SetMyCustomerPricing(c *gin.Context) {
 			common.ApiErrorMsg(c, "折扣最多保留两位小数: "+token)
 			return
 		}
-		floor := model.WholesaleRatioFor(token, wholesale)
+		floor, drivenBy, matched := model.RetailFloorFor(token, catalog, wholesale)
 		if ratio < floor {
-			common.ApiErrorMsg(c, fmt.Sprintf("客户折扣不能低于该模型的批发折 %.2f: %s", floor, token))
+			if matched == 0 {
+				common.ApiErrorMsg(c, fmt.Sprintf("客户折扣 %s=%.2f 不能低于 %.2f：该系列未匹配任何可售模型，按条目本身的批发折校验", token, ratio, floor))
+			} else {
+				common.ApiErrorMsg(c, fmt.Sprintf("客户折扣 %s=%.2f 不能低于 %s 的批发折 %.2f（该系列命中 %d 个可售模型）", token, ratio, drivenBy, floor, matched))
+			}
 			return
 		}
 	}

@@ -96,6 +96,37 @@ func WholesaleRatioFor(modelName string, ratios map[string]float64) float64 {
 	return discountRatioFor(modelName, ratios)
 }
 
+// RetailFloorFor is the lowest retail ratio a reseller may set for a series or
+// model token: the HIGHEST wholesale ratio among the offerable models the token
+// actually applies to (exact name or prefix — the request-time rule), so a
+// series like "claude" is judged against the claude-* models the reseller can
+// sell, not against a literal "claude" wholesale entry. drivenBy names the model
+// that sets the floor and matched how many catalog models the token covers.
+//
+// When no offerable model matches, the token is inert today but would go live
+// if the offerable set grew, so the floor falls back to resolving the token
+// itself (conservative: 1.0 unless the token has its own wholesale entry).
+func RetailFloorFor(token string, catalog []string, wholesale map[string]float64) (floor float64, drivenBy string, matched int) {
+	want := strings.ToLower(strings.TrimSpace(token))
+	if want == "" {
+		return 1.0, "", 0
+	}
+	for _, m := range catalog {
+		have := strings.ToLower(strings.TrimSpace(m))
+		if have != want && !strings.HasPrefix(have, want) {
+			continue
+		}
+		matched++
+		if r := WholesaleRatioFor(m, wholesale); matched == 1 || r > floor {
+			floor, drivenBy = r, m
+		}
+	}
+	if matched == 0 {
+		return WholesaleRatioFor(want, wholesale), "", 0
+	}
+	return floor, drivenBy, matched
+}
+
 // EffectiveWholesaleRatio returns the reseller's wholesale price ratio, clamped
 // to the sane (0,1] range; anything else (unset 0, or a nonsensical >1) means
 // "no discount" = 1.0. personal quota spent = purchased credit × ratio.
