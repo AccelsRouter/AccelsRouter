@@ -45,9 +45,11 @@ function matrixFromRules(rules: ResellerRoutingRule[]): Matrix {
   const m: Matrix = {}
   for (const r of rules) {
     m[r.model] ??= {}
+    // A saved rule always carries a concrete weight (a blank weight is written
+    // as 0), so echo it as-is — hiding 0 made a just-saved row look blank.
     m[r.model][r.channel_id] = {
       priority: String(r.priority),
-      weight: r.weight ? String(r.weight) : '',
+      weight: String(r.weight),
     }
   }
   return m
