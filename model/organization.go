@@ -259,6 +259,25 @@ func ModelAllowedBy(allowed map[string]bool, model, matchName string) bool {
 	return false
 }
 
+// OfferableCatalog narrows a group's enabled models to those a reseller's
+// offerable list admits, using the same exact-or-prefix rule the request path
+// enforces (ModelAllowedBy): a "deepseek-" entry offers every deepseek-* model.
+// Judging by exact set membership instead silently dropped every model behind
+// a prefix entry — the catalog the reseller assigns from, validates against
+// and prices against then showed none of them. nil allowed = unrestricted.
+func OfferableCatalog(groupModels []string, allowed map[string]bool) []string {
+	if allowed == nil {
+		return groupModels
+	}
+	out := make([]string, 0, len(groupModels))
+	for _, m := range groupModels {
+		if ModelAllowedBy(allowed, m, "") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // MarshalAllowedModels serializes a model-name list for storage, de-duplicated
 // and trimmed. An empty result serializes to "" (= unrestricted).
 func MarshalAllowedModels(models []string) (string, error) {

@@ -357,18 +357,9 @@ func resellerOfferableModels(reseller *model.Organization, group string) []strin
 	if group == "" {
 		group = "default"
 	}
-	groupModels := model.GetGroupEnabledModels(group)
-	offer := reseller.AllowedModelSet()
-	if offer == nil {
-		return groupModels
-	}
-	out := make([]string, 0, len(groupModels))
-	for _, m := range groupModels {
-		if offer[m] {
-			out = append(out, m)
-		}
-	}
-	return out
+	// Exact-or-prefix, the request-time rule: a "deepseek-" offerable entry
+	// admits every deepseek-* model (see model.OfferableCatalog).
+	return model.OfferableCatalog(model.GetGroupEnabledModels(group), reseller.AllowedModelSet())
 }
 
 // GetMyCustomerModels — GET /api/reseller/customers/:id/models

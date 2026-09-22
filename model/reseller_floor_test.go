@@ -58,3 +58,21 @@ func TestRetailFloorForJudgesTheModelsTheTokenCovers(t *testing.T) {
 	assert.InDelta(t, 1.0, floor, 1e-9)
 	assert.Equal(t, 0, n)
 }
+
+// The offerable catalog must admit models by the same exact-or-prefix rule the
+// request path uses: a "deepseek-" entry offers every deepseek-* model. Exact
+// set membership dropped them all, so the reseller could neither assign, nor
+// validate, nor price a series it had been granted by prefix.
+func TestOfferableCatalogAdmitsByExactOrPrefix(t *testing.T) {
+	group := []string{"deepseek-v4-pro", "deepseek-v3.2", "claude-opus-4-8", "claude-sonnet-5", "kimi-k3"}
+
+	assert.Equal(t, group, OfferableCatalog(group, nil), "unrestricted => whole group")
+
+	got := OfferableCatalog(group, map[string]bool{"deepseek-": true, "claude-opus-4-8": true})
+	assert.Equal(t, []string{"deepseek-v4-pro", "deepseek-v3.2", "claude-opus-4-8"}, got,
+		"prefix entry admits the series; exact entry admits one model; order preserved")
+
+	assert.Equal(t, []string{"kimi-k3"}, OfferableCatalog(group, map[string]bool{"KIMI-K3": true}),
+		"matching is case-insensitive")
+	assert.Empty(t, OfferableCatalog(group, map[string]bool{"gpt-": true}))
+}
