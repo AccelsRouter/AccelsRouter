@@ -159,7 +159,7 @@ export function ResellerUsageReport(props: {
           <StatCard
             label={t('Platform discount')}
             value={money(platformGiveback)}
-            hint={t('Standard − my cost')}
+            hint={t('Standard − reseller cost')}
           />
         )}
         <StatCard label={costLabel} value={money(cost)} />
