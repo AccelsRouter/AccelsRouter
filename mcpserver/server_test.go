@@ -106,10 +106,12 @@ func TestToolsListedAndReadOnlyHints(t *testing.T) {
 	for _, tool := range res.Tools {
 		got[tool.Name] = tool.Annotations != nil && tool.Annotations.ReadOnlyHint
 	}
-	for _, name := range []string{"ping", "list-models", "get-model", "list-providers", "get-model-pricing",
+	for _, name := range []string{"ping", "list-models", "get-model", "get-model-pricing",
 		"get-credits", "get-generation", "list-daily-model-rankings"} {
 		assert.True(t, got[name], "%s must be listed and marked read-only", name)
 	}
+	_, providersListed := got["list-providers"]
+	assert.False(t, providersListed, "upstream/vendor listing must not be exposed")
 	readOnly, listed := got["send-message"]
 	assert.True(t, listed)
 	assert.False(t, readOnly, "send-message spends credit and must not claim read-only")
@@ -137,7 +139,7 @@ func TestListModelsUsesCallerCatalogAndFilters(t *testing.T) {
 	assert.Equal(t, "default", out.Group)
 	require.Len(t, out.Models, 2)
 	assert.Equal(t, "gpt-x", out.Models[0].Id)
-	assert.Equal(t, "openai", out.Models[0].Provider, "falls back to owned_by when no vendor is configured")
+	assert.Empty(t, out.Models[0].Provider, "owned_by reflects the serving channel type and must never leak; only a configured vendor is shown")
 
 	res, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "list-models",
 		Arguments: map[string]any{"endpoint": "anthropic"}})

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -45,11 +44,6 @@ func registerTools(s *mcp.Server, engine *gin.Engine) {
 		func(ctx context.Context, _ *mcp.CallToolRequest, in modelInput) (*mcp.CallToolResult, modelDetail, error) {
 			return getModel(ctx, engine, in)
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "list-providers", Annotations: readOnly,
-		Description: "List the model providers (vendors) behind the models this API key can call, with model counts. Free."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, _ any) (*mcp.CallToolResult, listProvidersOutput, error) {
-			return listProviders(ctx, engine)
-		})
 	mcp.AddTool(s, &mcp.Tool{Name: "get-model-pricing", Annotations: readOnly,
 		Description: "Effective price of one model for this API key, in USD per 1M tokens (or per call), including the group ratio applied to this key. Free."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in modelInput) (*mcp.CallToolResult, modelPricing, error) {
@@ -83,7 +77,6 @@ func registerTools(s *mcp.Server, engine *gin.Engine) {
 // visibleModel is one entry of the caller's /v1/models list.
 type visibleModel struct {
 	Id                     string   `json:"id"`
-	OwnedBy                string   `json:"owned_by"`
 	SupportedEndpointTypes []string `json:"supported_endpoint_types"`
 }
 
@@ -215,7 +208,7 @@ type pingOutput struct {
 	ServerTime string `json:"server_time"`
 }
 
-// ---- list-models / get-model / list-providers ---------------------------------
+// ---- list-models / get-model ----------------------------------------------------
 
 type listModelsInput struct {
 	Search   string `json:"search,omitempty" jsonschema:"Case-insensitive substring matched against the model id"`
@@ -242,13 +235,14 @@ type listModelsOutput struct {
 	HasMore bool           `json:"has_more"`
 }
 
-func providerOf(p *model.Pricing, vendors map[int]string, ownedBy string) string {
+// providerOf is the vendor configured on the model's metadata, or empty. The
+// REST catalog's owned_by is deliberately NOT used as a fallback: it is derived
+// from the serving channel's type, and upstream channels stay invisible here.
+func providerOf(p *model.Pricing, vendors map[int]string) string {
 	if p != nil && p.VendorID > 0 {
-		if name := vendors[p.VendorID]; name != "" {
-			return name
-		}
+		return vendors[p.VendorID]
 	}
-	return ownedBy
+	return ""
 }
 
 func listModels(ctx context.Context, engine *gin.Engine, in listModelsInput) (*mcp.CallToolResult, listModelsOutput, error) {
@@ -280,7 +274,7 @@ func listModels(ctx context.Context, engine *gin.Engine, in listModelsInput) (*m
 		if entry, ok := pricing[vm.Id]; ok {
 			p = &entry
 		}
-		prov := providerOf(p, vendors, vm.OwnedBy)
+		prov := providerOf(p, vendors)
 		if provider != "" && strings.ToLower(prov) != provider {
 			continue
 		}
@@ -360,7 +354,7 @@ func getModel(ctx context.Context, engine *gin.Engine, in modelInput) (*mcp.Call
 	group, groupRatio := callerGroup(c)
 	out := modelDetail{
 		Id:        vm.Id,
-		Provider:  providerOf(p, vendorNames(), vm.OwnedBy),
+		Provider:  providerOf(p, vendorNames()),
 		Endpoints: vm.SupportedEndpointTypes,
 		Pricing:   effectivePricing(vm.Id, p, group, groupRatio),
 	}
@@ -387,49 +381,4 @@ func getModelPricing(ctx context.Context, engine *gin.Engine, in modelInput) (*m
 	}
 	group, groupRatio := callerGroup(c)
 	return nil, effectivePricing(vm.Id, p, group, groupRatio), nil
-}
-
-type providerSummary struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	ModelCount  int    `json:"model_count"`
-}
-
-type listProvidersOutput struct {
-	Providers []providerSummary `json:"providers"`
-}
-
-func listProviders(ctx context.Context, engine *gin.Engine) (*mcp.CallToolResult, listProvidersOutput, error) {
-	visible, err := visibleModels(ctx, engine)
-	if err != nil {
-		return nil, listProvidersOutput{}, err
-	}
-	pricing := pricingByName()
-	descriptions := map[string]string{}
-	vendors := map[int]string{}
-	for _, v := range model.GetVendors() {
-		vendors[v.ID] = v.Name
-		descriptions[v.Name] = v.Description
-	}
-	counts := map[string]int{}
-	for _, vm := range visible {
-		var p *model.Pricing
-		if entry, ok := pricing[vm.Id]; ok {
-			p = &entry
-		}
-		if name := providerOf(p, vendors, vm.OwnedBy); name != "" {
-			counts[name]++
-		}
-	}
-	out := listProvidersOutput{Providers: []providerSummary{}}
-	for name, n := range counts {
-		out.Providers = append(out.Providers, providerSummary{Name: name, Description: descriptions[name], ModelCount: n})
-	}
-	sort.Slice(out.Providers, func(i, j int) bool {
-		if out.Providers[i].ModelCount != out.Providers[j].ModelCount {
-			return out.Providers[i].ModelCount > out.Providers[j].ModelCount
-		}
-		return out.Providers[i].Name < out.Providers[j].Name
-	})
-	return nil, out, nil
 }
