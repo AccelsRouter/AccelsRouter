@@ -267,6 +267,39 @@ func TestGetWorkspaceBillingInfo(t *testing.T) {
 	assert.Nil(t, info, "a stale binding (deleted workspace) falls back to personal")
 }
 
+// Suspending a reseller must stop every one of its customers: the billing info
+// of a customer workspace token carries the owning reseller's live status, and
+// reactivating the reseller lifts the block without touching the customer.
+func TestGetWorkspaceBillingInfoCarriesResellerStatus(t *testing.T) {
+	migrateOrgTables(t)
+	reseller := mustCreateOrg(t, "acme-reseller", OrgTypeReseller, 1000)
+	cust, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", 400, 1)
+	require.NoError(t, err)
+	ws := &Workspace{OrgId: cust.Id, Name: "prod"}
+	require.NoError(t, CreateWorkspace(ws))
+	require.NoError(t, BindTokenToWorkspace(cust.Id, ws.Id, 777))
+
+	info, err := GetWorkspaceBillingInfo(777)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.Equal(t, reseller.Id, info.ResellerOrgId)
+	assert.Equal(t, OrgStatusActive, info.OrgStatus, "the customer itself stays active")
+	assert.Equal(t, OrgStatusActive, info.ResellerOrgStatus)
+
+	require.NoError(t, UpdateOrganizationFields(reseller.Id, map[string]interface{}{"status": OrgStatusSuspended}))
+	info, err = GetWorkspaceBillingInfo(777)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.Equal(t, OrgStatusActive, info.OrgStatus, "suspending the reseller does not rewrite the customer row")
+	assert.Equal(t, OrgStatusSuspended, info.ResellerOrgStatus, "the customer's next call must see the reseller suspended")
+
+	require.NoError(t, UpdateOrganizationFields(reseller.Id, map[string]interface{}{"status": OrgStatusActive}))
+	info, err = GetWorkspaceBillingInfo(777)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.Equal(t, OrgStatusActive, info.ResellerOrgStatus, "reactivating the reseller restores its customers")
+}
+
 // The per-seat member budget is optional: a token owner who is not a member
 // of the workspace's org has no cap and is allowed.
 func TestMemberSpendTolerantOfNonMember(t *testing.T) {

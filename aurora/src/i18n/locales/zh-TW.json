@@ -239,6 +239,7 @@
     "Ledger": "帳目",
     "No ledger entries.": "尚無帳目記錄。",
     "Suspended": "已暫停",
+    "Suspending a distributor also blocks every customer under it; reactivating restores them.": "暫停分銷商會同時禁止其下所有客戶呼叫；恢復後客戶自動恢復。",
     "My Organization": "我的組織",
     "You do not manage an organization.": "你未管理任何組織。",
     "Members": "成員",

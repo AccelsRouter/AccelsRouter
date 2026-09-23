@@ -243,7 +243,8 @@ func (o *OrgWalletFunding) Refund() error {
 // personal balance for personal keys and never has it silently bypassed by
 // org membership. When the token IS workspace-bound, the org wallet pays and
 // there is no fallback to personal funds (that would leak the org's cost onto
-// the member); a suspended org/workspace or an empty org wallet aborts.
+// the member); a suspended org/workspace, a suspended owning reseller (its
+// customers stop with it) or an empty org wallet aborts.
 func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preConsumedQuota int) (*BillingSession, *types.NewAPIError) {
 	info, err := model.GetWorkspaceBillingInfo(relayInfo.TokenId)
 	if err != nil {
@@ -261,6 +262,15 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 	if info.WorkspaceStatus == model.OrgStatusSuspended {
 		return nil, types.NewErrorWithStatusCode(
 			fmt.Errorf("该 workspace 已被暂停"),
+			types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+			types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+	}
+	// A reseller's customers stop with the reseller: while the owning reseller is
+	// suspended, none of its customer orgs may consume, regardless of their own
+	// status or wallet. Resumes automatically once the reseller is active again.
+	if info.ResellerOrgId > 0 && info.ResellerOrgStatus != model.OrgStatusActive {
+		return nil, types.NewErrorWithStatusCode(
+			fmt.Errorf("所属分销商已被暂停"),
 			types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
 			types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 	}

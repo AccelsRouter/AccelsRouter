@@ -199,6 +199,7 @@
     "Ledger": "Ledger",
     "No ledger entries.": "No ledger entries.",
     "Suspended": "Suspended",
+    "Suspending a distributor also blocks every customer under it; reactivating restores them.": "Suspending a distributor also blocks every customer under it; reactivating restores them.",
     "My Organization": "My Organization",
     "You do not manage an organization.": "You do not manage an organization.",
     "Members": "Members",

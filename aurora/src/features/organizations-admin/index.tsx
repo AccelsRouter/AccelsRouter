@@ -609,6 +609,13 @@ function EditOrgDialog(props: {
             {t('Suspended')}
           </NativeSelectOption>
         </NativeSelect>
+        {isReseller && (
+          <span className='text-muted-foreground text-xs'>
+            {t(
+              'Suspending a distributor also blocks every customer under it; reactivating restores them.'
+            )}
+          </span>
+        )}
       </Field>
       <Field label={t('Remark')}>
         <Textarea

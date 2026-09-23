@@ -620,6 +620,11 @@ type WorkspaceBillingInfo struct {
 	// reseller's cost basis, drained from the reseller wallet per call. Empty /
 	// unmatched = 1.0 = reseller pays full standard.
 	WholesaleRatios string
+	// ResellerOrgStatus is the owning reseller's status. Suspending a reseller
+	// must stop every one of its customers, so the billing session refuses a
+	// customer call while this is not active. Read from the reseller row already
+	// loaded for WholesaleRatios — no extra query; takes effect on the next call.
+	ResellerOrgStatus string
 }
 
 // GetWorkspaceBillingInfo resolves the org that pays for a token via its
@@ -663,6 +668,7 @@ func GetWorkspaceBillingInfo(tokenId int) (*WorkspaceBillingInfo, error) {
 		info.ResellerOrgId = resellerId
 		if reseller, rErr := GetOrganizationById(resellerId); rErr == nil && reseller != nil {
 			info.WholesaleRatios = reseller.WholesaleRatios
+			info.ResellerOrgStatus = reseller.Status
 		}
 	}
 	return info, nil
