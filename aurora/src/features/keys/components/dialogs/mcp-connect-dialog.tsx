@@ -49,7 +49,7 @@ function buildSnippet(client: ClientId, url: string, key: string): string {
   const auth = `Bearer ${key}`
   switch (client) {
     case 'claude-code':
-      return `claude mcp add --transport http accelsrouter ${url} --header "Authorization: ${auth}"`
+      return `claude mcp add --transport http --scope user accelsrouter ${url} --header "Authorization: ${auth}"`
     case 'cursor':
       return JSON.stringify(
         {
