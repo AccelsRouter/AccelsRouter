@@ -126,8 +126,13 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 	}
 }
 
+// formatUserLogs sanitizes rows for every viewer who is not a platform admin
+// (self logs, org / reseller call records): the upstream channel — id and
+// name — and the admin-only debug/audit blobs never leave the server, so no
+// theme or API client can surface which upstream served a request.
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
+		logs[i].ChannelId = 0
 		logs[i].ChannelName = ""
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)

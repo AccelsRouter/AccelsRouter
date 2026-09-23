@@ -56,7 +56,13 @@ func GetUserTask(c *gin.Context) {
 	items := model.TaskGetAllUserTask(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.TaskCountAllUserTask(userId, queryParams)
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(tasksToDto(items, false))
+	dtos := tasksToDto(items, false)
+	// The upstream channel is platform-admin-only; a user's own task list
+	// never carries it (mirrors formatUserLogs for usage logs).
+	for _, d := range dtos {
+		d.ChannelId = 0
+	}
+	pageInfo.SetItems(dtos)
 	common.ApiSuccess(c, pageInfo)
 }
 

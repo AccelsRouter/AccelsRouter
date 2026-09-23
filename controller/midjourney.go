@@ -317,11 +317,14 @@ func GetUserMidjourney(c *gin.Context) {
 	items := model.GetAllUserTask(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), queryParams)
 	total := model.CountAllUserTask(userId, queryParams)
 
-	if setting.MjForwardUrlEnabled {
-		for i, midjourney := range items {
+	for i, midjourney := range items {
+		// The upstream channel is platform-admin-only; a user's own drawing
+		// list never carries it (mirrors formatUserLogs for usage logs).
+		midjourney.ChannelId = 0
+		if setting.MjForwardUrlEnabled {
 			midjourney.ImageUrl = system_setting.ServerAddress + "/mj/image/" + midjourney.MjId
-			items[i] = midjourney
 		}
+		items[i] = midjourney
 	}
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(items)
