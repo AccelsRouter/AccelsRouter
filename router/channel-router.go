@@ -42,6 +42,7 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodGet, path: "/models", permission: authz.ChannelRead, handler: controller.ChannelListModels},
 	{method: http.MethodGet, path: "/models_enabled", permission: authz.ChannelRead, handler: controller.EnabledListModels},
 	{method: http.MethodGet, path: "/models_from_channels", permission: authz.ChannelRead, handler: controller.ChannelModelsList},
+	{method: http.MethodGet, path: "/model_summaries", permission: authz.ChannelRead, handler: controller.ChannelModelSummaries},
 	{method: http.MethodGet, path: "/:id/model-priorities", permission: authz.ChannelRead, handler: controller.ListChannelModelPriorities},
 	{method: http.MethodPost, path: "/:id/model-priorities", permission: authz.ChannelWrite, handler: controller.UpsertChannelModelPriority},
 	{method: http.MethodDelete, path: "/:id/model-priorities/:modelName", permission: authz.ChannelWrite, handler: controller.DeleteChannelModelPriority},

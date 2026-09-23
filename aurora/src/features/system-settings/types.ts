@@ -469,3 +469,13 @@ export type UpstreamRatiosResponse = {
     test_results: TestResult[]
   }
 }
+
+// One enabled channel and the models it serves (admin-safe, no keys). Backs
+// model pickers that show which channel a candidate would route to.
+export interface ChannelModelSummary {
+  id: number
+  name: string
+  type: number
+  status: number
+  models: string[]
+}

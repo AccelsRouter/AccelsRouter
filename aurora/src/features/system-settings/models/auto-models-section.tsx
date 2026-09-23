@@ -19,18 +19,20 @@ For commercial licensing, please contact support@quantumnous.com
 import { type TFunction } from 'i18next'
 import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { TagInput } from '@/components/tag-input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+import { getChannelModelSummaries } from '../api'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { CandidateModelPicker } from './candidate-model-picker'
 
 // Mirrors the backend validation in setting/auto_model.go. The server stays
 // the authority; these checks only surface errors before a round trip.
@@ -136,6 +138,13 @@ interface Props {
 export function AutoModelsSection(props: Props) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  // Enabled channels with their models: one load shared by every pool's
+  // picker, so a candidate can be chosen by name and shows where it routes.
+  const channelsQuery = useQuery({
+    queryKey: ['channel-model-summaries'],
+    queryFn: getChannelModelSummaries,
+    staleTime: 60_000,
+  })
 
   const nextIdRef = useRef(0)
   const allocateId = () => {
@@ -250,10 +259,11 @@ export function AutoModelsSection(props: Props) {
               </div>
               <div className='grid gap-1.5'>
                 <Label>{t('Candidate models (in failover order)')}</Label>
-                <TagInput
+                <CandidateModelPicker
                   value={pool.models}
                   onChange={(models) => updatePool(pool.id, { models })}
-                  placeholder={t('Type a real model name and press Enter')}
+                  channels={channelsQuery.data ?? []}
+                  loading={channelsQuery.isLoading}
                 />
               </div>
             </div>

@@ -368,6 +368,18 @@ func ChannelModelsList(c *gin.Context) {
 	})
 }
 
+// ChannelModelSummaries returns every enabled channel with the models it
+// serves, in admin-safe summary form (no keys). Backs model pickers that must
+// tell the admin which channel a candidate model would route to.
+func ChannelModelSummaries(c *gin.Context) {
+	rows, err := model.ListResellerRoutingChannelSummaries()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, rows)
+}
+
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
 	if aiModel, ok := openAIModelsMap[modelId]; ok {
