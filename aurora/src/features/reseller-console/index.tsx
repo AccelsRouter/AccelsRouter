@@ -37,7 +37,9 @@ import {
   getResellerSelf,
   listResellerAudit,
   listResellerLedger,
+  resellerKeysApi,
 } from '@/features/organization-console/api'
+import { OrgKeysPanel } from '@/features/org-keys'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
@@ -140,6 +142,7 @@ export function ResellerConsole() {
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                 <TabsTrigger value='customers'>{t('Customers')}</TabsTrigger>
+                <TabsTrigger value='keys'>{t('API Keys')}</TabsTrigger>
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
                 <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
@@ -147,6 +150,16 @@ export function ResellerConsole() {
               </TabsList>
               <TabsContent value='customers' className='pt-4'>
                 <CustomersTab walletQuota={self.wallet_quota} />
+              </TabsContent>
+              <TabsContent value='keys' className='pt-4'>
+                <OrgKeysPanel
+                  api={resellerKeysApi}
+                  queryKey='reseller-keys'
+                  showCreatedBy
+                  description={t(
+                    'Keys here draw on the distributor wallet at your wholesale price and route through your assigned upstreams, exactly like your customers’ calls. Distributors have no personal keys.'
+                  )}
+                />
               </TabsContent>
               <TabsContent value='usage' className='pt-4'>
                 <ResellerUsageTab />

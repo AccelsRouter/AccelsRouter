@@ -85,6 +85,9 @@ func SetResellerAdminStatus(resellerOrgId, userId int, status string) error {
 	if result.RowsAffected == 0 {
 		return errors.New("该用户不是此分销商的管理员")
 	}
+	// The admin link now feeds the payer record (own reseller keys route and
+	// bill as reseller traffic), so a status flip must reach the hot path.
+	InvalidateOrgPayerCache(userId)
 	return nil
 }
 
@@ -101,6 +104,7 @@ func RemoveResellerAdmin(resellerOrgId, userId int) error {
 	if result.RowsAffected == 0 {
 		return errors.New("该用户不是此分销商的管理员")
 	}
+	InvalidateOrgPayerCache(userId)
 	return nil
 }
 

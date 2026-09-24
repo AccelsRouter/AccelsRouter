@@ -213,6 +213,8 @@
     "Ledger": "账目",
     "No ledger entries.": "暂无账目记录。",
     "Suspended": "已暂停",
+    "Created by": "创建人",
+    "Keys here draw on the distributor wallet at your wholesale price and route through your assigned upstreams, exactly like your customers’ calls. Distributors have no personal keys.": "此处的密钥从分销商钱包按你的批发价扣费，并经由分配给你的上游路由，与客户的调用完全一致。分销商没有个人密钥。",
     "Add candidates": "添加候选模型",
     "Search by model or channel name": "按模型名或渠道名搜索",
     "Already a candidate": "已是候选",

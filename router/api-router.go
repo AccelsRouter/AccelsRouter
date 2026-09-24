@@ -280,6 +280,11 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			resellerRoute.GET("/wallet", controller.GetMyResellerWallet)
 			resellerRoute.POST("/wallet/purchase", middleware.CriticalRateLimit(), controller.PurchaseMyResellerCredit)
+			// Reseller-owned API keys (reseller wallet, wholesale price, reseller route).
+			resellerRoute.GET("/keys", controller.ListMyResellerKeys)
+			resellerRoute.POST("/keys", middleware.CriticalRateLimit(), controller.CreateMyResellerKey)
+			resellerRoute.POST("/keys/:token_id/key", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetMyResellerKey)
+			resellerRoute.DELETE("/keys/:token_id", controller.DeleteMyResellerKey)
 			// Customer delivery: invite a customer org's operator (admin).
 			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)

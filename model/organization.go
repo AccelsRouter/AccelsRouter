@@ -412,7 +412,23 @@ func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
 		return nil, err
 	}
 	var info *OrgPayerInfo
-	if row.OrgId != 0 {
+	if row.OrgId == 0 {
+		// A reseller admin holds no OrgAccount (its single-payer slot stays free)
+		// but its OWN reseller keys must still be treated as reseller traffic:
+		// capped by the reseller's offerable models, kept off BYOK, and routed
+		// through the reseller's bound upstreams. Surface the reseller org as
+		// the payer record, pointing ResellerOrgId at itself.
+		if reseller, rErr := GetResellerAdminOrg(userId); rErr == nil && reseller != nil {
+			info = &OrgPayerInfo{
+				OrgId:         reseller.Id,
+				OrgStatus:     reseller.Status,
+				OrgType:       OrgTypeReseller,
+				AccountStatus: OrgStatusActive,
+				AllowedModels: parseAllowedModels(reseller.AllowedModels),
+				ResellerOrgId: reseller.Id,
+			}
+		}
+	} else {
 		info = &OrgPayerInfo{
 			OrgId:         row.OrgId,
 			OrgStatus:     row.OrgStatus,
@@ -620,6 +636,10 @@ type WorkspaceBillingInfo struct {
 	// reseller's cost basis, drained from the reseller wallet per call. Empty /
 	// unmatched = 1.0 = reseller pays full standard.
 	WholesaleRatios string
+	// OrgType is the billed org's type. A RESELLER org's own keys pay the
+	// reseller's cost basis (its per-model wholesale ratio) from the reseller
+	// wallet alone — see tryOrgBillingSession.
+	OrgType string
 	// ResellerOrgStatus is the owning reseller's status. Suspending a reseller
 	// must stop every one of its customers, so the billing session refuses a
 	// customer call while this is not active. Read from the reseller row already
@@ -657,9 +677,16 @@ func GetWorkspaceBillingInfo(tokenId int) (*WorkspaceBillingInfo, error) {
 	info := &WorkspaceBillingInfo{
 		WorkspaceId:     wsId,
 		OrgId:           ws.OrgId,
+		OrgType:         org.Type,
 		OrgStatus:       org.Status,
 		WorkspaceStatus: ws.Status,
 		RetailDiscounts: org.RetailDiscounts,
+	}
+	// A reseller's OWN key: the wallet debited is the reseller's, at the
+	// reseller's wholesale price for the model (its cost basis) — the same
+	// price a customer call would have cost it. Nothing to debit twice.
+	if org.Type == OrgTypeReseller {
+		info.WholesaleRatios = org.WholesaleRatios
 	}
 	// Route-2: if this org is a reseller's customer, carry the reseller id and
 	// its per-model wholesale map so the hot path can debit the reseller wallet
@@ -933,8 +960,26 @@ func AttachOrgAccount(acc *OrgAccount) error {
 	err := DB.Create(acc).Error
 	if err == nil {
 		InvalidateOrgPayerCache(acc.UserId)
+		disablePersonalTokensIfResellerParty(acc.OrgId, acc.UserId)
 	}
 	return err
+}
+
+// disablePersonalTokensIfResellerParty enforces "reseller parties consume only
+// through organization keys" at the moment a user joins a reseller org or a
+// reseller customer org: their personal keys are disabled (non-fatal — the
+// startup sweep DisableResellerPartiesPersonalTokens catches any miss).
+func disablePersonalTokensIfResellerParty(orgId, userId int) {
+	org, err := GetOrganizationById(orgId)
+	if err != nil || org == nil {
+		return
+	}
+	if org.Type != OrgTypeReseller && !IsCustomerOrg(orgId) {
+		return
+	}
+	if _, err := DisablePersonalTokens(userId); err != nil {
+		common.SysError(fmt.Sprintf("disable personal tokens for user %d failed: %s", userId, err.Error()))
+	}
 }
 
 func DetachOrgAccount(orgId, userId int) error {

@@ -199,6 +199,8 @@
     "Ledger": "Ledger",
     "No ledger entries.": "No ledger entries.",
     "Suspended": "Suspended",
+    "Created by": "Created by",
+    "Keys here draw on the distributor wallet at your wholesale price and route through your assigned upstreams, exactly like your customers’ calls. Distributors have no personal keys.": "Keys here draw on the distributor wallet at your wholesale price and route through your assigned upstreams, exactly like your customers’ calls. Distributors have no personal keys.",
     "Add candidates": "Add candidates",
     "Search by model or channel name": "Search by model or channel name",
     "Already a candidate": "Already a candidate",

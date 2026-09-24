@@ -286,6 +286,15 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 			model.ParseRetailDiscounts(info.RetailDiscounts),
 		)
 	}
+	// A reseller's OWN key pays the reseller's cost basis: standard × its
+	// per-model wholesale ratio, from the reseller wallet alone. Reuses the
+	// discount lever so the wallet charge and the logged charged price agree.
+	if info.OrgType == model.OrgTypeReseller && info.WholesaleRatios != "" {
+		discountRatio = model.WholesaleRatioFor(
+			relayInfo.OriginModelName,
+			model.ParseRetailDiscounts(info.WholesaleRatios),
+		)
+	}
 	// Surface the applied discount so the consume log can show the discounted
 	// price (see attachOrgRetailDiscount).
 	relayInfo.OrgDiscountRatio = discountRatio

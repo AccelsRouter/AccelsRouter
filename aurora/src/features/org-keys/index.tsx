@@ -40,14 +40,27 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
-  createMyOrgKey,
-  deleteMyOrgKey,
-  getMyOrgKey,
-  listMyOrgKeys,
+  myOrgKeysApi,
+  type OrgKeysApi,
 } from '@/features/organization-console/api'
 import { fmtTime } from '@/features/organization-console/shared'
 
-export function OrgKeysPanel() {
+interface Props {
+  // Endpoint set; defaults to the enterprise member console's own keys.
+  api?: OrgKeysApi
+  queryKey?: string
+  // Replaces the default "draws on your organization's balance" blurb.
+  description?: string
+  // Show who minted each key (org-scoped consoles where every admin sees all).
+  showCreatedBy?: boolean
+}
+
+export function OrgKeysPanel({
+  api: keysApi = myOrgKeysApi,
+  queryKey = 'org-keys',
+  description,
+  showCreatedBy = false,
+}: Props = {}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
@@ -55,25 +68,25 @@ export function OrgKeysPanel() {
   const [newKey, setNewKey] = useState<string | null>(null)
 
   const { data: keys, isLoading } = useQuery({
-    queryKey: ['org-keys'],
-    queryFn: listMyOrgKeys,
+    queryKey: [queryKey],
+    queryFn: keysApi.list,
   })
 
   const createMutation = useMutation({
-    mutationFn: () => createMyOrgKey(name.trim()),
+    mutationFn: () => keysApi.create(name.trim()),
     onSuccess: (res) => {
       setNewKey(res.key)
       setName('')
-      queryClient.invalidateQueries({ queryKey: ['org-keys'] })
+      queryClient.invalidateQueries({ queryKey: [queryKey] })
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (tokenId: number) => deleteMyOrgKey(tokenId),
+    mutationFn: (tokenId: number) => keysApi.remove(tokenId),
     onSuccess: () => {
       toast.success(t('API key deleted'))
-      queryClient.invalidateQueries({ queryKey: ['org-keys'] })
+      queryClient.invalidateQueries({ queryKey: [queryKey] })
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
@@ -87,7 +100,7 @@ export function OrgKeysPanel() {
   const copyExisting = async (tokenId: number) => {
     setRevealingId(tokenId)
     try {
-      copy(await getMyOrgKey(tokenId))
+      copy(await keysApi.reveal(tokenId))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
     } finally {
@@ -105,9 +118,10 @@ export function OrgKeysPanel() {
     <div className='flex flex-col gap-4'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <p className='text-muted-foreground max-w-xl text-sm'>
-          {t(
-            'Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.'
-          )}
+          {description ??
+            t(
+              'Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.'
+            )}
         </p>
         <Button size='sm' onClick={() => setCreateOpen(true)}>
           {t('Create API Key')}
@@ -132,6 +146,11 @@ export function OrgKeysPanel() {
               <tr>
                 <th className='px-3 py-2 text-left font-medium'>{t('Name')}</th>
                 <th className='px-3 py-2 text-left font-medium'>{t('Key')}</th>
+                {showCreatedBy && (
+                  <th className='px-3 py-2 text-left font-medium'>
+                    {t('Created by')}
+                  </th>
+                )}
                 <th className='px-3 py-2 text-left font-medium'>
                   {t('Created')}
                 </th>
@@ -161,6 +180,11 @@ export function OrgKeysPanel() {
                       </Button>
                     </div>
                   </td>
+                  {showCreatedBy && (
+                    <td className='text-muted-foreground px-3 py-2 text-xs'>
+                      {k.created_by || '-'}
+                    </td>
+                  )}
                   <td className='text-muted-foreground px-3 py-2 text-xs whitespace-nowrap'>
                     {fmtTime(k.created_time)}
                   </td>
