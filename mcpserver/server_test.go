@@ -368,16 +368,34 @@ func TestResellerToolsOnlyForDistributorAdminPersonalKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, res.IsError, "another organization must not be readable through the distributor tools")
 
-	// The same user's workspace-bound key is a customer credential: no reseller tools.
+	// The same user's key bound to a CUSTOMER workspace is a customer credential: no reseller tools.
 	ws := &model.Workspace{OrgId: customer.Id, Name: "prod"}
 	require.NoError(t, model.CreateWorkspace(ws))
 	require.NoError(t, model.BindTokenToWorkspace(customer.Id, ws.Id, 42))
 	wsSession := connect(t, engine, "sk-test")
 	wsNames := toolNames(t, wsSession)
-	assert.False(t, wsNames["reseller-summary"], "workspace keys never unlock distributor data")
+	assert.False(t, wsNames["reseller-summary"], "customer workspace keys never unlock distributor data")
 	_, err = wsSession.CallTool(context.Background(), &mcp.CallToolParams{Name: "reseller-summary", Arguments: map[string]any{}})
 	require.Error(t, err, "a hidden distributor tool is unknown to this caller, not merely failing")
 	assert.Contains(t, err.Error(), "unknown tool")
+
+	// A key issued by the distributor console is bound to the distributor's OWN
+	// workspace; that is the distributor's normal key and must unlock the tools.
+	require.NoError(t, model.UnbindTokenFromWorkspace(42))
+	ownWs := &model.Workspace{OrgId: reseller.Id, Name: "distributor"}
+	require.NoError(t, model.CreateWorkspace(ownWs))
+	require.NoError(t, model.BindTokenToWorkspace(reseller.Id, ownWs.Id, 42))
+	ownSession := connect(t, engine, "sk-test")
+	assert.True(t, toolNames(t, ownSession)["reseller-summary"], "the distributor's own workspace key unlocks distributor tools")
+	res, err = ownSession.CallTool(context.Background(), &mcp.CallToolParams{Name: "get-credits", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%v", res.Content)
+	var credits creditsOutput
+	require.NoError(t, common.Unmarshal(mustJSON(t, res.StructuredContent), &credits))
+	assert.Equal(t, "organization_wallet", credits.PaidBy)
+	require.NotNil(t, credits.OrganizationWallet)
+	assert.Equal(t, reseller.Name, credits.OrganizationWallet.Name, "the paying wallet is the distributor wallet itself")
+	assert.Contains(t, credits.Note, "distributor wallet")
 }
 
 func TestResellerUsageReportsProfitAcrossCustomers(t *testing.T) {

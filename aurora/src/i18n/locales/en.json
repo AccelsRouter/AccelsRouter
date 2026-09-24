@@ -1811,7 +1811,7 @@
     "Caution": "Caution",
     "CC Switch": "CC Switch",
     "Connect via MCP": "Connect via MCP",
-    "As a distributor admin, your personal keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Workspace keys do not.": "As a distributor admin, your personal keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Workspace keys do not.",
+    "As a distributor admin, your keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Keys bound to a customer workspace do not.": "As a distributor admin, your keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Keys bound to a customer workspace do not.",
     "Server URL": "Server URL",
     "Give your coding agent this gateway as an MCP server: it can browse models and prices, check credit, look up past requests and send test messages with this key.": "Give your coding agent this gateway as an MCP server: it can browse models and prices, check credit, look up past requests and send test messages with this key.",
     "Only the send-message tool spends credit; every other tool is a free read-only lookup. The key is embedded in the snippet, so treat it like a password.": "Only the send-message tool spends credit; every other tool is a free read-only lookup. The key is embedded in the snippet, so treat it like a password.",

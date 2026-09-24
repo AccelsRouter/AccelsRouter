@@ -164,7 +164,7 @@ export function McpConnectDialog(props: Props) {
       {isResellerAdmin && (
         <p className='text-muted-foreground text-xs'>
           {t(
-            'As a distributor admin, your personal keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Workspace keys do not.'
+            'As a distributor admin, your keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Keys bound to a customer workspace do not.'
           )}
         </p>
       )}
