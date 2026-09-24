@@ -231,6 +231,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	if err := SettleBilling(ctx, relayInfo, quota); err != nil {
 		logger.LogError(ctx, "error settling billing: "+err.Error())
 	}
+	RecordTokenRateLimitUsage(relayInfo, totalTokens)
 
 	logModel := modelName
 	if extraContent != "" {
@@ -242,6 +243,8 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 	attachQuotaSaturation(ctx, relayInfo, other)
+	attachOrgRetailDiscount(relayInfo, other, quota)
+	recordOrgUsageDaily(relayInfo, quota, usage.InputTokens, usage.OutputTokens)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.InputTokens,
@@ -354,6 +357,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if err := SettleBilling(ctx, relayInfo, quota); err != nil {
 		logger.LogError(ctx, "error settling billing: "+err.Error())
 	}
+	RecordTokenRateLimitUsage(relayInfo, totalTokens)
 
 	logModel := relayInfo.OriginModelName
 	if extraContent != "" {
@@ -365,6 +369,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 	attachQuotaSaturation(ctx, relayInfo, other)
+	attachOrgRetailDiscount(relayInfo, other, quota)
+	recordOrgUsageDaily(relayInfo, quota, usage.PromptTokens, usage.CompletionTokens)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,
@@ -464,7 +470,47 @@ func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, pre
 	return result, nil
 }
 
+// recordOrgUsageDaily writes the immutable org/reseller usage rollup for an
+// org-billed request: the ACTUAL standard / charged (retail) / cost (wholesale)
+// amounts, using the ratios that applied at call time (so later ratio changes
+// never rewrite history). No-op for non-org-billed requests. `quota` is the
+// standard quota; the org context is set on relayInfo by tryOrgBillingSession.
+func recordOrgUsageDaily(relayInfo *relaycommon.RelayInfo, quota, promptTokens, completionTokens int) {
+	if relayInfo == nil || relayInfo.OrgId <= 0 || quota <= 0 {
+		return
+	}
+	std := int64(quota)
+	charged := std
+	if r := relayInfo.OrgDiscountRatio; r > 0 && r < 1 {
+		charged = int64(common.QuotaRound(float64(quota) * r))
+	}
+	var cost int64
+	if relayInfo.ResellerOrgId > 0 {
+		cost = std
+		if r := relayInfo.OrgWholesaleRatio; r > 0 && r < 1 {
+			cost = int64(common.QuotaRound(float64(quota) * r))
+		}
+	}
+	if err := model.RecordOrgUsageDaily(
+		common.GetTimestamp(),
+		relayInfo.OrgId, relayInfo.OrgWorkspaceId, relayInfo.ResellerOrgId,
+		relayInfo.UserId, relayInfo.OriginModelName,
+		std, charged, cost, int64(promptTokens), int64(completionTokens),
+	); err != nil {
+		common.SysError("record org usage daily failed: " + err.Error())
+	}
+}
+
 func checkAndSendQuotaNotify(relayInfo *relaycommon.RelayInfo, quota int, preConsumedQuota int) {
+	// Org-billed requests (reseller customers, org members) are paid from the
+	// organization wallet, not the caller's personal quota — which is typically 0
+	// and would otherwise trigger a bogus "your quota is almost used up ($0)"
+	// reminder with a self top-up link the user can't act on. The org wallet has
+	// its own insufficient-balance alert (notifyOrgOwnerBudget); skip the personal
+	// reminder here.
+	if relayInfo == nil || relayInfo.BillingSource == BillingSourceOrgWallet {
+		return
+	}
 	gopool.Go(func() {
 		userSetting := relayInfo.UserSetting
 		threshold := common.QuotaRemindThreshold

@@ -78,6 +78,19 @@ type Log struct {
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+	// RetailQuota is a computed, non-persisted field: the reseller's discounted
+	// price for this row (Quota × the customer's matched model-series discount),
+	// = what the customer's org wallet actually paid. Set only on reseller-
+	// customer org log views (see ListOrgLogs); 0/omitted otherwise.
+	RetailQuota int `json:"retail_quota,omitempty" gorm:"-"`
+	// RetailRatio is the CONFIGURED discount ratio for this row's model (0,1),
+	// shown as the discount %. Distinct from RetailQuota/Quota, which fluctuates
+	// row to row from integer truncation at tiny quotas. Computed, non-persisted.
+	RetailRatio float64 `json:"retail_ratio,omitempty" gorm:"-"`
+	// CustomerName is the name of the customer org this row belongs to. Populated
+	// only in a reseller's AGGREGATED call log (ListResellerLogs), where rows span
+	// multiple customers; empty otherwise. Computed, non-persisted.
+	CustomerName string `json:"customer_name,omitempty" gorm:"-"`
 }
 
 // don't use iota, avoid change log type value
@@ -113,8 +126,13 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 	}
 }
 
+// formatUserLogs sanitizes rows for every viewer who is not a platform admin
+// (self logs, org / reseller call records): the upstream channel — id and
+// name — and the admin-only debug/audit blobs never leave the server, so no
+// theme or API client can surface which upstream served a request.
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
+		logs[i].ChannelId = 0
 		logs[i].ChannelName = ""
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)

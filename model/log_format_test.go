@@ -22,9 +22,14 @@ func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 			},
 		},
 	})
-	logs := []*Log{{Other: other}}
+	logs := []*Log{{Other: other, ChannelId: 5, ChannelName: "bytepluses"}}
 
 	formatUserLogs(logs, 0)
+
+	// The upstream channel is platform-admin-only: both id and name are blanked
+	// for self / org / reseller log views regardless of which frontend renders.
+	require.Zero(t, logs[0].ChannelId)
+	require.Empty(t, logs[0].ChannelName)
 
 	parsed, err := common.StrToMap(logs[0].Other)
 	require.NoError(t, err)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"sync"
 
@@ -161,6 +162,76 @@ func ApplyChannelGroupFilter(query *gorm.DB, group string) *gorm.DB {
 	return query.Where(channelGroupFilterCondition(), channelGroupFilterPattern(group))
 }
 
+// ExcludeByokChannels filters out personal/org BYOK channels — those recorded
+// in the user_channels / org_channels ownership tables — from an admin channel
+// query. A BYOK channel is a per-user/-org private upstream that lives in the
+// channels table only to reuse routing/billing; it is owned and managed by the
+// end user via the BYOK console, so it must not clutter (or be editable from)
+// the global admin channel list. Precise by construction: it keys off the
+// ownership tables, not channel-name/group string conventions.
+func ExcludeByokChannels(query *gorm.DB) *gorm.DB {
+	return query.
+		Where("id NOT IN (?)", DB.Model(&UserChannel{}).Select("channel_id")).
+		Where("id NOT IN (?)", DB.Model(&OrgChannel{}).Select("channel_id"))
+}
+
+// EncryptExistingByokKeys encrypts at rest any BYOK channel key that is still
+// stored in plaintext (pre-encryption rows). Idempotent: already-encrypted keys
+// are skipped, so it is safe to run on every startup. Only BYOK channels (those
+// in the ownership tables) are touched; platform channel keys are left as-is.
+func EncryptExistingByokKeys() error {
+	var ids []int
+	if err := DB.Model(&UserChannel{}).Pluck("channel_id", &ids).Error; err != nil {
+		return err
+	}
+	var orgIds []int
+	if err := DB.Model(&OrgChannel{}).Pluck("channel_id", &orgIds).Error; err != nil {
+		return err
+	}
+	ids = append(ids, orgIds...)
+	for _, id := range ids {
+		var ch Channel
+		// GORM maps and quotes the reserved `key` column by struct field name.
+		err := DB.Where("id = ?", id).First(&ch).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if ch.Key == "" || common.IsByokSecretEncrypted(ch.Key) {
+			continue
+		}
+		enc, err := common.EncryptByokSecret(ch.Key)
+		if err != nil {
+			return err
+		}
+		if err := DB.Model(&Channel{}).Where("id = ?", id).Update("Key", enc).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// IsByokChannel reports whether a channel is a user/org-owned private BYOK
+// channel (recorded in the ownership tables). Admin channel operations use this
+// to refuse to touch or reveal a BYOK channel: its upstream credential belongs
+// to the end user and must never be readable through an admin endpoint. A DB
+// error is treated as "is BYOK" (fail safe: never expose on uncertainty).
+func IsByokChannel(channelId int) bool {
+	var n int64
+	if err := DB.Model(&UserChannel{}).Where("channel_id = ?", channelId).Count(&n).Error; err != nil {
+		return true
+	}
+	if n > 0 {
+		return true
+	}
+	if err := DB.Model(&OrgChannel{}).Where("channel_id = ?", channelId).Count(&n).Error; err != nil {
+		return true
+	}
+	return n > 0
+}
+
 // Value implements driver.Valuer interface
 func (c ChannelInfo) Value() (driver.Value, error) {
 	return common.Marshal(&c)
@@ -186,20 +257,31 @@ func (channel *Channel) GetKeys() []string {
 		if err := common.Unmarshal([]byte(trimmed), &arr); err == nil {
 			res := make([]string, len(arr))
 			for i, v := range arr {
-				res[i] = string(v)
+				res[i] = common.DecryptByokSecretOrSelf(string(v))
 			}
 			return res
 		}
 	}
-	// Otherwise, fall back to splitting by newline
+	// Otherwise, fall back to splitting by newline. BYOK keys are stored
+	// encrypted; decrypt each element (a non-encrypted value is returned as-is,
+	// so multi-key platform channels are unaffected).
 	keys := strings.Split(strings.Trim(channel.Key, "\n"), "\n")
+	for i := range keys {
+		keys[i] = common.DecryptByokSecretOrSelf(keys[i])
+	}
 	return keys
 }
 
 func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 	// If not in multi-key mode, return the original key string directly.
+	// BYOK keys are stored AES-GCM-encrypted; decrypt for use (a non-encrypted
+	// value passes through unchanged, so platform channels are unaffected).
 	if !channel.ChannelInfo.IsMultiKey {
-		return channel.Key, 0, nil
+		key, err := common.DecryptByokSecret(channel.Key)
+		if err != nil {
+			return "", 0, types.NewError(errors.New("failed to decrypt channel key"), types.ErrorCodeChannelNoAvailableKey)
+		}
+		return key, 0, nil
 	}
 
 	// Obtain all keys (split by \n)
@@ -286,11 +368,61 @@ func (channel *Channel) SaveChannelInfo() error {
 	return DB.Model(channel).Update("channel_info", channel.ChannelInfo).Error
 }
 
+// GetDistinctModelsFromChannels returns every distinct model name declared
+// across all enabled channels' own Models field. Reads channels directly,
+// unlike GetEnabledModels (which reads the abilities table — a derived
+// index that only reflects channels the sync step already processed) or
+// the separate model marketplace catalog (model.SearchModels), which may
+// be entirely unpopulated in a fresh setup regardless of what channels
+// actually serve.
+func GetDistinctModelsFromChannels() ([]string, error) {
+	var channels []*Channel
+	if err := DB.Select("models").Where("status = ?", common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	result := make([]string, 0)
+	for _, ch := range channels {
+		for _, m := range ch.GetModels() {
+			m = strings.TrimSpace(m)
+			if m == "" {
+				continue
+			}
+			if _, ok := seen[m]; !ok {
+				seen[m] = struct{}{}
+				result = append(result, m)
+			}
+		}
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
 func (channel *Channel) GetModels() []string {
 	if channel.Models == "" {
 		return []string{}
 	}
 	return strings.Split(strings.Trim(channel.Models, ","), ",")
+}
+
+// PriorityForModel returns the priority to use for modelName on this
+// channel, given a preloaded map of this channel's per-model overrides
+// (from GetChannelModelPriorities — the channel_models table). A model
+// with no entry in overrides falls back to the channel's own base
+// Priority (0 if that's unset too). AddAbilities/UpdateAbilities call this
+// once per model when generating each Ability row, so "priority per
+// model" only ever needs to be resolved at write time — channel
+// selection's existing ORDER BY priority DESC then picks the right
+// channel among several serving the same model without any changes of
+// its own.
+func (channel *Channel) PriorityForModel(modelName string, overrides map[string]int64) int64 {
+	if p, ok := overrides[modelName]; ok {
+		return p
+	}
+	if channel.Priority != nil {
+		return *channel.Priority
+	}
+	return 0
 }
 
 func (channel *Channel) GetGroups() []string {
@@ -403,8 +535,8 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 
 	order := resolveChannelSortOptions(idSort, sortOptions)
 
-	// 构造基础查询
-	baseQuery := DB.Model(&Channel{}).Omit("key")
+	// 构造基础查询（排除用户/组织私有 BYOK 渠道，不进管理员渠道搜索）
+	baseQuery := ExcludeByokChannels(DB.Model(&Channel{}).Omit("key"))
 
 	// 构造WHERE子句
 	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
@@ -930,8 +1062,8 @@ func SearchTags(keyword string, group string, model string, idSort bool) ([]*str
 		order = "id desc"
 	}
 
-	// 构造基础查询
-	baseQuery := DB.Model(&Channel{}).Omit("key")
+	// 构造基础查询（排除用户/组织私有 BYOK 渠道，不进管理员渠道搜索）
+	baseQuery := ExcludeByokChannels(DB.Model(&Channel{}).Omit("key"))
 
 	// 构造WHERE子句
 	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"

@@ -58,6 +58,13 @@ func writeUserCache(user *UserBase, includeQuota bool) error {
 		includeQuotaArg = "1"
 	}
 	ttl := userCacheTTLSeconds()
+	// Fork: HSET's field list here is a fixed, hand-written list — adding a
+	// new field to UserBase does NOT automatically make it into this hash.
+	// DailyTokenLimit/BillingMode were added to UserBase without being added
+	// here, so they silently never made it into Redis (read back as zero
+	// values, indistinguishable from "really unset"). Any future field added
+	// to UserBase must be added to both the HSET call below and the ARGV
+	// list passed to Eval, or it will have this exact same silent-miss bug.
 	const script = `
 local incoming = tonumber(ARGV[1])
 local pending = tonumber(redis.call('GET', KEYS[2]) or '0')
@@ -78,7 +85,8 @@ end
 redis.call('HSET', KEYS[1],
   'Id', ARGV[2], 'Group', ARGV[3], 'Email', ARGV[4],
   'Status', ARGV[5], 'Role', ARGV[6], 'Username', ARGV[7],
-  'Setting', ARGV[8], 'AuthVersion', ARGV[1], 'CacheSchema', ARGV[9])
+  'Setting', ARGV[8], 'AuthVersion', ARGV[1], 'CacheSchema', ARGV[9],
+  'DailyTokenLimit', ARGV[13], 'BillingMode', ARGV[14])
 if ARGV[10] == '1' and redis.call('HEXISTS', KEYS[1], 'Quota') == 0 then
   redis.call('HSET', KEYS[1], 'Quota', ARGV[11])
 end
@@ -88,6 +96,7 @@ return 1`
 		[]string{getUserCacheKey(user.Id), getUserAuthFenceKey(user.Id), getUserAuthVersionKey(user.Id)},
 		user.AuthVersion, user.Id, user.Group, user.Email, user.Status, user.Role,
 		user.Username, user.Setting, user.CacheSchema, includeQuotaArg, user.Quota, ttl,
+		user.DailyTokenLimit, user.BillingMode,
 	).Int()
 	if err != nil {
 		return err

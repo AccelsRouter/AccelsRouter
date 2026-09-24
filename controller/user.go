@@ -695,6 +695,25 @@ func GetUserModels(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+
+	// Fork: channel-pricing-mode users see the union of models their own
+	// bound channels declare support for — Group doesn't apply to them at
+	// all, so the normal group-based listing below would be meaningless
+	// (and could show models they have no bound channel to actually reach).
+	if user.BillingMode == model.BillingModeChannelPricing {
+		models, err := model.GetUserBoundEnabledModels(id)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    models,
+		})
+		return
+	}
+
 	groups := service.GetUserUsableGroups(user.Group)
 	group := c.Query("group")
 	var groupsToQuery []string
@@ -1136,6 +1155,11 @@ type ManageRequest struct {
 	Action string `json:"action"`
 	Value  int    `json:"value"`
 	Mode   string `json:"mode"`
+	// Remark is an optional free-text note attached to the credit-grant /
+	// credit-deduction TopUp record created when Mode == "add" or
+	// "subtract" (e.g. "June 2026 monthly authorized credit"). Ignored for
+	// "override".
+	Remark string `json:"remark"`
 }
 
 // ManageUser Only admin user can do this
@@ -1228,6 +1252,15 @@ func ManageUser(c *gin.Context) {
 				common.ApiError(c, err)
 				return
 			}
+			// Record a visible top-up entry (payment_method =
+			// credit_grant, money = 0) so this shows up in the user's own
+			// top-up history, distinguishable from real payments. A
+			// failure here is logged but doesn't roll back the quota
+			// change or fail the request — the quota adjustment itself
+			// already succeeded.
+			if err := model.RecordCreditGrantTopUp(user.Id, req.Value, req.Remark); err != nil {
+				common.SysLog(fmt.Sprintf("failed to record credit grant topup for user %d: %s", user.Id, err.Error()))
+			}
 			recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
 				"quota": logger.LogQuota(req.Value),
 			})
@@ -1240,6 +1273,14 @@ func ManageUser(c *gin.Context) {
 				common.ApiError(c, err)
 				return
 			}
+			// Mirror of the "add" case below: record a visible top-up
+			// history entry (negative amount, payment_method =
+			// credit_deduction) so the user can see why their balance
+			// went down without a real charge. A failure here is logged
+			// but doesn't roll back the quota change.
+			if err := model.RecordCreditDeductionTopUp(user.Id, req.Value, req.Remark); err != nil {
+				common.SysLog(fmt.Sprintf("failed to record credit deduction topup for user %d: %s", user.Id, err.Error()))
+			}
 			recordManageAuditFor(c, user.Id, "user.quota_subtract", map[string]interface{}{
 				"quota": logger.LogQuota(req.Value),
 			})
@@ -1248,6 +1289,20 @@ func ManageUser(c *gin.Context) {
 			if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", req.Value).Error; err != nil {
 				common.ApiError(c, err)
 				return
+			}
+			// Same treatment as add/subtract above: record a visible
+			// top-up history entry for whatever the override actually
+			// changed, so the user isn't left wondering why their
+			// balance jumped or dropped. Skipped entirely when the
+			// override didn't change anything (delta == 0).
+			if delta := req.Value - oldQuota; delta > 0 {
+				if err := model.RecordCreditGrantTopUp(user.Id, delta, req.Remark); err != nil {
+					common.SysLog(fmt.Sprintf("failed to record credit grant topup for user %d: %s", user.Id, err.Error()))
+				}
+			} else if delta < 0 {
+				if err := model.RecordCreditDeductionTopUp(user.Id, -delta, req.Remark); err != nil {
+					common.SysLog(fmt.Sprintf("failed to record credit deduction topup for user %d: %s", user.Id, err.Error()))
+				}
 			}
 			recordManageAuditFor(c, user.Id, "user.quota_override", map[string]interface{}{
 				"from": logger.LogQuota(oldQuota),

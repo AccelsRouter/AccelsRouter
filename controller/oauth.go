@@ -218,6 +218,13 @@ func HandleOAuth(c *gin.Context) {
 		return
 	}
 
+	// 8b. SSO JIT provisioning: attach to the org mapped to the email domain,
+	// but only when the login came through that domain's designated provider.
+	// Best-effort — a failure here must never block a valid login.
+	if _, err := model.AutoProvisionOrgMembership(user, providerName); err != nil {
+		common.SysError("sso auto-provision failed: " + err.Error())
+	}
+
 	// 9. Setup login
 	setupLogin(user, c)
 }

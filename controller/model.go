@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
@@ -253,6 +254,30 @@ func ListModels(c *gin.Context, modelType int) {
 		userModelNames = append(userModelNames, modelName)
 	}
 
+	// Fork: expose auto virtual models (setting/auto_model.go). An auto name
+	// is listed only when the token may use it (same limit semantics as the
+	// distributor) and at least one candidate is actually enabled for the
+	// user's groups, so the list never advertises a dead virtual model.
+	enabledModelSet := make(map[string]bool, len(models))
+	for _, m := range models {
+		enabledModelSet[m] = true
+	}
+	for _, autoName := range setting.AutoModelNames() {
+		if modelLimitEnable && !tokenModelLimit[autoName] {
+			continue
+		}
+		candidates, ok := setting.GetAutoModelCandidates(autoName)
+		if !ok {
+			continue
+		}
+		for _, candidate := range candidates {
+			if enabledModelSet[candidate] {
+				userModelNames = append(userModelNames, autoName)
+				break
+			}
+		}
+	}
+
 	ownerByModel := map[string]string{}
 	if len(ownerGroups) > 0 {
 		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
@@ -325,6 +350,34 @@ func EnabledListModels(c *gin.Context) {
 		"success": true,
 		"data":    model.GetEnabledModels(),
 	})
+}
+
+// ChannelModelsList returns every distinct model name declared across all
+// enabled channels' own Models field — reads channels directly, not the
+// abilities index or the (possibly unpopulated) model marketplace catalog.
+// Used by the channel-pricing-mode binding UI's "search a model" flow.
+func ChannelModelsList(c *gin.Context) {
+	models, err := model.GetDistinctModelsFromChannels()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(200, gin.H{
+		"success": true,
+		"data":    models,
+	})
+}
+
+// ChannelModelSummaries returns every enabled channel with the models it
+// serves, in admin-safe summary form (no keys). Backs model pickers that must
+// tell the admin which channel a candidate model would route to.
+func ChannelModelSummaries(c *gin.Context) {
+	rows, err := model.ListResellerRoutingChannelSummaries()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, rows)
 }
 
 func RetrieveModel(c *gin.Context, modelType int) {

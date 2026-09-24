@@ -37,6 +37,22 @@ func attachQuotaSaturationToOther(other map[string]interface{}, clamp *common.Qu
 // attachQuotaSaturation records the request's quota clamp (if any) onto the
 // consume log's other.admin_info and emits a request-correlated backend audit
 // line. Called right before RecordConsumeLog on the text/audio/wss paths.
+// attachOrgRetailDiscount records the reseller retail discount actually applied
+// to an org-wallet request onto the consume log's `other`, so any log view can
+// show the discounted price. Visible (not admin_info) — the customer and
+// reseller both see what was charged. No-op when there is no discount.
+func attachOrgRetailDiscount(relayInfo *relaycommon.RelayInfo, other map[string]interface{}, quota int) {
+	if relayInfo == nil || other == nil {
+		return
+	}
+	ratio := relayInfo.OrgDiscountRatio
+	if ratio <= 0 || ratio >= 1 {
+		return
+	}
+	other["org_discount_ratio"] = ratio
+	other["org_charged_quota"] = common.QuotaRound(float64(quota) * ratio)
+}
+
 func attachQuotaSaturation(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
 	if relayInfo == nil {
 		return
@@ -72,6 +88,10 @@ func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
+	// Fork: audit which auto virtual model (if any) the billed model came from.
+	if autoModel := common.GetContextKeyString(ctx, constant.ContextKeyAutoModelOriginal); autoModel != "" {
+		other["auto_model"] = autoModel
+	}
 	other["model_ratio"] = modelRatio
 	other["group_ratio"] = groupRatio
 	other["completion_ratio"] = completionRatio
@@ -107,6 +127,13 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 
 	AppendChannelAffinityAdminInfo(ctx, adminInfo)
+
+	// Fork: reseller upstream routing decision (mode / tier / candidates), so an
+	// admin can read from the call record why a reseller-routed request landed
+	// on a given channel. Admin-only via admin_info.
+	if decision, ok := common.GetContextKey(ctx, constant.ContextKeyResellerRoutingDecision); ok {
+		adminInfo["reseller_routing"] = decision
+	}
 
 	other["admin_info"] = adminInfo
 	appendRequestPath(ctx, relayInfo, other)

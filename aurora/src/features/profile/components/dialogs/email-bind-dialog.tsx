@@ -22,9 +22,11 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
+import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import { useCountdown } from '@/hooks/use-countdown'
 
 import { sendEmailVerification, bindEmail } from '../../api'
@@ -52,6 +54,15 @@ export function EmailBindDialog({
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const {
+    isTurnstileEnabled,
+    turnstileSiteKey,
+    turnstileToken,
+    turnstileResetSignal,
+    setTurnstileToken,
+    resetTurnstile,
+    validateTurnstile,
+  } = useTurnstile()
+  const {
     secondsLeft,
     isActive,
     start: startCountdown,
@@ -65,10 +76,15 @@ export function EmailBindDialog({
       toast.error(t('Please enter a valid email address'))
       return
     }
+    // Send-code is Turnstile-gated when the platform enables it; without a
+    // token the backend rejects with "Turnstile token 为空".
+    if (!validateTurnstile()) {
+      return
+    }
 
     try {
       setSendingCode(true)
-      const response = await sendEmailVerification(email)
+      const response = await sendEmailVerification(email, turnstileToken)
 
       if (response.success) {
         toast.success(t('Verification code sent! Please check your email.'))
@@ -80,6 +96,10 @@ export function EmailBindDialog({
       toast.error(t('Failed to send verification code'))
     } finally {
       setSendingCode(false)
+      // Turnstile tokens are single-use; force a fresh one for the next send.
+      if (isTurnstileEnabled) {
+        resetTurnstile()
+      }
     }
   }
 
@@ -197,6 +217,16 @@ export function EmailBindDialog({
             </Button>
           </div>
         </div>
+
+        {isTurnstileEnabled && (
+          <div className='flex justify-center'>
+            <Turnstile
+              siteKey={turnstileSiteKey}
+              onVerify={setTurnstileToken}
+              resetSignal={turnstileResetSignal}
+            />
+          </div>
+        )}
       </div>
     </Dialog>
   )

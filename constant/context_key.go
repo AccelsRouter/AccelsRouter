@@ -11,15 +11,37 @@ const (
 	ContextKeyRequestStartTime ContextKey = "request_start_time"
 
 	/* token related keys */
-	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"
-	ContextKeyTokenKey               ContextKey = "token_key"
-	ContextKeyTokenId                ContextKey = "token_id"
-	ContextKeyTokenGroup             ContextKey = "token_group"
-	ContextKeyTokenSpecificChannelId ContextKey = "specific_channel_id"
-	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
-	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
-	ContextKeyTokenCrossGroupRetry   ContextKey = "token_cross_group_retry"
-	ContextKeyTokenAutoGroups        ContextKey = "token_auto_groups"
+	ContextKeyTokenUnlimited ContextKey = "token_unlimited_quota"
+	ContextKeyTokenKey       ContextKey = "token_key"
+	ContextKeyTokenId        ContextKey = "token_id"
+	ContextKeyTokenGroup     ContextKey = "token_group"
+	// ContextKeyByokFallbackGroup carries the user's original (platform) group
+	// when a transparent-BYOK request is allowed to fall back to platform
+	// channels on failover. It is a one-shot signal consumed by the relay retry
+	// loop, which switches routing+billing from the BYOK private group to this
+	// group so the fallback is billed at the platform rate.
+	ContextKeyByokFallbackGroup ContextKey = "byok_fallback_group"
+	// ContextKeyResellerOriginGroup carries the customer's ORIGINAL group when a
+	// reseller-customer request is re-routed through its reseller's private
+	// routing group (reseller-<id>). Billing keeps using this group (see
+	// relay/helper/price.go), and it is the pool a fallback-enabled reseller
+	// drops back to once its bound channels are exhausted.
+	ContextKeyResellerOriginGroup ContextKey = "reseller_origin_group"
+	// ContextKeyResellerAffinityHash carries the sticky-routing hash for a
+	// reseller-customer request (reseller + customer org + model). Consumed by
+	// channel selection and by multi-key selection so the same customer+model
+	// keeps landing on the same upstream and the same upstream key, preserving
+	// provider-side prompt caches.
+	ContextKeyResellerAffinityHash ContextKey = "reseller_affinity_hash"
+	// ContextKeyResellerRoutingDecision records why the reseller selector (or
+	// the affinity guard) chose a channel — mode, tier, candidates — so the
+	// consume log's admin_info can explain the routing of each request.
+	ContextKeyResellerRoutingDecision ContextKey = "reseller_routing_decision"
+	ContextKeyTokenSpecificChannelId  ContextKey = "specific_channel_id"
+	ContextKeyTokenModelLimitEnabled  ContextKey = "token_model_limit_enabled"
+	ContextKeyTokenModelLimit         ContextKey = "token_model_limit"
+	ContextKeyTokenCrossGroupRetry    ContextKey = "token_cross_group_retry"
+	ContextKeyTokenAutoGroups         ContextKey = "token_auto_groups"
 
 	/* channel related keys */
 	ContextKeyChannelId                ContextKey = "channel_id"
@@ -52,7 +74,17 @@ const (
 	ContextKeyUserGroup   ContextKey = "user_group"
 	ContextKeyUsingGroup  ContextKey = "group"
 	ContextKeyUserName    ContextKey = "username"
-
+	// ContextKeyUserDailyTokenLimit carries the per-user daily token quota
+	// (0 = unlimited), set on the user record by an admin. Read by
+	// middleware.UserTokenRateLimit; see setting.UserDailyTokenLimitEnabled
+	// for the feature's global on/off switch.
+	ContextKeyUserDailyTokenLimit ContextKey = "user_daily_token_limit"
+	// ContextKeyUserBillingMode carries model.User.BillingMode ("group" or
+	// "channel_pricing"). Read by controller.getChannel to decide whether
+	// to use normal group-based channel selection/pricing or the
+	// channel-pricing-mode path (model.GetChannelPricingChannel +
+	// per-binding ratio).
+	ContextKeyUserBillingMode  ContextKey = "user_billing_mode"
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
 
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
@@ -73,4 +105,11 @@ const (
 	// fallback in authHelper (finishAdminAudit) skips its record to avoid
 	// duplicate entries.
 	ContextKeyAuditLogged ContextKey = "audit_logged"
+
+	// Fork: auto virtual models (setting/auto_model.go). Original stores the
+	// requested auto name for audit logs; Candidates the ordered concrete
+	// pool; Index the cursor of the candidate currently in use.
+	ContextKeyAutoModelOriginal   ContextKey = "auto_model_original"
+	ContextKeyAutoModelCandidates ContextKey = "auto_model_candidates"
+	ContextKeyAutoModelIndex      ContextKey = "auto_model_index"
 )

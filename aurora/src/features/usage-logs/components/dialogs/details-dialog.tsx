@@ -331,6 +331,24 @@ function BillingBreakdown(props: {
     value: formatLogQuota(log.quota),
   })
 
+  // Reseller retail discount applied to the org-wallet charge (org customers).
+  if (
+    other.org_discount_ratio != null &&
+    other.org_discount_ratio > 0 &&
+    other.org_discount_ratio < 1
+  ) {
+    rows.push({
+      label: t('Discount'),
+      value: `${Math.round(other.org_discount_ratio * 100)}%`,
+    })
+    if (other.org_charged_quota != null) {
+      rows.push({
+        label: t('Charged'),
+        value: formatLogQuota(other.org_charged_quota),
+      })
+    }
+  }
+
   if (rows.length === 0) return null
 
   return (

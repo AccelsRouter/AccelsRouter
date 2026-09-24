@@ -75,6 +75,14 @@ var DefaultCollapseSidebar = false // default value of collapse sidebar
 
 var SessionSecret = uuid.New().String()
 var CryptoSecret = uuid.New().String()
+
+// CryptoSecretPersistent reports whether CryptoSecret is derived from a
+// configured, restart-stable secret (SESSION_SECRET/CRYPTO_SECRET). Set in
+// common/init.go. Defaults to true so tests and callers that set CryptoSecret
+// directly still encrypt; init flips it to false only when no persistent secret
+// is configured (an ephemeral per-boot secret would make BYOK ciphertext
+// unrecoverable across restarts).
+var CryptoSecretPersistent = true
 var SessionCookieSecure = false
 var SessionCookieTrustedURLs []string
 

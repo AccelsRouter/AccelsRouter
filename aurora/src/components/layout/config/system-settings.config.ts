@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { type TFunction } from 'i18next'
 import {
   Box,
+  Building2,
   CreditCard,
   Globe,
   Layout,
@@ -100,6 +101,16 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
             {
               title: t('All orders'),
               url: '/system-settings/topups',
+            },
+          ],
+        },
+        {
+          title: t('Organizations'),
+          icon: Building2,
+          items: [
+            {
+              title: t('All organizations'),
+              url: '/system-settings/organizations',
             },
           ],
         },

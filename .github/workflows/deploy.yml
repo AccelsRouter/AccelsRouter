@@ -2,7 +2,7 @@ name: Build & Push to ECR
 
 on:
   push:
-    branches: [dev, staging]
+    branches: [dev, dev-*, staging]
     tags: ['prd-*']
 
 env:

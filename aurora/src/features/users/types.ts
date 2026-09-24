@@ -61,9 +61,13 @@ export const userSchema = z.object({
   last_login_at: z.number().optional(),
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
+  daily_token_limit: z.number().optional(),
+  // "group" (default) or "channel_pricing"; see backend
+  // model.BillingModeGroup / model.BillingModeChannelPricing.
+  billing_mode: z.enum(['group', 'channel_pricing']).optional(),
   admin_permissions: z
-    .record(z.string(), z.record(z.string(), z.boolean()))
-    .optional(),
+      .record(z.string(), z.record(z.string(), z.boolean()))
+      .optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -113,16 +117,21 @@ export interface UserFormData {
   quota?: number // Only used when updating user
   group?: string // Only used when updating user
   remark?: string // Only used when updating user
+  // Daily token quota (prompt+completion, resets at 00:00 UTC). 0/unset =
+  // unlimited. Only used when updating user.
+  daily_token_limit?: number
+  // Only used when updating user
+  billing_mode?: 'group' | 'channel_pricing'
   admin_permissions?: AdminPermissionMatrix
 }
 
 export type ManageUserAction =
-  | 'promote'
-  | 'demote'
-  | 'enable'
-  | 'disable'
-  | 'delete'
-  | 'add_quota'
+    | 'promote'
+    | 'demote'
+    | 'enable'
+    | 'disable'
+    | 'delete'
+    | 'add_quota'
 
 export type QuotaAdjustMode = 'add' | 'subtract' | 'override'
 
@@ -131,6 +140,10 @@ export interface ManageUserQuotaPayload {
   action: 'add_quota'
   mode: QuotaAdjustMode
   value: number
+  // Optional free-text note attached to the credit-grant/credit-deduction
+  // top-up record created for mode 'add'/'subtract'. Ignored for
+  // 'override'.
+  remark?: string
 }
 
 // ============================================================================

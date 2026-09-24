@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  ChannelModelSummary,
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
@@ -104,4 +105,17 @@ export async function fetchUpstreamRatios(request: FetchUpstreamRatiosRequest) {
     request
   )
   return res.data
+}
+
+export async function getChannelModelSummaries(): Promise<
+  ChannelModelSummary[]
+> {
+  const res = await api.get<{
+    success: boolean
+    message?: string
+    data?: ChannelModelSummary[]
+  }>('/api/channel/model_summaries')
+  if (!res.data?.success)
+    throw new Error(res.data?.message || 'Failed to load channels')
+  return res.data.data ?? []
 }

@@ -533,6 +533,10 @@ func UpdateChannelBalance(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if model.IsByokChannel(id) {
+		common.ApiErrorMsg(c, "该渠道为用户自带密钥（BYOK），管理员不可操作")
+		return
+	}
 	channel, err := model.CacheGetChannel(id)
 	if err != nil {
 		common.ApiError(c, err)

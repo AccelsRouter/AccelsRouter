@@ -83,6 +83,9 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 
 func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm.DB {
 	query := model.DB.Model(&model.Channel{})
+	// Personal/org BYOK channels are user-owned private upstreams; keep them out
+	// of the admin channel list (and its counts/tag/type aggregations).
+	query = model.ExcludeByokChannels(query)
 	query = model.ApplyChannelGroupFilter(query, group)
 	query = applyChannelStatusFilter(query, statusFilter)
 	if typeFilter >= 0 {
@@ -231,6 +234,10 @@ func FetchUpstreamModels(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if model.IsByokChannel(id) {
+		common.ApiErrorMsg(c, "该渠道为用户自带密钥（BYOK），管理员不可操作")
 		return
 	}
 
@@ -422,6 +429,17 @@ func GetChannelKey(c *gin.Context) {
 	channelId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiError(c, fmt.Errorf("渠道ID格式错误: %v", err))
+		return
+	}
+
+	// A personal/org BYOK channel's upstream credential belongs to the end
+	// user; it must never be readable through an admin endpoint, even by root.
+	// This is the guarantee behind "the platform admin cannot see your BYOK
+	// key": no product endpoint returns it. (The relay path still uses it to
+	// make the user's own upstream calls — that decryption-at-use is unavoidable
+	// for any server-side BYOK.)
+	if model.IsByokChannel(channelId) {
+		common.ApiErrorMsg(c, "该渠道为用户自带密钥（BYOK），其密钥不可查看")
 		return
 	}
 
@@ -1406,6 +1424,10 @@ func CopyChannel(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "invalid id"})
+		return
+	}
+	if model.IsByokChannel(id) {
+		common.ApiErrorMsg(c, "该渠道为用户自带密钥（BYOK），管理员不可操作")
 		return
 	}
 

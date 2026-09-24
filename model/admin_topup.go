@@ -23,6 +23,7 @@ type TopUpOrderWithUser struct {
 	CreateTime      int64   `json:"create_time"`
 	CompleteTime    int64   `json:"complete_time"`
 	Status          string  `json:"status"`
+	Remark          string  `json:"remark,omitempty"`
 }
 
 // ListTopUpOrdersWithUsername returns paginated top-up orders joined
@@ -57,7 +58,8 @@ func ListTopUpOrdersWithUsername(
 			"top_ups.id, top_ups.user_id, users.username, " +
 				"top_ups.amount, top_ups.money, top_ups.trade_no, " +
 				"top_ups.payment_method, top_ups.payment_provider, " +
-				"top_ups.create_time, top_ups.complete_time, top_ups.status",
+				"top_ups.create_time, top_ups.complete_time, top_ups.status, " +
+				"top_ups.remark",
 		).
 		Order("top_ups.id DESC").
 		Limit(page.GetPageSize()).

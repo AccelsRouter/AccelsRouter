@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -10,9 +11,11 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/limiter"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
@@ -129,6 +132,15 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		channels = filterChannelsByRequestPathAndModel(group2model2channels[group][normalizedModel], requestPath, model)
 	}
 
+	// Drop channels that have already exhausted their configured daily
+	// token budget (resets at 00:00 UTC). Filtering here (before
+	// priority/weight grouping) means an over-budget channel is
+	// transparently skipped in favor of the next channel/priority tier, and
+	// if every channel in this group is over budget, the caller naturally
+	// falls through to the next group for "auto" combinations, or reports
+	// no channel available.
+	channels = filterChannelsByTokenBudget(channels)
+
 	if len(channels) == 0 {
 		return nil, nil
 	}
@@ -230,6 +242,77 @@ func filterChannelsByRequestPathAndModel(channels []int, requestPath string, mod
 			continue
 		}
 		if config := channel2advancedCustomConfig[channelId]; config != nil && config.SupportsPathForModel(requestPath, model) {
+			filtered = append(filtered, channelId)
+		}
+	}
+	return filtered
+}
+
+// filterChannelsByTokenBudget peeks each candidate channel's accumulated
+// daily (UTC calendar day) token usage and drops channels that are already
+// at or over their configured dto.ChannelSettings.DailyTokenLimit.
+// Peek-only: actual usage is recorded elsewhere, after a response completes,
+// by service.RecordTokenRateLimitUsage. Channels without a configured limit
+// (0) are never filtered. If the limiter backend errors (e.g. Redis briefly
+// IsChannelOverDailyTokenBudget reports whether channel has already
+// exhausted its own configured daily token budget (resets at 00:00 UTC).
+// Shared by every channel-selection path — the memory-cache and DB-fallback
+// group selections, and channel affinity's "is the sticky channel still
+// usable" check — so a channel over budget is treated consistently
+// everywhere it might get chosen, not just on a fresh selection. Fails open
+// (reports false, i.e. "not over budget") when the global setting is off,
+// the channel has no limit configured, or the usage lookup itself fails.
+func IsChannelOverDailyTokenBudget(channel *Channel) bool {
+	if !setting.ChannelDailyTokenLimitEnabled || channel == nil {
+		return false
+	}
+	limitTokens := channel.GetSetting().DailyTokenLimit
+	if limitTokens <= 0 {
+		common.SysLog(fmt.Sprintf("[DEBUG] IsChannelOverDailyTokenBudget: channel %d has no daily_token_limit set, treating as unlimited", channel.Id))
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	count, err := limiter.PeekDailyTokens(ctx, setting.ChannelDailyTokenLimitKey(channel.Id))
+	if err != nil {
+		common.SysLog(fmt.Sprintf("daily token limit peek failed for channel %d, allowing through: %v", channel.Id, err))
+		return false
+	}
+	over := count >= limitTokens
+	common.SysLog(fmt.Sprintf("[DEBUG] IsChannelOverDailyTokenBudget: channel %d today's usage=%d limit=%d over=%v", channel.Id, count, limitTokens, over))
+	return over
+}
+
+// unavailable), the channel is kept (fail open) so a limiter hiccup can't
+// take every channel offline.
+func filterChannelsByTokenBudget(channels []int) []int {
+	if !setting.ChannelDailyTokenLimitEnabled || len(channels) == 0 {
+		return channels
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	filtered := make([]int, 0, len(channels))
+	for _, channelId := range channels {
+		channel, ok := channelsIDM[channelId]
+		if !ok {
+			// keep it so the downstream consistency error is raised as before
+			filtered = append(filtered, channelId)
+			continue
+		}
+		limitTokens := channel.GetSetting().DailyTokenLimit
+		if limitTokens <= 0 {
+			filtered = append(filtered, channelId)
+			continue
+		}
+		count, err := limiter.PeekDailyTokens(ctx, setting.ChannelDailyTokenLimitKey(channelId))
+		if err != nil {
+			common.SysLog(fmt.Sprintf("daily token limit peek failed for channel %d, allowing through: %v", channelId, err))
+			filtered = append(filtered, channelId)
+			continue
+		}
+		if count < limitTokens {
 			filtered = append(filtered, channelId)
 		}
 	}

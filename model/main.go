@@ -288,11 +288,27 @@ func migrateDB() error {
 		&UserOAuthBinding{},
 		&PerfMetric{},
 		&RefundRequest{},
+		&Organization{},
+		&OrgAccount{},
+		&CreditLedger{},
+		&Workspace{},
+		&WorkspaceToken{},
+		&OrgChannel{},
+		&OrgApplication{},
+		&OrgInvitation{},
+		&OrgSsoDomain{},
+		&OrgAuditLog{},
+		&ResellerCustomerLink{},
+		&ResellerRouting{},
+		&ResellerAdmin{},
+		&UserChannel{},
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
 		&CasbinRule{},
 		&AuthzRole{},
+		&UserChannelBinding{},
+		&ChannelModel{},
 	)
 	if err != nil {
 		return err
@@ -301,6 +317,12 @@ func migrateDB() error {
 		return err
 	}
 	if err := InitializeExternalIdentityClaims(); err != nil {
+		return err
+	}
+	if err := backfillResellerAdmins(); err != nil {
+		return err
+	}
+	if err := EncryptExistingByokKeys(); err != nil {
 		return err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
@@ -352,6 +374,20 @@ func migrateDBFast() error {
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
 		{&PerfMetric{}, "PerfMetric"},
 		{&RefundRequest{}, "RefundRequest"},
+		{&Organization{}, "Organization"},
+		{&OrgAccount{}, "OrgAccount"},
+		{&CreditLedger{}, "CreditLedger"},
+		{&Workspace{}, "Workspace"},
+		{&WorkspaceToken{}, "WorkspaceToken"},
+		{&OrgChannel{}, "OrgChannel"},
+		{&OrgApplication{}, "OrgApplication"},
+		{&OrgInvitation{}, "OrgInvitation"},
+		{&OrgSsoDomain{}, "OrgSsoDomain"},
+		{&OrgAuditLog{}, "OrgAuditLog"},
+		{&ResellerCustomerLink{}, "ResellerCustomerLink"},
+		{&ResellerRouting{}, "ResellerRouting"},
+		{&ResellerAdmin{}, "ResellerAdmin"},
+		{&UserChannel{}, "UserChannel"},
 		{&SystemInstance{}, "SystemInstance"},
 		{&SystemTask{}, "SystemTask"},
 		{&SystemTaskLock{}, "SystemTaskLock"},
@@ -383,6 +419,12 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := InitializeExternalIdentityClaims(); err != nil {
+		return err
+	}
+	if err := backfillResellerAdmins(); err != nil {
+		return err
+	}
+	if err := EncryptExistingByokKeys(); err != nil {
 		return err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {

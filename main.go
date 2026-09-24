@@ -345,6 +345,13 @@ func InitResources() error {
 		return err
 	}
 
+	// One-time seed of the org usage rollup from historical logs so usage
+	// reports show the same history the raw call records already have. Idempotent
+	// and non-fatal — a failure must not block startup.
+	if err := model.BackfillOrgUsageDaily(); err != nil {
+		common.SysError("org_usage_daily backfill failed: " + err.Error())
+	}
+
 	// Initialize Redis
 	err = common.InitRedisClient()
 	if err != nil {

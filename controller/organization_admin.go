@@ -1,0 +1,422 @@
+// Fork-only platform-admin controllers for the organization system: create
+// orgs, credit their wallets (invoiced top-up), and attach/detach accounts.
+// All routes are AdminAuth-gated in router/api-router.go. The org console
+// (org owners/admins managing their own members/customers) lives in
+// controller/organization_console.go.
+package controller
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-gonic/gin"
+)
+
+// AdminListOrgCustomers — GET /api/admin/organizations/:id/customers
+// Lists a reseller org's downstream customers (id + name), for the admin's
+// per-customer filter on the reseller's usage/call-records views. Empty for a
+// non-reseller org.
+func AdminListOrgCustomers(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	customers, err := model.ListResellerCustomers(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	out := make([]gin.H, 0, len(customers))
+	for _, cust := range customers {
+		if cust.Org == nil {
+			continue
+		}
+		out = append(out, gin.H{"id": cust.Org.Id, "name": cust.Org.Name})
+	}
+	common.ApiSuccess(c, out)
+}
+
+// AdminListOrganizations — GET /api/admin/organizations
+func AdminListOrganizations(c *gin.Context) {
+	page := common.GetPageQuery(c)
+	orgs, total, err := model.ListOrganizations(page.GetStartIdx(), page.GetPageSize(), c.Query("category"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// Mark reseller-provisioned customers so the admin UI can separate them from
+	// enterprise direct clients.
+	if customers, cErr := model.CustomerOrgIdSet(); cErr == nil {
+		for _, o := range orgs {
+			o.IsCustomer = customers[o.Id]
+		}
+	}
+	// Fill in each owner's email so the admin list shows a human-readable owner.
+	ownerIds := make([]int, 0, len(orgs))
+	for _, o := range orgs {
+		if o.OwnerUserId > 0 {
+			ownerIds = append(ownerIds, o.OwnerUserId)
+		}
+	}
+	if labels := model.UserDisplayLabelsByIds(ownerIds); len(labels) > 0 {
+		for _, o := range orgs {
+			o.OwnerEmail = labels[o.OwnerUserId]
+		}
+	}
+	// Expose per-model wholesale as a parsed map for the admin UI (the raw JSON
+	// string field is not serialized).
+	for _, o := range orgs {
+		if o.Type == model.OrgTypeReseller && o.WholesaleRatios != "" {
+			o.WholesaleRatioMap = model.ParseRetailDiscounts(o.WholesaleRatios)
+		}
+	}
+	page.SetTotal(int(total))
+	page.SetItems(orgs)
+	common.ApiSuccess(c, page)
+}
+
+type adminCreateOrgRequest struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	PriceGroup string `json:"price_group"`
+	OwnerId    int    `json:"owner_user_id"`
+	Remark     string `json:"remark"`
+}
+
+// AdminCreateOrganization — POST /api/admin/organizations
+func AdminCreateOrganization(c *gin.Context) {
+	var req adminCreateOrgRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if req.OwnerId > 0 {
+		if u, err := model.GetUserById(req.OwnerId, false); err != nil || u == nil {
+			common.ApiErrorMsg(c, "owner user not found")
+			return
+		}
+	}
+	// A reseller's pricing is driven by its wholesale ratio, not a base-rate
+	// group, so reseller orgs are pinned to the default price group.
+	priceGroup := req.PriceGroup
+	if req.Type == model.OrgTypeReseller {
+		priceGroup = "default"
+	}
+	org := &model.Organization{
+		Name:        req.Name,
+		Type:        req.Type,
+		PriceGroup:  priceGroup,
+		OwnerUserId: req.OwnerId,
+		Remark:      req.Remark,
+	}
+	if err := model.CreateOrganization(org); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(org.Id, c.GetInt("id"), "org.create", fmt.Sprintf("org:%d", org.Id), fmt.Sprintf("%s (%s)", org.Name, org.Type))
+	common.ApiSuccess(c, org)
+}
+
+type adminUpdateOrgRequest struct {
+	Name            *string             `json:"name"`
+	PriceGroup      *string             `json:"price_group"`
+	Status          *string             `json:"status"`
+	Remark          *string             `json:"remark"`
+	WholesaleRatio  *float64            `json:"wholesale_ratio"`
+	WholesaleRatios *map[string]float64 `json:"wholesale_ratios"`
+	AllowedModels   *[]string           `json:"allowed_models"`
+}
+
+// AdminUpdateOrganization — PUT /api/admin/organizations/:id
+func AdminUpdateOrganization(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var req adminUpdateOrgRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	fields := map[string]interface{}{}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if err := model.ValidateOrgName(name); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		fields["name"] = name
+	}
+	if req.PriceGroup != nil {
+		// Reseller orgs are pinned to the default price group (pricing comes from
+		// the wholesale ratio), so ignore any other group for them.
+		priceGroup := *req.PriceGroup
+		if org, gErr := model.GetOrganizationById(id); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
+			priceGroup = "default"
+		}
+		fields["price_group"] = priceGroup
+	}
+	if req.Status != nil {
+		if *req.Status != model.OrgStatusActive && *req.Status != model.OrgStatusSuspended {
+			common.ApiErrorMsg(c, "invalid status")
+			return
+		}
+		fields["status"] = *req.Status
+	}
+	if req.Remark != nil {
+		fields["remark"] = *req.Remark
+	}
+	if req.WholesaleRatio != nil {
+		// Wholesale ratio is a reseller's negotiated buy price (personal quota
+		// spent = credit × ratio). Bound to (0,1]; 0 clears it (= no discount).
+		if *req.WholesaleRatio < 0 || *req.WholesaleRatio > 1 {
+			common.ApiErrorMsg(c, "wholesale_ratio must be within (0, 1]")
+			return
+		}
+		if !ratioAtMost2Decimals(*req.WholesaleRatio) {
+			common.ApiErrorMsg(c, "批发折最多保留两位小数")
+			return
+		}
+		fields["wholesale_ratio"] = *req.WholesaleRatio
+	}
+	if req.WholesaleRatios != nil {
+		// Per-model wholesale (route-2): the reseller's per-model cost basis. Each
+		// ratio (0,1], ≤2 decimals; empty map clears it (= no discount = 1.0).
+		for token, ratio := range *req.WholesaleRatios {
+			if ratio <= 0 || ratio > 1 {
+				common.ApiErrorMsg(c, "批发折必须在 (0,1] 之间: "+token)
+				return
+			}
+			if !ratioAtMost2Decimals(ratio) {
+				common.ApiErrorMsg(c, "批发折最多保留两位小数: "+token)
+				return
+			}
+		}
+		stored, mErr := model.MarshalRetailDiscounts(*req.WholesaleRatios)
+		if mErr != nil {
+			common.ApiError(c, mErr)
+			return
+		}
+		fields["wholesale_ratios"] = stored
+	}
+	if req.AllowedModels != nil {
+		// The reseller's offerable model set (names only). Empty = unrestricted.
+		stored, mErr := model.MarshalAllowedModels(*req.AllowedModels)
+		if mErr != nil {
+			common.ApiError(c, mErr)
+			return
+		}
+		fields["allowed_models"] = stored
+	}
+	if len(fields) == 0 {
+		common.ApiSuccess(c, nil)
+		return
+	}
+	if err := model.UpdateOrganizationFields(id, fields); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// Suspension and model-allow changes must reflect on the hot path for the
+	// org's accounts at once (both are enforced from the cached OrgPayerInfo).
+	if req.Status != nil || req.AllowedModels != nil {
+		invalidateOrgAccountsCache(id)
+	}
+	model.RecordOrgAudit(id, c.GetInt("id"), "org.update", fmt.Sprintf("org:%d", id), fmt.Sprintf("%v", fields))
+	common.ApiSuccess(c, nil)
+}
+
+type adminCreditOrgRequest struct {
+	Quota   int    `json:"quota"`
+	TradeNo string `json:"trade_no"`
+	Remark  string `json:"remark"`
+}
+
+// AdminCreditOrganization — POST /api/admin/organizations/:id/credit
+// Invoiced top-up: platform credits the org wallet, appends a purchase ledger
+// row atomically.
+func AdminCreditOrganization(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var req adminCreditOrgRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if req.Quota <= 0 {
+		common.ApiErrorMsg(c, "quota must be positive")
+		return
+	}
+	if err := model.PlatformCreditOrg(id, req.Quota, c.GetInt("id"), req.TradeNo, req.Remark); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(id, c.GetInt("id"), "org.credit", fmt.Sprintf("org:%d", id), fmt.Sprintf("quota=%d trade=%s", req.Quota, req.TradeNo))
+	common.ApiSuccess(c, nil)
+}
+
+// AdminListOrgAudit — GET /api/admin/organizations/:id/audit
+func AdminListOrgAudit(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	page := common.GetPageQuery(c)
+	rows, total, err := model.ListOrgAuditLogs(id, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(rows)
+	common.ApiSuccess(c, page)
+}
+
+// AdminListOrgLedger — GET /api/admin/organizations/:id/ledger
+func AdminListOrgLedger(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	page := common.GetPageQuery(c)
+	rows, total, err := model.ListOrgLedger(id, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(rows)
+	common.ApiSuccess(c, page)
+}
+
+// invalidateOrgAccountsCache drops the payer cache for every account under an
+// org (used after org-wide status changes).
+func invalidateOrgAccountsCache(orgId int) {
+	accounts, err := model.ListOrgAccounts(orgId)
+	if err != nil {
+		return
+	}
+	for _, a := range accounts {
+		model.InvalidateOrgPayerCache(a.UserId)
+	}
+}
+
+type adminAttachRequest struct {
+	OrgId         int    `json:"org_id"`
+	UserId        int    `json:"user_id"`
+	Relation      string `json:"relation"`
+	Role          string `json:"role"`
+	MonthlyBudget int    `json:"monthly_budget"`
+	RegisteredBy  string `json:"registered_by"`
+}
+
+// AdminAttachOrgAccount — POST /api/admin/organizations/accounts
+// Platform-provisioned membership: only a platform admin binds a user to an
+// org, so an org operator cannot conscript an arbitrary user into its billing
+// (the org console can manage and detach existing accounts, never attach new
+// ones). Fails if the user is already managed anywhere (UNIQUE user_id).
+func AdminAttachOrgAccount(c *gin.Context) {
+	var req adminAttachRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	org, err := model.GetOrganizationById(req.OrgId)
+	if err != nil || org == nil {
+		common.ApiErrorMsg(c, "organization not found")
+		return
+	}
+	if u, uErr := model.GetUserById(req.UserId, false); uErr != nil || u == nil {
+		common.ApiErrorMsg(c, "user not found")
+		return
+	}
+	if existing, _ := model.GetOrgAccountByUser(req.UserId); existing != nil {
+		common.ApiErrorMsg(c, "该用户已归属某个组织，请先解绑")
+		return
+	}
+	relation := req.Relation
+	if relation == "" {
+		if org.Type == model.OrgTypeReseller {
+			relation = model.OrgRelationCustomer
+		} else {
+			relation = model.OrgRelationMember
+		}
+	}
+	role := req.Role
+	if role == "" {
+		role = model.OrgRoleMember
+	}
+	if req.MonthlyBudget < 0 {
+		common.ApiErrorMsg(c, "budget cannot be negative")
+		return
+	}
+	acc := &model.OrgAccount{
+		OrgId: req.OrgId, UserId: req.UserId, Relation: relation, Role: role,
+		MonthlyBudget: req.MonthlyBudget, RegisteredBy: req.RegisteredBy,
+	}
+	if err := model.AttachOrgAccount(acc); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(req.OrgId, c.GetInt("id"), "account.attach", fmt.Sprintf("user:%d", req.UserId), fmt.Sprintf("relation=%s role=%s", relation, role))
+	common.ApiSuccess(c, acc)
+}
+
+// AdminDetachOrgAccount — DELETE /api/admin/organizations/:id/accounts/:user_id
+// Platform remediation path (a wrongly-attached user always has an exit).
+func AdminDetachOrgAccount(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	userId, _ := strconv.Atoi(c.Param("user_id"))
+	target, err := model.GetOrgAccountByUser(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if target == nil || target.OrgId != orgId {
+		common.ApiErrorMsg(c, "account not in this organization")
+		return
+	}
+	if err := model.DetachOrgAccount(orgId, userId); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordOrgAudit(orgId, c.GetInt("id"), "account.detach", fmt.Sprintf("user:%d", userId), "")
+	common.ApiSuccess(c, nil)
+}
+
+// AdminListResellerAdmins — GET /api/admin/organizations/:id/reseller-admins
+func AdminListResellerAdmins(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	admins, err := model.ListResellerAdmins(orgId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, admins)
+}
+
+// AdminRevokeResellerAdmin — DELETE /api/admin/organizations/:id/reseller-admins/:user_id
+// Per-admin offboarding / containment lever for a reseller org: severs one
+// admin's access without suspending the whole org or banning the user.
+func AdminRevokeResellerAdmin(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	userId, _ := strconv.Atoi(c.Param("user_id"))
+	if err := model.RemoveResellerAdmin(orgId, userId); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(orgId, c.GetInt("id"), "reseller_admin.revoke", fmt.Sprintf("user:%d", userId), "")
+	common.ApiSuccess(c, nil)
+}
+
+// AdminSetResellerAdminStatus — PUT /api/admin/organizations/:id/reseller-admins/:user_id
+// Suspend or reactivate a single reseller admin. A suspended admin immediately
+// loses console authority (GetResellerAdminOrg returns nil) while the link and
+// the org's other admins are untouched — the reversible containment lever, in
+// contrast to the destructive revoke above.
+func AdminSetResellerAdminStatus(c *gin.Context) {
+	orgId, _ := strconv.Atoi(c.Param("id"))
+	userId, _ := strconv.Atoi(c.Param("user_id"))
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.SetResellerAdminStatus(orgId, userId, req.Status); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(orgId, c.GetInt("id"), "reseller_admin.status", fmt.Sprintf("user:%d", userId), req.Status)
+	common.ApiSuccess(c, nil)
+}

@@ -25,6 +25,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	hosttypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -193,8 +194,73 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
+		// Transparent-BYOK fallback (opt-in): the first attempt ran on the
+		// user's own BYOK channel in their private group. If it failed and a
+		// fallback group was armed by the distributor, switch routing AND
+		// billing to the platform group for the remaining retries, and re-price
+		// + re-pre-consume at the platform rate — otherwise the platform
+		// fallback would run under the BYOK-rate (often 0) pre-consume. One-shot.
+		// Note: this fires on a retry, so it requires common.RetryTimes >= 1;
+		// with retries disabled a BYOK failure stays fail-closed (never
+		// over-permissive).
+		if retryParam.GetRetry() > 0 {
+			if fbGroup := common.GetContextKeyString(c, constant.ContextKeyByokFallbackGroup); fbGroup != "" {
+				common.SetContextKey(c, constant.ContextKeyByokFallbackGroup, "")
+				relayInfo.UsingGroup = fbGroup
+				relayInfo.TokenGroup = fbGroup
+				retryParam.TokenGroup = fbGroup
+				common.SetContextKey(c, constant.ContextKeyUsingGroup, fbGroup)
+				common.SetContextKey(c, constant.ContextKeyTokenGroup, fbGroup)
+				fbPrice, priceErr := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
+				if priceErr != nil {
+					newAPIError = types.NewError(priceErr, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
+					break
+				}
+				if relayInfo.Billing != nil {
+					relayInfo.Billing.Refund(c)
+					relayInfo.Billing = nil
+				}
+				if !fbPrice.FreeModel {
+					if newAPIError = service.PreConsumeBilling(c, fbPrice.QuotaToPreConsume, relayInfo); newAPIError != nil {
+						break
+					}
+				}
+			}
+		}
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
+			// Fork: when the request came in as an auto virtual model and the
+			// current candidate's channels are exhausted, fail over to the
+			// next available candidate. The cursor is monotonic and the loop
+			// counter keeps advancing, so total attempts stay bounded by
+			// common.RetryTimes.
+			if next, ok := service.AdvanceAutoModel(c, relayInfo.TokenGroup, c.Request.URL.Path); ok {
+				retryParam.ModelName = next
+				relayInfo.OriginModelName = next
+				c.Set("original_model", next)
+				// Billing safety: PriceData and the pre-consume were computed
+				// for the previous candidate before the loop. Recompute for
+				// the new model and re-align the pre-consumed quota so the
+				// request is billed at the price of the model that actually
+				// serves it — a candidate without a valid price must never be
+				// served, and a cheaper first candidate must never discount a
+				// more expensive fallback.
+				nextPrice, priceErr := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
+				if priceErr != nil {
+					newAPIError = types.NewError(priceErr, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
+					break
+				}
+				if relayInfo.Billing != nil {
+					relayInfo.Billing.Refund(c)
+					relayInfo.Billing = nil
+				}
+				if !nextPrice.FreeModel {
+					if newAPIError = service.PreConsumeBilling(c, nextPrice.QuotaToPreConsume, relayInfo); newAPIError != nil {
+						break
+					}
+				}
+				continue
+			}
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
 			break
@@ -311,6 +377,41 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 			AutoBan: &autoBanInt,
 		}, nil
 	}
+
+	// Channel-pricing-mode users (model.User.BillingMode ==
+	// model.BillingModeChannelPricing) skip group-based selection/pricing
+	// entirely: they're routed only to their own bound channels
+	// (model.UserChannelBinding), each with its own billing ratio
+	// replacing the group ratio below.
+	if common.GetContextKeyString(c, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
+		userId := common.GetContextKeyInt(c, constant.ContextKeyUserId)
+		channel, overBudget, err := service.CacheGetChannelPricingChannel(userId, retryParam)
+		if err != nil {
+			return nil, types.NewError(fmt.Errorf("获取用户 %d 绑定渠道下模型 %s 的可用渠道失败（retry）: %s", userId, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		if channel == nil {
+			if overBudget {
+				return nil, types.NewError(fmt.Errorf("用户 %d 绑定的渠道下模型 %s 今日额度已用尽，请明日再试（retry）", userId, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+			}
+			return nil, types.NewError(fmt.Errorf("用户 %d 没有绑定支持模型 %s 的可用渠道（retry）", userId, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+
+		ratio, found := model.GetUserChannelBindingRatio(userId, channel.Id, info.OriginModelName)
+		if !found || ratio <= 0 {
+			ratio = 1
+		}
+		info.PriceData.GroupRatioInfo = hosttypes.GroupRatioInfo{
+			GroupRatio:        ratio,
+			GroupSpecialRatio: -1,
+		}
+
+		newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
+		if newAPIError != nil {
+			return nil, newAPIError
+		}
+		return channel, nil
+	}
+
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 	if err != nil {
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())

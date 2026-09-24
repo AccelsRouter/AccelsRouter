@@ -50,11 +50,17 @@ export function useSidebarView(): ResolvedSidebarView {
   const userRole = useAuthStore((s) => s.auth.user?.role)
   const rootSidebarData = useSidebarData()
   const configFilteredRoot = useSidebarConfig(rootSidebarData.navGroups)
+  // A scoped/curated view (reseller-customer console) is exempt from the
+  // platform's sidebar_modules narrowing so its Profile/Wallet entries are not
+  // stripped when the admin trims those modules for normal users.
+  const baseNavGroups = rootSidebarData.scoped
+    ? rootSidebarData.navGroups
+    : configFilteredRoot
 
   const rootNavGroups = useMemo<NavGroup[]>(() => {
     const role = userRole ?? ROLE.GUEST
     const isAdmin = role >= ROLE.ADMIN
-    return configFilteredRoot
+    return baseNavGroups
       .filter((group) => (group.id === 'admin' ? isAdmin : true))
       .map((group) => {
         const items = group.items.filter(
@@ -62,7 +68,7 @@ export function useSidebarView(): ResolvedSidebarView {
         )
         return items.length === group.items.length ? group : { ...group, items }
       })
-  }, [configFilteredRoot, userRole])
+  }, [baseNavGroups, userRole])
 
   const view = resolveSidebarView(pathname)
 

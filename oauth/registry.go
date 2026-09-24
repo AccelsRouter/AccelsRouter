@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
@@ -36,6 +37,38 @@ func Unregister(name string) {
 	defer mu.Unlock()
 	delete(providers, name)
 	delete(customProviderSlugs, name)
+}
+
+// EnabledProvider is a lightweight descriptor for UI enumeration: the slug is
+// the login route key (also stored on an SSO domain mapping), the name is the
+// human-readable display name.
+type EnabledProvider struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+// ListEnabledProviders returns every currently enabled provider (slug + display
+// name), sorted by slug for stable output. Used to populate SSO provider
+// pickers and to validate an SSO domain's provider binding.
+func ListEnabledProviders() []EnabledProvider {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make([]EnabledProvider, 0, len(providers))
+	for slug, provider := range providers {
+		if provider.IsEnabled() {
+			out = append(out, EnabledProvider{Slug: slug, Name: provider.GetName()})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
+	return out
+}
+
+// IsProviderEnabled reports whether the named provider exists and is enabled.
+func IsProviderEnabled(name string) bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	p := providers[name]
+	return p != nil && p.IsEnabled()
 }
 
 // GetProvider returns the OAuth provider for the given name

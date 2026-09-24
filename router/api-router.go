@@ -149,6 +149,10 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)
 				adminRoute.DELETE("/:id/bindings/:binding_type", controller.AdminClearUserBinding)
+				adminRoute.GET("/:id/channel-bindings", controller.ListUserChannelBindings)
+				adminRoute.POST("/:id/channel-bindings", controller.UpsertUserChannelBinding)
+				adminRoute.DELETE("/:id/channel-bindings/:channelId", controller.DeleteUserChannelBindingsForChannel)
+				adminRoute.DELETE("/:id/channel-bindings/:channelId/:modelName", controller.DeleteUserChannelBinding)
 				adminRoute.GET("/:id", controller.GetUser)
 				adminRoute.POST("/", controller.CreateUser)
 				adminRoute.POST("/manage", controller.ManageUser)
@@ -160,6 +164,147 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
+		}
+
+		// Fork: organization system (enterprise / reseller). Admin group manages
+		// orgs and invoiced credit; the org console (UserAuth) lets org
+		// owners/admins manage their own members/customers/workspaces/BYOK.
+		reconRoute := apiRouter.Group("/admin/reconciliation")
+		reconRoute.Use(middleware.AdminAuth())
+		{
+			reconRoute.GET("", controller.AdminGetReconciliation)
+			reconRoute.GET("/export", controller.AdminExportReconciliation)
+		}
+
+		orgAdminRoute := apiRouter.Group("/admin/organizations")
+		orgAdminRoute.Use(middleware.AdminAuth())
+		{
+			orgAdminRoute.GET("/", controller.AdminListOrganizations)
+			orgAdminRoute.POST("/", controller.AdminCreateOrganization)
+			orgAdminRoute.PUT("/:id", controller.AdminUpdateOrganization)
+			orgAdminRoute.POST("/:id/credit", middleware.CriticalRateLimit(), controller.AdminCreditOrganization)
+			orgAdminRoute.GET("/:id/ledger", controller.AdminListOrgLedger)
+			orgAdminRoute.GET("/:id/logs", controller.AdminListOrgLogs)
+			orgAdminRoute.GET("/:id/logs/export", controller.AdminExportOrgLogs)
+			orgAdminRoute.GET("/:id/customers", controller.AdminListOrgCustomers)
+			// Reseller upstream routing: admin-only, and upstream channels are never
+			// exposed to the reseller itself.
+			orgAdminRoute.GET("/:id/routing", controller.AdminGetResellerRouting)
+			orgAdminRoute.PUT("/:id/routing", controller.AdminSetResellerRouting)
+			orgAdminRoute.GET("/:id/routing/channels", controller.AdminListResellerRoutingChannels)
+			orgAdminRoute.POST("/accounts", controller.AdminAttachOrgAccount)
+			orgAdminRoute.DELETE("/:id/accounts/:user_id", controller.AdminDetachOrgAccount)
+			// Reseller-admin management (per-admin offboarding / containment).
+			orgAdminRoute.GET("/:id/reseller-admins", controller.AdminListResellerAdmins)
+			orgAdminRoute.PUT("/:id/reseller-admins/:user_id", controller.AdminSetResellerAdminStatus)
+			orgAdminRoute.DELETE("/:id/reseller-admins/:user_id", controller.AdminRevokeResellerAdmin)
+			orgAdminRoute.GET("/applications", controller.AdminListOrgApplications)
+			orgAdminRoute.POST("/applications/:id/approve", controller.AdminApproveOrgApplication)
+			orgAdminRoute.POST("/applications/:id/reject", controller.AdminRejectOrgApplication)
+			// SSO domain mappings (JIT provisioning) are admin-managed only.
+			orgAdminRoute.GET("/sso-providers", controller.AdminListSsoProviders)
+			orgAdminRoute.GET("/:id/sso-domains", controller.AdminListOrgSsoDomains)
+			orgAdminRoute.POST("/:id/sso-domains", controller.AdminAddOrgSsoDomain)
+			orgAdminRoute.DELETE("/:id/sso-domains/:domain_id", controller.AdminDeleteOrgSsoDomain)
+			orgAdminRoute.GET("/:id/usage", controller.AdminGetOrgUsage)
+			orgAdminRoute.GET("/:id/audit", controller.AdminListOrgAudit)
+		}
+
+		orgRoute := apiRouter.Group("/organization")
+		orgRoute.Use(middleware.UserAuth())
+		{
+			orgRoute.GET("/self", controller.GetMyOrganization)
+			orgRoute.GET("/accounts", controller.ListMyOrgAccounts)
+			orgRoute.PUT("/accounts/:user_id", controller.UpdateMyOrgAccount)
+			orgRoute.DELETE("/accounts/:user_id", controller.DetachMyOrgAccount)
+			orgRoute.GET("/ledger", controller.ListMyOrgLedger)
+			orgRoute.POST("/allocate", middleware.CriticalRateLimit(), controller.AllocateFromMyOrg)
+			orgRoute.POST("/revoke", middleware.CriticalRateLimit(), controller.RevokeFromMyOrg)
+			// Reseller customer management (reseller orgs only). Resolved via
+			// the reseller-admin link, decoupled from the paying OrgAccount.
+			// NOTE: new reseller-specific endpoints go under the /api/reseller
+			// group below (the bounded reseller module); these stay for
+			// backward compatibility with the existing console.
+			orgRoute.GET("/reseller/self", controller.GetMyResellerOrg)
+			orgRoute.GET("/context", controller.GetMyOrgContext)
+			orgRoute.GET("/reseller/ledger", controller.ListMyResellerLedger)
+			orgRoute.GET("/customers", controller.ListMyCustomers)
+			orgRoute.POST("/customers", middleware.CriticalRateLimit(), controller.CreateMyCustomer)
+			orgRoute.GET("/customers/:id/usage", controller.GetMyCustomerUsage)
+			orgRoute.GET("/reseller/usage", controller.GetMyResellerUsage)
+			orgRoute.GET("/reseller/logs", controller.ListMyResellerLogs)
+			orgRoute.GET("/reseller/logs/export", controller.ExportMyResellerLogs)
+			// Member-scoped org API keys (any active member): keys bound to the
+			// org's default workspace so they bill the org wallet, not a personal
+			// balance. Backs the org-member "API Keys" surface.
+			orgRoute.GET("/keys", controller.ListMyOrgKeys)
+			orgRoute.POST("/keys", middleware.CriticalRateLimit(), controller.CreateMyOrgKey)
+			orgRoute.POST("/keys/:token_id/key", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetMyOrgKey)
+			orgRoute.DELETE("/keys/:token_id", controller.DeleteMyOrgKey)
+			orgRoute.GET("/workspaces", controller.ListMyWorkspaces)
+			orgRoute.POST("/workspaces", controller.CreateMyWorkspace)
+			orgRoute.PUT("/workspaces/:id", controller.UpdateMyWorkspace)
+			orgRoute.DELETE("/workspaces/:id", controller.DeleteMyWorkspace)
+			orgRoute.POST("/workspaces/:id/tokens", controller.BindMyWorkspaceToken)
+			orgRoute.POST("/workspaces/:id/keys", middleware.CriticalRateLimit(), controller.CreateWorkspaceKey)
+			orgRoute.GET("/workspaces/:id/keys", controller.ListMyWorkspaceKeys)
+			orgRoute.GET("/byok", controller.ListMyByokChannels)
+			orgRoute.POST("/byok", controller.CreateMyByokChannel)
+			orgRoute.DELETE("/byok/:channel_id", controller.DeleteMyByokChannel)
+			// Self-service onboarding: apply to open an org, and invitations.
+			orgRoute.POST("/apply", middleware.CriticalRateLimit(), controller.ApplyForOrganization)
+			orgRoute.GET("/apply/self", controller.GetMyOrgApplication)
+			orgRoute.GET("/invitations", controller.ListMyOrgInvitations)
+			orgRoute.POST("/invitations", controller.CreateMyOrgInvitation)
+			orgRoute.DELETE("/invitations/:id", controller.RevokeMyOrgInvitation)
+			orgRoute.GET("/invitations/preview", controller.PreviewOrgInvitation)
+			orgRoute.POST("/invitations/accept", middleware.CriticalRateLimit(), controller.AcceptOrgInvitation)
+			// SSO domains (read-only) + usage reporting / invoice export.
+			orgRoute.GET("/sso-domains", controller.ListMyOrgSsoDomains)
+			orgRoute.GET("/usage", controller.GetMyOrgUsage)
+			orgRoute.GET("/logs", controller.GetMyOrgLogs)
+			orgRoute.GET("/usage/export", controller.ExportMyOrgUsage)
+			orgRoute.GET("/audit", controller.ListMyOrgAudit)
+		}
+
+		// Fork: personal BYOK — an individual user brings its own upstream
+		// provider credentials (channels in the user's private group) and a
+		// BYOK key that routes only to them. Gated by PersonalByokEnabled.
+		// Fork: bounded reseller module (/api/reseller/*). New reseller-
+		// specific capabilities land here rather than under /organization,
+		// so the reseller surface is a clean seam that can be extracted (own
+		// service / partner portal) later. Resolved via the reseller-admin
+		// link. First capability: self-service wholesale wallet top-up.
+		resellerRoute := apiRouter.Group("/reseller")
+		resellerRoute.Use(middleware.UserAuth())
+		{
+			resellerRoute.GET("/wallet", controller.GetMyResellerWallet)
+			resellerRoute.POST("/wallet/purchase", middleware.CriticalRateLimit(), controller.PurchaseMyResellerCredit)
+			// Customer delivery: invite a customer org's operator (admin).
+			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
+			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)
+			resellerRoute.POST("/customers/:id/invitations", middleware.CriticalRateLimit(), controller.InviteMyCustomerOwner)
+			resellerRoute.DELETE("/customers/:id/invitations/:inv_id", controller.RevokeMyCustomerInvitation)
+			// Per-customer model access: assign which models a customer may use.
+			resellerRoute.GET("/customers/:id/models", controller.GetMyCustomerModels)
+			resellerRoute.PUT("/customers/:id/models", controller.SetMyCustomerModels)
+			// Per-customer retail discount pricing (reporting overlay).
+			resellerRoute.GET("/customers/:id/pricing", controller.GetMyCustomerPricing)
+			resellerRoute.PUT("/customers/:id/pricing", controller.SetMyCustomerPricing)
+			// Models + pricing saved as one validated, atomic offer.
+			resellerRoute.PUT("/customers/:id/offer", controller.SetMyCustomerOffer)
+		}
+
+		personalByokRoute := apiRouter.Group("/personal_byok")
+		personalByokRoute.Use(middleware.UserAuth())
+		{
+			personalByokRoute.GET("/channels", controller.ListMyPersonalByok)
+			personalByokRoute.POST("/channels", middleware.CriticalRateLimit(), controller.CreateMyPersonalByok)
+			personalByokRoute.DELETE("/channels/:channel_id", controller.DeleteMyPersonalByok)
+			personalByokRoute.GET("/keys", controller.ListMyPersonalByokKeys)
+			personalByokRoute.POST("/keys", middleware.CriticalRateLimit(), controller.CreateMyPersonalByokKey)
+			personalByokRoute.GET("/fallback", controller.GetMyByokFallback)
+			personalByokRoute.PUT("/fallback", controller.SetMyByokFallback)
 		}
 
 		// Subscription billing (plans, purchase, admin management)

@@ -263,6 +263,16 @@ func (s *BillingSession) reserveFunding(delta int) error {
 			)
 		}
 		return nil
+	case *OrgWalletFunding:
+		// Mid-stream reserve for tiered pricing: charge the org wallet
+		// unconditionally (the tokens are consumed) and record the spend on
+		// the member/workspace counters past the budget, mirroring Settle.
+		// Settle applies the retail discount and tracks funding.consumed itself,
+		// so do NOT adjust consumed here (it would double-count in standard units).
+		if err := funding.Settle(delta); err != nil {
+			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		}
+		return nil
 	default:
 		return types.NewError(fmt.Errorf("unsupported funding source: %s", s.funding.Source()), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
@@ -279,6 +289,12 @@ func (s *BillingSession) rollbackFundingReserve(delta int) {
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {
 			common.SysLog("error rolling back subscription funding reserve: " + err.Error())
+		}
+	case *OrgWalletFunding:
+		// Settle tracks funding.consumed itself (in discounted units); a manual
+		// adjustment here would double-count.
+		if err := funding.Settle(-delta); err != nil {
+			common.SysLog("error rolling back org funding reserve: " + err.Error())
 		}
 	}
 }
@@ -357,6 +373,14 @@ func (s *BillingSession) syncRelayInfo() {
 func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preConsumedQuota int) (*BillingSession, *types.NewAPIError) {
 	if relayInfo == nil {
 		return nil, types.NewError(fmt.Errorf("relayInfo is nil"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+	}
+
+	// Fork: managed accounts bill their organization (consolidated billing,
+	// see service/org_funding.go). A managed account never falls back to
+	// personal wallet/subscription — suspension or an empty org wallet must
+	// stop the request, not shift the cost onto the member.
+	if session, apiErr := tryOrgBillingSession(c, relayInfo, preConsumedQuota); session != nil || apiErr != nil {
+		return session, apiErr
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)

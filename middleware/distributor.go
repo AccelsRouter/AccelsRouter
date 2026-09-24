@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -77,86 +78,260 @@ func Distribute() func(c *gin.Context) {
 				}
 			}
 
+			// Org-level model allow-list: a reseller-provisioned customer may
+			// only use the models it was assigned. nil = unrestricted (the
+			// common case, and non-managed users). Cached in OrgPayerInfo, so
+			// this is a map lookup on the hot path. Fail-open on lookup error —
+			// this is a business restriction, not a security boundary (the
+			// group's abilities already bound what is routable).
+			// Skip when the model name is empty: async task fetch/status routes
+			// (e.g. GET /v1/videos/:id) carry no model and were already checked on
+			// submit — enforcing here would falsely 403 a customer's own polling.
+			if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); modelRequest.Model != "" && perr == nil && payer != nil && (payer.AllowedModels != nil || payer.ResellerAllowedModels != nil) {
+				matchName := ratio_setting.FormatMatchingModelName(modelRequest.Model)
+				// A reseller customer must satisfy BOTH its own allow-list AND its
+				// reseller's offerable models (the reseller's set caps everything it
+				// may offer, even when the customer's own list is empty).
+				if !model.ModelAllowedBy(payer.AllowedModels, modelRequest.Model, matchName) ||
+					!model.ModelAllowedBy(payer.ResellerAllowedModels, modelRequest.Model, matchName) {
+					msg := i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model})
+					// Record the rejection so a reseller/customer can see the
+					// blocked model in the org call records (this org gate aborts
+					// before the relay's own error logging).
+					model.RecordErrorLog(c, c.GetInt("id"), 0, modelRequest.Model,
+						c.GetString("token_name"), msg, c.GetInt("token_id"), 0, false,
+						common.GetContextKeyString(c, constant.ContextKeyUsingGroup), nil)
+					// Same error code as the platform's other model-access
+					// rejections in this gate (model_not_found) for a consistent
+					// machine-readable code instead of an empty one.
+					abortWithOpenAiMessage(c, http.StatusForbidden, msg, types.ErrorCodeModelNotFound)
+					return
+				}
+			}
+
 			if shouldSelectChannel {
 				if modelRequest.Model == "" {
 					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
 					return
 				}
-				var selectGroup string
-				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-				// check path is /pg/chat/completions
-				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
-					playgroundRequest := &dto.PlayGroundRequest{}
-					err = common.UnmarshalBodyReusable(c, playgroundRequest)
-					if err != nil {
-						abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidPlayground, map[string]any{"Error": err.Error()}))
+
+				// Fork: channel-pricing-mode users (model.User.BillingMode ==
+				// model.BillingModeChannelPricing) skip the entire group-based
+				// cascade below (playground group override, auto-model
+				// resolution, transparent BYOK, channel affinity, and the
+				// final group-random fallback) — none of those are
+				// meaningful once Group no longer applies. They're routed
+				// only to their own bound channels (model.UserChannelBinding),
+				// selected here so pricing (HandleGroupRatio, called later
+				// in ModelPriceHelper) already knows the real channel and its
+				// ratio by the time it runs, instead of guessing at a group
+				// ratio that gets corrected only at settlement.
+				if common.GetContextKeyString(c, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
+					userId := c.GetInt("id")
+					pricingChannel, overBudget, pcErr := model.GetChannelPricingChannel(userId, modelRequest.Model, 0, c.Request.URL.Path)
+					if pcErr != nil {
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable,
+							fmt.Sprintf("获取用户 %d 绑定渠道下模型 %s 的可用渠道失败: %s", userId, modelRequest.Model, pcErr.Error()),
+							types.ErrorCodeModelNotFound)
 						return
 					}
-					if playgroundRequest.Group != "" {
-						if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
-							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
+					if pricingChannel == nil {
+						if overBudget {
+							abortWithOpenAiMessage(c, http.StatusTooManyRequests,
+								fmt.Sprintf("用户 %d 绑定的渠道下模型 %s 今日额度已用尽，请明日再试", userId, modelRequest.Model),
+								types.ErrorCodeModelNotFound)
 							return
 						}
-						usingGroup = playgroundRequest.Group
-						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
+						abortWithOpenAiMessage(c, http.StatusServiceUnavailable,
+							fmt.Sprintf("用户 %d 没有绑定支持模型 %s 的可用渠道", userId, modelRequest.Model),
+							types.ErrorCodeModelNotFound)
+						return
 					}
-				}
+					channel = pricingChannel
+				} else {
+					var selectGroup string
+					usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+					// check path is /pg/chat/completions
+					if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
+						playgroundRequest := &dto.PlayGroundRequest{}
+						err = common.UnmarshalBodyReusable(c, playgroundRequest)
+						if err != nil {
+							abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidPlayground, map[string]any{"Error": err.Error()}))
+							return
+						}
+						if playgroundRequest.Group != "" {
+							if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
+								abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
+								return
+							}
+							usingGroup = playgroundRequest.Group
+							common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
+						}
+					}
 
-				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
-					affinityUsable := false
-					preferred, err := model.CacheGetChannel(preferredChannelID)
-					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
-						if usingGroup == "auto" {
-							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-							autoGroups := service.GetRequestAutoGroups(c, userGroup)
-							for _, g := range autoGroups {
-								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
-									selectGroup = g
-									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-									channel = preferred
-									affinityUsable = true
-									service.MarkChannelAffinityUsed(c, g, preferred.Id)
-									break
+					// Fork: auto virtual models resolve to a concrete model here —
+					// after the token model-limit check on the requested (auto)
+					// name and the playground group override, but before affinity,
+					// channel selection, and everything billing-related, so no
+					// downstream consumer ever sees the virtual name.
+					if resolved, isAuto := service.ResolveAutoModel(c, usingGroup, modelRequest.Model, c.Request.URL.Path); isAuto {
+						if resolved == "" {
+							abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+							return
+						}
+						modelRequest.Model = resolved
+					}
+
+					// Fork: transparent BYOK. If the requesting user has an enabled
+					// BYOK channel serving this model, route to it (their own
+					// upstream key) using their NORMAL API key — no separate BYOK
+					// key needed, matching OpenRouter. The effective group switches
+					// to the user's private group so pricing uses the BYOK fee
+					// (default 0). Additive: only fires for users who own a matching
+					// BYOK channel, and only while the feature is enabled.
+					// Fork: reseller parties (a reseller org's members and its customers)
+					// may not use BYOK — their traffic must stay on platform-controlled
+					// upstreams (see reseller upstream routing). The configuration APIs
+					// already refuse them; this keeps any pre-existing BYOK channel from
+					// being adopted at request time. Cheap: reuses the TTL-cached payer
+					// record, no extra lookup on the hot path.
+					byokAllowed := true
+					if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); perr == nil && payer != nil &&
+						(payer.OrgType == model.OrgTypeReseller || payer.ResellerOrgId > 0) {
+						byokAllowed = false
+					}
+					if channel == nil && setting.PersonalByokEnabled && byokAllowed {
+						if byokId, ok := model.GetUserByokChannelForModel(c.GetInt("id"), modelRequest.Model); ok {
+							byokGroup := model.UserPrivateGroup(c.GetInt("id"))
+							byokCh, bErr := model.CacheGetChannel(byokId)
+							// Require a ratio entry for the private group: without it
+							// GetGroupRatio falls back to 1.0 and would bill the user
+							// full price for their own key. Missing entry ⇒ don't adopt.
+							if bErr == nil && byokCh != nil && byokCh.Status == common.ChannelStatusEnabled &&
+								ratio_setting.ContainsGroupRatio(byokGroup) &&
+								channelSupportsRequestPath(byokCh, c.Request.URL.Path, modelRequest.Model) {
+								// Capture the platform group BEFORE overwriting it, so
+								// an opted-in user can fall back to it on failover.
+								originalGroup := usingGroup
+								channel = byokCh
+								selectGroup = byokGroup
+								usingGroup = byokGroup
+								common.SetContextKey(c, constant.ContextKeyUsingGroup, byokGroup)
+								// Lock routing to the user's private group across the
+								// whole request, including retry/failover: a failing
+								// BYOK channel fails closed inside user-<id> instead of
+								// falling back to a PLATFORM channel that would then be
+								// billed at the BYOK ratio. Routing group == billing group.
+								common.SetContextKey(c, constant.ContextKeyTokenGroup, byokGroup)
+								// Opt-in: allow failover to a PLATFORM channel when the
+								// BYOK channel fails. The relay retry loop consumes this
+								// one-shot signal and switches routing+billing back to
+								// the platform group, so the fallback is billed at the
+								// platform rate (never the BYOK ratio). Default off ⇒
+								// fail closed. Never fall back to another private group.
+								if us, ok := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting); ok &&
+									us.ByokFallbackToPlatform && originalGroup != "" && !model.IsOwnByokGroup(c.GetInt("id"), originalGroup) {
+									common.SetContextKey(c, constant.ContextKeyByokFallbackGroup, originalGroup)
 								}
 							}
-						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
-							channel = preferred
-							selectGroup = usingGroup
-							affinityUsable = true
-							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
 						}
 					}
-					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
-						service.ClearCurrentChannelAffinityCache(c)
-					}
-				}
 
-				if channel == nil {
-					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
-						Ctx:         c,
-						ModelName:   modelRequest.Model,
-						TokenGroup:  usingGroup,
-						RequestPath: c.Request.URL.Path,
-						Retry:       common.GetPointer(0),
-					})
-					if err != nil {
-						showGroup := usingGroup
-						if usingGroup == "auto" {
-							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
+					// Fork: reseller upstream routing. A reseller customer's request is
+					// routed only through the channels the platform admin bound to its
+					// reseller, via the reseller's private group (reseller-<id>), with
+					// per-model priority and sticky affinity. Mirrors transparent BYOK:
+					// switch BOTH UsingGroup (channel selection, and the group the
+					// channel-affinity check below is constrained to) and TokenGroup
+					// (retry/failover stays inside the reseller group). Billing does NOT
+					// follow — the origin group is stashed and relay/helper/price.go
+					// bills with it, so the customer pays exactly what it paid before.
+					// Additive and default-off: fires only for reseller customers whose
+					// reseller has bound channels, only while the global switch is on,
+					// and never for the "auto" group (whose billing group is resolved
+					// later from the auto selection).
+					if channel == nil && setting.ResellerRoutingEnabled && usingGroup != "auto" {
+						if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); perr == nil && payer != nil && payer.ResellerOrgId > 0 {
+							if cfg := model.GetResellerRoutingCached(payer.ResellerOrgId); cfg != nil && len(cfg.ChannelIdList) > 0 {
+								resellerGroup := model.ResellerRoutingGroup(payer.ResellerOrgId)
+								common.SetContextKey(c, constant.ContextKeyResellerOriginGroup, usingGroup)
+								usingGroup = resellerGroup
+								common.SetContextKey(c, constant.ContextKeyUsingGroup, resellerGroup)
+								common.SetContextKey(c, constant.ContextKeyTokenGroup, resellerGroup)
+								if !cfg.AffinityOff {
+									common.SetContextKey(c, constant.ContextKeyResellerAffinityHash,
+										service.ResellerAffinityHash(payer.ResellerOrgId, payer.OrgId, modelRequest.Model))
+								}
+							}
 						}
-						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
-						// 如果错误，但是渠道不为空，说明是数据库一致性问题
-						//if channel != nil {
-						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
-						//	message = "数据库一致性已被破坏，请联系管理员"
-						//}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
-						return
 					}
+
 					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
-						return
+						if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
+							affinityUsable := false
+							preferred, err := model.CacheGetChannel(preferredChannelID)
+							if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
+								channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) &&
+								!model.IsChannelOverDailyTokenBudget(preferred) {
+								if usingGroup == "auto" {
+									userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
+									autoGroups := service.GetRequestAutoGroups(c, userGroup)
+									for _, g := range autoGroups {
+										if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
+											selectGroup = g
+											common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
+											channel = preferred
+											affinityUsable = true
+											service.MarkChannelAffinityUsed(c, g, preferred.Id)
+											break
+										}
+									}
+								} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) &&
+									// Fork: for a reseller-routed request the pinned channel is
+									// honoured only while it is still in the reseller matrix's top
+									// priority tier — stickiness must never outrank the admin's
+									// priorities. Rejecting it falls through to the clear-cache
+									// branch below, so the next selection re-pins correctly.
+									service.ResellerAffinityPreferredAllowed(c, usingGroup, modelRequest.Model, c.Request.URL.Path, preferred.Id) {
+									channel = preferred
+									selectGroup = usingGroup
+									affinityUsable = true
+									service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+								}
+							}
+							if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
+								service.ClearCurrentChannelAffinityCache(c)
+							}
+						}
+
+					}
+
+					if channel == nil {
+						channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
+							Ctx:         c,
+							ModelName:   modelRequest.Model,
+							TokenGroup:  usingGroup,
+							RequestPath: c.Request.URL.Path,
+							Retry:       common.GetPointer(0),
+						})
+						if err != nil {
+							showGroup := usingGroup
+							if usingGroup == "auto" {
+								showGroup = fmt.Sprintf("auto(%s)", selectGroup)
+							}
+							message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
+							// 如果错误，但是渠道不为空，说明是数据库一致性问题
+							//if channel != nil {
+							//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
+							//	message = "数据库一致性已被破坏，请联系管理员"
+							//}
+							abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
+							return
+						}
+						if channel == nil {
+							abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+							return
+						}
 					}
 				}
 			}
@@ -463,7 +638,20 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 
-	key, index, newAPIError := channel.GetNextEnabledKey()
+	// Fork: a reseller-routed request with sticky affinity pins the key inside a
+	// multi-key channel too (provider prompt caches live per upstream account),
+	// instead of the channel's round-robin/random rotation. Everything else
+	// keeps the existing rotation.
+	var (
+		key         string
+		index       int
+		newAPIError = (*types.NewAPIError)(nil)
+	)
+	if affinity, ok := common.GetContextKeyType[uint64](c, constant.ContextKeyResellerAffinityHash); ok {
+		key, index, newAPIError = channel.GetAffinityKey(affinity)
+	} else {
+		key, index, newAPIError = channel.GetNextEnabledKey()
+	}
 	if newAPIError != nil {
 		return newAPIError
 	}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -43,6 +44,25 @@ const defaultTieredPreConsumeMaxTokens = 8192
 
 // HandleGroupRatio checks for "auto_group" in the context and updates the group ratio and relayInfo.UsingGroup if present
 func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hosttypes.GroupRatioInfo {
+	// Fork: channel-pricing-mode users (model.User.BillingMode ==
+	// model.BillingModeChannelPricing) never had a meaningful group in the
+	// first place — middleware.Distribute already picked one of their own
+	// bound channels before this runs, and stored it in context. Use that
+	// channel's own binding ratio instead of any group ratio lookup, so
+	// pre-consume already reflects the real price (no more "estimate at
+	// group rate, correct at settlement").
+	if common.GetContextKeyString(ctx, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
+		channelId := common.GetContextKeyInt(ctx, constant.ContextKeyChannelId)
+		ratio, found := model.GetUserChannelBindingRatio(relayInfo.UserId, channelId, relayInfo.OriginModelName)
+		if !found || ratio <= 0 {
+			ratio = 1
+		}
+		return hosttypes.GroupRatioInfo{
+			GroupRatio:        ratio,
+			GroupSpecialRatio: -1,
+		}
+	}
+
 	groupRatioInfo := hosttypes.GroupRatioInfo{
 		GroupRatio:        1.0, // default ratio
 		GroupSpecialRatio: -1,
@@ -55,8 +75,18 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		relayInfo.UsingGroup = autoGroup.(string)
 	}
 
+	// Fork: reseller upstream routing re-routes a reseller customer through its
+	// reseller's private group (reseller-<id>) for channel selection only. The
+	// customer must keep paying at the group it was actually on, which the
+	// distributor stashed; bill with that. No reseller group therefore needs a
+	// group-ratio entry, and the global ratio table stays untouched.
+	billingGroup := relayInfo.UsingGroup
+	if origin := common.GetContextKeyString(ctx, constant.ContextKeyResellerOriginGroup); origin != "" {
+		billingGroup = origin
+	}
+
 	// check user group special ratio
-	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
+	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, billingGroup)
 	if ok {
 		// user group special ratio
 		groupRatioInfo.GroupSpecialRatio = userGroupRatio
@@ -64,7 +94,7 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		groupRatioInfo.HasSpecialRatio = true
 	} else {
 		// normal group ratio
-		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
+		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(billingGroup)
 	}
 
 	return groupRatioInfo

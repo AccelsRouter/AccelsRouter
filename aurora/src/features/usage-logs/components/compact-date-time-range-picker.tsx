@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 import { CalendarDays } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -69,7 +70,26 @@ export function CompactDateTimeRangePicker({
     return `${startText} ~ ${endText}`
   }, [end, start, t])
 
-  const handleOpenChange = (nextOpen: boolean) => {
+  const handleOpenChange = (
+    nextOpen: boolean,
+    eventDetails: PopoverPrimitive.Root.ChangeEventDetails
+  ) => {
+    // A native <input type="datetime-local"> opens the browser's own calendar
+    // dropdown, which lives outside the popover DOM. Base UI's dismiss logic
+    // reads a click on it as an outside-press and the focus shift into it as a
+    // focus-out, and would close the popover before the user can pick both
+    // dates and press Confirm. Veto those two reasons with cancel(): Base UI
+    // checks isCanceled before it flips its internal open state, so merely
+    // ignoring the callback is not enough. The popover still closes via a
+    // preset, Confirm, Escape, or clicking the trigger again.
+    if (
+      !nextOpen &&
+      (eventDetails.reason === 'outside-press' ||
+        eventDetails.reason === 'focus-out')
+    ) {
+      eventDetails.cancel()
+      return
+    }
     if (nextOpen) {
       setDraftStart(toInputValue(start))
       setDraftEnd(toInputValue(end))
@@ -83,6 +103,16 @@ export function CompactDateTimeRangePicker({
       end: fromInputValue(draftEnd),
     })
     setOpen(false)
+  }
+
+  // Apply a manual edit as soon as an input changes, so the selected range
+  // takes effect even if the popover closes before the user reaches Confirm
+  // (some browsers dismiss it when the native date-picker dropdown opens).
+  const emitRange = (nextStart: string, nextEnd: string) => {
+    onChange({
+      start: fromInputValue(nextStart),
+      end: fromInputValue(nextEnd),
+    })
   }
 
   const applyPreset = (kind: 'today' | '7d' | 'week' | '30d' | 'month') => {
@@ -147,7 +177,10 @@ export function CompactDateTimeRangePicker({
               <Input
                 type='datetime-local'
                 value={draftStart}
-                onChange={(e) => setDraftStart(e.target.value)}
+                onChange={(e) => {
+                  setDraftStart(e.target.value)
+                  emitRange(e.target.value, draftEnd)
+                }}
                 className='h-8 text-sm leading-5 tabular-nums'
               />
             </div>
@@ -161,7 +194,10 @@ export function CompactDateTimeRangePicker({
               <Input
                 type='datetime-local'
                 value={draftEnd}
-                onChange={(e) => setDraftEnd(e.target.value)}
+                onChange={(e) => {
+                  setDraftEnd(e.target.value)
+                  emitRange(draftStart, e.target.value)
+                }}
                 className='h-8 text-sm leading-5 tabular-nums'
               />
             </div>

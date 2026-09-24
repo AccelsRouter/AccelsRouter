@@ -199,6 +199,7 @@ export function ModelMutateDrawer({
       AutoGroups: '',
       MaxTokenAutoGroups: 5,
       DefaultUseAutoGroup: false,
+      AutoModelConfigs: '[]',
       CreateCacheRatio: '',
       'group_ratio_setting.group_special_usable_group': '{}',
       'grok.violation_deduction_enabled': false,
@@ -223,6 +224,8 @@ export function ModelMutateDrawer({
       'channel_affinity_setting.rules': '[]',
       'model_deployment.ionet.api_key': '',
       'model_deployment.ionet.enabled': false,
+      PersonalByokEnabled: false,
+      ByokFeeRatio: 0,
     }
     return getOptionValue(systemOptionsData.data, defaultModelSettings)
   }, [systemOptionsData])

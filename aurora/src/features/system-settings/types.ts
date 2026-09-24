@@ -226,6 +226,7 @@ export type ModelSettings = {
   AutoGroups: string
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
+  AutoModelConfigs: string
   'group_ratio_setting.group_special_usable_group': string
   RetryTimes: number
   ChannelDisableThreshold: string
@@ -249,6 +250,8 @@ export type ModelSettings = {
   'channel_affinity_setting.rules': string
   'model_deployment.ionet.api_key': string
   'model_deployment.ionet.enabled': boolean
+  PersonalByokEnabled: boolean
+  ByokFeeRatio: number
 }
 
 export type BillingSettings = {
@@ -387,6 +390,8 @@ export type SecuritySettings = {
   ModelRequestRateLimitSuccessCount: number
   ModelRequestRateLimitDurationMinutes: number
   ModelRequestRateLimitGroup: string
+  UserDailyTokenLimitEnabled: boolean
+  ChannelDailyTokenLimitEnabled: boolean
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
   SensitiveWords: string
@@ -463,4 +468,14 @@ export type UpstreamRatiosResponse = {
     differences: DifferencesMap
     test_results: TestResult[]
   }
+}
+
+// One enabled channel and the models it serves (admin-safe, no keys). Backs
+// model pickers that show which channel a candidate would route to.
+export interface ChannelModelSummary {
+  id: number
+  name: string
+  type: number
+  status: number
+  models: string[]
 }

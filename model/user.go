@@ -77,24 +77,36 @@ func resolveUserSortOptions(sortOptions []UserSortOptions) UserSortOptions {
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
-	Id               int                        `json:"id"`
-	Username         string                     `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password         string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
-	OriginalPassword string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
-	DisplayName      string                     `json:"display_name" gorm:"index" validate:"max=20"`
-	Role             int                        `json:"role" gorm:"type:int;default:1"`   // admin, common
-	Status           int                        `json:"status" gorm:"type:int;default:1"` // enabled, disabled
-	Email            string                     `json:"email" gorm:"index" validate:"max=50"`
-	GitHubId         string                     `json:"github_id" gorm:"column:github_id;index"`
-	DiscordId        string                     `json:"discord_id" gorm:"column:discord_id;index"`
-	OidcId           string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
-	WeChatId         string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
-	TelegramId       string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
-	AccessToken      *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota            int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota        int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount     int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	Id               int     `json:"id"`
+	Username         string  `json:"username" gorm:"unique;index" validate:"max=20"`
+	Password         string  `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	OriginalPassword string  `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	DisplayName      string  `json:"display_name" gorm:"index" validate:"max=20"`
+	Role             int     `json:"role" gorm:"type:int;default:1"`   // admin, common
+	Status           int     `json:"status" gorm:"type:int;default:1"` // enabled, disabled
+	Email            string  `json:"email" gorm:"index" validate:"max=50"`
+	GitHubId         string  `json:"github_id" gorm:"column:github_id;index"`
+	DiscordId        string  `json:"discord_id" gorm:"column:discord_id;index"`
+	OidcId           string  `json:"oidc_id" gorm:"column:oidc_id;index"`
+	WeChatId         string  `json:"wechat_id" gorm:"column:wechat_id;index"`
+	TelegramId       string  `json:"telegram_id" gorm:"column:telegram_id;index"`
+	VerificationCode string  `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	AccessToken      *string `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
+	Quota            int     `json:"quota" gorm:"type:int;default:0"`
+	UsedQuota        int     `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	RequestCount     int     `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	// DailyTokenLimit caps the tokens (prompt+completion) this user may
+	// consume per calendar day, reset at 00:00 UTC. 0 = unlimited. Set by an
+	// admin; see setting.UserDailyTokenLimitEnabled for the feature's global
+	// on/off switch.
+	DailyTokenLimit int64 `json:"daily_token_limit" gorm:"type:bigint;default:0;column:daily_token_limit"`
+	// BillingMode selects between "group" (default; Group field + normal
+	// group ratio/channel selection) and "channel_pricing" (Group no
+	// longer takes effect at all; channel selection and billing use this
+	// user's own UserChannelBinding rows instead). See
+	// BillingModeGroup/BillingModeChannelPricing in
+	// model/user_channel_binding.go.
+	BillingMode      string                     `json:"billing_mode" gorm:"type:varchar(20);default:'group';column:billing_mode"`
 	Group            string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
 	AffCode          string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount         int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
@@ -151,16 +163,18 @@ func attachTokenCounts(users []*User) {
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:          user.Id,
-		Group:       user.Group,
-		Quota:       user.Quota,
-		Status:      user.Status,
-		Role:        user.Role,
-		Username:    user.Username,
-		Setting:     user.Setting,
-		Email:       user.Email,
-		AuthVersion: user.AuthVersion,
-		CacheSchema: userCacheSchemaVersion,
+		Id:              user.Id,
+		Group:           user.Group,
+		Quota:           user.Quota,
+		Status:          user.Status,
+		Role:            user.Role,
+		Username:        user.Username,
+		Setting:         user.Setting,
+		Email:           user.Email,
+		DailyTokenLimit: user.DailyTokenLimit,
+		BillingMode:     user.BillingMode,
+		AuthVersion:     user.AuthVersion,
+		CacheSchema:     userCacheSchemaVersion,
 	}
 	return cache
 }
@@ -891,10 +905,12 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 
 	newUser := *user
 	updates := map[string]interface{}{
-		"username":     newUser.Username,
-		"display_name": newUser.DisplayName,
-		"group":        newUser.Group,
-		"remark":       newUser.Remark,
+		"username":          newUser.Username,
+		"display_name":      newUser.DisplayName,
+		"group":             newUser.Group,
+		"remark":            newUser.Remark,
+		"daily_token_limit": newUser.DailyTokenLimit,
+		"billing_mode":      newUser.BillingMode,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password

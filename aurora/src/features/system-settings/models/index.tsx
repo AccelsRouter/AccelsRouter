@@ -62,6 +62,7 @@ const defaultModelSettings: ModelSettings = {
   AutoGroups: '',
   MaxTokenAutoGroups: 5,
   DefaultUseAutoGroup: false,
+  AutoModelConfigs: '[]',
   'group_ratio_setting.group_special_usable_group': '{}',
   RetryTimes: 0,
   ChannelDisableThreshold: '',
@@ -83,6 +84,8 @@ const defaultModelSettings: ModelSettings = {
   'channel_affinity_setting.rules': '[]',
   'model_deployment.ionet.api_key': '',
   'model_deployment.ionet.enabled': false,
+  PersonalByokEnabled: false,
+  ByokFeeRatio: 0,
 }
 
 export function ModelSettings() {
