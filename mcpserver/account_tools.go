@@ -20,16 +20,19 @@ func quotaToUSD(quota int) float64 { return float64(quota) / common.QuotaPerUnit
 type walletCredits struct {
 	Name         string   `json:"name,omitempty"`
 	RemainingUSD *float64 `json:"remaining_usd,omitempty"`
-	UsedUSD      float64  `json:"used_usd"`
+	UsedUSD      *float64 `json:"used_usd,omitempty"`
 	Unlimited    bool     `json:"unlimited,omitempty"`
 	ExpiresAt    string   `json:"expires_at,omitempty"`
 }
 
 type creditsOutput struct {
-	Key           walletCredits  `json:"key" jsonschema:"Limits of this API key itself"`
-	Wallet        *walletCredits `json:"wallet,omitempty" jsonschema:"The balance that actually pays for this key's calls, when the platform exposes it"`
-	BillingSource string         `json:"billing_source" jsonschema:"personal (the key owner's balance) or organization (an organization wallet)"`
-	Currency      string         `json:"currency"`
+	Key                walletCredits  `json:"key" jsonschema:"This API key's own cap and spend"`
+	PaidBy             string         `json:"paid_by" jsonschema:"personal_balance or organization_wallet: which balance this key's calls are charged to"`
+	PersonalBalance    *walletCredits `json:"personal_balance,omitempty" jsonschema:"The key owner's personal balance; pays for personal keys"`
+	OrganizationWallet *walletCredits `json:"organization_wallet,omitempty" jsonschema:"The organization wallet that pays for this workspace key"`
+	DistributorWallet  *walletCredits `json:"distributor_wallet,omitempty" jsonschema:"Your distributor wallet: funds your customers' calls at wholesale. This key never spends it"`
+	Note               string         `json:"note"`
+	Currency           string         `json:"currency"`
 }
 
 func getCredits(ctx context.Context) (*mcp.CallToolResult, creditsOutput, error) {
@@ -38,8 +41,8 @@ func getCredits(ctx context.Context) (*mcp.CallToolResult, creditsOutput, error)
 	if err != nil {
 		return nil, creditsOutput{}, fmt.Errorf("key lookup failed: %w", err)
 	}
-	out := creditsOutput{Currency: "USD", BillingSource: "personal"}
-	out.Key = walletCredits{Name: token.Name, UsedUSD: quotaToUSD(token.UsedQuota), Unlimited: token.UnlimitedQuota}
+	out := creditsOutput{Currency: "USD"}
+	out.Key = walletCredits{Name: token.Name, UsedUSD: ptr(quotaToUSD(token.UsedQuota)), Unlimited: token.UnlimitedQuota}
 	if !token.UnlimitedQuota {
 		out.Key.RemainingUSD = ptr(quotaToUSD(token.RemainQuota))
 	}
@@ -47,22 +50,29 @@ func getCredits(ctx context.Context) (*mcp.CallToolResult, creditsOutput, error)
 		out.Key.ExpiresAt = time.Unix(token.ExpiredTime, 0).UTC().Format(time.RFC3339)
 	}
 
-	// A workspace-bound key is paid by its organization's wallet; otherwise by
-	// the owner's personal balance. The owner-level view honours the same
-	// switch as the OpenAI-compatible billing endpoint.
+	// A workspace-bound key is paid by its organization's wallet; every other
+	// key by the owner's personal balance (see service.NewBillingSession).
 	if info, wErr := model.GetWorkspaceBillingInfo(token.Id); wErr == nil && info != nil {
-		out.BillingSource = "organization"
+		out.PaidBy = "organization_wallet"
+		out.Note = "This is a workspace key: its calls are charged to the organization wallet, never to a personal balance."
 		if org, oErr := model.GetOrganizationById(info.OrgId); oErr == nil && org != nil {
-			out.Wallet = &walletCredits{Name: org.Name, RemainingUSD: ptr(quotaToUSD(org.WalletQuota))}
+			out.OrganizationWallet = &walletCredits{Name: org.Name, RemainingUSD: ptr(quotaToUSD(org.WalletQuota))}
 		}
 		return nil, out, nil
 	}
-	if !common.DisplayTokenStatEnabled {
-		remaining, qErr := model.GetUserQuota(token.UserId, false)
-		used, uErr := model.GetUserUsedQuota(token.UserId)
-		if qErr == nil && uErr == nil {
-			out.Wallet = &walletCredits{RemainingUSD: ptr(quotaToUSD(remaining)), UsedUSD: quotaToUSD(used)}
+	out.PaidBy = "personal_balance"
+	out.Note = "This is a personal key: its calls are charged to the owner's personal balance."
+	if remaining, qErr := model.GetUserQuota(token.UserId, false); qErr == nil {
+		out.PersonalBalance = &walletCredits{RemainingUSD: ptr(quotaToUSD(remaining))}
+		if used, uErr := model.GetUserUsedQuota(token.UserId); uErr == nil {
+			out.PersonalBalance.UsedUSD = ptr(quotaToUSD(used))
 		}
+	}
+	// A distributor admin also sees the distributor wallet, clearly separated:
+	// it funds the customers' calls and is not what this key spends.
+	if reseller, rErr := callerReseller(c); rErr == nil {
+		out.DistributorWallet = &walletCredits{Name: reseller.Name, RemainingUSD: ptr(quotaToUSD(reseller.WalletQuota))}
+		out.Note += " The distributor wallet shown separately funds your customers' calls at wholesale; this key does not draw from it."
 	}
 	return nil, out, nil
 }

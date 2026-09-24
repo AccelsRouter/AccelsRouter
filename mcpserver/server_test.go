@@ -67,9 +67,16 @@ func newTestDB(t *testing.T) {
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.QuotaData{},
 		&model.Organization{}, &model.OrgAccount{}, &model.CreditLedger{}, &model.Workspace{}, &model.WorkspaceToken{},
-		&model.ResellerCustomerLink{}, &model.ResellerAdmin{}, &model.OrgUsageDaily{}, &model.User{}))
+		&model.ResellerCustomerLink{}, &model.ResellerAdmin{}, &model.OrgUsageDaily{}, &model.User{}, &model.Token{}))
 	model.DB = db
 	model.LOG_DB = db
+	common.RedisEnabled = false
+	// The token→workspace binding is cached process-wide; a previous test may
+	// have bound key 42, so start every test from the unbound state.
+	model.InvalidateTokenWorkspaceCache(42)
+	// The fake-auth caller: user 7 holding personal key 42 (see newTestEngine).
+	require.NoError(t, db.Create(&model.User{Id: 7, Username: "jayke", Quota: 5_000_000, UsedQuota: 250_000, Status: common.UserStatusEnabled}).Error)
+	require.NoError(t, db.Create(&model.Token{Id: 42, UserId: 7, Name: "jayke-01", Key: "test", UnlimitedQuota: true, UsedQuota: 25, Status: common.TokenStatusEnabled}).Error)
 }
 
 // seedReseller makes user 7 (the fake-auth caller) the admin of a distributor
@@ -140,6 +147,8 @@ func TestToolsListedAndReadOnlyHints(t *testing.T) {
 	}
 	_, providersListed := got["list-providers"]
 	assert.False(t, providersListed, "upstream/vendor listing must not be exposed")
+	_, resellerListed := got["reseller-summary"]
+	assert.False(t, resellerListed, "a key that is not a distributor admin's must not see reseller tools")
 	readOnly, listed := got["send-message"]
 	assert.True(t, listed)
 	assert.False(t, readOnly, "send-message spends credit and must not claim read-only")
@@ -276,4 +285,133 @@ func mustJSON(t *testing.T, v any) []byte {
 	b, err := common.Marshal(v)
 	require.NoError(t, err)
 	return b
+}
+
+func TestGetCreditsSeparatesKeyPersonalAndDistributorBalances(t *testing.T) {
+	newTestDB(t)
+	reseller, customer := seedReseller(t)
+	engine := newTestEngine(t)
+
+	session := connect(t, engine, "sk-test")
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "get-credits", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%v", res.Content)
+	var out creditsOutput
+	require.NoError(t, common.Unmarshal(mustJSON(t, res.StructuredContent), &out))
+	assert.Equal(t, "personal_balance", out.PaidBy)
+	assert.True(t, out.Key.Unlimited)
+	require.NotNil(t, out.PersonalBalance, "a personal key must show the balance it actually spends")
+	assert.InDelta(t, 10.0, *out.PersonalBalance.RemainingUSD, 1e-9)
+	assert.InDelta(t, 0.5, *out.PersonalBalance.UsedUSD, 1e-9)
+	require.NotNil(t, out.DistributorWallet, "a distributor admin sees the distributor wallet too")
+	assert.Equal(t, reseller.Name, out.DistributorWallet.Name)
+	assert.InDelta(t, 4.0, *out.DistributorWallet.RemainingUSD, 1e-9, "the wallet is the distributor's own cost balance; granting a customer a cap does not debit it")
+	assert.Nil(t, out.OrganizationWallet)
+	assert.Contains(t, out.Note, "does not draw from it")
+
+	// Bound to a customer workspace, the same key is paid by that org's wallet
+	// and the distributor wallet disappears from the answer.
+	ws := &model.Workspace{OrgId: customer.Id, Name: "prod"}
+	require.NoError(t, model.CreateWorkspace(ws))
+	require.NoError(t, model.BindTokenToWorkspace(customer.Id, ws.Id, 42))
+	res, err = connect(t, engine, "sk-test").CallTool(context.Background(), &mcp.CallToolParams{Name: "get-credits", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%v", res.Content)
+	var bound creditsOutput
+	require.NoError(t, common.Unmarshal(mustJSON(t, res.StructuredContent), &bound))
+	assert.Equal(t, "organization_wallet", bound.PaidBy)
+	require.NotNil(t, bound.OrganizationWallet)
+	assert.Equal(t, customer.Name, bound.OrganizationWallet.Name)
+	assert.InDelta(t, 1.0, *bound.OrganizationWallet.RemainingUSD, 1e-9, "the customer's initial allocation")
+	assert.Nil(t, bound.PersonalBalance)
+	assert.Nil(t, bound.DistributorWallet)
+}
+
+func TestResellerToolsOnlyForDistributorAdminPersonalKey(t *testing.T) {
+	newTestDB(t)
+	reseller, customer := seedReseller(t)
+	engine := newTestEngine(t)
+
+	// Distributor admin's personal key: reseller-* tools appear and are scoped.
+	session := connect(t, engine, "sk-test")
+	names := toolNames(t, session)
+	for _, name := range []string{"reseller-summary", "reseller-customers", "reseller-usage",
+		"reseller-customer-logs", "reseller-customer-offer", "reseller-ledger"} {
+		assert.True(t, names[name], "%s must be listed for a distributor admin", name)
+	}
+	assert.True(t, names["list-models"], "base tools stay available")
+
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "reseller-summary", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%v", res.Content)
+	var summary resellerSummary
+	require.NoError(t, common.Unmarshal(mustJSON(t, res.StructuredContent), &summary))
+	assert.Equal(t, reseller.Id, summary.Id)
+	assert.Equal(t, 1, summary.CustomerCount)
+	assert.InDelta(t, 4.0, summary.WalletUSD, 1e-9, "2,000,000 quota = $4; a customer cap grant does not debit the wallet")
+	assert.Equal(t, 0.8, summary.WholesaleDiscounts["claude"])
+
+	res, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "reseller-customers", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%v", res.Content)
+	var customers resellerCustomersOutput
+	require.NoError(t, common.Unmarshal(mustJSON(t, res.StructuredContent), &customers))
+	require.Len(t, customers.Customers, 1)
+	assert.Equal(t, customer.Id, customers.Customers[0].Id)
+	assert.InDelta(t, 1.0, customers.Customers[0].NetAllocatedUSD, 1e-9)
+
+	// A foreign org id is refused exactly like an unknown one.
+	stranger := &model.Organization{Name: "someone-else", Type: model.OrgTypeEnterprise, Status: model.OrgStatusActive}
+	require.NoError(t, model.DB.Create(stranger).Error)
+	res, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "reseller-customer-offer",
+		Arguments: map[string]any{"customer_id": stranger.Id}})
+	require.NoError(t, err)
+	assert.True(t, res.IsError, "another organization must not be readable through the distributor tools")
+
+	// The same user's workspace-bound key is a customer credential: no reseller tools.
+	ws := &model.Workspace{OrgId: customer.Id, Name: "prod"}
+	require.NoError(t, model.CreateWorkspace(ws))
+	require.NoError(t, model.BindTokenToWorkspace(customer.Id, ws.Id, 42))
+	wsSession := connect(t, engine, "sk-test")
+	wsNames := toolNames(t, wsSession)
+	assert.False(t, wsNames["reseller-summary"], "workspace keys never unlock distributor data")
+	_, err = wsSession.CallTool(context.Background(), &mcp.CallToolParams{Name: "reseller-summary", Arguments: map[string]any{}})
+	require.Error(t, err, "a hidden distributor tool is unknown to this caller, not merely failing")
+	assert.Contains(t, err.Error(), "unknown tool")
+}
+
+func TestResellerUsageReportsProfitAcrossCustomers(t *testing.T) {
+	newTestDB(t)
+	reseller, customer := seedReseller(t)
+	now := common.GetTimestamp()
+	// standard 1,000,000 ($2), customer paid 900,000 ($1.80), cost 800,000 ($1.60)
+	require.NoError(t, model.RecordOrgUsageDaily(now-3600, customer.Id, 0, reseller.Id, 9, "claude-opus", 1_000_000, 900_000, 800_000, 100, 50))
+	// Outside a 7-day window: must not count.
+	require.NoError(t, model.RecordOrgUsageDaily(now-10*86400, customer.Id, 0, reseller.Id, 9, "claude-opus", 5_000_000, 5_000_000, 5_000_000, 1, 1))
+	session := connect(t, newTestEngine(t), "sk-test")
+
+	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "reseller-usage", Arguments: map[string]any{"days": 7}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%v", res.Content)
+	var out resellerUsageOutput
+	require.NoError(t, common.Unmarshal(mustJSON(t, res.StructuredContent), &out))
+	assert.Equal(t, "all-customers", out.Scope)
+	assert.InDelta(t, 2.0, out.StandardUSD, 1e-9)
+	assert.InDelta(t, 1.8, out.CustomerPaidUSD, 1e-9)
+	assert.InDelta(t, 1.6, out.CostUSD, 1e-9)
+	assert.InDelta(t, 0.2, out.MarginUSD, 1e-9, "margin = customer paid - cost")
+	require.Len(t, out.ByCustomer, 1)
+	assert.Equal(t, "customer-one", out.ByCustomer[0].Key)
+	require.Len(t, out.ByModel, 1)
+	assert.Equal(t, "claude-opus", out.ByModel[0].Key)
+
+	res, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "reseller-usage",
+		Arguments: map[string]any{"days": 7, "customer_id": customer.Id}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%v", res.Content)
+	var single resellerUsageOutput
+	require.NoError(t, common.Unmarshal(mustJSON(t, res.StructuredContent), &single))
+	assert.Equal(t, "customer-one", single.Scope)
+	assert.InDelta(t, 1.8, single.CustomerPaidUSD, 1e-9)
+	assert.Empty(t, single.ByCustomer, "a single customer statement has no per-customer split")
 }
