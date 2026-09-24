@@ -12,7 +12,7 @@ import (
 // admin sees and manages all of them. Reseller parties have no personal keys
 // (see AddToken / DisablePersonalTokens), so this is their only key surface.
 
-// ListMyResellerKeys — GET /api/organization/reseller/keys
+// ListMyResellerKeys — GET /api/reseller/keys
 func ListMyResellerKeys(c *gin.Context) {
 	reseller, ok := callerReseller(c)
 	if !ok {
@@ -21,7 +21,7 @@ func ListMyResellerKeys(c *gin.Context) {
 	listOrgKeys(c, reseller.Id, 0)
 }
 
-// CreateMyResellerKey — POST /api/organization/reseller/keys
+// CreateMyResellerKey — POST /api/reseller/keys
 func CreateMyResellerKey(c *gin.Context) {
 	reseller, ok := callerReseller(c)
 	if !ok {
@@ -30,7 +30,7 @@ func CreateMyResellerKey(c *gin.Context) {
 	createOrgKey(c, reseller, "reseller.key.create")
 }
 
-// GetMyResellerKey — POST /api/organization/reseller/keys/:token_id/key
+// GetMyResellerKey — POST /api/reseller/keys/:token_id/key
 func GetMyResellerKey(c *gin.Context) {
 	reseller, ok := callerReseller(c)
 	if !ok {
@@ -39,7 +39,7 @@ func GetMyResellerKey(c *gin.Context) {
 	revealOrgKey(c, reseller.Id, 0)
 }
 
-// DeleteMyResellerKey — DELETE /api/organization/reseller/keys/:token_id
+// DeleteMyResellerKey — DELETE /api/reseller/keys/:token_id
 func DeleteMyResellerKey(c *gin.Context) {
 	reseller, ok := callerReseller(c)
 	if !ok {
