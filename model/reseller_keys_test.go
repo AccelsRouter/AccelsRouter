@@ -110,3 +110,53 @@ func TestDisablePersonalTokensForResellerParties(t *testing.T) {
 	assert.Equal(t, common.TokenStatusDisabled, status(customerPersonal.Id), "customer user personal key disabled")
 	assert.Equal(t, common.TokenStatusEnabled, status(enterprisePersonal.Id), "enterprise member is not a reseller party")
 }
+
+// The reseller console must show the reseller's OWN key traffic alongside its
+// customers': call records include tokens bound to the reseller org (paid
+// overlay = wholesale), and the usage report counts rows billed to the reseller
+// org itself — whether tagged with reseller_org_id or only with org_id.
+func TestResellerConsoleIncludesOwnKeyTraffic(t *testing.T) {
+	migrateOrgTables(t)
+	require.NoError(t, DB.AutoMigrate(&Log{}, &OrgUsageDaily{}))
+	reseller := mustCreateOrg(t, "reseller", OrgTypeReseller, 1000)
+	require.NoError(t, UpdateOrganizationFields(reseller.Id, map[string]interface{}{
+		"wholesale_ratios": `{"claude-opus-4-8":0.8}`,
+	}))
+	customer, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", 400, 1)
+	require.NoError(t, err)
+
+	ownWs := &Workspace{OrgId: reseller.Id, Name: "Default"}
+	require.NoError(t, CreateWorkspace(ownWs))
+	custWs := &Workspace{OrgId: customer.Id, Name: "prod"}
+	require.NoError(t, CreateWorkspace(custWs))
+	require.NoError(t, BindTokenToWorkspace(reseller.Id, ownWs.Id, 7501))
+	require.NoError(t, BindTokenToWorkspace(customer.Id, custWs.Id, 7502))
+
+	now := common.GetTimestamp()
+	require.NoError(t, LOG_DB.Create(&Log{UserId: 7601, Type: LogTypeConsume, TokenId: 7501, ModelName: "claude-opus-4-8", Quota: 1000, CreatedAt: now}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{UserId: 7602, Type: LogTypeConsume, TokenId: 7502, ModelName: "claude-opus-4-8", Quota: 500, CreatedAt: now}).Error)
+
+	logs, total, err := ListResellerLogs(reseller.Id, now-10, now+10, 0, 50)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, total)
+	byToken := map[int]*Log{}
+	for _, l := range logs {
+		byToken[l.TokenId] = l
+	}
+	require.Contains(t, byToken, 7501, "the reseller's own key row is listed")
+	assert.Equal(t, "reseller", byToken[7501].CustomerName)
+	assert.Equal(t, 0.8, byToken[7501].RetailRatio, "own row's paid overlay is the wholesale ratio")
+	assert.Equal(t, 800, byToken[7501].RetailQuota)
+	assert.Equal(t, "customer-one", byToken[7502].CustomerName)
+
+	// Rollup: an own-key row written before own calls were tagged (reseller_org_id
+	// 0, org_id = reseller) and one written after (tagged) both count once.
+	require.NoError(t, RecordOrgUsageDaily(now, reseller.Id, ownWs.Id, 0, 7601, "claude-opus-4-8", 1000, 800, 0, 10, 20))
+	require.NoError(t, RecordOrgUsageDaily(now, reseller.Id, ownWs.Id, reseller.Id, 7601, "deepseek-v4-pro", 300, 300, 300, 5, 5))
+	require.NoError(t, RecordOrgUsageDaily(now, customer.Id, custWs.Id, reseller.Id, 7602, "claude-opus-4-8", 500, 500, 400, 7, 7))
+	report, err := GetResellerUsageFromDaily(reseller.Id, now-10, now+10)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, report.TotalRequests)
+	assert.EqualValues(t, 1800, report.TotalQuota, "own (1000+300) + customer (500) standard")
+	assert.EqualValues(t, 700, report.TotalCostQuota, "own tagged cost (300) + customer wholesale (400)")
+}

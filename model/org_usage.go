@@ -140,22 +140,21 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 }
 
 // ListResellerLogs returns the per-request call log across ALL of a reseller's
-// customer orgs (a reseller has no bound tokens of its own). Each row's retail
-// overlay uses the discount of the customer that owns the row's token.
+// customer orgs plus the reseller's OWN keys (bound to the reseller org). A
+// customer row's paid overlay uses that customer's retail discount; an own row's
+// uses the reseller's wholesale ratio (what the reseller wallet actually paid).
 func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*Log, int64, error) {
 	var links []ResellerCustomerLink
 	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Find(&links).Error; err != nil {
 		return nil, 0, err
 	}
-	if len(links) == 0 {
-		return []*Log{}, 0, nil
-	}
-	custIds := make([]int, 0, len(links))
+	orgIds := make([]int, 0, len(links)+1)
 	for _, l := range links {
-		custIds = append(custIds, l.CustomerOrgId)
+		orgIds = append(orgIds, l.CustomerOrgId)
 	}
+	orgIds = append(orgIds, resellerOrgId)
 	var bindings []WorkspaceToken
-	if err := DB.Where("org_id IN ?", custIds).Find(&bindings).Error; err != nil {
+	if err := DB.Where("org_id IN ?", orgIds).Find(&bindings).Error; err != nil {
 		return nil, 0, err
 	}
 	if len(bindings) == 0 {
@@ -194,6 +193,12 @@ func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*
 			if org.RetailDiscounts != "" {
 				discountsByOrg[l.CustomerOrgId] = ParseRetailDiscounts(org.RetailDiscounts)
 			}
+		}
+	}
+	if reseller, err := GetOrganizationById(resellerOrgId); err == nil && reseller != nil {
+		nameByOrg[resellerOrgId] = reseller.Name
+		if reseller.WholesaleRatios != "" {
+			discountsByOrg[resellerOrgId] = ParseRetailDiscounts(reseller.WholesaleRatios)
 		}
 	}
 	for _, lg := range logs {

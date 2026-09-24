@@ -314,6 +314,13 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 	relayInfo.OrgWorkspaceId = info.WorkspaceId
 	relayInfo.ResellerOrgId = info.ResellerOrgId
 	relayInfo.OrgWholesaleRatio = wholesaleRatio
+	if info.OrgType == model.OrgTypeReseller {
+		// The reseller's OWN call is reseller traffic in the reports: tag the
+		// rollup row with the reseller itself and record its cost = the wholesale
+		// amount it paid. Funding above keeps resellerOrgId 0 (single debit).
+		relayInfo.ResellerOrgId = info.OrgId
+		relayInfo.OrgWholesaleRatio = discountRatio
+	}
 	session := &BillingSession{
 		relayInfo: relayInfo,
 		funding: &OrgWalletFunding{

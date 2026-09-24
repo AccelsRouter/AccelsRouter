@@ -218,7 +218,9 @@ func GetResellerUsageFromDaily(resellerOrgId int, from, to int64) (*OrgUsageRepo
 		ByModel:     []OrgUsageBucket{},
 		ByMember:    []OrgUsageBucket{},
 	}
-	rows, err := fetchOrgUsageDaily("reseller_org_id = ?", []interface{}{resellerOrgId}, from, to)
+	// Customer rows carry reseller_org_id; the reseller's OWN key rows are
+	// billed to the reseller org itself (org_id), so both are its usage.
+	rows, err := fetchOrgUsageDaily("reseller_org_id = ? OR org_id = ?", []interface{}{resellerOrgId, resellerOrgId}, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -302,6 +304,15 @@ func BackfillOrgUsageDaily() error {
 	for _, l := range links {
 		resellerOf[l.CustomerOrgId] = l.ResellerOrgId
 	}
+	// A reseller org's own keys are reseller traffic too: the reseller is its
+	// own "reseller" and its cost is the wholesale amount it paid.
+	var resellerOrgIds []int
+	if err := DB.Model(&Organization{}).Where("type = ?", OrgTypeReseller).Pluck("id", &resellerOrgIds).Error; err != nil {
+		return err
+	}
+	for _, id := range resellerOrgIds {
+		resellerOf[id] = id
+	}
 
 	// Lazily-resolved per-org ratio maps (a handful of orgs, memoized).
 	retailByOrg := map[int]map[string]float64{}
@@ -373,6 +384,9 @@ func BackfillOrgUsageDaily() error {
 			cost = std
 			if r := WholesaleRatioFor(modelName, wholesaleFor(resellerId)); r > 0 && r < 1 {
 				cost = int64(common.QuotaRound(float64(l.Quota) * r))
+			}
+			if resellerId == own.orgId {
+				charged = cost // the reseller's own call: it paid exactly its cost
 			}
 		}
 		k := aggKey{day: day, orgId: own.orgId, workspaceId: own.workspaceId, model: modelName, userId: l.UserId}
