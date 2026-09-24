@@ -533,23 +533,23 @@ export const myOrgKeysApi: OrgKeysApi = {
 export const resellerKeysApi: OrgKeysApi = {
   list: async () => {
     const res = await api.get<ApiResp<OrgApiKey[]>>(
-      '/api/organization/reseller/keys'
+      '/api/reseller/keys'
     )
     return res.data?.data ?? []
   },
   create: async (name) => {
     const res = await api.post<ApiResp<{ token_id: number; key: string }>>(
-      '/api/organization/reseller/keys',
+      '/api/reseller/keys',
       { name }
     )
     return unwrap(res, 'Failed to create API key')
   },
   remove: async (tokenId) => {
-    await api.delete(`/api/organization/reseller/keys/${tokenId}`)
+    await api.delete(`/api/reseller/keys/${tokenId}`)
   },
   reveal: async (tokenId) => {
     const res = await api.post<ApiResp<{ key: string }>>(
-      `/api/organization/reseller/keys/${tokenId}/key`
+      `/api/reseller/keys/${tokenId}/key`
     )
     return unwrap(res, 'Failed to reveal API key').key
   },
