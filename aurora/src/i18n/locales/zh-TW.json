@@ -1849,6 +1849,7 @@
     "Caution": "注意",
     "CC Switch": "CC 切換",
     "Connect via MCP": "透過 MCP 連接",
+    "As a distributor admin, your personal keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Workspace keys do not.": "你是分銷商管理員，個人金鑰還會額外獲得一組唯讀的分銷商工具：客戶列表、用量與毛利、客戶可售模型與折扣、呼叫記錄、錢包流水。Workspace 金鑰不包含這些工具。",
     "Server URL": "伺服器位址",
     "Give your coding agent this gateway as an MCP server: it can browse models and prices, check credit, look up past requests and send test messages with this key.": "把本閘道作為 MCP 伺服器接入你的編碼代理：它可以用這把金鑰瀏覽模型與價格、查詢餘額、查看歷史請求並發送測試訊息。",
     "Only the send-message tool spends credit; every other tool is a free read-only lookup. The key is embedded in the snippet, so treat it like a password.": "只有 send-message 工具會消耗額度，其餘工具均為免費的唯讀查詢。設定片段內含金鑰，請像密碼一樣保管。",

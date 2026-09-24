@@ -17,11 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
+import { getOrgContext } from '@/features/organization-console/api'
 
 function getServerAddress(): string {
   try {
@@ -89,6 +91,13 @@ interface Props {
 export function McpConnectDialog(props: Props) {
   const { t } = useTranslation()
   const [client, setClient] = useState<ClientId>('claude-code')
+  const { data: orgContext } = useQuery({
+    queryKey: ['org-context'],
+    queryFn: getOrgContext,
+    enabled: props.open,
+    staleTime: 60_000,
+  })
+  const isResellerAdmin = orgContext?.is_reseller_admin ?? false
   const url = `${getServerAddress().replace(/\/$/, '')}/mcp`
   const key = props.tokenKey.startsWith('sk-')
     ? props.tokenKey
@@ -152,6 +161,13 @@ export function McpConnectDialog(props: Props) {
           'Only the send-message tool spends credit; every other tool is a free read-only lookup. The key is embedded in the snippet, so treat it like a password.'
         )}
       </p>
+      {isResellerAdmin && (
+        <p className='text-muted-foreground text-xs'>
+          {t(
+            'As a distributor admin, your personal keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Workspace keys do not.'
+          )}
+        </p>
+      )}
     </Dialog>
   )
 }

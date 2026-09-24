@@ -65,9 +65,36 @@ func newTestDB(t *testing.T) {
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.QuotaData{}))
+	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.QuotaData{},
+		&model.Organization{}, &model.OrgAccount{}, &model.CreditLedger{}, &model.Workspace{}, &model.WorkspaceToken{},
+		&model.ResellerCustomerLink{}, &model.ResellerAdmin{}, &model.OrgUsageDaily{}, &model.User{}))
 	model.DB = db
 	model.LOG_DB = db
+}
+
+// seedReseller makes user 7 (the fake-auth caller) the admin of a distributor
+// with one customer, and returns both orgs.
+func seedReseller(t *testing.T) (reseller, customer *model.Organization) {
+	t.Helper()
+	reseller = &model.Organization{Name: "acme-reseller", Type: model.OrgTypeReseller, Status: model.OrgStatusActive,
+		WalletQuota: 2_000_000, WholesaleRatios: `{"claude":0.8}`}
+	require.NoError(t, model.DB.Create(reseller).Error)
+	require.NoError(t, model.DB.Create(&model.ResellerAdmin{UserId: 7, ResellerOrgId: reseller.Id, Status: model.OrgStatusActive}).Error)
+	var err error
+	customer, err = model.CreateResellerCustomer(reseller.Id, "customer-one", "retail", 500_000, 7)
+	require.NoError(t, err)
+	return reseller, customer
+}
+
+func toolNames(t *testing.T, session *mcp.ClientSession) map[string]bool {
+	t.Helper()
+	res, err := session.ListTools(context.Background(), nil)
+	require.NoError(t, err)
+	names := map[string]bool{}
+	for _, tool := range res.Tools {
+		names[tool.Name] = true
+	}
+	return names
 }
 
 func connect(t *testing.T, engine *gin.Engine, key string) *mcp.ClientSession {
@@ -99,6 +126,7 @@ func (h headerRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestToolsListedAndReadOnlyHints(t *testing.T) {
+	newTestDB(t)
 	session := connect(t, newTestEngine(t), "sk-test")
 	res, err := session.ListTools(context.Background(), nil)
 	require.NoError(t, err)

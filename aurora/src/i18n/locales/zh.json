@@ -1823,6 +1823,7 @@
     "Caution": "注意",
     "CC Switch": "CC 切换",
     "Connect via MCP": "通过 MCP 连接",
+    "As a distributor admin, your personal keys also unlock read-only reseller tools: customers, usage and profit, customer offers, call records and the wallet ledger. Workspace keys do not.": "你是分销商管理员，个人密钥还会额外获得一组只读的分销商工具：客户列表、用量与毛利、客户可售模型与折扣、调用记录、钱包流水。Workspace 密钥不包含这些工具。",
     "Server URL": "服务器地址",
     "Give your coding agent this gateway as an MCP server: it can browse models and prices, check credit, look up past requests and send test messages with this key.": "把本网关作为 MCP 服务器接入你的编码代理：它可以用这把密钥浏览模型与价格、查询余额、查看历史请求并发送测试消息。",
     "Only the send-message tool spends credit; every other tool is a free read-only lookup. The key is embedded in the snippet, so treat it like a password.": "只有 send-message 工具会消耗额度，其余工具均为免费的只读查询。配置片段内含密钥，请像密码一样保管。",

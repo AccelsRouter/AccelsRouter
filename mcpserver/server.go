@@ -41,18 +41,32 @@ func ginFrom(ctx context.Context) *gin.Context {
 // Handler returns the gin handler serving the MCP endpoint. engine is the
 // application's own router, used for in-process dispatch to /v1 APIs.
 func Handler(engine *gin.Engine) gin.HandlerFunc {
-	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "accelsrouter",
-		Title:   common.SystemName,
-		Version: common.Version,
-	}, &mcp.ServerOptions{
-		Instructions: "Tools for exploring this AI gateway from a coding agent: browse the model catalog and " +
-			"effective prices for your API key, check remaining credit, inspect a past generation by request id, " +
-			"see which models are trending, and send a test message. Only send-message consumes credit.",
-	})
-	registerTools(server, engine)
+	const instructions = "Tools for exploring this AI gateway from a coding agent: browse the model catalog and " +
+		"effective prices for your API key, check remaining credit, inspect a past generation by request id, " +
+		"see which models are trending, and send a test message. Only send-message consumes credit."
+	newServer := func(extra string) *mcp.Server {
+		return mcp.NewServer(&mcp.Implementation{
+			Name:    "accelsrouter",
+			Title:   common.SystemName,
+			Version: common.Version,
+		}, &mcp.ServerOptions{Instructions: instructions + extra})
+	}
+	// Two fixed tool sets: everyone gets the base tools; a distributor admin's
+	// personal key additionally gets the read-only reseller-* tools. The choice
+	// is made per request from the authenticated caller, never from client input.
+	base := newServer("")
+	registerTools(base, engine)
+	reseller := newServer(" The reseller-* tools report on your distributor account: customers, usage, " +
+		"profit, offers and wallet ledger. They are read-only.")
+	registerTools(reseller, engine)
+	registerResellerTools(reseller)
 
-	httpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
+	httpHandler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
+		if isResellerCaller(ginFrom(req.Context())) {
+			return reseller
+		}
+		return base
+	}, &mcp.StreamableHTTPOptions{
 		Stateless:    true,
 		JSONResponse: true,
 	})
