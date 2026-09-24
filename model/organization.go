@@ -893,10 +893,41 @@ func ValidateOrgName(name string) error {
 	return nil
 }
 
+// ErrOrgNameTaken is returned when an organization name is already in use.
+var ErrOrgNameTaken = errors.New("组织名称已被使用，请换一个名称")
+
+// orgNameTaken reports whether another organization already uses name
+// (case-insensitive, trimmed). Names are unique across ALL organizations —
+// enterprises, distributors and their customers — so a reseller's own name
+// can never be confused with one of its customers in reports. excludeId
+// lets a rename keep its own current name. Enforced here rather than by a
+// unique index so pre-existing duplicate rows never block migration.
+func orgNameTaken(tx *gorm.DB, name string, excludeId int) (bool, error) {
+	var count int64
+	q := tx.Model(&Organization{}).Where("LOWER(name) = LOWER(?)", strings.TrimSpace(name))
+	if excludeId > 0 {
+		q = q.Where("id <> ?", excludeId)
+	}
+	if err := q.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// OrgNameTaken is orgNameTaken on the default connection.
+func OrgNameTaken(name string, excludeId int) (bool, error) {
+	return orgNameTaken(DB, name, excludeId)
+}
+
 func CreateOrganization(org *Organization) error {
 	org.Name = strings.TrimSpace(org.Name)
 	if err := ValidateOrgName(org.Name); err != nil {
 		return err
+	}
+	if taken, err := OrgNameTaken(org.Name, 0); err != nil {
+		return err
+	} else if taken {
+		return ErrOrgNameTaken
 	}
 	if org.Type != OrgTypeEnterprise && org.Type != OrgTypeReseller {
 		return errors.New("invalid organization type")
