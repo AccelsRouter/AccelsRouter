@@ -47,3 +47,21 @@ func DeleteMyResellerKey(c *gin.Context) {
 	}
 	deleteOrgKey(c, reseller, 0, "reseller.key.delete")
 }
+
+// UpdateMyResellerKey — PUT /api/reseller/keys/:token_id
+func UpdateMyResellerKey(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	updateOrgKey(c, reseller, 0, "reseller.key.update")
+}
+
+// GetMyResellerKeyModels — GET /api/reseller/keys/models
+func GetMyResellerKeyModels(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	orgKeyModels(c, reseller)
+}

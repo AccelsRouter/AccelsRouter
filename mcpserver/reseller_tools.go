@@ -22,17 +22,13 @@ const (
 	maxResellerLimit = 100
 )
 
-// callerReseller resolves the distributor a caller may act for. Only a personal
-// key of an active distributor admin qualifies: workspace-bound keys are
-// customer-facing credentials and never unlock distributor data.
+// callerReseller resolves the distributor a caller may act for. The key must
+// belong to an active distributor admin and be either a personal key or one
+// of the distributor's own keys (bound to a workspace of the distributor org,
+// which is how the distributor console issues keys). A key bound to a
+// customer's workspace is a customer-facing credential and never unlocks
+// distributor data, whoever holds it.
 func callerReseller(c *gin.Context) (*model.Organization, error) {
-	wsId, err := model.GetTokenWorkspaceId(c.GetInt("token_id"))
-	if err != nil {
-		return nil, err
-	}
-	if wsId != 0 {
-		return nil, fmt.Errorf("distributor tools require a personal API key, not a workspace key")
-	}
 	org, err := model.GetResellerAdminOrg(c.GetInt("id"))
 	if err != nil {
 		return nil, err
@@ -42,6 +38,19 @@ func callerReseller(c *gin.Context) (*model.Organization, error) {
 	}
 	if org.Status != model.OrgStatusActive {
 		return nil, fmt.Errorf("distributor %q is suspended", org.Name)
+	}
+	wsId, err := model.GetTokenWorkspaceId(c.GetInt("token_id"))
+	if err != nil {
+		return nil, err
+	}
+	if wsId != 0 {
+		ws, wErr := model.GetWorkspaceById(wsId)
+		if wErr != nil {
+			return nil, wErr
+		}
+		if ws == nil || ws.OrgId != org.Id {
+			return nil, fmt.Errorf("distributor tools require one of the distributor's own keys, not a customer workspace key")
+		}
 	}
 	return org, nil
 }

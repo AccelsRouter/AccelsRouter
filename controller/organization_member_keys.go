@@ -9,6 +9,7 @@ package controller
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -16,6 +17,107 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// orgKeyRequest is the create/update payload of an organization key. Every
+// limit is optional: on create, an absent field means "unlimited / never /
+// all callable models"; on update, an absent field is left unchanged.
+type orgKeyRequest struct {
+	Name               *string  `json:"name"`
+	UnlimitedQuota     *bool    `json:"unlimited_quota"`
+	RemainQuota        *int     `json:"remain_quota"`
+	ExpiredTime        *int64   `json:"expired_time"` // -1 = never
+	ModelLimitsEnabled *bool    `json:"model_limits_enabled"`
+	ModelLimits        []string `json:"model_limits"`
+	Status             *int     `json:"status"` // enabled / disabled only
+}
+
+// orgCallableModels is what a key of this org can actually reach: the org's
+// price group models, narrowed by the owning reseller's offerable set (for a
+// reseller customer) and by the org's own allow-list — exact-or-prefix, the
+// request-time rule. A key's model limits must stay inside this catalog.
+func orgCallableModels(org *model.Organization) []string {
+	group := org.PriceGroup
+	if group == "" {
+		group = "default"
+	}
+	catalog := model.GetGroupEnabledModels(group)
+	if resellerId, ok := model.ResellerOrgIdForCustomer(org.Id); ok && resellerId > 0 {
+		if reseller, err := model.GetOrganizationById(resellerId); err == nil && reseller != nil {
+			catalog = model.OfferableCatalog(catalog, reseller.AllowedModelSet())
+		}
+	}
+	catalog = model.OfferableCatalog(catalog, org.AllowedModelSet())
+	sort.Strings(catalog)
+	return catalog
+}
+
+// applyOrgKeyRequest validates req against the org's callable catalog and
+// writes it onto token. Quota bounds mirror the personal-key rules.
+func applyOrgKeyRequest(token *model.Token, req orgKeyRequest, callable []string) error {
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			name = "API Key"
+		}
+		if len([]rune(name)) > 64 {
+			return fmt.Errorf("名称过长（最多 64 字）")
+		}
+		token.Name = name
+	}
+	if req.UnlimitedQuota != nil {
+		token.UnlimitedQuota = *req.UnlimitedQuota
+	}
+	if req.RemainQuota != nil {
+		token.RemainQuota = *req.RemainQuota
+	}
+	if !token.UnlimitedQuota {
+		if token.RemainQuota < 0 {
+			return fmt.Errorf("额度不能为负数")
+		}
+		if maxQuota := common.QuotaFromFloat(1000000000 * common.QuotaPerUnit); token.RemainQuota > maxQuota {
+			return fmt.Errorf("额度超出上限")
+		}
+	}
+	if req.ExpiredTime != nil {
+		if *req.ExpiredTime != -1 && *req.ExpiredTime <= 0 {
+			return fmt.Errorf("过期时间无效")
+		}
+		token.ExpiredTime = *req.ExpiredTime
+	}
+	if req.ModelLimitsEnabled != nil {
+		token.ModelLimitsEnabled = *req.ModelLimitsEnabled
+	}
+	if req.ModelLimits != nil {
+		allowed := make(map[string]bool, len(callable))
+		for _, m := range callable {
+			allowed[m] = true
+		}
+		cleaned := make([]string, 0, len(req.ModelLimits))
+		seen := map[string]bool{}
+		for _, m := range req.ModelLimits {
+			m = strings.TrimSpace(m)
+			if m == "" || seen[m] {
+				continue
+			}
+			if !allowed[m] {
+				return fmt.Errorf("模型 %s 不在本组织可调用范围内", m)
+			}
+			seen[m] = true
+			cleaned = append(cleaned, m)
+		}
+		token.ModelLimits = strings.Join(cleaned, ",")
+	}
+	if token.ModelLimitsEnabled && token.ModelLimits == "" {
+		return fmt.Errorf("已开启模型限制但未选择任何模型")
+	}
+	if req.Status != nil {
+		if *req.Status != common.TokenStatusEnabled && *req.Status != common.TokenStatusDisabled {
+			return fmt.Errorf("状态无效")
+		}
+		token.Status = *req.Status
+	}
+	return nil
+}
 
 // callerOrgMember resolves the caller's active organization from their
 // OrgAccount, for any role (member/admin/owner) — the self-service key surface
@@ -105,14 +207,18 @@ func listOrgKeys(c *gin.Context, orgId, ownerUserId int) {
 		creators := model.UserDisplayLabelsByIds(creatorIds)
 		for _, tk := range tokens {
 			out = append(out, gin.H{
-				"token_id":        tk.Id,
-				"name":            tk.Name,
-				"status":          tk.Status,
-				"key_masked":      "sk-" + maskChannelKey(tk.Key),
-				"unlimited_quota": tk.UnlimitedQuota,
-				"remain_quota":    tk.RemainQuota,
-				"created_time":    tk.CreatedTime,
-				"created_by":      creators[tk.UserId],
+				"token_id":             tk.Id,
+				"name":                 tk.Name,
+				"status":               tk.Status,
+				"key_masked":           "sk-" + maskChannelKey(tk.Key),
+				"unlimited_quota":      tk.UnlimitedQuota,
+				"remain_quota":         tk.RemainQuota,
+				"used_quota":           tk.UsedQuota,
+				"expired_time":         tk.ExpiredTime,
+				"model_limits_enabled": tk.ModelLimitsEnabled,
+				"model_limits":         tk.GetModelLimits(),
+				"created_time":         tk.CreatedTime,
+				"created_by":           creators[tk.UserId],
 			})
 		}
 	}
@@ -122,21 +228,26 @@ func listOrgKeys(c *gin.Context, orgId, ownerUserId int) {
 // createOrgKey mints a key bound to the org's default workspace (org-wallet
 // billed) and records it under the given audit action.
 func createOrgKey(c *gin.Context, org *model.Organization, auditAction string) {
-	var req struct {
-		Name string `json:"name"`
-	}
+	var req orgKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		name = "API Key"
+	req.Status = nil // a new key is always enabled
+	token := &model.Token{
+		UserId:         c.GetInt("id"),
+		Name:           "API Key",
+		CreatedTime:    common.GetTimestamp(),
+		AccessedTime:   common.GetTimestamp(),
+		ExpiredTime:    -1,
+		UnlimitedQuota: true,
+		Status:         common.TokenStatusEnabled,
 	}
-	if len([]rune(name)) > 64 {
-		common.ApiErrorMsg(c, "名称过长（最多 64 字）")
+	if err := applyOrgKeyRequest(token, req, orgCallableModels(org)); err != nil {
+		common.ApiErrorMsg(c, err.Error())
 		return
 	}
+	name := token.Name
 	ws, err := ensureDefaultWorkspace(org.Id)
 	if err != nil {
 		common.ApiError(c, err)
@@ -147,16 +258,7 @@ func createOrgKey(c *gin.Context, org *model.Organization, auditAction string) {
 		common.ApiError(c, err)
 		return
 	}
-	token := &model.Token{
-		UserId:         c.GetInt("id"),
-		Name:           name,
-		Key:            key,
-		CreatedTime:    common.GetTimestamp(),
-		AccessedTime:   common.GetTimestamp(),
-		ExpiredTime:    -1,
-		UnlimitedQuota: true,
-		Status:         common.TokenStatusEnabled,
-	}
+	token.Key = key
 	if err := token.Insert(); err != nil {
 		common.ApiError(c, err)
 		return
@@ -167,6 +269,41 @@ func createOrgKey(c *gin.Context, org *model.Organization, auditAction string) {
 	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), auditAction, fmt.Sprintf("workspace:%d", ws.Id), fmt.Sprintf("token:%d %s", token.Id, name))
 	common.ApiSuccess(c, gin.H{"token_id": token.Id, "key": "sk-" + key})
+}
+
+// updateOrgKey edits the limits (name, quota, expiry, model limits, enabled)
+// of one visible key. The stored row is loaded first so untouched fields are
+// preserved by Token.Update's column list.
+func updateOrgKey(c *gin.Context, org *model.Organization, ownerUserId int, auditAction string) {
+	tokenId, ok := resolveOrgKey(c, org.Id, ownerUserId)
+	if !ok {
+		return
+	}
+	var req orgKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	token, err := model.GetTokenById(tokenId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := applyOrgKeyRequest(token, req, orgCallableModels(org)); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	if err := token.Update(); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordOrgAudit(org.Id, c.GetInt("id"), auditAction, fmt.Sprintf("token:%d", tokenId), token.Name)
+	common.ApiSuccess(c, nil)
+}
+
+// orgKeyModels returns the catalog a key's model limits may be chosen from.
+func orgKeyModels(c *gin.Context, org *model.Organization) {
+	common.ApiSuccess(c, orgCallableModels(org))
 }
 
 // resolveOrgKey parses :token_id and checks it is one of the keys visible to
@@ -294,4 +431,22 @@ func DeleteMyOrgKey(c *gin.Context) {
 		return
 	}
 	deleteOrgKey(c, org, c.GetInt("id"), "member.key.delete")
+}
+
+// UpdateMyOrgKey — PUT /api/organization/keys/:token_id
+func UpdateMyOrgKey(c *gin.Context) {
+	org, ok := callerOrgMember(c)
+	if !ok {
+		return
+	}
+	updateOrgKey(c, org, c.GetInt("id"), "member.key.update")
+}
+
+// GetMyOrgKeyModels — GET /api/organization/keys/models
+func GetMyOrgKeyModels(c *gin.Context) {
+	org, ok := callerOrgMember(c)
+	if !ok {
+		return
+	}
+	orgKeyModels(c, org)
 }

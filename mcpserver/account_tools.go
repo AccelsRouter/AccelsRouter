@@ -57,6 +57,9 @@ func getCredits(ctx context.Context) (*mcp.CallToolResult, creditsOutput, error)
 		out.Note = "This is a workspace key: its calls are charged to the organization wallet, never to a personal balance."
 		if org, oErr := model.GetOrganizationById(info.OrgId); oErr == nil && org != nil {
 			out.OrganizationWallet = &walletCredits{Name: org.Name, RemainingUSD: ptr(quotaToUSD(org.WalletQuota))}
+			if org.Type == model.OrgTypeReseller {
+				out.Note = "This is one of your distributor's keys: its calls are charged to the distributor wallet at your wholesale price, the same wallet that funds your customers' calls."
+			}
 		}
 		return nil, out, nil
 	}
