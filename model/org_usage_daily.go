@@ -239,6 +239,16 @@ func GetResellerUsageFromDaily(resellerOrgId int, from, to int64) (*OrgUsageRepo
 	orgName := orgNames(orgIds)
 	userName := userNames(userIds)
 	for _, r := range rows {
+		// The reseller's OWN key rows: it paid its wholesale cost itself, so
+		// charged == cost and there is no margin. Rows written before own calls
+		// were tagged carry cost 0 with charged = the wholesale amount; read
+		// them under the same rule instead of rewriting the immutable rollup.
+		if r.OrgId == resellerOrgId {
+			if r.CostQuota == 0 {
+				r.CostQuota = r.ChargedQuota
+			}
+			r.ChargedQuota = r.CostQuota
+		}
 		report.TotalQuota += r.StandardQuota
 		report.TotalRetailQuota += r.ChargedQuota
 		report.TotalCostQuota += r.CostQuota

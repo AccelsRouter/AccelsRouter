@@ -158,5 +158,8 @@ func TestResellerConsoleIncludesOwnKeyTraffic(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 3, report.TotalRequests)
 	assert.EqualValues(t, 1800, report.TotalQuota, "own (1000+300) + customer (500) standard")
-	assert.EqualValues(t, 700, report.TotalCostQuota, "own tagged cost (300) + customer wholesale (400)")
+	// Own rows pay their own cost: the untagged legacy row (cost 0, charged 800)
+	// reads as cost 800; margin on own rows is always zero.
+	assert.EqualValues(t, 1500, report.TotalCostQuota, "own 800 + own 300 + customer wholesale 400")
+	assert.EqualValues(t, 1600, report.TotalRetailQuota, "own rows charged == cost (800+300) + customer retail 500")
 }
