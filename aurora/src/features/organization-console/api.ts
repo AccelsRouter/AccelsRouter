@@ -482,78 +482,84 @@ export type OrgApiKey = {
   key_masked: string
   unlimited_quota: boolean
   remain_quota: number
+  used_quota: number
+  expired_time: number // -1 = never
+  model_limits_enabled: boolean
+  model_limits: string[]
   created_time: number
   // Who minted the key (email or username). Org-scoped consoles (reseller)
   // show it because every admin sees every key.
   created_by?: string
 }
 
+// OrgKeyPatch is the create/update payload: every limit optional (absent =
+// unlimited / never / all models on create; unchanged on update).
+export type OrgKeyPatch = {
+  name?: string
+  unlimited_quota?: boolean
+  remain_quota?: number
+  expired_time?: number
+  model_limits_enabled?: boolean
+  model_limits?: string[]
+  status?: number
+}
+
 // OrgKeysApi is the endpoint set a key console operates on: the enterprise
 // member console and the reseller console share one panel over two paths.
 export type OrgKeysApi = {
   list: () => Promise<OrgApiKey[]>
-  create: (name: string) => Promise<{ key: string }>
+  create: (patch: OrgKeyPatch) => Promise<{ key: string }>
+  update: (tokenId: number, patch: OrgKeyPatch) => Promise<void>
   remove: (tokenId: number) => Promise<void>
   reveal: (tokenId: number) => Promise<string>
+  // Models a key of this org may be limited to (the org's callable catalog).
+  models: () => Promise<string[]>
 }
 
-export async function listMyOrgKeys(): Promise<OrgApiKey[]> {
-  const res = await api.get<ApiResp<OrgApiKey[]>>('/api/organization/keys')
-  return res.data?.data ?? []
+// orgKeysApiFor builds the endpoint set over one base path.
+function orgKeysApiFor(base: string): OrgKeysApi {
+  return {
+    list: async () => {
+      const res = await api.get<ApiResp<OrgApiKey[]>>(base)
+      return res.data?.data ?? []
+    },
+    create: async (patch) => {
+      const res = await api.post<ApiResp<{ token_id: number; key: string }>>(
+        base,
+        patch
+      )
+      return unwrap(res, 'Failed to create API key')
+    },
+    update: async (tokenId, patch) => {
+      const res = await api.put<ApiResp<null>>(`${base}/${tokenId}`, patch)
+      if (!res.data?.success)
+        throw new Error(res.data?.message || 'Failed to update API key')
+    },
+    remove: async (tokenId) => {
+      const res = await api.delete<ApiResp<null>>(`${base}/${tokenId}`)
+      if (!res.data?.success)
+        throw new Error(res.data?.message || 'Failed to delete API key')
+    },
+    reveal: async (tokenId) => {
+      const res = await api.post<ApiResp<{ key: string }>>(
+        `${base}/${tokenId}/key`
+      )
+      return unwrap(res, 'Failed to reveal API key').key
+    },
+    models: async () => {
+      const res = await api.get<ApiResp<string[]>>(`${base}/models`)
+      return res.data?.data ?? []
+    },
+  }
 }
 
-export async function createMyOrgKey(name: string): Promise<{ key: string }> {
-  const res = await api.post<ApiResp<{ token_id: number; key: string }>>(
-    '/api/organization/keys',
-    { name }
-  )
-  return unwrap(res, 'Failed to create API key')
-}
-
-export async function deleteMyOrgKey(tokenId: number): Promise<void> {
-  await api.delete(`/api/organization/keys/${tokenId}`)
-}
-
-export async function getMyOrgKey(tokenId: number): Promise<string> {
-  const res = await api.post<ApiResp<{ key: string }>>(
-    `/api/organization/keys/${tokenId}/key`
-  )
-  return unwrap(res, 'Failed to reveal API key').key
-}
-
-export const myOrgKeysApi: OrgKeysApi = {
-  list: listMyOrgKeys,
-  create: createMyOrgKey,
-  remove: deleteMyOrgKey,
-  reveal: getMyOrgKey,
-}
+// Enterprise / customer member keys: bound to the member's org, billed from
+// the org wallet; each member sees only the keys they created.
+export const myOrgKeysApi: OrgKeysApi = orgKeysApiFor('/api/organization/keys')
 
 // Reseller-owned keys: bound to the reseller org, billed from the reseller
 // wallet at wholesale, routed through the reseller's upstreams.
-export const resellerKeysApi: OrgKeysApi = {
-  list: async () => {
-    const res = await api.get<ApiResp<OrgApiKey[]>>(
-      '/api/reseller/keys'
-    )
-    return res.data?.data ?? []
-  },
-  create: async (name) => {
-    const res = await api.post<ApiResp<{ token_id: number; key: string }>>(
-      '/api/reseller/keys',
-      { name }
-    )
-    return unwrap(res, 'Failed to create API key')
-  },
-  remove: async (tokenId) => {
-    await api.delete(`/api/reseller/keys/${tokenId}`)
-  },
-  reveal: async (tokenId) => {
-    const res = await api.post<ApiResp<{ key: string }>>(
-      `/api/reseller/keys/${tokenId}/key`
-    )
-    return unwrap(res, 'Failed to reveal API key').key
-  },
-}
+export const resellerKeysApi: OrgKeysApi = orgKeysApiFor('/api/reseller/keys')
 
 export async function listResellerAudit(params: {
   page: number

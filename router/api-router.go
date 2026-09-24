@@ -238,7 +238,9 @@ func SetApiRouter(router *gin.Engine) {
 			// org's default workspace so they bill the org wallet, not a personal
 			// balance. Backs the org-member "API Keys" surface.
 			orgRoute.GET("/keys", controller.ListMyOrgKeys)
+			orgRoute.GET("/keys/models", controller.GetMyOrgKeyModels)
 			orgRoute.POST("/keys", middleware.CriticalRateLimit(), controller.CreateMyOrgKey)
+			orgRoute.PUT("/keys/:token_id", controller.UpdateMyOrgKey)
 			orgRoute.POST("/keys/:token_id/key", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetMyOrgKey)
 			orgRoute.DELETE("/keys/:token_id", controller.DeleteMyOrgKey)
 			orgRoute.GET("/workspaces", controller.ListMyWorkspaces)
@@ -282,7 +284,9 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.POST("/wallet/purchase", middleware.CriticalRateLimit(), controller.PurchaseMyResellerCredit)
 			// Reseller-owned API keys (reseller wallet, wholesale price, reseller route).
 			resellerRoute.GET("/keys", controller.ListMyResellerKeys)
+			resellerRoute.GET("/keys/models", controller.GetMyResellerKeyModels)
 			resellerRoute.POST("/keys", middleware.CriticalRateLimit(), controller.CreateMyResellerKey)
+			resellerRoute.PUT("/keys/:token_id", controller.UpdateMyResellerKey)
 			resellerRoute.POST("/keys/:token_id/key", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.GetMyResellerKey)
 			resellerRoute.DELETE("/keys/:token_id", controller.DeleteMyResellerKey)
 			// Customer delivery: invite a customer org's operator (admin).
