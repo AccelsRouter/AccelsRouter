@@ -95,6 +95,23 @@ func CreateOrgApplication(app *OrgApplication) error {
 	if app.Type != OrgTypeEnterprise && app.Type != OrgTypeReseller {
 		return errors.New("invalid organization type")
 	}
+	// Names are unique across all organizations; also refuse a name another
+	// PENDING application already claims, so the applicant learns now rather
+	// than at approval.
+	if taken, err := OrgNameTaken(app.OrgName, 0); err != nil {
+		return err
+	} else if taken {
+		return ErrOrgNameTaken
+	}
+	var sameNamePending int64
+	if err := DB.Model(&OrgApplication{}).
+		Where("LOWER(org_name) = LOWER(?) AND status = ?", app.OrgName, OrgApplicationPending).
+		Count(&sameNamePending).Error; err != nil {
+		return err
+	}
+	if sameNamePending > 0 {
+		return ErrOrgNameTaken
+	}
 	// The reseller-admin role is decoupled from the single-payer OrgAccount, so
 	// an existing enterprise member MAY apply to become a reseller (and vice
 	// versa). Each role is guarded against duplication on its own table.
@@ -192,6 +209,13 @@ func ApproveOrgApplication(appId, reviewerId int, priceGroup, note string) (*Org
 			if managed > 0 {
 				return errors.New("申请人已归属某个组织")
 			}
+		}
+		// Re-check at approval: another org may have taken the name since the
+		// application was filed.
+		if taken, err := orgNameTaken(tx, app.OrgName, 0); err != nil {
+			return err
+		} else if taken {
+			return ErrOrgNameTaken
 		}
 		newOrg := &Organization{
 			Name:        app.OrgName,

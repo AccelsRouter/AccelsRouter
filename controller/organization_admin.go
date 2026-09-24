@@ -142,6 +142,13 @@ func AdminUpdateOrganization(c *gin.Context) {
 			common.ApiErrorMsg(c, err.Error())
 			return
 		}
+		if taken, err := model.OrgNameTaken(name, id); err != nil {
+			common.ApiError(c, err)
+			return
+		} else if taken {
+			common.ApiErrorMsg(c, model.ErrOrgNameTaken.Error())
+			return
+		}
 		fields["name"] = name
 	}
 	if req.PriceGroup != nil {
