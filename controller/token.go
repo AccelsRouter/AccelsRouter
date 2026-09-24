@@ -268,6 +268,12 @@ func AddToken(c *gin.Context) {
 		common.ApiError(c, fmt.Errorf("您有进行中的退款申请，无法新建 Token。如需继续使用请先撤销退款申请"))
 		return
 	}
+	// Reseller parties consume only through organization keys (org wallet,
+	// reseller route); a personal key would bypass both.
+	if party, pErr := model.IsResellerParty(c.GetInt("id")); pErr == nil && party {
+		common.ApiError(c, fmt.Errorf("分销商及其客户不能创建个人密钥，请在控制台创建组织密钥"))
+		return
+	}
 	request := tokenRequest{}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
@@ -389,6 +395,14 @@ func UpdateToken(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	// A reseller party's personal (unbound) keys are disabled by rule; they
+	// cannot be edited or re-enabled — only deleted. Org keys are unaffected.
+	if wsId, _ := model.GetTokenWorkspaceId(cleanToken.Id); wsId == 0 {
+		if party, pErr := model.IsResellerParty(userId); pErr == nil && party {
+			common.ApiError(c, fmt.Errorf("分销商及其客户的个人密钥已停用，请使用控制台的组织密钥"))
+			return
+		}
 	}
 	if token.Status == common.TokenStatusEnabled {
 		// Refund-lock: forbid re-enabling a disabled token while a

@@ -239,6 +239,13 @@ func ApproveOrgApplication(appId, reviewerId int, priceGroup, note string) (*Org
 		return nil, err
 	}
 	InvalidateOrgPayerCache(org.OwnerUserId)
+	if org.Type == OrgTypeReseller {
+		// A reseller admin consumes only through reseller keys (reseller wallet,
+		// wholesale price, reseller route): its personal keys stop here.
+		if _, dErr := DisablePersonalTokens(org.OwnerUserId); dErr != nil {
+			common.SysError(fmt.Sprintf("disable personal tokens for reseller admin %d failed: %s", org.OwnerUserId, dErr.Error()))
+		}
+	}
 	return org, nil
 }
 
@@ -387,5 +394,6 @@ func AcceptOrgInvitation(code string, userId int) (*OrgInvitation, error) {
 		return nil, err
 	}
 	InvalidateOrgPayerCache(userId)
+	disablePersonalTokensIfResellerParty(accepted.OrgId, userId)
 	return accepted, nil
 }

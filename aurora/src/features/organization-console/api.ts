@@ -483,6 +483,18 @@ export type OrgApiKey = {
   unlimited_quota: boolean
   remain_quota: number
   created_time: number
+  // Who minted the key (email or username). Org-scoped consoles (reseller)
+  // show it because every admin sees every key.
+  created_by?: string
+}
+
+// OrgKeysApi is the endpoint set a key console operates on: the enterprise
+// member console and the reseller console share one panel over two paths.
+export type OrgKeysApi = {
+  list: () => Promise<OrgApiKey[]>
+  create: (name: string) => Promise<{ key: string }>
+  remove: (tokenId: number) => Promise<void>
+  reveal: (tokenId: number) => Promise<string>
 }
 
 export async function listMyOrgKeys(): Promise<OrgApiKey[]> {
@@ -507,6 +519,40 @@ export async function getMyOrgKey(tokenId: number): Promise<string> {
     `/api/organization/keys/${tokenId}/key`
   )
   return unwrap(res, 'Failed to reveal API key').key
+}
+
+export const myOrgKeysApi: OrgKeysApi = {
+  list: listMyOrgKeys,
+  create: createMyOrgKey,
+  remove: deleteMyOrgKey,
+  reveal: getMyOrgKey,
+}
+
+// Reseller-owned keys: bound to the reseller org, billed from the reseller
+// wallet at wholesale, routed through the reseller's upstreams.
+export const resellerKeysApi: OrgKeysApi = {
+  list: async () => {
+    const res = await api.get<ApiResp<OrgApiKey[]>>(
+      '/api/organization/reseller/keys'
+    )
+    return res.data?.data ?? []
+  },
+  create: async (name) => {
+    const res = await api.post<ApiResp<{ token_id: number; key: string }>>(
+      '/api/organization/reseller/keys',
+      { name }
+    )
+    return unwrap(res, 'Failed to create API key')
+  },
+  remove: async (tokenId) => {
+    await api.delete(`/api/organization/reseller/keys/${tokenId}`)
+  },
+  reveal: async (tokenId) => {
+    const res = await api.post<ApiResp<{ key: string }>>(
+      `/api/organization/reseller/keys/${tokenId}/key`
+    )
+    return unwrap(res, 'Failed to reveal API key').key
+  },
 }
 
 export async function listResellerAudit(params: {

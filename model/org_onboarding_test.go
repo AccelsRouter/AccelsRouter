@@ -29,15 +29,22 @@ func TestOrgApplicationApproval(t *testing.T) {
 
 	// A reseller admin is a management role, NOT a paying OrgAccount: the
 	// applicant administers the reseller org but keeps its single-payer slot
-	// free (GetOrgPayerInfo stays nil).
+	// free (no org_accounts row). Its hot-path payer record still points at the
+	// reseller org, so the admin's own reseller keys route and bill as reseller
+	// traffic.
 	adminOrg, err := GetResellerAdminOrg(100)
 	require.NoError(t, err)
 	require.NotNil(t, adminOrg)
 	assert.Equal(t, org.Id, adminOrg.Id)
+	acc, err := GetOrgAccountByUser(100)
+	require.NoError(t, err)
+	assert.Nil(t, acc, "reseller admin must not occupy the single-payer slot")
 
 	info, err := GetOrgPayerInfo(100)
 	require.NoError(t, err)
-	assert.Nil(t, info, "reseller admin must not occupy the single-payer slot")
+	require.NotNil(t, info)
+	assert.Equal(t, org.Id, info.OrgId)
+	assert.Equal(t, org.Id, info.ResellerOrgId, "own keys are reseller traffic")
 
 	// Re-approving the same (now approved) application fails.
 	_, err = ApproveOrgApplication(app.Id, 1, "", "")

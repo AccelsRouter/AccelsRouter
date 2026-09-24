@@ -239,6 +239,8 @@
     "Ledger": "帳目",
     "No ledger entries.": "尚無帳目記錄。",
     "Suspended": "已暫停",
+    "Created by": "建立人",
+    "Keys here draw on the distributor wallet at your wholesale price and route through your assigned upstreams, exactly like your customers’ calls. Distributors have no personal keys.": "此處的金鑰從分銷商錢包按你的批發價扣費，並經由分配給你的上游路由，與客戶的呼叫完全一致。分銷商沒有個人金鑰。",
     "Add candidates": "新增候選模型",
     "Search by model or channel name": "依模型名或渠道名搜尋",
     "Already a candidate": "已是候選",

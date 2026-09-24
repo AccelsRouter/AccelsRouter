@@ -351,6 +351,11 @@ func InitResources() error {
 	if err := model.BackfillOrgUsageDaily(); err != nil {
 		common.SysError("org_usage_daily backfill failed: " + err.Error())
 	}
+	// Reseller parties consume only through organization keys: disable any
+	// personal keys they still hold (idempotent, non-fatal).
+	if err := model.DisableResellerPartiesPersonalTokens(); err != nil {
+		common.SysError("reseller parties personal token sweep failed: " + err.Error())
+	}
 
 	// Initialize Redis
 	err = common.InitRedisClient()

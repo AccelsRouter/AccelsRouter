@@ -250,9 +250,11 @@ export function useSidebarData(): SidebarData {
             url: '/dashboard/models',
             icon: LayoutDashboard,
           },
-          // Org members create keys under "My Organization" (org-wallet billed);
-          // only non-org users get the personal /keys entry here.
-          ...(!isOrgMember
+          // Org members create keys under "My Organization" (org-wallet billed)
+          // and reseller parties under "Distributor" (reseller wallet, reseller
+          // route; their personal keys are disabled by rule) — only unattached
+          // users get the personal /keys entry here.
+          ...(!isOrgMember && !isResellerParty
             ? [{ title: t('API Keys'), url: '/keys', icon: Key } as NavItem]
             : []),
           // A reseller admin reviews consumption under the Distributor console
