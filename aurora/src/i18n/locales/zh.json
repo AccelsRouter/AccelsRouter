@@ -214,6 +214,8 @@
     "No ledger entries.": "暂无账目记录。",
     "Suspended": "已暂停",
     "Organization": "组织",
+    "Two-factor authentication must be enabled on your account before you can create an API key here.": "创建这里的 API 密钥前，必须先为你的账号开启二次验证。",
+    "Enable two-factor authentication": "去开启二次验证",
     "Operator email (optional)": "客户负责人邮箱（可选）",
     "Invites the operator right away: a new email gets an account plus an activation link valid 7 days; a registered email gets a join invitation.": "填写后立即邀请负责人：未注册的邮箱会直接开户并收到 7 天有效的激活链接；已注册的邮箱会收到加入邀请。",
     "Customer created, but the invitation failed: {{reason}}": "客户已建立，但邀请失败：{{reason}}",

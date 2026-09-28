@@ -228,6 +228,15 @@ func listOrgKeys(c *gin.Context, orgId, ownerUserId int) {
 // createOrgKey mints a key bound to the org's default workspace (org-wallet
 // billed) and records it under the given audit action.
 func createOrgKey(c *gin.Context, org *model.Organization, auditAction string) {
+	// An organization key spends the org's (or distributor's) wallet, so the
+	// account minting it must be protected by two-factor authentication.
+	if enabled, err := model.IsTwoFAEnabled(c.GetInt("id")); err != nil {
+		common.ApiError(c, err)
+		return
+	} else if !enabled {
+		common.ApiErrorMsg(c, "创建组织密钥前必须先在个人资料中开启二次验证")
+		return
+	}
 	var req orgKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
