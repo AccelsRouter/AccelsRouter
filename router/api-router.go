@@ -175,6 +175,14 @@ func SetApiRouter(router *gin.Engine) {
 			reconRoute.GET("", controller.AdminGetReconciliation)
 			reconRoute.GET("/export", controller.AdminExportReconciliation)
 		}
+		// Upstream monitor: channel/model health history and price comparison.
+		upstreamRoute := apiRouter.Group("/admin/upstream")
+		upstreamRoute.Use(middleware.AdminAuth())
+		{
+			upstreamRoute.GET("/health", controller.AdminUpstreamHealth)
+			upstreamRoute.GET("/history", controller.AdminUpstreamHistory)
+			upstreamRoute.GET("/prices", controller.AdminUpstreamPrices)
+		}
 
 		orgAdminRoute := apiRouter.Group("/admin/organizations")
 		orgAdminRoute.Use(middleware.AdminAuth())

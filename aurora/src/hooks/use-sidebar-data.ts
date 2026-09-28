@@ -298,6 +298,11 @@ export function useSidebarData(): SidebarData {
             icon: Radio,
           },
           {
+            title: t('Upstream Monitor'),
+            url: '/upstream',
+            icon: Activity,
+          },
+          {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,

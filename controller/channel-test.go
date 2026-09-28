@@ -40,6 +40,23 @@ type testResult struct {
 	context     *gin.Context
 	localErr    error
 	newAPIError *types.NewAPIError
+	// model actually probed (resolved from the channel when none was given)
+	model string
+}
+
+// recordProbe feeds a channel test outcome into the upstream monitor.
+func recordProbe(channel *model.Channel, result testResult, milliseconds int64) {
+	if channel == nil || result.model == "" {
+		return
+	}
+	switch {
+	case result.localErr != nil:
+		model.RecordUpstreamProbe(channel.Id, result.model, false, milliseconds, result.localErr.Error())
+	case result.newAPIError != nil:
+		model.RecordUpstreamProbe(channel.Id, result.model, false, milliseconds, result.newAPIError.Error())
+	default:
+		model.RecordUpstreamProbe(channel.Id, result.model, true, milliseconds, "")
+	}
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) string {
@@ -70,7 +87,31 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
+// resolveChannelTestModel is the model a test actually probes: the requested
+// one, else the channel's test model, else its first model, else gpt-4o-mini.
+func resolveChannelTestModel(channel *model.Channel, testModel string) string {
+	testModel = strings.TrimSpace(testModel)
+	if testModel != "" {
+		return testModel
+	}
+	if channel.TestModel != nil && *channel.TestModel != "" {
+		return strings.TrimSpace(*channel.TestModel)
+	}
+	if models := channel.GetModels(); len(models) > 0 && strings.TrimSpace(models[0]) != "" {
+		return strings.TrimSpace(models[0])
+	}
+	return "gpt-4o-mini"
+}
+
+// testChannel runs one channel test and reports which model was probed, so
+// callers can feed the upstream monitor (recordProbe).
 func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+	result := runChannelTest(ctx, channel, testUserID, testModel, endpointType, isStream)
+	result.model = resolveChannelTestModel(channel, testModel)
+	return result
+}
+
+func runChannelTest(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -93,20 +134,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 
-	testModel = strings.TrimSpace(testModel)
-	if testModel == "" {
-		if channel.TestModel != nil && *channel.TestModel != "" {
-			testModel = strings.TrimSpace(*channel.TestModel)
-		} else {
-			models := channel.GetModels()
-			if len(models) > 0 {
-				testModel = strings.TrimSpace(models[0])
-			}
-			if testModel == "" {
-				testModel = "gpt-4o-mini"
-			}
-		}
-	}
+	testModel = resolveChannelTestModel(channel, testModel)
 
 	endpointType = normalizeChannelTestEndpoint(channel, endpointType)
 
@@ -871,6 +899,7 @@ func TestChannel(c *gin.Context) {
 		requestCtx = c.Request.Context()
 	}
 	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
+	recordProbe(channel, result, time.Since(tik).Milliseconds())
 	if result.localErr != nil {
 		resp := gin.H{
 			"success": false,
@@ -919,6 +948,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	tik := time.Now()
 	result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
 	milliseconds := time.Since(tik).Milliseconds()
+	recordProbe(channel, result, milliseconds)
 	if ctx.Err() != nil {
 		return summary
 	}
