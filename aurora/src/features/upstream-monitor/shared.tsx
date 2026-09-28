@@ -105,7 +105,8 @@ export function HistoryStrip(props: {
   barClassName?: string
 }) {
   const { t } = useTranslation()
-  const start = props.since - (props.since % 3600)
+  // Slots run from the hour after the window start up to the current hour.
+  const start = props.since - (props.since % 3600) + 3600
   const byBucket = new Map(props.buckets.map((b) => [b.bucket, b]))
   const slots: (UpstreamBucket | null)[] = []
   for (let h = 0; h < props.hours; h++) {

@@ -107,9 +107,9 @@ function ModelRow(props: {
             <Badge
               variant='outline'
               className='text-[10px]'
-              title={t('Seen in traffic but not declared on the channel')}
+              title={t('Removed from the channel; history kept for 30 days')}
             >
-              {t('unlisted')}
+              {t('removed')}
             </Badge>
           )}
         </div>
@@ -174,13 +174,17 @@ function ChannelCard(props: {
   hours: number
   queryKey: unknown[]
   defaultOpen: boolean
+  showRemoved: boolean
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(props.defaultOpen)
   const ch = props.ch
   const tone = availabilityTone(ch.availability)
   const status = CHANNEL_STATUS[ch.status] ?? CHANNEL_STATUS[2]
-  const modelsWithData = ch.models.filter((m) => m.availability >= 0).length
+  const listed = ch.models.filter((m) => m.listed)
+  const removed = ch.models.length - listed.length
+  const visible = props.showRemoved ? ch.models : listed
+  const modelsWithData = listed.filter((m) => m.availability >= 0).length
   return (
     <div
       className={cn(
@@ -217,9 +221,11 @@ function ChannelCard(props: {
             </div>
             <div className='text-muted-foreground mt-0.5 text-xs'>
               {t('{{n}} models · {{m}} with data', {
-                n: ch.models.length,
+                n: listed.length,
                 m: modelsWithData,
               })}
+              {removed > 0 &&
+                ` · ${t('{{count}} removed', { count: removed })}`}
               {ch.test_time > 0 &&
                 ` · ${t('last test')} ${fmtAgo(ch.test_time, t)}`}
             </div>
@@ -264,7 +270,7 @@ function ChannelCard(props: {
       </button>
       {open && (
         <div className='border-border/60 border-t'>
-          {ch.models.length === 0 ? (
+          {visible.length === 0 ? (
             <p className='text-muted-foreground px-4 py-6 text-center text-sm'>
               {t('No models declared on this channel.')}
             </p>
@@ -298,7 +304,7 @@ function ChannelCard(props: {
                   </tr>
                 </thead>
                 <tbody className='divide-border/60 divide-y'>
-                  {ch.models.map((m) => (
+                  {visible.map((m) => (
                     <ModelRow
                       key={m.model}
                       channelId={ch.id}
@@ -323,6 +329,7 @@ export function AvailabilityTab(props: {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [problemsOnly, setProblemsOnly] = useState(false)
+  const [showRemoved, setShowRemoved] = useState(false)
 
   const channels = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -367,6 +374,14 @@ export function AvailabilityTab(props: {
           />
           {t('Problems only')}
         </label>
+        <label className='flex items-center gap-2 text-xs'>
+          <Switch
+            size='sm'
+            checked={showRemoved}
+            onCheckedChange={(c) => setShowRemoved(Boolean(c))}
+          />
+          {t('Show removed models')}
+        </label>
         <span className='text-muted-foreground ml-auto text-xs'>
           {t('{{count}} channels', { count: channels.length })}
         </span>
@@ -385,6 +400,7 @@ export function AvailabilityTab(props: {
               hours={props.data.hours}
               queryKey={props.queryKey}
               defaultOpen={i === 0 && channelIsProblem(ch)}
+              showRemoved={showRemoved}
             />
           ))}
         </div>

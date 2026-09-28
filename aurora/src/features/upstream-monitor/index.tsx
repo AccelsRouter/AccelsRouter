@@ -77,15 +77,20 @@ export function UpstreamMonitor() {
   const summary = useMemo(() => {
     const chs = health.data?.channels ?? []
     const enabled = chs.filter((c) => c.status === 1).length
-    const models = chs.reduce((n, c) => n + c.models.length, 0)
+    const models = chs.reduce(
+      (n, c) => n + c.models.filter((m) => m.listed).length,
+      0
+    )
     const withData = chs.reduce(
-      (n, c) => n + c.models.filter((m) => m.availability >= 0).length,
+      (n, c) =>
+        n + c.models.filter((m) => m.listed && m.availability >= 0).length,
       0
     )
     let ok = 0
     let total = 0
     for (const c of chs)
       for (const m of c.models) {
+        if (!m.listed) continue
         const t = m.requests + m.failures + m.probes
         ok += m.requests + (m.probes - m.probe_failures)
         total += t
