@@ -839,12 +839,22 @@ export async function listCustomers(): Promise<ResellerCustomer[]> {
   return unwrap(res, 'Failed to load customers')
 }
 
+export type CreateCustomerResult = {
+  customer: ResellerCustomerOrg
+  // Present when owner_email was given and the invite went through.
+  invite?: CustomerInviteResult
+  // Present when the org was created but the invite failed (retry from the
+  // customer's invite dialog).
+  invite_error?: string
+}
+
 export async function createCustomer(payload: {
   name: string
   price_group: string
   initial_quota: number
-}): Promise<ResellerCustomerOrg> {
-  const res = await api.post<ApiResp<ResellerCustomerOrg>>(
+  owner_email?: string
+}): Promise<CreateCustomerResult> {
+  const res = await api.post<ApiResp<CreateCustomerResult>>(
     '/api/organization/customers',
     payload
   )
