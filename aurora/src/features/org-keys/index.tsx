@@ -25,11 +25,22 @@ no personal balance) always gets a key that works against the org's quota.
 */
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Key, Loader2, Pencil, Search, Trash2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import {
+  Copy,
+  Key,
+  Loader2,
+  Pencil,
+  Search,
+  ShieldAlert,
+  Trash2,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { get2FAStatus } from '@/lib/api'
 import { formatQuotaWithCurrency, getCurrencyLabel } from '@/lib/currency'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -119,6 +130,20 @@ export function OrgKeysPanel({
     queryKey: [queryKey],
     queryFn: keysApi.list,
   })
+  // Creating an org key requires the creator's account to have 2FA enabled
+  // (enforced server-side); surface it before the person fills in a form.
+  const twoFA = useQuery({
+    queryKey: ['2fa-status'],
+    queryFn: async () => {
+      const res = (await get2FAStatus()) as {
+        success?: boolean
+        data?: { enabled?: boolean }
+      }
+      return Boolean(res?.success && res.data?.enabled)
+    },
+    staleTime: 30_000,
+  })
+  const twoFAEnabled = twoFA.data === true
   const modelsQuery = useQuery({
     queryKey: [queryKey, 'models'],
     queryFn: keysApi.models,
@@ -272,10 +297,30 @@ export function OrgKeysPanel({
               'Keys here draw on your organization’s balance. Use them as your OpenAI-compatible API key.'
             )}
         </p>
-        <Button size='sm' onClick={() => setEditing('new')}>
+        <Button
+          size='sm'
+          disabled={twoFA.isSuccess && !twoFAEnabled}
+          onClick={() => setEditing('new')}
+        >
           {t('Create API Key')}
         </Button>
       </div>
+
+      {twoFA.isSuccess && !twoFAEnabled && (
+        <Alert>
+          <ShieldAlert className='h-4 w-4' />
+          <AlertDescription className='flex flex-wrap items-center justify-between gap-2'>
+            <span>
+              {t(
+                'Two-factor authentication must be enabled on your account before you can create an API key here.'
+              )}
+            </span>
+            <Button size='sm' variant='outline' render={<Link to='/profile' />}>
+              {t('Enable two-factor authentication')}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {isLoading ? (
         <div className='flex h-40 items-center justify-center'>

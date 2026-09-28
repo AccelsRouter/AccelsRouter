@@ -200,6 +200,8 @@
     "No ledger entries.": "No ledger entries.",
     "Suspended": "Suspended",
     "Organization": "Organization",
+    "Two-factor authentication must be enabled on your account before you can create an API key here.": "Two-factor authentication must be enabled on your account before you can create an API key here.",
+    "Enable two-factor authentication": "Enable two-factor authentication",
     "Operator email (optional)": "Operator email (optional)",
     "Invites the operator right away: a new email gets an account plus an activation link valid 7 days; a registered email gets a join invitation.": "Invites the operator right away: a new email gets an account plus an activation link valid 7 days; a registered email gets a join invitation.",
     "Customer created, but the invitation failed: {{reason}}": "Customer created, but the invitation failed: {{reason}}",
