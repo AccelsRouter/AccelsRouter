@@ -50,6 +50,7 @@ import { Route as AuthenticatedReconciliationIndexRouteImport } from './routes/_
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedPersonalByokIndexRouteImport } from './routes/_authenticated/personal-byok/index'
+import { Route as AuthenticatedOrganizationsIndexRouteImport } from './routes/_authenticated/organizations/index'
 import { Route as AuthenticatedOrganizationIndexRouteImport } from './routes/_authenticated/organization/index'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
@@ -65,7 +66,6 @@ import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
 import { Route as AuthenticatedSystemSettingsTopupsIndexRouteImport } from './routes/_authenticated/system-settings/topups/index'
 import { Route as AuthenticatedSystemSettingsSiteIndexRouteImport } from './routes/_authenticated/system-settings/site/index'
 import { Route as AuthenticatedSystemSettingsSecurityIndexRouteImport } from './routes/_authenticated/system-settings/security/index'
-import { Route as AuthenticatedSystemSettingsOrganizationsIndexRouteImport } from './routes/_authenticated/system-settings/organizations/index'
 import { Route as AuthenticatedSystemSettingsOperationsIndexRouteImport } from './routes/_authenticated/system-settings/operations/index'
 import { Route as AuthenticatedSystemSettingsModelsIndexRouteImport } from './routes/_authenticated/system-settings/models/index'
 import { Route as AuthenticatedSystemSettingsGeoBlockIndexRouteImport } from './routes/_authenticated/system-settings/geo-block/index'
@@ -297,6 +297,12 @@ const AuthenticatedPersonalByokIndexRoute =
     path: '/personal-byok/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedOrganizationsIndexRoute =
+  AuthenticatedOrganizationsIndexRouteImport.update({
+    id: '/organizations/',
+    path: '/organizations/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedOrganizationIndexRoute =
   AuthenticatedOrganizationIndexRouteImport.update({
     id: '/organization/',
@@ -382,12 +388,6 @@ const AuthenticatedSystemSettingsSecurityIndexRoute =
   AuthenticatedSystemSettingsSecurityIndexRouteImport.update({
     id: '/security/',
     path: '/security/',
-    getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
-  } as any)
-const AuthenticatedSystemSettingsOrganizationsIndexRoute =
-  AuthenticatedSystemSettingsOrganizationsIndexRouteImport.update({
-    id: '/organizations/',
-    path: '/organizations/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
   } as any)
 const AuthenticatedSystemSettingsOperationsIndexRoute =
@@ -513,6 +513,7 @@ export interface FileRoutesByFullPath {
   '/keys/': typeof AuthenticatedKeysIndexRoute
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/organization/': typeof AuthenticatedOrganizationIndexRoute
+  '/organizations/': typeof AuthenticatedOrganizationsIndexRoute
   '/personal-byok/': typeof AuthenticatedPersonalByokIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/profile/': typeof AuthenticatedProfileIndexRoute
@@ -541,7 +542,6 @@ export interface FileRoutesByFullPath {
   '/system-settings/geo-block/': typeof AuthenticatedSystemSettingsGeoBlockIndexRoute
   '/system-settings/models/': typeof AuthenticatedSystemSettingsModelsIndexRoute
   '/system-settings/operations/': typeof AuthenticatedSystemSettingsOperationsIndexRoute
-  '/system-settings/organizations/': typeof AuthenticatedSystemSettingsOrganizationsIndexRoute
   '/system-settings/security/': typeof AuthenticatedSystemSettingsSecurityIndexRoute
   '/system-settings/site/': typeof AuthenticatedSystemSettingsSiteIndexRoute
   '/system-settings/topups/': typeof AuthenticatedSystemSettingsTopupsIndexRoute
@@ -583,6 +583,7 @@ export interface FileRoutesByTo {
   '/keys': typeof AuthenticatedKeysIndexRoute
   '/models': typeof AuthenticatedModelsIndexRoute
   '/organization': typeof AuthenticatedOrganizationIndexRoute
+  '/organizations': typeof AuthenticatedOrganizationsIndexRoute
   '/personal-byok': typeof AuthenticatedPersonalByokIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/profile': typeof AuthenticatedProfileIndexRoute
@@ -611,7 +612,6 @@ export interface FileRoutesByTo {
   '/system-settings/geo-block': typeof AuthenticatedSystemSettingsGeoBlockIndexRoute
   '/system-settings/models': typeof AuthenticatedSystemSettingsModelsIndexRoute
   '/system-settings/operations': typeof AuthenticatedSystemSettingsOperationsIndexRoute
-  '/system-settings/organizations': typeof AuthenticatedSystemSettingsOrganizationsIndexRoute
   '/system-settings/security': typeof AuthenticatedSystemSettingsSecurityIndexRoute
   '/system-settings/site': typeof AuthenticatedSystemSettingsSiteIndexRoute
   '/system-settings/topups': typeof AuthenticatedSystemSettingsTopupsIndexRoute
@@ -657,6 +657,7 @@ export interface FileRoutesById {
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/organization/': typeof AuthenticatedOrganizationIndexRoute
+  '/_authenticated/organizations/': typeof AuthenticatedOrganizationsIndexRoute
   '/_authenticated/personal-byok/': typeof AuthenticatedPersonalByokIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
@@ -685,7 +686,6 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/geo-block/': typeof AuthenticatedSystemSettingsGeoBlockIndexRoute
   '/_authenticated/system-settings/models/': typeof AuthenticatedSystemSettingsModelsIndexRoute
   '/_authenticated/system-settings/operations/': typeof AuthenticatedSystemSettingsOperationsIndexRoute
-  '/_authenticated/system-settings/organizations/': typeof AuthenticatedSystemSettingsOrganizationsIndexRoute
   '/_authenticated/system-settings/security/': typeof AuthenticatedSystemSettingsSecurityIndexRoute
   '/_authenticated/system-settings/site/': typeof AuthenticatedSystemSettingsSiteIndexRoute
   '/_authenticated/system-settings/topups/': typeof AuthenticatedSystemSettingsTopupsIndexRoute
@@ -730,6 +730,7 @@ export interface FileRouteTypes {
     | '/keys/'
     | '/models/'
     | '/organization/'
+    | '/organizations/'
     | '/personal-byok/'
     | '/playground/'
     | '/profile/'
@@ -758,7 +759,6 @@ export interface FileRouteTypes {
     | '/system-settings/geo-block/'
     | '/system-settings/models/'
     | '/system-settings/operations/'
-    | '/system-settings/organizations/'
     | '/system-settings/security/'
     | '/system-settings/site/'
     | '/system-settings/topups/'
@@ -800,6 +800,7 @@ export interface FileRouteTypes {
     | '/keys'
     | '/models'
     | '/organization'
+    | '/organizations'
     | '/personal-byok'
     | '/playground'
     | '/profile'
@@ -828,7 +829,6 @@ export interface FileRouteTypes {
     | '/system-settings/geo-block'
     | '/system-settings/models'
     | '/system-settings/operations'
-    | '/system-settings/organizations'
     | '/system-settings/security'
     | '/system-settings/site'
     | '/system-settings/topups'
@@ -873,6 +873,7 @@ export interface FileRouteTypes {
     | '/_authenticated/keys/'
     | '/_authenticated/models/'
     | '/_authenticated/organization/'
+    | '/_authenticated/organizations/'
     | '/_authenticated/personal-byok/'
     | '/_authenticated/playground/'
     | '/_authenticated/profile/'
@@ -901,7 +902,6 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/geo-block/'
     | '/_authenticated/system-settings/models/'
     | '/_authenticated/system-settings/operations/'
-    | '/_authenticated/system-settings/organizations/'
     | '/_authenticated/system-settings/security/'
     | '/_authenticated/system-settings/site/'
     | '/_authenticated/system-settings/topups/'
@@ -1218,6 +1218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPersonalByokIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/organizations/': {
+      id: '/_authenticated/organizations/'
+      path: '/organizations'
+      fullPath: '/organizations/'
+      preLoaderRoute: typeof AuthenticatedOrganizationsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/organization/': {
       id: '/_authenticated/organization/'
       path: '/organization'
@@ -1321,13 +1328,6 @@ declare module '@tanstack/react-router' {
       path: '/security'
       fullPath: '/system-settings/security/'
       preLoaderRoute: typeof AuthenticatedSystemSettingsSecurityIndexRouteImport
-      parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
-    }
-    '/_authenticated/system-settings/organizations/': {
-      id: '/_authenticated/system-settings/organizations/'
-      path: '/organizations'
-      fullPath: '/system-settings/organizations/'
-      preLoaderRoute: typeof AuthenticatedSystemSettingsOrganizationsIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
     }
     '/_authenticated/system-settings/operations/': {
@@ -1473,7 +1473,6 @@ interface AuthenticatedSystemSettingsRouteRouteChildren {
   AuthenticatedSystemSettingsGeoBlockIndexRoute: typeof AuthenticatedSystemSettingsGeoBlockIndexRoute
   AuthenticatedSystemSettingsModelsIndexRoute: typeof AuthenticatedSystemSettingsModelsIndexRoute
   AuthenticatedSystemSettingsOperationsIndexRoute: typeof AuthenticatedSystemSettingsOperationsIndexRoute
-  AuthenticatedSystemSettingsOrganizationsIndexRoute: typeof AuthenticatedSystemSettingsOrganizationsIndexRoute
   AuthenticatedSystemSettingsSecurityIndexRoute: typeof AuthenticatedSystemSettingsSecurityIndexRoute
   AuthenticatedSystemSettingsSiteIndexRoute: typeof AuthenticatedSystemSettingsSiteIndexRoute
   AuthenticatedSystemSettingsTopupsIndexRoute: typeof AuthenticatedSystemSettingsTopupsIndexRoute
@@ -1511,8 +1510,6 @@ const AuthenticatedSystemSettingsRouteRouteChildren: AuthenticatedSystemSettings
       AuthenticatedSystemSettingsModelsIndexRoute,
     AuthenticatedSystemSettingsOperationsIndexRoute:
       AuthenticatedSystemSettingsOperationsIndexRoute,
-    AuthenticatedSystemSettingsOrganizationsIndexRoute:
-      AuthenticatedSystemSettingsOrganizationsIndexRoute,
     AuthenticatedSystemSettingsSecurityIndexRoute:
       AuthenticatedSystemSettingsSecurityIndexRoute,
     AuthenticatedSystemSettingsSiteIndexRoute:
@@ -1540,6 +1537,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedOrganizationIndexRoute: typeof AuthenticatedOrganizationIndexRoute
+  AuthenticatedOrganizationsIndexRoute: typeof AuthenticatedOrganizationsIndexRoute
   AuthenticatedPersonalByokIndexRoute: typeof AuthenticatedPersonalByokIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
@@ -1569,6 +1567,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedOrganizationIndexRoute: AuthenticatedOrganizationIndexRoute,
+  AuthenticatedOrganizationsIndexRoute: AuthenticatedOrganizationsIndexRoute,
   AuthenticatedPersonalByokIndexRoute: AuthenticatedPersonalByokIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedProfileIndexRoute: AuthenticatedProfileIndexRoute,

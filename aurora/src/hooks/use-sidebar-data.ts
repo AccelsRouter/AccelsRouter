@@ -313,6 +313,11 @@ export function useSidebarData(): SidebarData {
             icon: Users,
           },
           {
+            title: t('Organizations'),
+            url: '/organizations',
+            icon: Building2,
+          },
+          {
             title: t('Redemption Codes'),
             url: '/redemption-codes',
             icon: Ticket,
