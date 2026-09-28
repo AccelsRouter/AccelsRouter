@@ -96,7 +96,9 @@ export type UpstreamChannelPrices = {
   ok: boolean
   error?: string
   fetched_at: number
-  source?: string
+  source?: string // endpoint that answered, 'custom url' or 'manual'
+  price_url?: string
+  has_manual: boolean
   models: UpstreamModelPriceRow[]
   summary: Partial<Record<PriceStatus, number>>
 }
@@ -143,6 +145,44 @@ export async function getUpstreamPrices(
     { params: refresh ? { refresh: 1 } : {}, timeout: 60_000 }
   )
   return unwrap(res, 'Failed to load upstream prices')
+}
+
+export type UpstreamPriceSource = {
+  channel_id: number
+  price_url: string
+  manual_prices: string
+  manual_count: number
+  updated_time?: number
+}
+
+export async function getPriceSource(
+  channelId: number
+): Promise<UpstreamPriceSource> {
+  const res = await api.get<ApiResp<UpstreamPriceSource>>(
+    `/api/admin/upstream/price-source/${channelId}`
+  )
+  return unwrap(res, 'Failed to load price source')
+}
+
+export async function setPriceSource(
+  channelId: number,
+  body: { price_url: string; manual_prices: string }
+): Promise<{ manual_count: number }> {
+  const res = await api.put<ApiResp<{ manual_count: number }>>(
+    `/api/admin/upstream/price-source/${channelId}`,
+    body
+  )
+  return unwrap(res, 'Failed to save price source')
+}
+
+export async function testPriceSource(body: {
+  price_url: string
+  manual_prices: string
+}): Promise<{ kind: 'url' | 'manual'; count: number; sample: string[] }> {
+  const res = await api.post<
+    ApiResp<{ kind: 'url' | 'manual'; count: number; sample: string[] }>
+  >('/api/admin/upstream/price-source/test', body, { timeout: 30_000 })
+  return unwrap(res, 'Test failed')
 }
 
 // Probe = the existing channel test for one model; its outcome lands in the

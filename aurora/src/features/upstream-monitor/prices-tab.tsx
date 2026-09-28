@@ -17,10 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, Search, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import type {
@@ -30,6 +31,7 @@ import type {
   UpstreamPrice,
   UpstreamPricesResponse,
 } from './api'
+import { PriceSourceDialog } from './price-source-dialog'
 import { fmtAgo } from './shared'
 
 // One ratio unit = $2 per 1M tokens (the platform's pricing convention).
@@ -154,6 +156,7 @@ function ChannelPriceCard(props: {
   mismatchesOnly: boolean
   query: string
   defaultOpen: boolean
+  onConfigure: () => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(props.defaultOpen)
@@ -209,12 +212,38 @@ function ChannelPriceCard(props: {
           </div>
           <div className='text-muted-foreground mt-0.5 text-xs'>
             {ch.ok
-              ? `${t('via')} ${ch.source} · ${t('fetched')} ${fmtAgo(ch.fetched_at, t)}`
+              ? `${t('via')} ${
+                  ch.source === 'manual'
+                    ? t('manual import')
+                    : ch.source === 'custom url'
+                      ? t('custom endpoint')
+                      : ch.source
+                } · ${t('fetched')} ${fmtAgo(ch.fetched_at, t)}`
               : ch.error === 'no http base URL'
                 ? t('No HTTP base URL to fetch prices from')
                 : `${t('Could not fetch prices')}: ${ch.error}`}
+            {ch.ok && ch.source === 'manual' && ch.error && (
+              <span className='text-amber-600 dark:text-amber-400'>
+                {' '}
+                · {t('fetch failed, using manual prices')}
+              </span>
+            )}
           </div>
         </div>
+        <Button
+          type='button'
+          size='sm'
+          variant={ch.ok ? 'ghost' : 'outline'}
+          className='h-7 gap-1 text-xs'
+          title={t('Configure price source')}
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onConfigure()
+          }}
+        >
+          <Settings2 className='h-3.5 w-3.5' />
+          {ch.ok ? null : t('Set price source')}
+        </Button>
         {ch.ok && (
           <div className='flex items-center gap-2'>
             <Badge
@@ -305,6 +334,9 @@ export function PricesTab(props: { data: UpstreamPricesResponse }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [mismatchesOnly, setMismatchesOnly] = useState(true)
+  const [configuring, setConfiguring] = useState<UpstreamChannelPrices | null>(
+    null
+  )
   const channels = useMemo(
     () =>
       [...props.data.channels].sort((a, b) => {
@@ -365,9 +397,15 @@ export function PricesTab(props: { data: UpstreamPricesResponse }) {
             mismatchesOnly={mismatchesOnly}
             query={query}
             defaultOpen={i === 0}
+            onConfigure={() => setConfiguring(ch)}
           />
         ))}
       </div>
+      <PriceSourceDialog
+        channelId={configuring?.id ?? null}
+        channelName={configuring?.name ?? ''}
+        onClose={() => setConfiguring(null)}
+      />
     </div>
   )
 }

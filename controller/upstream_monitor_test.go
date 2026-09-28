@@ -56,3 +56,38 @@ func TestComparePrices(t *testing.T) {
 		assert.Equal(t, tc.want, comparePrices(tc.local, tc.upstream), tc.name)
 	}
 }
+
+// A manual import accepts the two JSON payload shapes (with or without the
+// envelope) and CSV in USD per 1M tokens (per-token) or per call, converting
+// dollars to the platform's ratio unit; malformed lines are reported.
+func TestParseManualPrices(t *testing.T) {
+	p, err := parseManualPrices("model,input,output\ngpt-4o,5,20\n# comment\n\ndall-e-3,0.04\n")
+	require.NoError(t, err)
+	assert.Equal(t, &upstreamPrice{ModelRatio: 2.5, CompletionRatio: 4}, p.priceOf("gpt-4o"), "$5 in / $20 out per 1M → ratio 2.5, completion ×4")
+	assert.Equal(t, &upstreamPrice{PerCall: true, ModelPrice: 0.04}, p.priceOf("dall-e-3"), "two columns = per call")
+	assert.Equal(t, 2, p.count())
+
+	p, err = parseManualPrices(`{"model_ratio":{"gpt-4o":2.5},"completion_ratio":{"gpt-4o":4}}`)
+	require.NoError(t, err)
+	assert.Equal(t, &upstreamPrice{ModelRatio: 2.5, CompletionRatio: 4}, p.priceOf("gpt-4o"))
+
+	p, err = parseManualPrices(`[{"model_name":"gpt-4o","quota_type":0,"model_ratio":2.5,"completion_ratio":4}]`)
+	require.NoError(t, err)
+	assert.Equal(t, &upstreamPrice{ModelRatio: 2.5, CompletionRatio: 4}, p.priceOf("gpt-4o"))
+
+	p, err = parseManualPrices(`{"success":true,"data":{"model_ratio":{"gpt-4o":2.5}}}`)
+	require.NoError(t, err)
+	assert.NotNil(t, p.priceOf("gpt-4o"))
+
+	// Normalized storage round-trips through the JSON path.
+	back, err := parseManualPrices(p.normalizedJSON())
+	require.NoError(t, err)
+	assert.Equal(t, p.priceOf("gpt-4o"), back.priceOf("gpt-4o"))
+
+	_, err = parseManualPrices("gpt-4o,abc,20")
+	require.Error(t, err)
+	_, err = parseManualPrices("gpt-4o,-1,20")
+	require.Error(t, err)
+	_, err = parseManualPrices("   ")
+	require.Error(t, err)
+}
