@@ -62,7 +62,11 @@ import {
 import { CallRecords } from './call-records'
 import { CustomerOfferDialog } from './customer-offer-dialog'
 import { Field, Td, Th, fmtTime } from './shared'
-import type { InvitationStatus, ResellerCustomer } from './types'
+import type {
+  InvitationStatus,
+  ResellerCustomer,
+  ResellerCustomerOrg,
+} from './types'
 import { UsageReport } from './usage-report'
 
 function toUnix(date?: Date): number | undefined {
@@ -212,6 +216,9 @@ export function CustomersTab(props: { walletQuota: number }) {
       <CreateCustomerDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
+        onShareLink={(customer) =>
+          setInviteCustomer({ org: customer, net_allocated: 0 })
+        }
       />
 
       <AllocationDialog
@@ -477,12 +484,19 @@ function CustomerInviteDialog(props: {
   )
 }
 
-function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
+function CreateCustomerDialog(props: {
+  open: boolean
+  onClose: () => void
+  // Called when the operator was invited but no email went out, so the
+  // distributor lands in the invite dialog where the link can be copied.
+  onShareLink: (customer: ResellerCustomerOrg) => void
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [priceGroup, setPriceGroup] = useState('default')
   const [initialQuota, setInitialQuota] = useState('')
+  const [ownerEmail, setOwnerEmail] = useState('')
   const [loadedOpen, setLoadedOpen] = useState(false)
 
   // Reset the form each time the dialog is opened.
@@ -491,8 +505,13 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
     setName('')
     setPriceGroup('default')
     setInitialQuota('')
+    setOwnerEmail('')
   }
   if (!props.open && loadedOpen) setLoadedOpen(false)
+
+  const emailTrimmed = ownerEmail.trim()
+  const emailValid =
+    emailTrimmed === '' || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailTrimmed)
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -500,12 +519,39 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
         name: name.trim(),
         price_group: priceGroup.trim() || 'default',
         initial_quota: quotaFromUSD(Number(initialQuota) || 0),
+        owner_email: emailTrimmed || undefined,
       }),
-    onSuccess: () => {
-      toast.success(t('Customer created'))
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['org-customers'] })
       queryClient.invalidateQueries({ queryKey: ['reseller-self'] })
       props.onClose()
+      if (res.invite_error) {
+        toast.warning(
+          t('Customer created, but the invitation failed: {{reason}}', {
+            reason: res.invite_error,
+          })
+        )
+        return
+      }
+      const inv = res.invite
+      if (!inv) {
+        toast.success(t('Customer created'))
+        return
+      }
+      if (inv.emailed) {
+        toast.success(
+          inv.provisioned
+            ? t(
+                'Customer created; account opened and activation email sent (link valid 7 days).'
+              )
+            : t('Customer created and invitation email sent.')
+        )
+        return
+      }
+      toast.success(
+        t('Customer created. No email went out; copy the link to share it.')
+      )
+      props.onShareLink(res.customer)
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
@@ -544,6 +590,19 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
               />
             </div>
           </Field>
+          <Field label={t('Operator email (optional)')}>
+            <Input
+              type='email'
+              value={ownerEmail}
+              onChange={(e) => setOwnerEmail(e.target.value)}
+              placeholder='owner@customer.com'
+            />
+            <span className='text-muted-foreground text-xs'>
+              {t(
+                'Invites the operator right away: a new email gets an account plus an activation link valid 7 days; a registered email gets a join invitation.'
+              )}
+            </span>
+          </Field>
         </div>
         <DialogFooter className='gap-2'>
           <Button
@@ -555,7 +614,9 @@ function CreateCustomerDialog(props: { open: boolean; onClose: () => void }) {
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={name.trim().length === 0 || mutation.isPending}
+            disabled={
+              name.trim().length === 0 || !emailValid || mutation.isPending
+            }
             className='gap-1.5'
           >
             {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}

@@ -42,6 +42,43 @@ type createCustomerRequest struct {
 	Name         string `json:"name"`
 	PriceGroup   string `json:"price_group"`
 	InitialQuota int    `json:"initial_quota"`
+	// OwnerEmail, when given, invites the customer's operator in the same
+	// step: an unregistered email gets an account opened + activation link,
+	// a registered one a join invitation (see inviteCustomerOwner).
+	OwnerEmail string `json:"owner_email"`
+}
+
+// inviteCustomerOwner delivers a customer org to its operator by email.
+// Invite = open the account: an email with no user yet gets a provisioned
+// account attached to the customer org and an activation link (7 days) to set
+// a password — no registration round-trip. A registered email keeps the
+// consent flow (log in, then accept). Returns the invite summary the console
+// shows (code = activation or join link, whether the mail went out).
+func inviteCustomerOwner(c *gin.Context, reseller, customer *model.Organization, email string) (gin.H, error) {
+	inv, _, err := model.ProvisionCustomerAccount(customer.Id, email, c.GetInt("id"))
+	if err == nil {
+		emailed := sendOrgActivationEmail(inv.InvitedEmail, customer.Name, inv.Code, inv.ExpiresAt)
+		model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.provision", fmt.Sprintf("org:%d", customer.Id), inv.InvitedEmail)
+		return gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true}, nil
+	}
+	if !errors.Is(err, model.ErrEmailAlreadyRegistered) {
+		return nil, err
+	}
+	// Role must be admin (owner is not invitable); relation customer marks this
+	// as a reseller-provisioned managed org.
+	inv = &model.OrgInvitation{
+		OrgId:        customer.Id,
+		Relation:     model.OrgRelationCustomer,
+		Role:         model.OrgRoleAdmin,
+		InvitedEmail: strings.TrimSpace(email),
+		CreatedBy:    c.GetInt("id"),
+	}
+	if err := model.CreateOrgInvitation(inv); err != nil {
+		return nil, err
+	}
+	emailed := sendOrgInvitationEmail(inv.InvitedEmail, customer.Name, inv.Code)
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite", fmt.Sprintf("org:%d", customer.Id), inv.InvitedEmail)
+	return gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": false}, nil
 }
 
 // CreateMyCustomer — POST /api/organization/customers
@@ -59,6 +96,11 @@ func CreateMyCustomer(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
+	ownerEmail := strings.TrimSpace(req.OwnerEmail)
+	if ownerEmail != "" && !strings.Contains(ownerEmail, "@") {
+		common.ApiErrorMsg(c, "负责人邮箱格式无效")
+		return
+	}
 	// A reseller customer always uses the default price group: its pricing is
 	// driven by the reseller's retail discounts, not a per-group base rate. The
 	// client field is ignored so it can never be assigned a divergent group.
@@ -68,7 +110,17 @@ func CreateMyCustomer(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.create", fmt.Sprintf("org:%d", customer.Id), fmt.Sprintf("%s quota=%d", customer.Name, req.InitialQuota))
-	common.ApiSuccess(c, customer)
+	resp := gin.H{"customer": customer}
+	if ownerEmail != "" {
+		// The org exists either way; an invite failure is reported, not fatal,
+		// so the distributor can retry from the customer's invite dialog.
+		if invite, iErr := inviteCustomerOwner(c, reseller, customer, ownerEmail); iErr != nil {
+			resp["invite_error"] = iErr.Error()
+		} else {
+			resp["invite"] = invite
+		}
+	}
+	common.ApiSuccess(c, resp)
 }
 
 // ListMyCustomers — GET /api/organization/customers
@@ -276,41 +328,17 @@ func InviteMyCustomerOwner(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	orgName := fmt.Sprintf("#%d", customerId)
-	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
-		orgName = customer.Name
-	}
-	// Invite = open the account: an email with no user yet gets a provisioned
-	// account attached to the customer org and an activation link (7 days) to
-	// set a password — no registration round-trip. A registered email keeps
-	// the consent flow (log in, then accept).
-	inv, _, err := model.ProvisionCustomerAccount(customerId, req.Email, c.GetInt("id"))
-	if err == nil {
-		emailed := sendOrgActivationEmail(inv.InvitedEmail, orgName, inv.Code, inv.ExpiresAt)
-		model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.provision", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
-		common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
+	customer, err := model.GetOrganizationById(customerId)
+	if err != nil || customer == nil {
+		common.ApiErrorMsg(c, "客户组织不存在")
 		return
 	}
-	if !errors.Is(err, model.ErrEmailAlreadyRegistered) {
+	invite, err := inviteCustomerOwner(c, reseller, customer, req.Email)
+	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	// Role must be admin (owner is not invitable); relation customer marks this
-	// as a reseller-provisioned managed org.
-	inv = &model.OrgInvitation{
-		OrgId:        customerId,
-		Relation:     model.OrgRelationCustomer,
-		Role:         model.OrgRoleAdmin,
-		InvitedEmail: strings.TrimSpace(req.Email),
-		CreatedBy:    c.GetInt("id"),
-	}
-	if err := model.CreateOrgInvitation(inv); err != nil {
-		common.ApiErrorMsg(c, err.Error())
-		return
-	}
-	emailed := sendOrgInvitationEmail(inv.InvitedEmail, orgName, inv.Code)
-	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
-	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": false})
+	common.ApiSuccess(c, invite)
 }
 
 // ResendMyCustomerInvitation — POST /api/reseller/customers/:id/invitations/:inv_id/resend
