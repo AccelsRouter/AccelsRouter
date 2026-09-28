@@ -38,6 +38,7 @@ import type {
   ResellerCustomer,
   ResellerCustomerOrg,
   SsoDomain,
+  InvitationStatus,
 } from './types'
 
 type ApiResp<T> = {
@@ -170,7 +171,7 @@ export type CustomerInvitation = {
   id: number
   code: string
   invited_email: string
-  status: string
+  status: InvitationStatus
   role: string
   expires_at: number
   created_time: number
@@ -236,24 +237,37 @@ export async function listCustomerLogs(
   return unwrap(res, 'Failed to load call records')
 }
 
-export async function inviteCustomerOwner(
-  customerId: number,
-  email: string
-): Promise<{
+export type CustomerInviteResult = {
   code: string
   invited_email: string
   expires_at: number
   emailed: boolean
-}> {
-  const res = await api.post<
-    ApiResp<{
-      code: string
-      invited_email: string
-      expires_at: number
-      emailed: boolean
-    }>
-  >(`/api/reseller/customers/${customerId}/invitations`, { email })
+  // true = the account was opened on the spot and `code` is an activation
+  // link; false = a registered email got a consent (join) invitation.
+  provisioned: boolean
+}
+
+export async function inviteCustomerOwner(
+  customerId: number,
+  email: string
+): Promise<CustomerInviteResult> {
+  const res = await api.post<ApiResp<CustomerInviteResult>>(
+    `/api/reseller/customers/${customerId}/invitations`,
+    { email }
+  )
   return unwrap(res, 'Failed to send invitation')
+}
+
+// Renews a provisioned invitation's activation link (new 7-day window) and
+// mails it again.
+export async function resendCustomerInvitation(
+  customerId: number,
+  invId: number
+): Promise<CustomerInviteResult> {
+  const res = await api.post<ApiResp<CustomerInviteResult>>(
+    `/api/reseller/customers/${customerId}/invitations/${invId}/resend`
+  )
+  return unwrap(res, 'Failed to resend invitation')
 }
 
 export async function listCustomerInvitations(

@@ -338,7 +338,7 @@ func ListOrgInvitations(orgId int) ([]*OrgInvitation, error) {
 
 func RevokeOrgInvitation(orgId, invId int) error {
 	result := DB.Model(&OrgInvitation{}).
-		Where("id = ? AND org_id = ? AND status = ?", invId, orgId, OrgInvitationPending).
+		Where("id = ? AND org_id = ? AND status IN ?", invId, orgId, []string{OrgInvitationPending, OrgInvitationProvisioned}).
 		Update("status", OrgInvitationRevoked)
 	if result.Error != nil {
 		return result.Error
@@ -420,4 +420,194 @@ func AcceptOrgInvitation(code string, userId int) (*OrgInvitation, error) {
 	InvalidateOrgPayerCache(userId)
 	disablePersonalTokensIfResellerParty(accepted.OrgId, userId)
 	return accepted, nil
+}
+
+// ---------------------------------------------------------------------------
+// Provisioned customer accounts ("invite = open the account")
+//
+// A distributor invites a customer by email. When that email has no account
+// yet, the platform opens one on the spot — user + customer-org membership —
+// and mails an activation link that lets the person set a password. The
+// invitation row tracks it with status "provisioned" and a 7-day activation
+// window the distributor can see and renew. An already-registered email keeps
+// the consent flow (log in, then accept), because attaching an existing
+// account is that person's decision.
+// ---------------------------------------------------------------------------
+
+const (
+	OrgInvitationProvisioned = "provisioned"
+	orgActivationTTL         = 7 * 24 * time.Hour
+)
+
+// ErrEmailAlreadyRegistered tells the caller to fall back to a consent invite.
+var ErrEmailAlreadyRegistered = errors.New("email already registered")
+
+// provisionedUsername derives a login name from the email's local part, kept
+// to the User.Username length limit and made unique with a numeric suffix.
+func provisionedUsername(tx *gorm.DB, email string) (string, error) {
+	local := email
+	if at := strings.Index(email, "@"); at > 0 {
+		local = email[:at]
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(local) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+			b.WriteRune(r)
+		}
+	}
+	base := b.String()
+	if len(base) < 3 {
+		base = "user" + base
+	}
+	if len(base) > 16 {
+		base = base[:16]
+	}
+	candidate := base
+	for i := 2; i < 200; i++ {
+		var n int64
+		if err := tx.Unscoped().Model(&User{}).Where("username = ?", candidate).Count(&n).Error; err != nil {
+			return "", err
+		}
+		if n == 0 {
+			return candidate, nil
+		}
+		candidate = fmt.Sprintf("%s-%d", base, i)
+	}
+	return "", errors.New("无法生成唯一用户名")
+}
+
+// ProvisionCustomerAccount opens an account for an invited email that has no
+// user yet, attaches it to the customer org as an admin, and records a
+// provisioned invitation whose code is the activation link. The user cannot
+// log in until ActivateProvisionedAccount sets a password.
+func ProvisionCustomerAccount(orgId int, email string, createdBy int) (*OrgInvitation, *User, error) {
+	email = NormalizeEmail(strings.TrimSpace(email))
+	if email == "" || !strings.Contains(email, "@") {
+		return nil, nil, errors.New("受邀邮箱必填")
+	}
+	if IsEmailAlreadyTaken(email) {
+		return nil, nil, ErrEmailAlreadyRegistered
+	}
+	org, err := GetOrganizationById(orgId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if org == nil {
+		return nil, nil, errors.New("organization not found")
+	}
+	var user *User
+	var inv *OrgInvitation
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		username, uErr := provisionedUsername(tx, email)
+		if uErr != nil {
+			return uErr
+		}
+		user = &User{
+			Username:    username,
+			DisplayName: username,
+			// Unknown to anyone: the activation link is the only way in.
+			Password: common.GetRandomString(24),
+			Email:    email,
+			Role:     common.RoleCommonUser,
+			Status:   common.UserStatusEnabled,
+			Group:    "default",
+		}
+		if err := user.InsertWithTx(tx, 0); err != nil {
+			return err
+		}
+		acc := &OrgAccount{
+			OrgId: orgId, UserId: user.Id, Relation: OrgRelationCustomer, Role: OrgRoleAdmin,
+			Status: OrgStatusActive, PeriodKey: currentPeriodKey(), CreatedTime: common.GetTimestamp(),
+		}
+		if err := tx.Create(acc).Error; err != nil {
+			return err
+		}
+		inv = &OrgInvitation{
+			OrgId: orgId, Code: common.GetUUID(), Relation: OrgRelationCustomer, Role: OrgRoleAdmin,
+			InvitedEmail: email, Status: OrgInvitationProvisioned, CreatedBy: createdBy,
+			AcceptedUserId: user.Id, ExpiresAt: time.Now().Add(orgActivationTTL).Unix(),
+			CreatedTime: common.GetTimestamp(),
+		}
+		return tx.Create(inv).Error
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	user.FinalizeOAuthUserCreation(0)
+	InvalidateOrgPayerCache(user.Id)
+	return inv, user, nil
+}
+
+// RenewProvisionedInvitation issues a fresh activation code with a new 7-day
+// window for a provisioned (possibly expired) invitation of this org.
+func RenewProvisionedInvitation(orgId, invId int) (*OrgInvitation, error) {
+	var inv OrgInvitation
+	err := DB.Where("id = ? AND org_id = ? AND status = ?", invId, orgId, OrgInvitationProvisioned).First(&inv).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("邀请不存在或不在待激活状态")
+	}
+	if err != nil {
+		return nil, err
+	}
+	inv.Code = common.GetUUID()
+	inv.ExpiresAt = time.Now().Add(orgActivationTTL).Unix()
+	if err := DB.Model(&OrgInvitation{}).Where("id = ?", inv.Id).
+		Updates(map[string]interface{}{"code": inv.Code, "expires_at": inv.ExpiresAt}).Error; err != nil {
+		return nil, err
+	}
+	return &inv, nil
+}
+
+// GetActivationByCode resolves a live (provisioned, unexpired) activation code.
+func GetActivationByCode(code string) (*OrgInvitation, error) {
+	inv, err := GetOrgInvitationByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	if inv == nil || inv.Status != OrgInvitationProvisioned || inv.ExpiresAt < time.Now().Unix() {
+		return nil, errors.New("激活链接无效或已过期，请联系邀请方重新发送")
+	}
+	return inv, nil
+}
+
+// ActivateProvisionedAccount sets the provisioned user's password and marks
+// the invitation accepted. The code is single-use.
+func ActivateProvisionedAccount(code, password string) (*User, error) {
+	if n := len(password); n < 8 || n > 20 {
+		return nil, errors.New("密码长度需为 8 到 20 位")
+	}
+	inv, err := GetActivationByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	hashed, err := common.Password2Hash(password)
+	if err != nil {
+		return nil, err
+	}
+	var user *User
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&OrgInvitation{}).
+			Where("id = ? AND status = ?", inv.Id, OrgInvitationProvisioned).
+			Update("status", OrgInvitationAccepted)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errors.New("激活链接已被使用")
+		}
+		if err := tx.Model(&User{}).Where("id = ?", inv.AcceptedUserId).Update("password", hashed).Error; err != nil {
+			return err
+		}
+		var u User
+		if err := tx.Where("id = ?", inv.AcceptedUserId).First(&u).Error; err != nil {
+			return err
+		}
+		user = &u
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	_ = updateUserCache(*user)
+	return user, nil
 }

@@ -32,7 +32,8 @@ import {
 import { Loader2, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
+import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
+import dayjs from '@/lib/dayjs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -44,23 +45,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
-import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
-import dayjs from '@/lib/dayjs'
-
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
-
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
 import {
   createCustomer,
   getCustomerUsage,
   inviteCustomerOwner,
   listCustomerInvitations,
+  resendCustomerInvitation,
   exportCustomerLogs,
   listCustomerLogs,
   listCustomers,
@@ -68,8 +61,8 @@ import {
 } from './api'
 import { CallRecords } from './call-records'
 import { CustomerOfferDialog } from './customer-offer-dialog'
-import { Field, Td, Th } from './shared'
-import type { ResellerCustomer } from './types'
+import { Field, Td, Th, fmtTime } from './shared'
+import type { InvitationStatus, ResellerCustomer } from './types'
 import { UsageReport } from './usage-report'
 
 function toUnix(date?: Date): number | undefined {
@@ -257,6 +250,7 @@ function CustomerInviteDialog(props: {
   const customer = props.customer
   const [email, setEmail] = useState('')
   const [lastLink, setLastLink] = useState<string | null>(null)
+  const [lastProvisioned, setLastProvisioned] = useState(false)
 
   const { data: invitations } = useQuery({
     queryKey: ['customer-invitations', customer?.org.id],
@@ -266,6 +260,18 @@ function CustomerInviteDialog(props: {
 
   const joinLink = (code: string) =>
     `${window.location.origin}/organization/join?code=${code}`
+  const activateLink = (code: string) =>
+    `${window.location.origin}/activate?code=${code}`
+  // A provisioned invitation's code is an activation link; a consent invite's
+  // is a join link.
+  const linkFor = (inv: { code: string; status: InvitationStatus }) =>
+    inv.status === 'provisioned' ? activateLink(inv.code) : joinLink(inv.code)
+  const statusLabel: Record<InvitationStatus, string> = {
+    pending: t('Pending acceptance'),
+    provisioned: t('Account opened, awaiting password'),
+    accepted: t('Joined'),
+    revoked: t('Revoked'),
+  }
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -275,10 +281,37 @@ function CustomerInviteDialog(props: {
   const inviteMutation = useMutation({
     mutationFn: () => inviteCustomerOwner(customer!.org.id, email.trim()),
     onSuccess: (res) => {
-      setLastLink(joinLink(res.code))
+      setLastProvisioned(res.provisioned)
+      setLastLink(res.provisioned ? activateLink(res.code) : joinLink(res.code))
       setEmail('')
       toast.success(
-        res.emailed ? t('Invitation email sent') : t('Invitation created')
+        res.provisioned
+          ? res.emailed
+            ? t(
+                'Account opened and activation email sent. The link is valid for 7 days.'
+              )
+            : t(
+                'Account opened. Share the activation link below; it is valid for 7 days.'
+              )
+          : res.emailed
+            ? t('Invitation email sent')
+            : t('Invitation created')
+      )
+      invalidate()
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
+
+  const resendMutation = useMutation({
+    mutationFn: (invId: number) =>
+      resendCustomerInvitation(customer!.org.id, invId),
+    onSuccess: (res) => {
+      setLastProvisioned(true)
+      setLastLink(activateLink(res.code))
+      toast.success(
+        res.emailed
+          ? t('Activation email resent. The new link is valid for 7 days.')
+          : t('Activation link renewed; share it below. Valid for 7 days.')
       )
       invalidate()
     },
@@ -304,7 +337,7 @@ function CustomerInviteDialog(props: {
           <DialogTitle>{t('Invite owner')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Invite the customer’s operator by email to take over this organization as its admin. They accept via the link and must sign in with the invited email.'
+              'Enter the customer operator’s email. A new email gets an account opened right away plus an activation link to set a password (valid 7 days). An already registered email receives a join invitation to accept after signing in.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -334,7 +367,9 @@ function CustomerInviteDialog(props: {
           {lastLink && (
             <div className='border-border/60 bg-muted/30 flex flex-col gap-1.5 rounded-lg border p-3'>
               <span className='text-muted-foreground text-xs'>
-                {t('Share this join link with the customer')}
+                {lastProvisioned
+                  ? t('Share this activation link with the customer')
+                  : t('Share this join link with the customer')}
               </span>
               <div className='flex items-center gap-2'>
                 <code className='bg-background min-w-0 flex-1 truncate rounded px-2 py-1 text-xs'>
@@ -367,21 +402,56 @@ function CustomerInviteDialog(props: {
                   <div className='flex min-w-0 flex-col'>
                     <span className='truncate'>{inv.invited_email}</span>
                     <span className='text-muted-foreground text-xs'>
-                      {inv.status}
+                      {statusLabel[inv.status] ?? inv.status}
+                      {(inv.status === 'pending' ||
+                        inv.status === 'provisioned') && (
+                        <>
+                          {' · '}
+                          <span
+                            className={
+                              inv.expires_at * 1000 < Date.now()
+                                ? 'text-destructive'
+                                : undefined
+                            }
+                          >
+                            {inv.expires_at * 1000 < Date.now()
+                              ? t('Link expired {{time}}', {
+                                  time: fmtTime(inv.expires_at),
+                                })
+                              : t('Link valid until {{time}}', {
+                                  time: fmtTime(inv.expires_at),
+                                })}
+                          </span>
+                        </>
+                      )}
                     </span>
                   </div>
                   <div className='flex items-center gap-2'>
-                    <Button
-                      size='sm'
-                      variant='ghost'
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(joinLink(inv.code))
-                        toast.success(t('Copied'))
-                      }}
-                    >
-                      {t('Copy link')}
-                    </Button>
-                    {inv.status === 'pending' && (
+                    {(inv.status === 'pending' ||
+                      inv.status === 'provisioned') && (
+                      <Button
+                        size='sm'
+                        variant='ghost'
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(linkFor(inv))
+                          toast.success(t('Copied'))
+                        }}
+                      >
+                        {t('Copy link')}
+                      </Button>
+                    )}
+                    {inv.status === 'provisioned' && (
+                      <Button
+                        size='sm'
+                        variant='ghost'
+                        onClick={() => resendMutation.mutate(inv.id)}
+                        disabled={resendMutation.isPending}
+                      >
+                        {t('Resend')}
+                      </Button>
+                    )}
+                    {(inv.status === 'pending' ||
+                      inv.status === 'provisioned') && (
                       <Button
                         size='sm'
                         variant='ghost'
@@ -553,7 +623,9 @@ function CustomerUsageDialog(props: {
           <TabsContent value='records' className='pt-4'>
             {customer && (
               <CallRecords
-                fetchLogs={(p) => listCustomerLogs(customer.org.id, p, from, to)}
+                fetchLogs={(p) =>
+                  listCustomerLogs(customer.org.id, p, from, to)
+                }
                 queryKey={`customer-logs-${customer.org.id}-${from}-${to}`}
                 onExport={() => exportCustomerLogs(customer.org.id, from, to)}
               />

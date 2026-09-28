@@ -122,7 +122,9 @@ export type ApplyResult = {
   org_id?: number
 }
 
-export type InvitationStatus = 'pending' | 'accepted' | 'revoked'
+// provisioned: the platform opened the account on invite; the person still
+// has to set a password through the activation link (7 days).
+export type InvitationStatus = 'pending' | 'provisioned' | 'accepted' | 'revoked'
 
 export type OrgInvitation = {
   id: number

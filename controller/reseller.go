@@ -6,6 +6,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -275,9 +276,28 @@ func InviteMyCustomerOwner(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	orgName := fmt.Sprintf("#%d", customerId)
+	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
+		orgName = customer.Name
+	}
+	// Invite = open the account: an email with no user yet gets a provisioned
+	// account attached to the customer org and an activation link (7 days) to
+	// set a password — no registration round-trip. A registered email keeps
+	// the consent flow (log in, then accept).
+	inv, _, err := model.ProvisionCustomerAccount(customerId, req.Email, c.GetInt("id"))
+	if err == nil {
+		emailed := sendOrgActivationEmail(inv.InvitedEmail, orgName, inv.Code, inv.ExpiresAt)
+		model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.provision", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
+		common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
+		return
+	}
+	if !errors.Is(err, model.ErrEmailAlreadyRegistered) {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
 	// Role must be admin (owner is not invitable); relation customer marks this
 	// as a reseller-provisioned managed org.
-	inv := &model.OrgInvitation{
+	inv = &model.OrgInvitation{
 		OrgId:        customerId,
 		Relation:     model.OrgRelationCustomer,
 		Role:         model.OrgRoleAdmin,
@@ -288,13 +308,32 @@ func InviteMyCustomerOwner(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
+	emailed := sendOrgInvitationEmail(inv.InvitedEmail, orgName, inv.Code)
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
+	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": false})
+}
+
+// ResendMyCustomerInvitation — POST /api/reseller/customers/:id/invitations/:inv_id/resend
+// Renews a provisioned invitation's activation link (new code, new 7-day
+// window) and mails it again.
+func ResendMyCustomerInvitation(c *gin.Context) {
+	reseller, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	invId, _ := strconv.Atoi(c.Param("inv_id"))
+	inv, err := model.RenewProvisionedInvitation(customerId, invId)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
 	orgName := fmt.Sprintf("#%d", customerId)
 	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
 		orgName = customer.Name
 	}
-	emailed := sendOrgInvitationEmail(inv.InvitedEmail, orgName, inv.Code)
-	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
-	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed})
+	emailed := sendOrgActivationEmail(inv.InvitedEmail, orgName, inv.Code, inv.ExpiresAt)
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.provision.resend", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
+	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
 }
 
 // ListMyCustomerInvitations — GET /api/reseller/customers/:id/invitations
