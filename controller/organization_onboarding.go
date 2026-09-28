@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -37,6 +38,70 @@ func sendOrgInvitationEmail(invitedEmail, orgName, code string) bool {
 		return false
 	}
 	return true
+}
+
+// sendOrgActivationEmail mails the activation link of a provisioned customer
+// account: the recipient sets a password and lands in the org, no
+// registration step. Reports whether the mail went out (SMTP may be unset).
+func sendOrgActivationEmail(invitedEmail, orgName, code string, expiresAt int64) bool {
+	if strings.TrimSpace(invitedEmail) == "" {
+		return false
+	}
+	if common.SMTPServer == "" && common.SMTPAccount == "" {
+		return false
+	}
+	link := fmt.Sprintf("%s/activate?code=%s", system_setting.ServerAddress, code)
+	expires := time.Unix(expiresAt, 0).Format("2006-01-02 15:04")
+	subject := fmt.Sprintf("您的 %s 账号已开通", orgName)
+	content := fmt.Sprintf(
+		"<p>组织 <b>%s</b> 已为您开通账号（登录邮箱：%s）。</p>"+
+			"<p>请点击 <a href='%s'>此处</a> 设置密码并登录。</p>"+
+			"<p>链接有效期至 %s（7 天）；过期后请联系邀请方重新发送。</p>"+
+			"<p>如果链接无法点击，请复制到浏览器打开：<br/>%s</p>",
+		orgName, invitedEmail, link, expires, link)
+	if err := common.SendEmail(subject, invitedEmail, content); err != nil {
+		common.SysLog("org activation email failed: " + err.Error())
+		return false
+	}
+	return true
+}
+
+// PreviewOrgActivation — GET /api/organization/activation?code=
+// Public: what the activation page shows before the person sets a password.
+func PreviewOrgActivation(c *gin.Context) {
+	inv, err := model.GetActivationByCode(c.Query("code"))
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	orgName := ""
+	if org, _ := model.GetOrganizationById(inv.OrgId); org != nil {
+		orgName = org.Name
+	}
+	common.ApiSuccess(c, gin.H{
+		"org_name":      orgName,
+		"invited_email": inv.InvitedEmail,
+		"expires_at":    inv.ExpiresAt,
+	})
+}
+
+// ActivateOrgAccount — POST /api/organization/activation {code, password}
+// Public, single-use: sets the provisioned account's password.
+func ActivateOrgAccount(c *gin.Context) {
+	var req struct {
+		Code     string `json:"code"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user, err := model.ActivateProvisionedAccount(strings.TrimSpace(req.Code), req.Password)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	common.ApiSuccess(c, gin.H{"username": user.Username, "email": user.Email})
 }
 
 type applyOrgRequest struct {

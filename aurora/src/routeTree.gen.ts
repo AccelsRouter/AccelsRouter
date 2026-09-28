@@ -35,6 +35,7 @@ import { Route as authRegisterRouteImport } from './routes/(auth)/register'
 import { Route as authOtpRouteImport } from './routes/(auth)/otp'
 import { Route as authOauthRouteImport } from './routes/(auth)/oauth'
 import { Route as authForgotPasswordRouteImport } from './routes/(auth)/forgot-password'
+import { Route as authActivateRouteImport } from './routes/(auth)/activate'
 import { Route as AuthenticatedSystemSettingsRouteRouteImport } from './routes/_authenticated/system-settings/route'
 import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$modelId/index'
 import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenticated/wallet/index'
@@ -206,6 +207,11 @@ const authOauthRoute = authOauthRouteImport.update({
 const authForgotPasswordRoute = authForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => authRouteRoute,
+} as any)
+const authActivateRoute = authActivateRouteImport.update({
+  id: '/activate',
+  path: '/activate',
   getParentRoute: () => authRouteRoute,
 } as any)
 const AuthenticatedSystemSettingsRouteRoute =
@@ -474,6 +480,7 @@ export interface FileRoutesByFullPath {
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/user-agreement': typeof UserAgreementRoute
   '/system-settings': typeof AuthenticatedSystemSettingsRouteRouteWithChildren
+  '/activate': typeof authActivateRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/oauth': typeof authOauthRoute
   '/otp': typeof authOtpRoute
@@ -543,6 +550,7 @@ export interface FileRoutesByTo {
   '/enterprise': typeof EnterpriseRoute
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/user-agreement': typeof UserAgreementRoute
+  '/activate': typeof authActivateRoute
   '/forgot-password': typeof authForgotPasswordRoute
   '/oauth': typeof authOauthRoute
   '/otp': typeof authOtpRoute
@@ -616,6 +624,7 @@ export interface FileRoutesById {
   '/privacy-policy': typeof PrivacyPolicyRoute
   '/user-agreement': typeof UserAgreementRoute
   '/_authenticated/system-settings': typeof AuthenticatedSystemSettingsRouteRouteWithChildren
+  '/(auth)/activate': typeof authActivateRoute
   '/(auth)/forgot-password': typeof authForgotPasswordRoute
   '/(auth)/oauth': typeof authOauthRoute
   '/(auth)/otp': typeof authOtpRoute
@@ -688,6 +697,7 @@ export interface FileRouteTypes {
     | '/privacy-policy'
     | '/user-agreement'
     | '/system-settings'
+    | '/activate'
     | '/forgot-password'
     | '/oauth'
     | '/otp'
@@ -757,6 +767,7 @@ export interface FileRouteTypes {
     | '/enterprise'
     | '/privacy-policy'
     | '/user-agreement'
+    | '/activate'
     | '/forgot-password'
     | '/oauth'
     | '/otp'
@@ -829,6 +840,7 @@ export interface FileRouteTypes {
     | '/privacy-policy'
     | '/user-agreement'
     | '/_authenticated/system-settings'
+    | '/(auth)/activate'
     | '/(auth)/forgot-password'
     | '/(auth)/oauth'
     | '/(auth)/otp'
@@ -1098,6 +1110,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof authForgotPasswordRouteImport
+      parentRoute: typeof authRouteRoute
+    }
+    '/(auth)/activate': {
+      id: '/(auth)/activate'
+      path: '/activate'
+      fullPath: '/activate'
+      preLoaderRoute: typeof authActivateRouteImport
       parentRoute: typeof authRouteRoute
     }
     '/_authenticated/system-settings': {
@@ -1412,6 +1431,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface authRouteRouteChildren {
+  authActivateRoute: typeof authActivateRoute
   authForgotPasswordRoute: typeof authForgotPasswordRoute
   authOauthRoute: typeof authOauthRoute
   authOtpRoute: typeof authOtpRoute
@@ -1423,6 +1443,7 @@ interface authRouteRouteChildren {
 }
 
 const authRouteRouteChildren: authRouteRouteChildren = {
+  authActivateRoute: authActivateRoute,
   authForgotPasswordRoute: authForgotPasswordRoute,
   authOauthRoute: authOauthRoute,
   authOtpRoute: authOtpRoute,

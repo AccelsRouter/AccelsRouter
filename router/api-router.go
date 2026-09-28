@@ -22,6 +22,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/setup", controller.GetSetup)
 		apiRouter.POST("/setup", anonymousRequestBodyLimit, controller.PostSetup)
 		apiRouter.GET("/status", controller.GetStatus)
+		// Provisioned customer account activation (public, code from the email).
+		apiRouter.GET("/organization/activation", controller.PreviewOrgActivation)
+		apiRouter.POST("/organization/activation", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ActivateOrgAccount)
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
@@ -294,6 +297,7 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)
 			resellerRoute.POST("/customers/:id/invitations", middleware.CriticalRateLimit(), controller.InviteMyCustomerOwner)
 			resellerRoute.DELETE("/customers/:id/invitations/:inv_id", controller.RevokeMyCustomerInvitation)
+			resellerRoute.POST("/customers/:id/invitations/:inv_id/resend", middleware.CriticalRateLimit(), controller.ResendMyCustomerInvitation)
 			// Per-customer model access: assign which models a customer may use.
 			resellerRoute.GET("/customers/:id/models", controller.GetMyCustomerModels)
 			resellerRoute.PUT("/customers/:id/models", controller.SetMyCustomerModels)
