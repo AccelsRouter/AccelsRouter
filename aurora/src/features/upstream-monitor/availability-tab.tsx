@@ -77,11 +77,20 @@ function ModelRow(props: {
         toast.success(
           t('Probe ok ({{ms}} ms)', { ms: Math.round((res.time ?? 0) * 1000) })
         )
-      else toast.error(res.message || t('Probe failed'))
-      // The rollup flushes every 15 s; refetch shortly after.
+      else {
+        // The message is what the upstream answered; keep it readable.
+        const msg = (res.message || '').replace(/\s+/g, ' ').trim()
+        toast.error(
+          t('Probe failed. Upstream answered: {{msg}}', {
+            msg: msg.length > 220 ? `${msg.slice(0, 220)}…` : msg || '-',
+          }),
+          { duration: 8000 }
+        )
+      }
+      // The backend flushes the rollup right after a manual probe.
       setTimeout(
         () => queryClient.invalidateQueries({ queryKey: props.queryKey }),
-        16_000
+        800
       )
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
