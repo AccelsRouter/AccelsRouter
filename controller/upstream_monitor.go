@@ -219,7 +219,9 @@ type upstreamChannelPrices struct {
 	Ok        bool                    `json:"ok"`
 	Error     string                  `json:"error,omitempty"`
 	FetchedAt int64                   `json:"fetched_at"`
-	Source    string                  `json:"source,omitempty"` // endpoint that answered
+	Source    string                  `json:"source,omitempty"` // endpoint that answered, or "manual"
+	PriceURL  string                  `json:"price_url,omitempty"`
+	HasManual bool                    `json:"has_manual"`
 	Models    []upstreamModelPriceRow `json:"models"`
 	Summary   map[string]int          `json:"summary"`
 }
@@ -398,12 +400,164 @@ func comparePrices(local, upstream *upstreamPrice) string {
 	return "mixed"
 }
 
+// ---------------------------------------------------------------------------
+// Price sources: explicit endpoint and manual import per channel
+// ---------------------------------------------------------------------------
+
+// fetchUpstreamPricingURL fetches one explicit pricing endpoint.
+func fetchUpstreamPricingURL(ctx context.Context, client *http.Client, fullURL string) (*upstreamPricing, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, upstreamPriceMaxBytes))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s", resp.Status)
+	}
+	return parseUpstreamPricing(body)
+}
+
+// parseManualPrices turns an admin paste into normalized pricing. Accepted:
+//   - JSON as served by /api/pricing or /api/ratio_config (with or without
+//     the {success,data} envelope);
+//   - CSV lines "model,input_usd_per_1M,output_usd_per_1M" (per-token) or
+//     "model,usd_per_call" (per-call); a header line is skipped; '#' comments
+//     and blank lines ignored.
+//
+// USD per 1M tokens converts to the platform ratio unit (1 ratio = $2 / 1M).
+func parseManualPrices(text string) (*upstreamPricing, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, fmt.Errorf("empty input")
+	}
+	if strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[") {
+		raw := json.RawMessage(text)
+		var probe map[string]json.RawMessage
+		if strings.HasPrefix(text, "{") {
+			if err := common.Unmarshal(raw, &probe); err != nil {
+				return nil, fmt.Errorf("invalid JSON: %w", err)
+			}
+		}
+		if _, hasData := probe["data"]; !hasData {
+			// bare payload: wrap it in the envelope the parser expects
+			wrapped, _ := common.Marshal(map[string]any{"success": true, "data": raw})
+			raw = wrapped
+		}
+		return parseUpstreamPricing(raw)
+	}
+	out := &upstreamPricing{modelRatio: map[string]float64{}, completionRatio: map[string]float64{}, modelPrice: map[string]float64{}}
+	for n, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) == 1 {
+			parts = strings.Fields(line)
+		}
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+		if len(parts) < 2 {
+			return nil, fmt.Errorf("line %d: expected model,input[,output]", n+1)
+		}
+		in, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			if n == 0 {
+				continue // header line
+			}
+			return nil, fmt.Errorf("line %d: %q is not a number", n+1, parts[1])
+		}
+		if in < 0 {
+			return nil, fmt.Errorf("line %d: negative price", n+1)
+		}
+		modelName := parts[0]
+		if len(parts) == 2 {
+			out.modelPrice[modelName] = in
+			continue
+		}
+		outPrice, err := strconv.ParseFloat(parts[2], 64)
+		if err != nil || outPrice < 0 {
+			return nil, fmt.Errorf("line %d: %q is not a valid output price", n+1, parts[2])
+		}
+		ratio := in / 2
+		out.modelRatio[modelName] = ratio
+		if in > 0 {
+			out.completionRatio[modelName] = outPrice / in
+		} else {
+			out.completionRatio[modelName] = 0
+		}
+	}
+	if len(out.modelRatio) == 0 && len(out.modelPrice) == 0 {
+		return nil, fmt.Errorf("no price lines found")
+	}
+	return out, nil
+}
+
+func (p *upstreamPricing) normalizedJSON() string {
+	b, _ := common.Marshal(map[string]any{
+		"model_ratio": p.modelRatio, "completion_ratio": p.completionRatio, "model_price": p.modelPrice,
+	})
+	return string(b)
+}
+
+func (p *upstreamPricing) count() int { return len(p.modelRatio) + len(p.modelPrice) }
+
+// resolveUpstreamPricing picks the channel's pricing: an explicit endpoint if
+// configured, else the base URL's well-known endpoints; when neither yields
+// prices, the manually imported set. Returns the pricing, its source label
+// and, when only the fallback worked, the fetch error for display.
+func resolveUpstreamPricing(ctx context.Context, client *http.Client, base string, src *model.UpstreamPriceSource) (*upstreamPricing, string, string) {
+	var fetchErr string
+	if src != nil && src.PriceURL != "" {
+		if p, err := fetchUpstreamPricingURL(ctx, client, src.PriceURL); err == nil {
+			return p, "custom url", ""
+		} else {
+			fetchErr = "custom url: " + err.Error()
+		}
+	} else if strings.HasPrefix(base, "http://") || strings.HasPrefix(base, "https://") {
+		if p, ep, err := fetchUpstreamPricing(ctx, client, base); err == nil {
+			return p, ep, ""
+		} else {
+			fetchErr = err.Error()
+		}
+	} else {
+		fetchErr = "no http base URL"
+	}
+	if src != nil && src.ManualPrices != "" {
+		if p, err := parseManualPrices(src.ManualPrices); err == nil {
+			return p, "manual", fetchErr
+		}
+	}
+	return nil, "", fetchErr
+}
+
+func invalidateUpstreamPriceCache(channelId int) {
+	upstreamPriceCacheMu.Lock()
+	delete(upstreamPriceCache, channelId)
+	upstreamPriceCacheMu.Unlock()
+}
+
 // AdminUpstreamPrices — GET /api/admin/upstream/prices?refresh=1
 func AdminUpstreamPrices(c *gin.Context) {
 	refresh := c.Query("refresh") == "1"
 	var channels []model.Channel
 	if err := model.DB.Select("id", "name", "type", "status", "models", "base_url").
 		Order("id asc").Find(&channels).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	sources, err := model.ListUpstreamPriceSources()
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -418,6 +572,7 @@ func AdminUpstreamPrices(c *gin.Context) {
 	for i := range channels {
 		ch := channels[i]
 		base := strings.TrimRight(strings.TrimSpace(ch.GetBaseURL()), "/")
+		src := sources[ch.Id]
 		row := upstreamChannelPrices{
 			Id: ch.Id, Name: ch.Name, Type: ch.Type, TypeName: constant.GetChannelTypeName(ch.Type),
 			Status: ch.Status, Models: []upstreamModelPriceRow{}, Summary: map[string]int{},
@@ -425,10 +580,9 @@ func AdminUpstreamPrices(c *gin.Context) {
 		if u, err := url.Parse(base); err == nil {
 			row.Host = u.Host
 		}
-		if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-			row.Error = "no http base URL"
-			results[i] = row
-			continue
+		if src != nil {
+			row.PriceURL = src.PriceURL
+			row.HasManual = src.ManualPrices != ""
 		}
 		upstreamPriceCacheMu.Lock()
 		cached, hit := upstreamPriceCache[ch.Id]
@@ -438,17 +592,16 @@ func AdminUpstreamPrices(c *gin.Context) {
 			continue
 		}
 		wg.Add(1)
-		go func(i int, row upstreamChannelPrices, base string, models []string) {
+		go func(i int, row upstreamChannelPrices, base string, src *model.UpstreamPriceSource, models []string) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			ctx, cancel := context.WithTimeout(c.Request.Context(), upstreamPriceTimeout)
 			defer cancel()
 			row.FetchedAt = common.GetTimestamp()
-			pricing, source, err := fetchUpstreamPricing(ctx, client, base)
-			if err != nil {
-				row.Error = err.Error()
-			} else {
+			pricing, source, fetchErr := resolveUpstreamPricing(ctx, client, base, src)
+			row.Error = fetchErr
+			if pricing != nil {
 				row.Ok = true
 				row.Source = source
 				for _, m := range models {
@@ -466,8 +619,124 @@ func AdminUpstreamPrices(c *gin.Context) {
 			upstreamPriceCache[row.Id] = row
 			upstreamPriceCacheMu.Unlock()
 			results[i] = row
-		}(i, row, base, ch.GetModels())
+		}(i, row, base, src, ch.GetModels())
 	}
 	wg.Wait()
 	common.ApiSuccess(c, gin.H{"fetched_at": now, "channels": results})
+}
+
+type upstreamPriceSourceRequest struct {
+	PriceURL     string `json:"price_url"`
+	ManualPrices string `json:"manual_prices"`
+}
+
+// AdminGetUpstreamPriceSource — GET /api/admin/upstream/price-source/:channel_id
+func AdminGetUpstreamPriceSource(c *gin.Context) {
+	channelId, _ := strconv.Atoi(c.Param("channel_id"))
+	src, err := model.GetUpstreamPriceSource(channelId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if src == nil {
+		common.ApiSuccess(c, gin.H{"channel_id": channelId, "price_url": "", "manual_prices": "", "manual_count": 0})
+		return
+	}
+	count := 0
+	if p, err := parseManualPrices(src.ManualPrices); err == nil {
+		count = p.count()
+	}
+	common.ApiSuccess(c, gin.H{"channel_id": channelId, "price_url": src.PriceURL, "manual_prices": src.ManualPrices, "manual_count": count, "updated_time": src.UpdatedTime})
+}
+
+// AdminSetUpstreamPriceSource — PUT /api/admin/upstream/price-source/:channel_id
+// Validates the endpoint shape and the manual paste (stored normalized), then
+// drops the channel's cached comparison so the next load uses the new source.
+func AdminSetUpstreamPriceSource(c *gin.Context) {
+	channelId, _ := strconv.Atoi(c.Param("channel_id"))
+	if channelId <= 0 {
+		common.ApiErrorMsg(c, "invalid channel id")
+		return
+	}
+	if ch, err := model.GetChannelById(channelId, false); err != nil || ch == nil {
+		common.ApiErrorMsg(c, "channel not found")
+		return
+	}
+	var req upstreamPriceSourceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	priceURL := strings.TrimSpace(req.PriceURL)
+	if priceURL != "" {
+		u, err := url.Parse(priceURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			common.ApiErrorMsg(c, "price_url must be an http(s) URL")
+			return
+		}
+	}
+	manual := ""
+	manualCount := 0
+	if strings.TrimSpace(req.ManualPrices) != "" {
+		p, err := parseManualPrices(req.ManualPrices)
+		if err != nil {
+			common.ApiErrorMsg(c, "manual prices: "+err.Error())
+			return
+		}
+		manual = p.normalizedJSON()
+		manualCount = p.count()
+	}
+	if err := model.SetUpstreamPriceSource(channelId, priceURL, manual, c.GetInt("id")); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	invalidateUpstreamPriceCache(channelId)
+	common.ApiSuccess(c, gin.H{"channel_id": channelId, "price_url": priceURL, "manual_count": manualCount})
+}
+
+// AdminTestUpstreamPriceSource — POST /api/admin/upstream/price-source/test
+// Dry-runs an endpoint or a manual paste and reports how many models it prices.
+func AdminTestUpstreamPriceSource(c *gin.Context) {
+	var req upstreamPriceSourceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if u := strings.TrimSpace(req.PriceURL); u != "" {
+		client := &http.Client{Timeout: upstreamPriceTimeout}
+		if common.TLSInsecureSkipVerify {
+			client.Transport = &http.Transport{TLSClientConfig: common.InsecureTLSConfig}
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), upstreamPriceTimeout)
+		defer cancel()
+		p, err := fetchUpstreamPricingURL(ctx, client, u)
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		common.ApiSuccess(c, gin.H{"kind": "url", "count": p.count(), "sample": p.sample(5)})
+		return
+	}
+	p, err := parseManualPrices(req.ManualPrices)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	common.ApiSuccess(c, gin.H{"kind": "manual", "count": p.count(), "sample": p.sample(5)})
+}
+
+// sample lists a few priced model names for a dry-run preview.
+func (p *upstreamPricing) sample(n int) []string {
+	names := make([]string, 0, p.count())
+	for m := range p.modelRatio {
+		names = append(names, m)
+	}
+	for m := range p.modelPrice {
+		names = append(names, m)
+	}
+	sort.Strings(names)
+	if len(names) > n {
+		names = names[:n]
+	}
+	return names
 }

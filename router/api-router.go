@@ -185,6 +185,9 @@ func SetApiRouter(router *gin.Engine) {
 			upstreamRoute.GET("/health", controller.AdminUpstreamHealth)
 			upstreamRoute.GET("/history", controller.AdminUpstreamHistory)
 			upstreamRoute.GET("/prices", controller.AdminUpstreamPrices)
+			upstreamRoute.GET("/price-source/:channel_id", controller.AdminGetUpstreamPriceSource)
+			upstreamRoute.PUT("/price-source/:channel_id", controller.AdminSetUpstreamPriceSource)
+			upstreamRoute.POST("/price-source/test", controller.AdminTestUpstreamPriceSource)
 		}
 
 		orgAdminRoute := apiRouter.Group("/admin/organizations")
