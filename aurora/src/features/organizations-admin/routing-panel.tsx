@@ -19,7 +19,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ListPlus, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useAuthStore } from '@/stores/auth-store'
 import { modelMatchesToken } from '@/lib/model-match'
+import { ROLE } from '@/lib/roles'
 import { useStatus } from '@/hooks/use-status'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -94,6 +96,9 @@ export function RoutingPanel(props: {
   const queryClient = useQueryClient()
   const org = props.org
   const { status } = useStatus()
+  // Flipping the system option is a root-only API; admins only see the notice.
+  const isSuperAdmin =
+    useAuthStore((s) => s.auth.user?.role ?? 0) >= ROLE.SUPER_ADMIN
   // Explicitly false only: an absent flag (older status payload) must not read
   // as "disabled".
   const globallyDisabled = status?.reseller_routing_enabled === false
@@ -317,16 +322,18 @@ export function RoutingPanel(props: {
               'Reseller routing is globally disabled (system option ResellerRoutingEnabled). Every reseller customer is on the platform pool until it is re-enabled.'
             )}
           </span>
-          <Button
-            type='button'
-            size='sm'
-            variant='outline'
-            className='h-8'
-            disabled={switchMutation.isPending}
-            onClick={() => switchMutation.mutate(true)}
-          >
-            {t('Re-enable reseller routing')}
-          </Button>
+          {isSuperAdmin && (
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              className='h-8'
+              disabled={switchMutation.isPending}
+              onClick={() => switchMutation.mutate(true)}
+            >
+              {t('Re-enable reseller routing')}
+            </Button>
+          )}
         </div>
       )}
 
