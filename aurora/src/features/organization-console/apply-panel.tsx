@@ -28,16 +28,11 @@ import { Link } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
-
 import { applyForOrg, getSelfApplication } from './api'
 import { Field } from './shared'
 import type { OrgApplicationStatus, OrgType } from './types'
@@ -128,8 +123,7 @@ export function ApplyPanel({ fixedType }: { fixedType?: OrgType } = {}) {
           ? t('Organization name cannot contain special characters.')
           : ''
   const nameValid = nameCharCount >= 3 && nameCharsOk
-  const canSubmit =
-    nameValid && (isEnterprise || contact.trim().length > 0)
+  const canSubmit = nameValid && (isEnterprise || contact.trim().length > 0)
 
   return (
     <div className='mx-auto flex w-full max-w-xl flex-col gap-5'>
@@ -142,9 +136,7 @@ export function ApplyPanel({ fixedType }: { fixedType?: OrgType } = {}) {
             <StatusBadge status={application.status} />
           </div>
           <span className='text-muted-foreground text-xs'>
-            {application.type === 'reseller'
-              ? t('Reseller')
-              : t('Enterprise')}
+            {application.type === 'reseller' ? t('Reseller') : t('Enterprise')}
           </span>
           {application.status === 'pending' && (
             <p className='text-muted-foreground text-sm'>
@@ -163,10 +155,11 @@ export function ApplyPanel({ fixedType }: { fixedType?: OrgType } = {}) {
                 className='self-start'
                 render={
                   <Link
-                    to={
+                    to='/organization'
+                    search={
                       application.type === 'reseller'
-                        ? '/reseller'
-                        : '/organization'
+                        ? { view: 'reseller' }
+                        : {}
                     }
                   />
                 }
@@ -251,9 +244,7 @@ export function ApplyPanel({ fixedType }: { fixedType?: OrgType } = {}) {
             className='gap-1.5 self-start'
           >
             {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
-            {isEnterprise
-              ? t('Create organization')
-              : t('Submit application')}
+            {isEnterprise ? t('Create organization') : t('Submit application')}
           </Button>
         </div>
       )}

@@ -1,7 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { ResellerConsole } from '@/features/reseller-console'
-
+// The distributor console now lives under the single "Organization" entry;
+// keep this path for bookmarks and emailed links.
 export const Route = createFileRoute('/_authenticated/reseller/')({
-  component: ResellerConsole,
+  beforeLoad: () => {
+    throw redirect({ to: '/organization', search: { view: 'reseller' } })
+  },
 })
