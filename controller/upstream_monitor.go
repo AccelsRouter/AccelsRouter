@@ -143,6 +143,11 @@ func AdminUpstreamHealth(c *gin.Context) {
 			ok := s.Requests + (s.Probes - s.ProbeFailures)
 			total := s.Requests + s.Failures + s.Probes
 			mh.Availability = availabilityOf(ok, total)
+			if !mh.Listed {
+				// Removed from the channel: its history stays in the rollup for
+				// 30 days but no longer counts toward the channel's numbers.
+				continue
+			}
 			okTotal += ok
 			allTotal += total
 			row.Requests += s.Requests
