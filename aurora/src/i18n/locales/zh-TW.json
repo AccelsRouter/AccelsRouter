@@ -270,6 +270,7 @@
     "8 to 20 characters": "8 到 20 個字元",
     "Go to sign in": "前往登入",
     "Set password": "設定密碼",
+    "Probe failed. Upstream answered: {{msg}}": "探測失敗。上游回傳：{{msg}}",
     "CSV: \"model,input,output\" in USD per 1M tokens, or \"model,price\" per call. JSON in the /api/pricing or /api/ratio_config format is accepted too.": "CSV：「模型,輸入,輸出」按每百萬 token 的美元價，或「模型,價格」按次計價。也接受 /api/pricing 或 /api/ratio_config 格式的 JSON。",
     "Configure price source": "設定價格來源",
     "Manual prices": "手動匯入價格",

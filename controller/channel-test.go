@@ -900,6 +900,11 @@ func TestChannel(c *gin.Context) {
 	}
 	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
 	recordProbe(channel, result, time.Since(tik).Milliseconds())
+	// A manual probe is watched live in the upstream monitor: flush now so the
+	// outcome is visible on the next load instead of after the periodic tick.
+	if err := model.FlushUpstreamHealth(); err != nil {
+		common.SysError("upstream health flush after probe failed: " + err.Error())
+	}
 	if result.localErr != nil {
 		resp := gin.H{
 			"success": false,
