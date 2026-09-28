@@ -239,6 +239,7 @@
     "Ledger": "帳目",
     "No ledger entries.": "尚無帳目記錄。",
     "Suspended": "已暫停",
+    "Organization": "組織",
     "Operator email (optional)": "客戶負責人信箱（可選）",
     "Invites the operator right away: a new email gets an account plus an activation link valid 7 days; a registered email gets a join invitation.": "填寫後立即邀請負責人：未註冊的信箱會直接開戶並收到 7 天有效的啟用連結；已註冊的信箱會收到加入邀請。",
     "Customer created, but the invitation failed: {{reason}}": "客戶已建立，但邀請失敗：{{reason}}",

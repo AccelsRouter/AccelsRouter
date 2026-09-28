@@ -213,6 +213,7 @@
     "Ledger": "账目",
     "No ledger entries.": "暂无账目记录。",
     "Suspended": "已暂停",
+    "Organization": "组织",
     "Operator email (optional)": "客户负责人邮箱（可选）",
     "Invites the operator right away: a new email gets an account plus an activation link valid 7 days; a registered email gets a join invitation.": "填写后立即邀请负责人：未注册的邮箱会直接开户并收到 7 天有效的激活链接；已注册的邮箱会收到加入邀请。",
     "Customer created, but the invitation failed: {{reason}}": "客户已建立，但邀请失败：{{reason}}",

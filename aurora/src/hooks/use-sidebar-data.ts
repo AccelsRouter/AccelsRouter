@@ -156,7 +156,7 @@ export function useSidebarData(): SidebarData {
           items: [
             { title: t('Wallet'), url: '/wallet', icon: Wallet },
             {
-              title: t('My Organization'),
+              title: t('Organization'),
               url: '/organization',
               icon: Building2,
             },
@@ -167,35 +167,21 @@ export function useSidebarData(): SidebarData {
     }
   }
 
-  // Enterprise and reseller are separate consoles. "My Organization"
-  // (/organization) is the enterprise console / self-service apply page;
-  // "Distributor" (/reseller) is the reseller console. Both are normally shown so
-  // either is discoverable — a person may run an enterprise org and a reseller
-  // org. The exception: a pure reseller admin (runs only a reseller org, holds no
-  // OrgAccount) has no enterprise org, so "My Organization" would only echo the
-  // approved-reseller apply card — hide it and leave just "Distributor".
-  const hideMyOrganization = isResellerAdmin && !isOrgMember
-  const orgNavItems: NavItem[] = []
-  if (!hideMyOrganization) {
-    orgNavItems.push({
-      title: t('My Organization'),
-      url: '/organization',
-      icon: Building2,
-    })
-  }
-  orgNavItems.push({
-    title: t('Distributor'),
-    url: '/reseller',
-    icon: Building2,
-  })
-
+  // One "Organization" entry for everyone: the hub behind it renders the
+  // enterprise/customer console, the distributor console, a switch for a
+  // person holding both roles, or the apply page when there is no org yet.
   const personalItems: NavItem[] = [
     {
       title: t('Wallet'),
       url: '/wallet',
       icon: Wallet,
     },
-    ...orgNavItems,
+    {
+      title: t('Organization'),
+      url: '/organization',
+      activeUrls: ['/reseller'],
+      icon: Building2,
+    },
     // Personal BYOK is an opt-in platform feature; only surface it when the
     // backend status flag enables it — and never to reseller parties, who must
     // stay on platform-controlled upstreams (the backend refuses them as well).
