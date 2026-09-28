@@ -299,6 +299,9 @@ func RecordTopupLog(userId int, content string, callerIp string, paymentMethod s
 
 func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string, tokenName string, content string, tokenId int, useTimeSeconds int,
 	isStream bool, group string, other map[string]interface{}) {
+	// Upstream monitor: an error attributed to a channel is an upstream failure
+	// (channelId 0 = rejected before any upstream was chosen; not counted).
+	RecordUpstreamOutcome(channelId, modelName, false, int64(useTimeSeconds)*1000, content)
 	logger.LogInfo(c, fmt.Sprintf("record error log: userId=%d, channelId=%d, modelName=%s, tokenName=%s, content=%s", userId, channelId, modelName, tokenName, common.LocalLogPreview(content)))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
@@ -359,6 +362,8 @@ type RecordConsumeLogParams struct {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	// Upstream monitor: a completed request is a successful upstream outcome.
+	RecordUpstreamOutcome(params.ChannelId, params.ModelName, true, int64(params.UseTimeSeconds)*1000, "")
 	if !common.LogConsumeEnabled {
 		return
 	}

@@ -356,6 +356,8 @@ func InitResources() error {
 	if err := model.DisableResellerPartiesPersonalTokens(); err != nil {
 		common.SysError("reseller parties personal token sweep failed: " + err.Error())
 	}
+	// Upstream monitor: periodic flush of the in-memory health aggregator.
+	model.StartUpstreamHealthFlusher()
 
 	// Initialize Redis
 	err = common.InitRedisClient()
