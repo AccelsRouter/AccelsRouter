@@ -80,14 +80,7 @@ export function ResellerConsole() {
             size='sm'
             onClick={() => setAllocationMode('allocate')}
           >
-            {t('Allocate Quota')}
-          </Button>
-          <Button
-            variant='outline'
-            size='sm'
-            onClick={() => setAllocationMode('revoke')}
-          >
-            {t('Revoke Quota')}
+            {t('Adjust customer balance')}
           </Button>
         </SectionPageLayout.Actions>
       )}

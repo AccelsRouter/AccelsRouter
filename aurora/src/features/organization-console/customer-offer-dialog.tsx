@@ -7,7 +7,7 @@ Each discount row shows its floor live, computed against the models selected
 above (the whole catalog when nothing is selected). Saved as one atomic offer.
 Model names only — no channel/upstream information is ever exposed here.
 */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -83,6 +83,20 @@ export function CustomerOfferDialog(props: {
   }
 
   const catalog = modelsQuery.data?.catalog ?? []
+  const offerable = modelsQuery.data?.offerable ?? []
+  // Which platform token admits a catalog model: exact name, else the longest
+  // matching prefix. Makes prefix-driven inclusion visible in the list.
+  const admittedBy = (m: string): string => {
+    const lower = m.toLowerCase()
+    let best = ''
+    for (const tk of offerable) {
+      const t0 = tk.trim().toLowerCase()
+      if (!t0) continue
+      if (t0 === lower) return tk
+      if (lower.startsWith(t0) && t0.length > best.length) best = tk
+    }
+    return best
+  }
   // What this customer will actually be able to call after saving: the
   // selection, or the whole catalog when nothing is selected (= unrestricted).
   const callable =
@@ -123,6 +137,7 @@ export function CustomerOfferDialog(props: {
   }
   const rowError = (r: Row): string => {
     if (!r.token.trim()) return ''
+    if (!r.ratio.trim()) return '' // blank ratio = no discount
     const ratio = Number(r.ratio)
     if (!twoDecimals(r.ratio) || ratio <= 0 || ratio > 1)
       return t('Ratio must be within (0, 1].')
@@ -145,7 +160,40 @@ export function CustomerOfferDialog(props: {
           )
     return ''
   }
-  const invalid = rows.some((r) => r.token.trim() && !rowValid(r))
+  const invalid = rows.some(
+    (r) => r.token.trim() && r.ratio.trim() && !rowValid(r)
+  )
+
+  // Pricing rows follow the model selection: a newly checked model gets a
+  // row with a blank ratio (= no discount) unless an existing row already
+  // covers it (exact name or a series prefix the reseller typed); unchecking
+  // drops that model's row while its ratio is still blank.
+  const selectedKey = [...selected].sort().join('\n')
+  const prevSelected = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (loadedId !== customer?.org.id) return
+    const now = selected
+    const gone = [...prevSelected.current].filter((m) => !now.has(m))
+    prevSelected.current = new Set(now)
+    setRows((prev) => {
+      let next = prev.filter(
+        (r) => !(gone.includes(r.token.trim()) && r.ratio.trim() === '')
+      )
+      for (const m of now) {
+        const covered = next.some(
+          (r) =>
+            r.token.trim() && modelMatchesToken(r.token.trim().toLowerCase(), m)
+        )
+        if (!covered) next.push({ token: m, ratio: '' })
+      }
+      if (next.length > 1)
+        next = next.filter(
+          (r) => r.token.trim() !== '' || r.ratio.trim() !== ''
+        )
+      return next.length ? next : [{ token: '', ratio: '' }]
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey, loadedId])
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -268,6 +316,15 @@ export function CustomerOfferDialog(props: {
                         onChange={() => toggle(m)}
                       />
                       <span className='truncate'>{m}</span>
+                      {offerable.length > 0 &&
+                        admittedBy(m) &&
+                        admittedBy(m).toLowerCase() !== m.toLowerCase() && (
+                          <span className='text-muted-foreground shrink-0 text-[10px]'>
+                            {t('Offered via {{token}}', {
+                              token: admittedBy(m),
+                            })}
+                          </span>
+                        )}
                       <span className='text-muted-foreground ml-auto shrink-0 text-xs tabular-nums'>
                         {t('wholesale')}{' '}
                         {ratioForModel(m, wholesale).toFixed(2)}
@@ -289,6 +346,18 @@ export function CustomerOfferDialog(props: {
                     "Each series' ratio must be at least the highest wholesale ratio among the models this customer can call that it matches (exact name beats prefix)."
                   )}
                 </div>
+              )}
+              <span className='text-muted-foreground text-xs'>
+                {t(
+                  'Checked models are listed here automatically; blank ratio = no discount. A model name can be edited into a series prefix (e.g. deepseek) to price the whole series.'
+                )}
+              </span>
+              {offerable.length === 0 && (
+                <span className='text-muted-foreground text-xs'>
+                  {t(
+                    'No offerable-model limit is set for you, so the whole group catalog is available.'
+                  )}
+                </span>
               )}
               <div className='text-muted-foreground flex gap-2 px-1 text-xs'>
                 <span className='flex-1'>{t('Model series')}</span>
@@ -313,7 +382,7 @@ export function CustomerOfferDialog(props: {
                         min={0}
                         max={1}
                         step='0.05'
-                        placeholder='0.6'
+                        placeholder={t('no discount')}
                         value={r.ratio}
                         onChange={(e) => update(i, { ratio: e.target.value })}
                         aria-invalid={err ? true : undefined}

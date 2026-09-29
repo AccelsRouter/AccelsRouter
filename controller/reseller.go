@@ -422,6 +422,10 @@ func GetMyCustomerModels(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"allowed": customer.AllowedModelList(),
 		"catalog": resellerOfferableModels(reseller, customer.PriceGroup),
+		// The platform's offerable tokens for this reseller (exact names or
+		// prefixes); empty = the whole group catalog. Lets the console show
+		// which token admits each catalog model.
+		"offerable": reseller.AllowedModelList(),
 	})
 }
 
