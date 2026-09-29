@@ -89,6 +89,12 @@ const MODELS_SECTIONS = [
             settings['monitor_setting.channel_test_concurrency'],
           'monitor_setting.channel_test_mode':
             settings['monitor_setting.channel_test_mode'],
+          'monitor_setting.upstream_probe_enabled':
+            settings['monitor_setting.upstream_probe_enabled'],
+          'monitor_setting.upstream_probe_minutes':
+            settings['monitor_setting.upstream_probe_minutes'],
+          'monitor_setting.upstream_probe_all_models':
+            settings['monitor_setting.upstream_probe_all_models'],
         }}
       />
     ),

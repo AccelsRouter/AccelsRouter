@@ -57,10 +57,33 @@ export type UpstreamChannelHealth = {
   buckets: UpstreamBucket[]
 }
 
+export type UpstreamProbeStatus = {
+  enabled: boolean
+  minutes: number
+  all_models: boolean
+  running: boolean
+  last: {
+    started_at: number
+    finished_at: number
+    channels: number
+    probed: number
+    failed: number
+    skipped: number
+  }
+}
+
 export type UpstreamHealthResponse = {
   hours: number
   since: number
   channels: UpstreamChannelHealth[]
+  probe: UpstreamProbeStatus
+}
+
+export async function probeAllUpstreams(): Promise<void> {
+  const res = await api.post<ApiResp<{ started: boolean }>>(
+    '/api/admin/upstream/probe-all'
+  )
+  if (!res.data?.success) throw new Error(res.data?.message || 'Failed')
 }
 
 export type UpstreamPrice = {

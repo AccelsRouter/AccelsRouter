@@ -98,6 +98,12 @@ const createRoutingReliabilitySchema = (
             t('Channel test concurrency must be between 1 and 32')
           ),
         channel_test_mode: z.enum(channelTestModes),
+        upstream_probe_enabled: z.boolean(),
+        upstream_probe_minutes: z.coerce
+          .number()
+          .int()
+          .min(5, t('Interval must be at least 5 minutes')),
+        upstream_probe_all_models: z.boolean(),
       }),
     })
     .superRefine((values, ctx) => {
@@ -147,6 +153,9 @@ type RoutingReliabilitySectionProps = {
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.channel_test_concurrency': number
     'monitor_setting.channel_test_mode': ChannelTestMode
+    'monitor_setting.upstream_probe_enabled': boolean
+    'monitor_setting.upstream_probe_minutes': number
+    'monitor_setting.upstream_probe_all_models': boolean
   }
 }
 
@@ -166,6 +175,9 @@ type NormalizedRoutingReliabilityValues = {
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
   'monitor_setting.channel_test_mode': ChannelTestMode
+  'monitor_setting.upstream_probe_enabled': boolean
+  'monitor_setting.upstream_probe_minutes': number
+  'monitor_setting.upstream_probe_all_models': boolean
 }
 
 function normalizeChannelTestMode(value?: string): ChannelTestMode {
@@ -197,6 +209,12 @@ const buildFormDefaults = (
     channel_test_mode: normalizeChannelTestMode(
       defaults['monitor_setting.channel_test_mode']
     ),
+    upstream_probe_enabled:
+      defaults['monitor_setting.upstream_probe_enabled'] ?? true,
+    upstream_probe_minutes:
+      defaults['monitor_setting.upstream_probe_minutes'] ?? 60,
+    upstream_probe_all_models:
+      defaults['monitor_setting.upstream_probe_all_models'] ?? true,
   },
 })
 
@@ -225,6 +243,12 @@ const normalizeDefaults = (
   'monitor_setting.channel_test_mode': normalizeChannelTestMode(
     defaults['monitor_setting.channel_test_mode']
   ),
+  'monitor_setting.upstream_probe_enabled':
+    defaults['monitor_setting.upstream_probe_enabled'] ?? true,
+  'monitor_setting.upstream_probe_minutes':
+    defaults['monitor_setting.upstream_probe_minutes'] ?? 60,
+  'monitor_setting.upstream_probe_all_models':
+    defaults['monitor_setting.upstream_probe_all_models'] ?? true,
 })
 
 const normalizeFormValues = (
@@ -250,6 +274,12 @@ const normalizeFormValues = (
   'monitor_setting.channel_test_concurrency':
     values.monitor_setting.channel_test_concurrency,
   'monitor_setting.channel_test_mode': values.monitor_setting.channel_test_mode,
+  'monitor_setting.upstream_probe_enabled':
+    values.monitor_setting.upstream_probe_enabled,
+  'monitor_setting.upstream_probe_minutes':
+    values.monitor_setting.upstream_probe_minutes,
+  'monitor_setting.upstream_probe_all_models':
+    values.monitor_setting.upstream_probe_all_models,
 })
 
 export function RoutingReliabilitySection({
@@ -530,6 +560,76 @@ export function RoutingReliabilitySection({
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.upstream_probe_enabled'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t('Upstream monitor probes')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Periodically send one minimal request per model to record availability. Observation only; never disables a channel.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.upstream_probe_minutes'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Probe interval (minutes)')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={5}
+                        step={1}
+                        {...safeNumberFieldProps(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Each probe costs a few tokens upstream; 60 minutes is a sensible default.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.upstream_probe_all_models'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t('Probe every declared model')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Off = only each channel’s test model, one request per channel.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
                 )}
               />
 

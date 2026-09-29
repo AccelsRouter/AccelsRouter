@@ -238,6 +238,9 @@ export type ModelSettings = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
+  'monitor_setting.upstream_probe_enabled': boolean
+  'monitor_setting.upstream_probe_minutes': number
+  'monitor_setting.upstream_probe_all_models': boolean
   'monitor_setting.channel_test_mode':
     | 'scheduled_all'
     | 'auto_ban_only'
