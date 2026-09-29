@@ -14,7 +14,7 @@ unserved and reports the served set upward so the pricing tab can flag
 offerable models that no bound channel provides. The server still validates
 on save.
 */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ListPlus, Loader2, Plus, Search, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -105,6 +105,10 @@ export function RoutingPanel(props: {
   // routing through the handle registered with onSaveHandle.
   embedded?: boolean
   onSaveHandle?: (save: () => Promise<void>) => void
+  // Rendered between channel binding and the priority matrix, so the parent
+  // can place the offerable-model and discount editors there: channels →
+  // models → discounts → matrix (the matrix only lists offerable models).
+  middle?: ReactNode
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -441,12 +445,16 @@ export function RoutingPanel(props: {
             </label>
           </section>
 
+          {props.middle}
+
           {/* Matrix */}
           <section className='flex flex-col gap-2'>
             <div className='flex flex-wrap items-end justify-between gap-2'>
               <div className='flex flex-col gap-0.5'>
                 <span className='text-sm font-medium'>
-                  {t('Per-model priority matrix')}
+                  {props.embedded
+                    ? t('4. Per-model priority matrix')
+                    : t('Per-model priority matrix')}
                 </span>
                 <div className='text-muted-foreground flex flex-col gap-0.5 text-xs'>
                   <span>
@@ -550,7 +558,24 @@ export function RoutingPanel(props: {
                 <div className='max-h-64 overflow-y-auto'>
                   {pickerItems.length === 0 ? (
                     <p className='text-muted-foreground px-1 py-2 text-xs'>
-                      {t('No matching models.')}
+                      {(() => {
+                        // Served by a bound channel but outside the offerable
+                        // list: say so instead of a bare "no match".
+                        const q = pickerQuery.trim().toLowerCase()
+                        const outside = q
+                          ? covered.filter(
+                              (m) =>
+                                m.toLowerCase().includes(q) &&
+                                !effective.includes(m)
+                            )
+                          : []
+                        return outside.length > 0
+                          ? t(
+                              '{{count}} matching models are served by a bound channel but are not offerable — add them under offerable models first.',
+                              { count: outside.length }
+                            )
+                          : t('No matching models.')
+                      })()}
                     </p>
                   ) : (
                     <ul className='divide-border/60 divide-y'>

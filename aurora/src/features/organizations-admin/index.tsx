@@ -675,7 +675,7 @@ function EditOrgDialog(props: {
 
   const pricingFields = (
     <>
-      <Field label={t('Offerable models (blank = all)')}>
+      <Field label={t('2. Offerable models (blank = all)')}>
         <ModelMultiPicker
           value={offerableList}
           onChange={(next) => setAllowedModels(next.join('\n'))}
@@ -713,7 +713,7 @@ function EditOrgDialog(props: {
             </span>
           ))}
       </Field>
-      <Field label={t('Per-model wholesale ratios (blank = no discount)')}>
+      <Field label={t('3. Per-model wholesale ratios (blank = no discount)')}>
         <ModelRatioRows
           key={org?.id}
           initial={org?.wholesale_ratios ?? {}}
@@ -787,15 +787,14 @@ function EditOrgDialog(props: {
                       onSaveHandle={(fn) => {
                         routingSaveRef.current = fn
                       }}
+                      middle={
+                        <section className='flex flex-col gap-3'>
+                          {pricingFields}
+                        </section>
+                      }
                     />
                   </section>
                 )}
-                <section className='flex flex-col gap-3'>
-                  <span className='text-sm font-medium'>
-                    {t('2. Offerable models and 3. wholesale discounts')}
-                  </span>
-                  {pricingFields}
-                </section>
               </div>
             </TabsContent>
           </Tabs>
