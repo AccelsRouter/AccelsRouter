@@ -122,30 +122,40 @@ func applyOrgKeyRequest(token *model.Token, req orgKeyRequest, callable []string
 // callerOrgMember resolves the caller's active organization from their
 // OrgAccount, for any role (member/admin/owner) — the self-service key surface
 // is open to every member, since spend is capped by the member's own budget.
-func callerOrgMember(c *gin.Context) (*model.Organization, bool) {
+func callerOrgMember(c *gin.Context) (*model.Organization, *model.OrgAccount, bool) {
 	acc, err := model.GetOrgAccountByUser(c.GetInt("id"))
 	if err != nil {
 		common.ApiError(c, err)
-		return nil, false
+		return nil, nil, false
 	}
 	if acc == nil {
 		common.ApiErrorMsg(c, "你不属于任何组织")
-		return nil, false
+		return nil, nil, false
 	}
 	if acc.Status == model.OrgStatusSuspended {
 		common.ApiErrorMsg(c, "账号已被暂停")
-		return nil, false
+		return nil, nil, false
 	}
 	org, err := model.GetOrganizationById(acc.OrgId)
 	if err != nil || org == nil {
 		common.ApiErrorMsg(c, "organization not found")
-		return nil, false
+		return nil, nil, false
 	}
 	if org.Status == model.OrgStatusSuspended {
 		common.ApiErrorMsg(c, "组织已被暂停")
-		return nil, false
+		return nil, nil, false
 	}
-	return org, true
+	return org, acc, true
+}
+
+// orgKeyScope is the creator filter for the member console: owners and
+// admins manage every key of the org (and see who created each), a plain
+// member only their own.
+func orgKeyScope(c *gin.Context, acc *model.OrgAccount) int {
+	if acc.Role == model.OrgRoleOwner || acc.Role == model.OrgRoleAdmin {
+		return 0
+	}
+	return c.GetInt("id")
 }
 
 // myOrgKeyTokenIds returns the caller's own token ids that are bound to a
@@ -376,11 +386,11 @@ func deleteOrgKey(c *gin.Context, org *model.Organization, ownerUserId int, audi
 
 // ListMyOrgKeys — GET /api/organization/keys
 func ListMyOrgKeys(c *gin.Context) {
-	org, ok := callerOrgMember(c)
+	org, acc, ok := callerOrgMember(c)
 	if !ok {
 		return
 	}
-	listOrgKeys(c, org.Id, c.GetInt("id"))
+	listOrgKeys(c, org.Id, orgKeyScope(c, acc))
 }
 
 // ensureDefaultWorkspace returns the org's first active workspace, creating a
@@ -412,7 +422,7 @@ func ensureDefaultWorkspace(orgId int) (*model.Workspace, error) {
 
 // CreateMyOrgKey — POST /api/organization/keys
 func CreateMyOrgKey(c *gin.Context) {
-	org, ok := callerOrgMember(c)
+	org, _, ok := callerOrgMember(c)
 	if !ok {
 		return
 	}
@@ -426,34 +436,34 @@ func CreateMyOrgKey(c *gin.Context) {
 // Reveals the full key so a member can re-copy it after creation (the list only
 // returns a masked value). Mirrors the personal-token reveal endpoint.
 func GetMyOrgKey(c *gin.Context) {
-	org, ok := callerOrgMember(c)
+	org, acc, ok := callerOrgMember(c)
 	if !ok {
 		return
 	}
-	revealOrgKey(c, org.Id, c.GetInt("id"))
+	revealOrgKey(c, org.Id, orgKeyScope(c, acc))
 }
 
 // DeleteMyOrgKey — DELETE /api/organization/keys/:token_id
 func DeleteMyOrgKey(c *gin.Context) {
-	org, ok := callerOrgMember(c)
+	org, acc, ok := callerOrgMember(c)
 	if !ok {
 		return
 	}
-	deleteOrgKey(c, org, c.GetInt("id"), "member.key.delete")
+	deleteOrgKey(c, org, orgKeyScope(c, acc), "member.key.delete")
 }
 
 // UpdateMyOrgKey — PUT /api/organization/keys/:token_id
 func UpdateMyOrgKey(c *gin.Context) {
-	org, ok := callerOrgMember(c)
+	org, acc, ok := callerOrgMember(c)
 	if !ok {
 		return
 	}
-	updateOrgKey(c, org, c.GetInt("id"), "member.key.update")
+	updateOrgKey(c, org, orgKeyScope(c, acc), "member.key.update")
 }
 
 // GetMyOrgKeyModels — GET /api/organization/keys/models
 func GetMyOrgKeyModels(c *gin.Context) {
-	org, ok := callerOrgMember(c)
+	org, _, ok := callerOrgMember(c)
 	if !ok {
 		return
 	}

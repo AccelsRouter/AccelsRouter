@@ -60,6 +60,15 @@ function matrixFromRules(rules: ResellerRoutingRule[]): Matrix {
   return m
 }
 
+// Server-side bounds (model.ValidateResellerRouting): priority is a rank
+// 0..50, weight a relative share 0..10.
+export const MAX_ROUTING_PRIORITY = 50
+export const MAX_ROUTING_WEIGHT = 10
+const clampPriority = (n: number) =>
+  Math.min(MAX_ROUTING_PRIORITY, Math.max(0, Math.trunc(n)))
+const clampWeight = (n: number) =>
+  Math.min(MAX_ROUTING_WEIGHT, Math.max(0, Math.trunc(n)))
+
 function rulesFromMatrix(
   matrix: Matrix,
   boundIds: number[]
@@ -75,8 +84,8 @@ function rulesFromMatrix(
       out.push({
         model,
         channel_id: id,
-        priority: Math.trunc(priority),
-        weight: Math.max(0, Math.trunc(weight)),
+        priority: clampPriority(priority),
+        weight: clampWeight(weight),
       })
     }
   }
@@ -208,8 +217,8 @@ export function RoutingPanel(props: {
   const defaultCell = (id: number): Cell => {
     const ch = channelById.get(id)
     return {
-      priority: String(ch?.priority ?? 0),
-      weight: String(ch?.weight ?? 0),
+      priority: String(clampPriority(ch?.priority ?? 0)),
+      weight: String(clampWeight(ch?.weight ?? 0)),
     }
   }
 
@@ -432,12 +441,12 @@ export function RoutingPanel(props: {
                 <div className='text-muted-foreground flex flex-col gap-0.5 text-xs'>
                   <span>
                     {t(
-                      'Priority: the higher number is used first. A lower priority is tried only after every channel at the higher priority has failed.'
+                      'Priority (0–50): the higher number is used first. A lower priority is tried only after every channel at the higher priority has failed.'
                     )}
                   </span>
                   <span>
                     {t(
-                      'Weight: how traffic is shared among channels with the same priority (effective weight = weight + 10, so 0 still gets a share). With sticky affinity on, the share applies across customers while each customer stays on one channel.'
+                      'Weight (0–10): how traffic is shared among channels with the same priority (effective weight = weight + 10, so 0 still gets a share). With sticky affinity on, the share applies across customers while each customer stays on one channel.'
                     )}
                   </span>
                   <span>
@@ -645,6 +654,8 @@ export function RoutingPanel(props: {
                               <div className='flex gap-1'>
                                 <Input
                                   type='number'
+                                  min={0}
+                                  max={MAX_ROUTING_PRIORITY}
                                   aria-label={t('Priority')}
                                   placeholder='—'
                                   value={cell?.priority ?? ''}
@@ -658,6 +669,7 @@ export function RoutingPanel(props: {
                                 <Input
                                   type='number'
                                   min={0}
+                                  max={MAX_ROUTING_WEIGHT}
                                   aria-label={t('Weight')}
                                   placeholder='—'
                                   value={cell?.weight ?? ''}

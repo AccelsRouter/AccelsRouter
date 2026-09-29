@@ -329,6 +329,40 @@ export function CustomerOfferDialog(props: {
                         <X className='h-4 w-4' />
                       </Button>
                     </div>
+                    {r.token.trim() !== '' &&
+                      (() => {
+                        const tok = r.token.trim().toLowerCase()
+                        const hits = callable.filter((m) =>
+                          m.toLowerCase().includes(tok)
+                        )
+                        if (hits.length === 0) return null
+                        return (
+                          <div className='flex flex-wrap items-center gap-1 px-1'>
+                            <span className='text-muted-foreground text-xs'>
+                              {t('Matches {{count}} callable models', {
+                                count: hits.length,
+                              })}
+                              :
+                            </span>
+                            {hits.slice(0, 8).map((m) => (
+                              <button
+                                key={m}
+                                type='button'
+                                className='bg-muted hover:bg-muted/70 rounded px-1.5 py-0.5 font-mono text-[11px]'
+                                title={t('Use this exact model name')}
+                                onClick={() => update(i, { token: m })}
+                              >
+                                {m}
+                              </button>
+                            ))}
+                            {hits.length > 8 && (
+                              <span className='text-muted-foreground text-xs'>
+                                …
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })()}
                     {err && (
                       <span className='text-destructive px-1 text-xs'>
                         {r.token.trim()}: {err}

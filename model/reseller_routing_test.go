@@ -77,7 +77,7 @@ func TestValidateResellerRoutingNormalisesAndBounds(t *testing.T) {
 		ChannelIdList: []int{3, 1, 3},
 		RuleList: []ResellerRoutingRule{
 			{Model: "  Claude-Opus-4-8 ", ChannelId: 3, Priority: 1, Weight: 2},
-			{Model: "deepseek-", ChannelId: 1, Priority: -1},
+			{Model: "deepseek-", ChannelId: 1, Priority: 0},
 		},
 	}
 	require.NoError(t, ValidateResellerRouting(r))
@@ -95,7 +95,8 @@ func TestValidateResellerRoutingNormalisesAndBounds(t *testing.T) {
 		{"empty model", ResellerRouting{ChannelIdList: []int{1}, RuleList: []ResellerRoutingRule{{Model: "  ", ChannelId: 1}}}},
 		{"comma in model", ResellerRouting{ChannelIdList: []int{1}, RuleList: []ResellerRoutingRule{{Model: "a,b", ChannelId: 1}}}},
 		{"control char in model", ResellerRouting{ChannelIdList: []int{1}, RuleList: []ResellerRoutingRule{{Model: "a\nb", ChannelId: 1}}}},
-		{"priority out of range", ResellerRouting{ChannelIdList: []int{1}, RuleList: []ResellerRoutingRule{{Model: "m", ChannelId: 1, Priority: resellerRoutingMaxAbsPriority + 1}}}},
+		{"priority out of range", ResellerRouting{ChannelIdList: []int{1}, RuleList: []ResellerRoutingRule{{Model: "m", ChannelId: 1, Priority: resellerRoutingMaxPriority + 1}}}},
+		{"negative priority", ResellerRouting{ChannelIdList: []int{1}, RuleList: []ResellerRoutingRule{{Model: "m", ChannelId: 1, Priority: -1}}}},
 		{"weight out of range", ResellerRouting{ChannelIdList: []int{1}, RuleList: []ResellerRoutingRule{{Model: "m", ChannelId: 1, Weight: resellerRoutingMaxWeight + 1}}}},
 		{"duplicate rule (case-folded)", ResellerRouting{ChannelIdList: []int{1}, RuleList: []ResellerRoutingRule{{Model: "m", ChannelId: 1}, {Model: "M", ChannelId: 1}}}},
 	}
