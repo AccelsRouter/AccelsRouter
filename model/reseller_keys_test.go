@@ -163,3 +163,40 @@ func TestResellerConsoleIncludesOwnKeyTraffic(t *testing.T) {
 	assert.EqualValues(t, 1500, report.TotalCostQuota, "own 800 + own 300 + customer wholesale 400")
 	assert.EqualValues(t, 1600, report.TotalRetailQuota, "own rows charged == cost (800+300) + customer retail 500")
 }
+
+// The admin user list shows each user's organization ties: distributor
+// admin of a reseller org, member of a customer org (with its distributor),
+// or member of an enterprise org; a user may hold two; others are absent.
+func TestUserOrgRelations(t *testing.T) {
+	migrateOrgTables(t)
+	reseller := mustCreateOrg(t, "Rel Reseller", OrgTypeReseller, 0)
+	cust, err := CreateResellerCustomer(reseller.Id, "Rel Customer", "retail", 100, 1)
+	require.NoError(t, err)
+	enterprise := mustCreateOrg(t, "Rel Enterprise", OrgTypeEnterprise, 0)
+	require.NoError(t, DB.Create(&ResellerAdmin{UserId: 8101, ResellerOrgId: reseller.Id, Status: OrgStatusActive}).Error)
+	require.NoError(t, DB.Create(&OrgAccount{OrgId: cust.Id, UserId: 8102, Relation: OrgRelationCustomer, Role: OrgRoleAdmin, Status: OrgStatusActive}).Error)
+	require.NoError(t, DB.Create(&OrgAccount{OrgId: enterprise.Id, UserId: 8103, Relation: OrgRelationMember, Role: OrgRoleOwner, Status: OrgStatusActive}).Error)
+	// Dual role: distributor admin who is also an enterprise member.
+	require.NoError(t, DB.Create(&ResellerAdmin{UserId: 8103, ResellerOrgId: reseller.Id, Status: OrgStatusActive}).Error)
+
+	rels, err := UserOrgRelations([]int{8101, 8102, 8103, 8104})
+	require.NoError(t, err)
+
+	require.Len(t, rels[8101], 1)
+	assert.Equal(t, "reseller_admin", rels[8101][0].Kind)
+	assert.Equal(t, "Rel Reseller", rels[8101][0].OrgName)
+
+	require.Len(t, rels[8102], 1)
+	assert.Equal(t, "customer", rels[8102][0].Kind)
+	assert.Equal(t, "Rel Customer", rels[8102][0].OrgName)
+	assert.Equal(t, "admin", rels[8102][0].Role)
+	assert.Equal(t, reseller.Id, rels[8102][0].ResellerOrgId)
+	assert.Equal(t, "Rel Reseller", rels[8102][0].ResellerOrgName)
+
+	require.Len(t, rels[8103], 2, "distributor admin + enterprise member")
+	kinds := []string{rels[8103][0].Kind, rels[8103][1].Kind}
+	assert.ElementsMatch(t, []string{"reseller_admin", "member"}, kinds)
+
+	_, has := rels[8104]
+	assert.False(t, has, "a user without ties is absent")
+}

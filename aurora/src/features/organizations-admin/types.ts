@@ -23,6 +23,17 @@ model.OrgLedger JSON shapes (see model/organization.go).
 export type OrgType = 'enterprise' | 'reseller'
 export type OrgStatus = 'active' | 'suspended'
 
+// One organization tie of a platform user (admin user list).
+export type UserOrgRelation = {
+  kind: 'reseller_admin' | 'customer' | 'member'
+  org_id: number
+  org_name: string
+  org_type: string
+  role?: string
+  reseller_org_id?: number
+  reseller_org_name?: string
+}
+
 export type Organization = {
   id: number
   name: string

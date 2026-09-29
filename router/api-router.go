@@ -194,6 +194,7 @@ func SetApiRouter(router *gin.Engine) {
 		orgAdminRoute.Use(middleware.AdminAuth())
 		{
 			orgAdminRoute.GET("/", controller.AdminListOrganizations)
+			orgAdminRoute.GET("/user-relations", controller.AdminUserOrgRelations)
 			orgAdminRoute.POST("/", controller.AdminCreateOrganization)
 			orgAdminRoute.PUT("/:id", controller.AdminUpdateOrganization)
 			orgAdminRoute.POST("/:id/credit", middleware.CriticalRateLimit(), controller.AdminCreditOrganization)

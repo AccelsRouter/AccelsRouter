@@ -427,3 +427,25 @@ func AdminSetResellerAdminStatus(c *gin.Context) {
 	model.RecordOrgAudit(orgId, c.GetInt("id"), "reseller_admin.status", fmt.Sprintf("user:%d", userId), req.Status)
 	common.ApiSuccess(c, nil)
 }
+
+// AdminUserOrgRelations — GET /api/admin/organizations/user-relations?ids=1,2
+// Organization ties of the given users for the admin user list (fork-only:
+// keeps the upstream user endpoints untouched). At most 200 ids per call.
+func AdminUserOrgRelations(c *gin.Context) {
+	var ids []int
+	for _, part := range strings.Split(c.Query("ids"), ",") {
+		if id, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > 200 {
+		common.ApiErrorMsg(c, "at most 200 ids per request")
+		return
+	}
+	rels, err := model.UserOrgRelations(ids)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, rels)
+}
