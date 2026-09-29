@@ -22,7 +22,7 @@ with create, edit, invoiced credit (top-up), and a per-org ledger dialog.
 
 Backend: /api/admin/organizations (see controller/organization_admin.go).
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   keepPreviousData,
   useMutation,
@@ -486,7 +486,7 @@ function CreateOrgDialog(props: {
 }
 
 // Tabs of the reseller edit dialog; enterprise orgs keep the single form.
-type EditTab = 'basics' | 'pricing' | 'routing'
+type EditTab = 'basics' | 'reseller'
 
 // The org's allowed_models is stored as a JSON array string; parse it for the
 // admin editor (empty/invalid → []).
@@ -523,9 +523,14 @@ function EditOrgDialog(props: {
   // Reseller edit is tabbed (basics / pricing & offerable models / upstream
   // routing). Panels stay mounted so unsaved matrix edits survive tab switches.
   const [tab, setTab] = useState<EditTab>('basics')
-  // Union of the bound channels' models, reported live by the routing panel so
-  // the pricing tab can flag offerable models no bound channel serves.
+  // Union of the bound channels' models (and the bound-channel count),
+  // reported live by the routing panel so the offerable-model picker can
+  // flag entries no bound channel serves — and the save can refuse them.
   const [covered, setCovered] = useState<string[]>([])
+  const [boundCount, setBoundCount] = useState(0)
+  // The routing panel's save, registered by the panel; the dialog's Save
+  // persists org fields and routing together.
+  const routingSaveRef = useRef<(() => Promise<void>) | null>(null)
 
   // Sync local form state when a different org is opened.
   if (org && org.id !== loadedId) {
@@ -539,6 +544,8 @@ function EditOrgDialog(props: {
     setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
     setTab('basics')
     setCovered([])
+    setBoundCount(0)
+    routingSaveRef.current = null
   }
 
   const offerableList = allowedModels
@@ -573,13 +580,15 @@ function EditOrgDialog(props: {
   // Offerable models no bound channel serves. Only meaningful once at least
   // one channel is bound; before that the routing tab itself says so.
   const uncovered = (() => {
-    if (!isReseller || covered.length === 0 || offerableList.length === 0)
-      return [] as string[]
-    // Same exact-or-prefix rule the request path uses for offerable models.
+    if (!isReseller || offerableList.length === 0) return [] as string[]
+    if (boundCount === 0) return offerableList
     return offerableList.filter(
       (e) => !covered.some((m) => modelMatchesToken(e, m))
     )
   })()
+  // Offerable models must be reachable through the bound channels: saving
+  // is refused while any entry is unserved (or no channel is bound at all).
+  const coverageBlocked = isReseller && uncovered.length > 0
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -598,7 +607,16 @@ function EditOrgDialog(props: {
             }
           : {}),
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Reseller: persist the routing edited in the same dialog.
+      if (isReseller && routingSaveRef.current) {
+        try {
+          await routingSaveRef.current()
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : String(e))
+          return
+        }
+      }
       toast.success(t('Organization updated'))
       props.onSaved()
       props.onClose()
@@ -657,41 +675,27 @@ function EditOrgDialog(props: {
 
   const pricingFields = (
     <>
-      <Field label={t('Per-model wholesale ratios (blank = no discount)')}>
-        <ModelRatioRows
-          key={org?.id}
-          initial={org?.wholesale_ratios ?? {}}
-          tokens={offerableList}
-          onChange={(map, valid) => {
-            setWholesaleRatios(map)
-            setWholesaleValid(valid)
-          }}
-        />
-        <span className='text-muted-foreground text-xs'>
-          {t(
-            'The reseller pays standard × this ratio per call for matching models. Exact model name beats prefix.'
-          )}
-        </span>
-      </Field>
       <Field label={t('Offerable models (blank = all)')}>
         <ModelMultiPicker
           value={offerableList}
           onChange={(next) => setAllowedModels(next.join('\n'))}
-          catalog={modelCatalog.list}
+          catalog={boundCount > 0 ? covered : modelCatalog.list}
           providers={modelCatalog.providers}
           loading={summariesQuery.isLoading}
           allowCustom
         />
-        {/* Live coverage against the routing tab's bound channels. */}
+        {/* Live coverage against the bound channels above. */}
         {offerableList.length > 0 &&
-          (covered.length === 0 ? (
-            <span className='text-muted-foreground text-xs'>
-              {t('Bind upstream channels in the routing tab to see coverage.')}
+          (boundCount === 0 ? (
+            <span className='text-destructive text-xs'>
+              {t(
+                'Bind at least one upstream channel above; offerable models cannot be saved without a channel that serves them.'
+              )}
             </span>
           ) : uncovered.length > 0 ? (
             <div className='flex flex-wrap items-center gap-1 text-xs'>
               <span className='text-destructive'>
-                {t('Not served by any bound channel')}:
+                {t('Cannot save: not served by any bound channel')}:
               </span>
               {uncovered.map((m) => (
                 <Badge
@@ -709,10 +713,26 @@ function EditOrgDialog(props: {
             </span>
           ))}
       </Field>
+      <Field label={t('Per-model wholesale ratios (blank = no discount)')}>
+        <ModelRatioRows
+          key={org?.id}
+          initial={org?.wholesale_ratios ?? {}}
+          tokens={offerableList}
+          onChange={(map, valid) => {
+            setWholesaleRatios(map)
+            setWholesaleValid(valid)
+          }}
+        />
+        <span className='text-muted-foreground text-xs'>
+          {t(
+            'The reseller pays standard × this ratio per call for matching models. Exact model name beats prefix.'
+          )}
+        </span>
+      </Field>
     </>
   )
 
-  const showOrgFooter = !isReseller || tab !== 'routing'
+  const showOrgFooter = true
 
   return (
     <Dialog open={!!org} onOpenChange={(o) => !o && props.onClose()}>
@@ -733,11 +753,8 @@ function EditOrgDialog(props: {
           <Tabs value={tab} onValueChange={(v) => setTab(v as EditTab)}>
             <TabsList>
               <TabsTrigger value='basics'>{t('Basics')}</TabsTrigger>
-              <TabsTrigger value='pricing'>
-                {t('Pricing & offerable models')}
-              </TabsTrigger>
-              <TabsTrigger value='routing' className='gap-1.5'>
-                {t('Upstream routing')}
+              <TabsTrigger value='reseller' className='gap-1.5'>
+                {t('Upstream, models & pricing')}
                 {uncovered.length > 0 && (
                   <Badge
                     variant='destructive'
@@ -751,17 +768,35 @@ function EditOrgDialog(props: {
             <TabsContent value='basics' keepMounted className='pt-3'>
               <div className='flex flex-col gap-3'>{basicFields}</div>
             </TabsContent>
-            <TabsContent value='pricing' keepMounted className='pt-3'>
-              <div className='flex flex-col gap-3'>{pricingFields}</div>
-            </TabsContent>
-            <TabsContent value='routing' keepMounted className='pt-3'>
-              {org && (
-                <RoutingPanel
-                  org={org}
-                  offerableModels={offerableList}
-                  onCoverageChange={setCovered}
-                />
-              )}
+            <TabsContent value='reseller' keepMounted className='pt-3'>
+              {/* Top to bottom: upstream channels → offerable models → wholesale. */}
+              <div className='flex flex-col gap-5'>
+                {org && (
+                  <section className='flex flex-col gap-2'>
+                    <span className='text-sm font-medium'>
+                      {t('1. Upstream channels')}
+                    </span>
+                    <RoutingPanel
+                      org={org}
+                      offerableModels={offerableList}
+                      onCoverageChange={(c, n) => {
+                        setCovered(c)
+                        setBoundCount(n)
+                      }}
+                      embedded
+                      onSaveHandle={(fn) => {
+                        routingSaveRef.current = fn
+                      }}
+                    />
+                  </section>
+                )}
+                <section className='flex flex-col gap-3'>
+                  <span className='text-sm font-medium'>
+                    {t('2. Offerable models and 3. wholesale discounts')}
+                  </span>
+                  {pricingFields}
+                </section>
+              </div>
             </TabsContent>
           </Tabs>
         ) : (
@@ -776,11 +811,24 @@ function EditOrgDialog(props: {
             >
               {t('Cancel')}
             </Button>
+            {coverageBlocked && (
+              <span className='text-destructive mr-auto self-center text-xs'>
+                {boundCount === 0
+                  ? t('Bind an upstream channel before saving.')
+                  : t(
+                      '{{count}} offerable models are not served by any bound channel.',
+                      {
+                        count: uncovered.length,
+                      }
+                    )}
+              </span>
+            )}
             <Button
               onClick={() => mutation.mutate()}
               disabled={
                 name.trim().length === 0 ||
                 (isReseller && !wholesaleValid) ||
+                coverageBlocked ||
                 mutation.isPending
               }
               className='gap-1.5'
