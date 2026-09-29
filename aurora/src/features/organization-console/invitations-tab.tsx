@@ -27,8 +27,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, Loader2, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import { formatQuotaWithCurrency } from '@/lib/currency'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,13 +39,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select'
-import { formatQuotaWithCurrency } from '@/lib/currency'
-
-import { createInvitation, listInvitations, revokeInvitation } from './api'
+  createInvitation,
+  listInvitations,
+  resendInvitation,
+  revokeInvitation,
+} from './api'
 import { Field, Td, Th, fmtTime } from './shared'
 import type { InvitationStatus, OrgInvitation, OrgType } from './types'
 
@@ -55,6 +55,16 @@ function joinLink(code: string): string {
     code
   )}`
 }
+function activateLink(code: string): string {
+  return `${window.location.origin}/activate?code=${encodeURIComponent(code)}`
+}
+// A provisioned invitation's code is an activation link; a consent invite's
+// is a join link.
+function linkFor(inv: { code: string; status: InvitationStatus }): string {
+  return inv.status === 'provisioned'
+    ? activateLink(inv.code)
+    : joinLink(inv.code)
+}
 
 function StatusBadge({ status }: { status: InvitationStatus }) {
   const { t } = useTranslation()
@@ -62,6 +72,12 @@ function StatusBadge({ status }: { status: InvitationStatus }) {
     return <Badge variant='outline'>{t('Accepted')}</Badge>
   if (status === 'revoked')
     return <Badge variant='destructive'>{t('Revoked')}</Badge>
+  if (status === 'provisioned')
+    return (
+      <Badge variant='secondary'>
+        {t('Account opened, awaiting password')}
+      </Badge>
+    )
   return <Badge variant='secondary'>{t('Pending')}</Badge>
 }
 
@@ -90,9 +106,21 @@ export function InvitationsTab({ orgType }: { orgType: OrgType }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
+  const resendMutation = useMutation({
+    mutationFn: (id: number) => resendInvitation(id),
+    onSuccess: (res) => {
+      toast.success(
+        res.emailed
+          ? t('Activation email resent. The new link is valid for 7 days.')
+          : t('Activation link renewed; share it below. Valid for 7 days.')
+      )
+      invalidate()
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
   const copyCode = async (inv: OrgInvitation) => {
     try {
-      await navigator.clipboard.writeText(joinLink(inv.code))
+      await navigator.clipboard.writeText(linkFor(inv))
       setCopiedId(inv.id)
       toast.success(t('Invitation link copied'))
       window.setTimeout(() => setCopiedId(null), 1500)
@@ -106,7 +134,11 @@ export function InvitationsTab({ orgType }: { orgType: OrgType }) {
   return (
     <div className='flex flex-col gap-4'>
       <div className='flex justify-end'>
-        <Button size='sm' className='gap-1.5' onClick={() => setCreateOpen(true)}>
+        <Button
+          size='sm'
+          className='gap-1.5'
+          onClick={() => setCreateOpen(true)}
+        >
           <Plus className='h-3.5 w-3.5' />
           {t('New Invitation')}
         </Button>
@@ -148,12 +180,13 @@ export function InvitationsTab({ orgType }: { orgType: OrgType }) {
                   <Td>
                     <StatusBadge status={inv.status} />
                   </Td>
-                  <Td className='text-muted-foreground whitespace-nowrap text-xs'>
+                  <Td className='text-muted-foreground text-xs whitespace-nowrap'>
                     {fmtTime(inv.expires_at)}
                   </Td>
                   <Td className='text-right'>
                     <div className='flex justify-end gap-2'>
-                      {inv.status === 'pending' && (
+                      {(inv.status === 'pending' ||
+                        inv.status === 'provisioned') && (
                         <>
                           <Button
                             size='sm'
@@ -168,6 +201,16 @@ export function InvitationsTab({ orgType }: { orgType: OrgType }) {
                             )}
                             {t('Copy Link')}
                           </Button>
+                          {inv.status === 'provisioned' && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              disabled={resendMutation.isPending}
+                              onClick={() => resendMutation.mutate(inv.id)}
+                            >
+                              {t('Resend')}
+                            </Button>
+                          )}
                           <Button
                             size='sm'
                             variant='outline'
@@ -240,8 +283,20 @@ function NewInvitationDialog(props: {
         monthly_budget: Number(budget) || 0,
         invited_email: email.trim(),
       }),
-    onSuccess: () => {
-      toast.success(t('Invitation created'))
+    onSuccess: (res) => {
+      toast.success(
+        res.provisioned
+          ? res.emailed
+            ? t(
+                'Account opened and activation email sent. The link is valid for 7 days.'
+              )
+            : t(
+                'Account opened. Copy the activation link from the list; it is valid for 7 days.'
+              )
+          : res.emailed
+            ? t('Invitation email sent')
+            : t('Invitation created')
+      )
       props.onSaved()
       props.onClose()
     },
@@ -256,7 +311,9 @@ function NewInvitationDialog(props: {
           <DialogDescription>
             {isReseller
               ? t('Invite a customer to join this reseller organization.')
-              : t('Invite a member to join this organization.')}
+              : t(
+                  'Invite a member by email. A new email gets an account opened right away plus an activation link to set a password (valid 7 days); a registered email gets a join invitation to accept after signing in.'
+                )}
           </DialogDescription>
         </DialogHeader>
         <div className='flex flex-col gap-3'>

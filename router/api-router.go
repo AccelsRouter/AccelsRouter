@@ -275,6 +275,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.GET("/invitations", controller.ListMyOrgInvitations)
 			orgRoute.POST("/invitations", controller.CreateMyOrgInvitation)
 			orgRoute.DELETE("/invitations/:id", controller.RevokeMyOrgInvitation)
+			orgRoute.POST("/invitations/:id/resend", middleware.CriticalRateLimit(), controller.ResendMyOrgInvitation)
 			orgRoute.GET("/invitations/preview", controller.PreviewOrgInvitation)
 			orgRoute.POST("/invitations/accept", middleware.CriticalRateLimit(), controller.AcceptOrgInvitation)
 			// SSO domains (read-only) + usage reporting / invoice export.

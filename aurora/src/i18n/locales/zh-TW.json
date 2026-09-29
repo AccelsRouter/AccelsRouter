@@ -239,6 +239,8 @@
     "Ledger": "帳目",
     "No ledger entries.": "尚無帳目記錄。",
     "Suspended": "已暫停",
+    "Account opened. Copy the activation link from the list; it is valid for 7 days.": "已開戶。請到列表裡複製啟用連結發給對方，7 天內有效。",
+    "Invite a member by email. A new email gets an account opened right away plus an activation link to set a password (valid 7 days); a registered email gets a join invitation to accept after signing in.": "依信箱邀請成員。未註冊的信箱會立即開戶並收到設定密碼的啟用連結（7 天有效）；已註冊的信箱會收到加入邀請，登入後接受即可。",
     "4. Per-model priority matrix": "4. 按模型的優先順序矩陣",
     "2. Offerable models (blank = all)": "2. 可售模型（留空 = 全部）",
     "3. Per-model wholesale ratios (blank = no discount)": "3. 按模型批發折扣（留空 = 不打折）",

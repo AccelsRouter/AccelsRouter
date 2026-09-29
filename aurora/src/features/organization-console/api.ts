@@ -681,12 +681,23 @@ export async function createInvitation(payload: {
   role?: string
   monthly_budget?: number
   invited_email?: string
-}): Promise<{ code: string; expires_at: number }> {
-  const res = await api.post<ApiResp<{ code: string; expires_at: number }>>(
+}): Promise<CustomerInviteResult> {
+  const res = await api.post<ApiResp<CustomerInviteResult>>(
     '/api/organization/invitations',
     payload
   )
   return unwrap(res, 'Failed to create invitation')
+}
+
+// Renews a provisioned member invitation's activation link (new 7-day
+// window) and mails it again.
+export async function resendInvitation(
+  id: number
+): Promise<CustomerInviteResult> {
+  const res = await api.post<ApiResp<CustomerInviteResult>>(
+    `/api/organization/invitations/${id}/resend`
+  )
+  return unwrap(res, 'Failed to resend invitation')
 }
 
 export async function revokeInvitation(id: number): Promise<void> {
