@@ -199,6 +199,8 @@
     "Ledger": "Ledger",
     "No ledger entries.": "No ledger entries.",
     "Suspended": "Suspended",
+    "Account opened. Copy the activation link from the list; it is valid for 7 days.": "Account opened. Copy the activation link from the list; it is valid for 7 days.",
+    "Invite a member by email. A new email gets an account opened right away plus an activation link to set a password (valid 7 days); a registered email gets a join invitation to accept after signing in.": "Invite a member by email. A new email gets an account opened right away plus an activation link to set a password (valid 7 days); a registered email gets a join invitation to accept after signing in.",
     "4. Per-model priority matrix": "4. Per-model priority matrix",
     "2. Offerable models (blank = all)": "2. Offerable models (blank = all)",
     "3. Per-model wholesale ratios (blank = no discount)": "3. Per-model wholesale ratios (blank = no discount)",

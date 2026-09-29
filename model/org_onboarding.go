@@ -476,14 +476,31 @@ func provisionedUsername(tx *gorm.DB, email string) (string, error) {
 	return "", errors.New("无法生成唯一用户名")
 }
 
-// ProvisionCustomerAccount opens an account for an invited email that has no
-// user yet, attaches it to the customer org as an admin, and records a
-// provisioned invitation whose code is the activation link. The user cannot
-// log in until ActivateProvisionedAccount sets a password.
+// ProvisionCustomerAccount is ProvisionInvitedAccount for a distributor
+// delivering a customer org to its operator (customer relation, admin role).
 func ProvisionCustomerAccount(orgId int, email string, createdBy int) (*OrgInvitation, *User, error) {
+	return ProvisionInvitedAccount(orgId, email, OrgRelationCustomer, OrgRoleAdmin, 0, createdBy)
+}
+
+// ProvisionInvitedAccount opens an account for an invited email that has no
+// user yet, attaches it to the org with the given relation, role and monthly
+// budget, and records a provisioned invitation whose code is the activation
+// link (7 days). The user cannot log in until ActivateProvisionedAccount
+// sets a password. Used by every invite surface: a distributor inviting a
+// customer's operator, and an org owner/admin inviting a member.
+func ProvisionInvitedAccount(orgId int, email, relation, role string, monthlyBudget, createdBy int) (*OrgInvitation, *User, error) {
 	email = NormalizeEmail(strings.TrimSpace(email))
 	if email == "" || !strings.Contains(email, "@") {
 		return nil, nil, errors.New("受邀邮箱必填")
+	}
+	if relation != OrgRelationMember && relation != OrgRelationCustomer {
+		return nil, nil, errors.New("invalid relation")
+	}
+	if role != OrgRoleAdmin && role != OrgRoleMember {
+		return nil, nil, errors.New("invalid role")
+	}
+	if monthlyBudget < 0 {
+		return nil, nil, errors.New("budget cannot be negative")
 	}
 	if IsEmailAlreadyTaken(email) {
 		return nil, nil, ErrEmailAlreadyRegistered
@@ -516,14 +533,14 @@ func ProvisionCustomerAccount(orgId int, email string, createdBy int) (*OrgInvit
 			return err
 		}
 		acc := &OrgAccount{
-			OrgId: orgId, UserId: user.Id, Relation: OrgRelationCustomer, Role: OrgRoleAdmin,
+			OrgId: orgId, UserId: user.Id, Relation: relation, Role: role, MonthlyBudget: monthlyBudget,
 			Status: OrgStatusActive, PeriodKey: currentPeriodKey(), CreatedTime: common.GetTimestamp(),
 		}
 		if err := tx.Create(acc).Error; err != nil {
 			return err
 		}
 		inv = &OrgInvitation{
-			OrgId: orgId, Code: common.GetUUID(), Relation: OrgRelationCustomer, Role: OrgRoleAdmin,
+			OrgId: orgId, Code: common.GetUUID(), Relation: relation, Role: role, MonthlyBudget: monthlyBudget,
 			InvitedEmail: email, Status: OrgInvitationProvisioned, CreatedBy: createdBy,
 			AcceptedUserId: user.Id, ExpiresAt: time.Now().Add(orgActivationTTL).Unix(),
 			CreatedTime: common.GetTimestamp(),

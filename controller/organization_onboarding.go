@@ -4,6 +4,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -268,7 +269,21 @@ func CreateMyOrgInvitation(c *gin.Context) {
 	if req.Role == "" {
 		req.Role = model.OrgRoleMember
 	}
-	inv := &model.OrgInvitation{
+	// Invite = open the account (same as a distributor inviting a customer's
+	// operator): an email with no user yet gets an account attached to this
+	// org and an activation link; a registered email keeps the consent flow.
+	inv, _, err := model.ProvisionInvitedAccount(org.Id, req.InvitedEmail, req.Relation, req.Role, req.MonthlyBudget, c.GetInt("id"))
+	if err == nil {
+		emailed := sendOrgActivationEmail(inv.InvitedEmail, org.Name, inv.Code, inv.ExpiresAt)
+		model.RecordOrgAudit(org.Id, c.GetInt("id"), "invitation.provision", fmt.Sprintf("inv:%d", inv.Id), inv.InvitedEmail)
+		common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
+		return
+	}
+	if !errors.Is(err, model.ErrEmailAlreadyRegistered) {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	inv = &model.OrgInvitation{
 		OrgId: org.Id, Relation: req.Relation, Role: req.Role,
 		MonthlyBudget: req.MonthlyBudget, InvitedEmail: strings.TrimSpace(req.InvitedEmail),
 		CreatedBy: c.GetInt("id"),
@@ -278,7 +293,26 @@ func CreateMyOrgInvitation(c *gin.Context) {
 		return
 	}
 	emailed := sendOrgInvitationEmail(inv.InvitedEmail, org.Name, inv.Code)
-	common.ApiSuccess(c, gin.H{"code": inv.Code, "expires_at": inv.ExpiresAt, "emailed": emailed})
+	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": false})
+}
+
+// ResendMyOrgInvitation — POST /api/organization/invitations/:id/resend
+// Renews a provisioned invitation's activation link (new code, new 7-day
+// window) and mails it again.
+func ResendMyOrgInvitation(c *gin.Context) {
+	org, _, ok := callerOrg(c)
+	if !ok {
+		return
+	}
+	invId, _ := strconv.Atoi(c.Param("id"))
+	inv, err := model.RenewProvisionedInvitation(org.Id, invId)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	emailed := sendOrgActivationEmail(inv.InvitedEmail, org.Name, inv.Code, inv.ExpiresAt)
+	model.RecordOrgAudit(org.Id, c.GetInt("id"), "invitation.provision.resend", fmt.Sprintf("inv:%d", inv.Id), inv.InvitedEmail)
+	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
 }
 
 // ListMyOrgInvitations — GET /api/organization/invitations

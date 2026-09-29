@@ -114,4 +114,19 @@ func TestProvisionedCustomerAccountLifecycle(t *testing.T) {
 	require.NoError(t, RevokeOrgInvitation(cust.Id, inv2.Id))
 	_, err = GetActivationByCode(renewed.Code)
 	require.Error(t, err)
+
+	// An org owner inviting a member goes through the same door: the account
+	// is attached with the invite's relation, role and monthly budget.
+	inv3, user3, err := ProvisionInvitedAccount(cust.Id, "member@example.com", OrgRelationMember, OrgRoleMember, 500, 1)
+	require.NoError(t, err)
+	acc3, err := GetOrgAccountByUser(user3.Id)
+	require.NoError(t, err)
+	require.NotNil(t, acc3)
+	assert.Equal(t, OrgRelationMember, acc3.Relation)
+	assert.Equal(t, OrgRoleMember, acc3.Role)
+	assert.Equal(t, 500, acc3.MonthlyBudget)
+	assert.Equal(t, OrgRoleMember, inv3.Role)
+	assert.Equal(t, 500, inv3.MonthlyBudget)
+	_, _, err = ProvisionInvitedAccount(cust.Id, "x@example.com", "owner", OrgRoleMember, 0, 1)
+	require.Error(t, err, "invalid relation is refused")
 }
