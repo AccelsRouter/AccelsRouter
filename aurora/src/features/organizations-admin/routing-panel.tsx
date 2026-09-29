@@ -97,9 +97,14 @@ export function RoutingPanel(props: {
   // The reseller's offerable models as currently edited in the pricing tab
   // (empty = unrestricted). Drives the live served/unserved lists.
   offerableModels: string[]
-  // Reports the union of the bound channels' models whenever it changes, so
-  // the parent can flag unserved offerable models outside this panel.
-  onCoverageChange?: (covered: string[]) => void
+  // Reports the union of the bound channels' models (and how many channels
+  // are bound) whenever it changes, so the parent can flag unserved
+  // offerable models outside this panel.
+  onCoverageChange?: (covered: string[], boundCount: number) => void
+  // Embedded in the org editor: no own save button; the parent saves the
+  // routing through the handle registered with onSaveHandle.
+  embedded?: boolean
+  onSaveHandle?: (save: () => Promise<void>) => void
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -169,10 +174,10 @@ export function RoutingPanel(props: {
   }, [channelIds, channelById])
   const coveredKey = covered.join('\n')
   useEffect(() => {
-    props.onCoverageChange?.(covered)
+    props.onCoverageChange?.(covered, channelIds.length)
     // Depend on the joined key so an identical set does not re-fire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coveredKey])
+  }, [coveredKey, channelIds.length])
 
   const { effective, uncovered } = useMemo(() => {
     if (props.offerableModels.length === 0) {
@@ -190,20 +195,25 @@ export function RoutingPanel(props: {
     return { effective: eff, uncovered: unc }
   }, [covered, props.offerableModels])
 
+  const saveRouting = async () => {
+    await setResellerRouting(org.id, {
+      channel_ids: channelIds,
+      rules: rulesFromMatrix(matrix, channelIds),
+      fallback,
+      affinity_off: !affinity,
+    })
+    queryClient.invalidateQueries({ queryKey: ['reseller-routing', org.id] })
+  }
   const saveMutation = useMutation({
-    mutationFn: () =>
-      setResellerRouting(org.id, {
-        channel_ids: channelIds,
-        rules: rulesFromMatrix(matrix, channelIds),
-        fallback,
-        affinity_off: !affinity,
-      }),
-    onSuccess: () => {
-      toast.success(t('Saved'))
-      queryClient.invalidateQueries({ queryKey: ['reseller-routing', org.id] })
-    },
+    mutationFn: saveRouting,
+    onSuccess: () => toast.success(t('Saved')),
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
+  // Hand the parent an always-current save (its inputs live in this state).
+  useEffect(() => {
+    props.onSaveHandle?.(saveRouting)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelIds, matrix, fallback, affinity])
 
   const switchMutation = useMutation({
     mutationFn: (next: boolean) =>
@@ -758,18 +768,20 @@ export function RoutingPanel(props: {
             </div>
           </section>
 
-          <div className='flex justify-end'>
-            <Button
-              type='button'
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-            >
-              {saveMutation.isPending && (
-                <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
-              )}
-              {t('Save routing')}
-            </Button>
-          </div>
+          {!props.embedded && (
+            <div className='flex justify-end'>
+              <Button
+                type='button'
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+              >
+                {saveMutation.isPending && (
+                  <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+                )}
+                {t('Save routing')}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>
