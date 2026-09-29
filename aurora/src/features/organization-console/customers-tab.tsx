@@ -170,7 +170,7 @@ export function CustomersTab(props: { walletQuota: number }) {
                           setAllocation({ mode: 'allocate', customer: c })
                         }
                       >
-                        {t('Balance')}
+                        {t('Adjust quota')}
                       </Button>
                       <Button
                         size='sm'
