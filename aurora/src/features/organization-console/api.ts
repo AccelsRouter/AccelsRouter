@@ -279,7 +279,12 @@ export async function listCustomerInvitations(
   return unwrap(res, 'Failed to load invitations') ?? []
 }
 
-export type CustomerModels = { allowed: string[]; catalog: string[] }
+export type CustomerModels = {
+  allowed: string[]
+  catalog: string[]
+  // Platform-set offerable tokens for the reseller (names or prefixes); empty = whole group.
+  offerable: string[]
+}
 
 export async function getCustomerModels(
   customerId: number
@@ -288,7 +293,11 @@ export async function getCustomerModels(
     `/api/reseller/customers/${customerId}/models`
   )
   const data = unwrap(res, 'Failed to load models')
-  return { allowed: data.allowed ?? [], catalog: data.catalog ?? [] }
+  return {
+    allowed: data.allowed ?? [],
+    catalog: data.catalog ?? [],
+    offerable: data.offerable ?? [],
+  }
 }
 
 export async function getCustomerPricing(
