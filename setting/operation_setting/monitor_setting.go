@@ -13,6 +13,12 @@ type MonitorSetting struct {
 	AutoTestChannelMinutes float64 `json:"auto_test_channel_minutes"`
 	ChannelTestMode        string  `json:"channel_test_mode"`
 	ChannelTestConcurrency int     `json:"channel_test_concurrency"`
+	// Upstream monitor probes: a periodic sweep that sends one minimal request
+	// per declared model (or per channel test model) purely to record
+	// availability. Observation only — never disables or enables a channel.
+	UpstreamProbeEnabled   bool    `json:"upstream_probe_enabled"`
+	UpstreamProbeMinutes   float64 `json:"upstream_probe_minutes"`
+	UpstreamProbeAllModels bool    `json:"upstream_probe_all_models"`
 }
 
 const (
@@ -31,6 +37,9 @@ var monitorSetting = MonitorSetting{
 	AutoTestChannelMinutes: 10,
 	ChannelTestMode:        ChannelTestModeScheduledAll,
 	ChannelTestConcurrency: DefaultChannelTestConcurrency,
+	UpstreamProbeEnabled:   true,
+	UpstreamProbeMinutes:   60,
+	UpstreamProbeAllModels: true,
 }
 
 func init() {

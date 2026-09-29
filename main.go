@@ -358,6 +358,8 @@ func InitResources() error {
 	}
 	// Upstream monitor: periodic flush of the in-memory health aggregator.
 	model.StartUpstreamHealthFlusher()
+	// Upstream monitor: scheduled probe sweep (master only, monitor_setting.upstream_probe_*).
+	controller.StartUpstreamProbeScheduler()
 
 	// Initialize Redis
 	err = common.InitRedisClient()

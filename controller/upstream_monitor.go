@@ -171,7 +171,7 @@ func AdminUpstreamHealth(c *gin.Context) {
 		})
 		out = append(out, row)
 	}
-	common.ApiSuccess(c, gin.H{"hours": hours, "since": since, "channels": out})
+	common.ApiSuccess(c, gin.H{"hours": hours, "since": since, "channels": out, "probe": upstreamProbeStatus()})
 }
 
 // AdminUpstreamHistory — GET /api/admin/upstream/history?channel_id=&model=&hours=

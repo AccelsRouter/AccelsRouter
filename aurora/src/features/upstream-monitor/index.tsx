@@ -28,16 +28,27 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { Activity, Boxes, Loader2, Radio, RefreshCw, Tags } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import {
+  Activity,
+  Boxes,
+  Loader2,
+  Play,
+  Radio,
+  RefreshCw,
+  Tags,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { StatCard } from '@/features/dashboard/components/ui/stat-card'
-import { getUpstreamHealth, getUpstreamPrices } from './api'
+import { getUpstreamHealth, getUpstreamPrices, probeAllUpstreams } from './api'
 import { AvailabilityTab } from './availability-tab'
 import { PRICE_STATUS_META, PricesTab } from './prices-tab'
+import { fmtAgo } from './shared'
 
 const WINDOWS = [
   { hours: 24, key: 'Last 24 hours' },
@@ -64,6 +75,23 @@ export function UpstreamMonitor() {
     staleTime: 10 * 60_000,
   })
   const [refreshingPrices, setRefreshingPrices] = useState(false)
+  const [sweeping, setSweeping] = useState(false)
+  const probe = health.data?.probe
+  const startSweep = async () => {
+    setSweeping(true)
+    try {
+      await probeAllUpstreams()
+      toast.success(t('Probe sweep started; results appear as they land.'))
+      // Sweeps take minutes; poll a few times while it runs.
+      for (const delay of [15_000, 45_000, 120_000]) {
+        setTimeout(() => void health.refetch(), delay)
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSweeping(false)
+    }
+  }
   const refreshPrices = async () => {
     setRefreshingPrices(true)
     try {
@@ -151,6 +179,23 @@ export function UpstreamMonitor() {
           variant='outline'
           size='sm'
           className='gap-1.5'
+          disabled={sweeping || probe?.running}
+          onClick={() => void startSweep()}
+          title={t(
+            'Send one test request to every model of every enabled channel now'
+          )}
+        >
+          {sweeping || probe?.running ? (
+            <Loader2 className='h-3.5 w-3.5 animate-spin' />
+          ) : (
+            <Play className='h-3.5 w-3.5' />
+          )}
+          {probe?.running ? t('Probing…') : t('Probe all now')}
+        </Button>
+        <Button
+          variant='outline'
+          size='sm'
+          className='gap-1.5'
           disabled={health.isFetching || refreshingPrices}
           onClick={() => {
             void health.refetch()
@@ -167,6 +212,31 @@ export function UpstreamMonitor() {
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-5'>
+          {probe && (
+            <p className='text-muted-foreground text-xs'>
+              {probe.enabled
+                ? t('Automatic probes every {{minutes}} min, {{scope}}.', {
+                    minutes: probe.minutes,
+                    scope: probe.all_models
+                      ? t('every declared model')
+                      : t('one test model per channel'),
+                  })
+                : t('Automatic probes are off.')}{' '}
+              {probe.last.started_at > 0 &&
+                t('Last sweep {{ago}}: {{probed}} probes, {{failed}} failed.', {
+                  ago: fmtAgo(probe.last.started_at, t),
+                  probed: probe.last.probed,
+                  failed: probe.last.failed,
+                })}{' '}
+              <Link
+                to='/system-settings/models/$section'
+                params={{ section: 'routing-reliability' }}
+                className='underline underline-offset-2'
+              >
+                {t('Configure')}
+              </Link>
+            </p>
+          )}
           <div className='grid grid-cols-2 gap-3 xl:grid-cols-4'>
             <StatCard
               title={t('Channels online')}
