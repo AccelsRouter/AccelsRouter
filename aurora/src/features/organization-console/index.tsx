@@ -83,6 +83,9 @@ export function OrganizationConsole() {
     staleTime: 60_000,
   })
   const isResellerCustomer = orgContext?.is_reseller_customer ?? false
+  // A plain member manages only its own keys; owners and admins get the
+  // management tabs (the backing endpoints are owner/admin-only anyway).
+  const canManage = self?.role !== 'member'
 
   return (
     <SectionPageLayout>
@@ -136,28 +139,34 @@ export function OrganizationConsole() {
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                 <TabsTrigger value='keys'>{t('API Keys')}</TabsTrigger>
-                <TabsTrigger value='accounts'>{t('Members')}</TabsTrigger>
-                <TabsTrigger value='invitations'>
-                  {t('Invitations')}
-                </TabsTrigger>
-                {!isResellerCustomer && (
-                  <TabsTrigger value='workspaces'>
-                    {t('Workspaces')}
-                  </TabsTrigger>
+                {canManage && (
+                  <>
+                    <TabsTrigger value='accounts'>{t('Members')}</TabsTrigger>
+                    <TabsTrigger value='invitations'>
+                      {t('Invitations')}
+                    </TabsTrigger>
+                    {!isResellerCustomer && (
+                      <TabsTrigger value='workspaces'>
+                        {t('Workspaces')}
+                      </TabsTrigger>
+                    )}
+                    {!isResellerCustomer && self.type !== 'reseller' && (
+                      <TabsTrigger value='byok'>{t('BYOK')}</TabsTrigger>
+                    )}
+                    <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
+                    <TabsTrigger value='records'>
+                      {t('Call Records')}
+                    </TabsTrigger>
+                    {!isResellerCustomer && (
+                      <TabsTrigger value='sso'>{t('SSO')}</TabsTrigger>
+                    )}
+                    <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
+                    <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
+                  </>
                 )}
-                {!isResellerCustomer && self.type !== 'reseller' && (
-                  <TabsTrigger value='byok'>{t('BYOK')}</TabsTrigger>
-                )}
-                <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
-                <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
-                {!isResellerCustomer && (
-                  <TabsTrigger value='sso'>{t('SSO')}</TabsTrigger>
-                )}
-                <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
-                <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
               </TabsList>
               <TabsContent value='keys' className='pt-4'>
-                <OrgKeysPanel />
+                <OrgKeysPanel showCreatedBy={canManage} />
               </TabsContent>
               <TabsContent value='accounts' className='pt-4'>
                 <AccountsTab orgType={self.type} />

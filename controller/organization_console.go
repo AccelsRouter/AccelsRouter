@@ -46,7 +46,9 @@ func callerOrg(c *gin.Context) (*model.Organization, bool, bool) {
 
 // GetMyOrganization — GET /api/organization/self
 func GetMyOrganization(c *gin.Context) {
-	org, isOwner, ok := callerOrg(c)
+	// Every active member sees their organization (a plain member gets the
+	// header and its own keys); management endpoints stay owner/admin-only.
+	org, acc, ok := callerOrgMember(c)
 	if !ok {
 		return
 	}
@@ -57,7 +59,8 @@ func GetMyOrganization(c *gin.Context) {
 		"status":       org.Status,
 		"wallet_quota": org.WalletQuota,
 		"price_group":  org.PriceGroup,
-		"is_owner":     isOwner,
+		"is_owner":     acc.Role == model.OrgRoleOwner,
+		"role":         acc.Role,
 	})
 }
 
@@ -258,6 +261,12 @@ func AllocateFromMyOrg(c *gin.Context) {
 	}
 	if req.Quota <= 0 {
 		common.ApiErrorMsg(c, "quota must be positive")
+		return
+	}
+	// A grant is a spending cap, not a transfer, but it must never exceed what
+	// the distributor itself currently holds.
+	if req.Quota > org.WalletQuota {
+		common.ApiErrorMsg(c, "分配金额不能超过你当前的分销商余额")
 		return
 	}
 	// A reseller may only fund its own linked customers.

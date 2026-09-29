@@ -51,12 +51,15 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { SectionPageLayout } from '@/components/layout'
+import { ModelMultiPicker } from '@/components/model-multi-picker'
 import { ModelRatioRows } from '@/components/model-ratio-rows'
+import { getChannelTypeConfig } from '@/features/channels/lib/channel-type-config'
 import { exportAdminOrgLogs } from '@/features/organization-console/api'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CustomerFilteredCallRecords } from '@/features/organization-console/customer-filtered-call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
 import { ResellerUsageReport } from '@/features/reseller-console/usage-report'
+import { getChannelModelSummaries } from '@/features/system-settings/api'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import {
   addSsoDomain,
@@ -542,6 +545,31 @@ function EditOrgDialog(props: {
     .split(/[\n,]/)
     .map((m) => m.trim())
     .filter(Boolean)
+  // Catalog for the offerable-models picker: every model an enabled channel
+  // serves, labelled with the channels (and providers) serving it.
+  const summariesQuery = useQuery({
+    queryKey: ['channel-model-summaries'],
+    queryFn: getChannelModelSummaries,
+    enabled: !!org && isReseller,
+    staleTime: 60_000,
+  })
+  const modelCatalog = (() => {
+    const names = new Map<string, string>()
+    const providers = new Map<string, string[]>()
+    for (const ch of summariesQuery.data ?? []) {
+      const label = `${ch.name} · ${getChannelTypeConfig(ch.type).name}`
+      for (const m of ch.models) {
+        names.set(m.toLowerCase(), m)
+        const list = providers.get(m) ?? []
+        list.push(label)
+        providers.set(m, list)
+      }
+    }
+    return {
+      list: Array.from(names.values()).sort((a, b) => a.localeCompare(b)),
+      providers,
+    }
+  })()
   // Offerable models no bound channel serves. Only meaningful once at least
   // one channel is bound; before that the routing tab itself says so.
   const uncovered = (() => {
@@ -644,12 +672,14 @@ function EditOrgDialog(props: {
           )}
         </span>
       </Field>
-      <Field label={t('Offerable models (one per line; blank = all)')}>
-        <Textarea
-          value={allowedModels}
-          onChange={(e) => setAllowedModels(e.target.value)}
-          rows={4}
-          placeholder={'gpt-4o\nclaude-3-5-sonnet'}
+      <Field label={t('Offerable models (blank = all)')}>
+        <ModelMultiPicker
+          value={offerableList}
+          onChange={(next) => setAllowedModels(next.join('\n'))}
+          catalog={modelCatalog.list}
+          providers={modelCatalog.providers}
+          loading={summariesQuery.isLoading}
+          allowCustom
         />
         {/* Live coverage against the routing tab's bound channels. */}
         {offerableList.length > 0 &&

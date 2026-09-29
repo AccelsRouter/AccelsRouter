@@ -38,6 +38,8 @@ export type OrgSelf = {
   // customer discount for a model must be >= its wholesale ratio).
   wholesale_ratios?: Record<string, number>
   is_owner: boolean
+  // owner | admin | member — management tabs are owner/admin only.
+  role?: string
 }
 
 export type OrgAccount = {
@@ -124,7 +126,11 @@ export type ApplyResult = {
 
 // provisioned: the platform opened the account on invite; the person still
 // has to set a password through the activation link (7 days).
-export type InvitationStatus = 'pending' | 'provisioned' | 'accepted' | 'revoked'
+export type InvitationStatus =
+  | 'pending'
+  | 'provisioned'
+  | 'accepted'
+  | 'revoked'
 
 export type OrgInvitation = {
   id: number

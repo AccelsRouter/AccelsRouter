@@ -135,7 +135,6 @@ export function CustomersTab(props: { walletQuota: number }) {
                 <Th>{t('Owner')}</Th>
                 <Th className='text-right'>{t('Wallet Balance')}</Th>
                 <Th className='text-right'>{t('Net Allocated')}</Th>
-                <Th>{t('Price Group')}</Th>
                 <Th className='text-right'>{t('Action')}</Th>
               </tr>
             </thead>
@@ -162,7 +161,6 @@ export function CustomersTab(props: { walletQuota: number }) {
                   <Td className='text-right tabular-nums'>
                     {formatQuotaWithCurrency(c.net_allocated)}
                   </Td>
-                  <Td>{c.org.price_group || '-'}</Td>
                   <Td className='text-right'>
                     <div className='flex justify-end gap-2'>
                       <Button
@@ -494,7 +492,6 @@ function CreateCustomerDialog(props: {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
-  const [priceGroup, setPriceGroup] = useState('default')
   const [initialQuota, setInitialQuota] = useState('')
   const [ownerEmail, setOwnerEmail] = useState('')
   const [loadedOpen, setLoadedOpen] = useState(false)
@@ -503,7 +500,6 @@ function CreateCustomerDialog(props: {
   if (props.open && !loadedOpen) {
     setLoadedOpen(true)
     setName('')
-    setPriceGroup('default')
     setInitialQuota('')
     setOwnerEmail('')
   }
@@ -517,7 +513,9 @@ function CreateCustomerDialog(props: {
     mutationFn: () =>
       createCustomer({
         name: name.trim(),
-        price_group: priceGroup.trim() || 'default',
+        // Customers are always on the default group; pricing comes from the
+        // distributor's discounts, so the field is not shown.
+        price_group: 'default',
         initial_quota: quotaFromUSD(Number(initialQuota) || 0),
         owner_email: emailTrimmed || undefined,
       }),
@@ -568,12 +566,6 @@ function CreateCustomerDialog(props: {
         <div className='flex flex-col gap-3'>
           <Field label={t('Name')}>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label={t('Price Group')}>
-            <Input value={priceGroup} disabled readOnly />
-            <span className='text-muted-foreground text-xs'>
-              {t('Fixed to "default"; pricing is driven by your discounts.')}
-            </span>
           </Field>
           <Field label={t('Initial amount (USD)')}>
             <div className='relative'>

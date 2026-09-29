@@ -26,25 +26,26 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-
-import { SectionPageLayout } from '@/components/layout'
+import { formatQuotaWithCurrency } from '@/lib/currency'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AllocationDialog, type AllocationMode } from '@/features/organization-console/allocation-dialog'
-import { ApplyPanel } from '@/features/organization-console/apply-panel'
+import { SectionPageLayout } from '@/components/layout'
+import { OrgKeysPanel } from '@/features/org-keys'
+import {
+  AllocationDialog,
+  type AllocationMode,
+} from '@/features/organization-console/allocation-dialog'
 import {
   getResellerSelf,
   listResellerAudit,
   listResellerLedger,
   resellerKeysApi,
 } from '@/features/organization-console/api'
-import { OrgKeysPanel } from '@/features/org-keys'
+import { ApplyPanel } from '@/features/organization-console/apply-panel'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
-import { formatQuotaWithCurrency } from '@/lib/currency'
-
 import { ResellerRecordsTab } from './records-tab'
 import { ResellerTopUpDialog } from './reseller-topup-dialog'
 import { ResellerUsageTab } from './usage-tab'
@@ -123,11 +124,6 @@ export function ResellerConsole() {
                       </span>
                     )}
                 </div>
-                {self.price_group && (
-                  <span className='text-muted-foreground text-xs'>
-                    {t('Price Group')}: {self.price_group}
-                  </span>
-                )}
               </div>
               <div className='flex flex-col items-end'>
                 <span className='text-muted-foreground text-xs'>

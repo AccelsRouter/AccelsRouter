@@ -34,12 +34,15 @@ const (
 	resellerRoutingGroupPrefix = "reseller-"
 	// Hard caps on admin input. Generous for any real deployment, tight enough
 	// that a mistaken or malicious payload cannot blow up storage or selection.
-	resellerRoutingMaxChannels    = 50
-	resellerRoutingMaxRules       = 2000
-	resellerRoutingMaxModelLen    = 255
-	resellerRoutingMaxAbsPriority = 1_000_000
-	resellerRoutingMaxWeight      = 10_000
-	resellerRoutingCacheTTL       = 30 * time.Second
+	resellerRoutingMaxChannels = 50
+	resellerRoutingMaxRules    = 2000
+	resellerRoutingMaxModelLen = 255
+	// Priority is a rank within one reseller's matrix and weight a relative
+	// share within a tier, so small ranges keep the numbers readable: a rule
+	// carries priority 0..50 and weight 0..10 (effective share = weight + 10).
+	resellerRoutingMaxPriority = 50
+	resellerRoutingMaxWeight   = 10
+	resellerRoutingCacheTTL    = 30 * time.Second
 )
 
 // ResellerRoutingRule ranks one bound channel for one model (exact name) or one
@@ -221,7 +224,7 @@ func ValidateResellerRouting(r *ResellerRouting) error {
 		if _, bound := seenCh[rule.ChannelId]; !bound {
 			return errors.New("rule refers to a channel that is not bound to this reseller")
 		}
-		if rule.Priority > resellerRoutingMaxAbsPriority || rule.Priority < -resellerRoutingMaxAbsPriority {
+		if rule.Priority > resellerRoutingMaxPriority || rule.Priority < 0 {
 			return errors.New("rule priority out of range")
 		}
 		if rule.Weight > resellerRoutingMaxWeight {
