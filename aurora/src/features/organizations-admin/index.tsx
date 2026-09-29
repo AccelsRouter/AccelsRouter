@@ -661,6 +661,7 @@ function EditOrgDialog(props: {
         <ModelRatioRows
           key={org?.id}
           initial={org?.wholesale_ratios ?? {}}
+          tokens={offerableList}
           onChange={(map, valid) => {
             setWholesaleRatios(map)
             setWholesaleValid(valid)

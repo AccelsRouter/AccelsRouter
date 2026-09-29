@@ -199,6 +199,7 @@
     "Ledger": "Ledger",
     "No ledger entries.": "No ledger entries.",
     "Suspended": "Suspended",
+    "no discount": "no discount",
     "Offerable models (blank = all)": "Offerable models (blank = all)",
     "Add as typed (prefix matches every model starting with it)": "Add as typed (prefix matches every model starting with it)",
     "Matches {{count}} callable models": "Matches {{count}} callable models",

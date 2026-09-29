@@ -213,6 +213,7 @@
     "Ledger": "账目",
     "No ledger entries.": "暂无账目记录。",
     "Suspended": "已暂停",
+    "no discount": "不打折",
     "Offerable models (blank = all)": "可售模型（留空 = 全部）",
     "Add as typed (prefix matches every model starting with it)": "按输入添加（作为前缀，匹配所有以它开头的模型）",
     "Matches {{count}} callable models": "匹配 {{count}} 个可调用模型",

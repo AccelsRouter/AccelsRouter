@@ -5,10 +5,9 @@ reseller's per-model wholesale (admin side) and per-model retail discounts
 per-model floor enforces "must be >= floor" (e.g. retail >= wholesale). The
 parent owns the resulting map and validity via onChange.
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -41,12 +40,18 @@ export function ModelRatioRows({
   initial,
   floorFor,
   onChange,
+  tokens,
 }: {
   initial: Record<string, number>
   // Optional floor per model token; a ratio below it is invalid. Return 0 for
   // no floor.
   floorFor?: (token: string) => number
   onChange: (map: Record<string, number>, valid: boolean) => void
+  // Optional: tokens (model names or prefixes) that must each have a row —
+  // e.g. the offerable models picked next to this editor. A newly picked
+  // token gets a row with a blank ratio (= no discount) ready to edit; a
+  // token picked off again drops its row only while the ratio is still blank.
+  tokens?: string[]
 }) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<Row[]>(() => {
@@ -69,7 +74,7 @@ export function ModelRatioRows({
     let valid = true
     for (const r of rows) {
       const token = r.token.trim().toLowerCase()
-      if (!token && !r.ratio.trim()) continue // blank row ignored
+      if (!r.ratio.trim()) continue // blank ratio = no discount for this token
       if (!token || !rowValid(r)) {
         valid = false
         continue
@@ -80,8 +85,44 @@ export function ModelRatioRows({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows])
 
+  // Mirror the picked tokens into rows (see the `tokens` prop).
+  const tokensKey = (tokens ?? []).join('\n')
+  const prevTokens = useRef<string[]>([])
+  useEffect(() => {
+    if (!tokens) return
+    const now = new Set(tokens.map((x) => x.trim().toLowerCase()))
+    const gone = new Set(
+      prevTokens.current
+        .map((x) => x.trim().toLowerCase())
+        .filter((x) => !now.has(x))
+    )
+    prevTokens.current = tokens
+    setRows((prev) => {
+      let next = prev.filter(
+        (r) =>
+          !(gone.has(r.token.trim().toLowerCase()) && r.ratio.trim() === '')
+      )
+      const have = new Set(next.map((r) => r.token.trim().toLowerCase()))
+      for (const tk of tokens) {
+        const key = tk.trim().toLowerCase()
+        if (key && !have.has(key)) {
+          next.push({ token: tk.trim(), ratio: '' })
+          have.add(key)
+        }
+      }
+      if (next.length > 1)
+        next = next.filter(
+          (r) => r.token.trim() !== '' || r.ratio.trim() !== ''
+        )
+      return next.length ? next : [{ token: '', ratio: '' }]
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokensKey])
+
   const update = (i: number, patch: Partial<Row>) =>
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+    setRows((prev) =>
+      prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+    )
 
   return (
     <div className='flex flex-col gap-2'>
@@ -92,7 +133,10 @@ export function ModelRatioRows({
       </div>
       {rows.map((r, i) => {
         const floor = floorFor ? floorFor(r.token.trim().toLowerCase()) : 0
-        const invalid = (r.token.trim() || r.ratio.trim()) && !rowValid(r)
+        // A blank ratio is "no discount", never invalid; a ratio without a
+        // token, or out of range / below the floor, is.
+        const invalid =
+          r.ratio.trim() !== '' && (!r.token.trim() || !rowValid(r))
         return (
           <div key={i} className='flex items-center gap-2'>
             <Input
@@ -107,7 +151,7 @@ export function ModelRatioRows({
               min={0}
               max={1}
               step='0.01'
-              placeholder='0.8'
+              placeholder={t('no discount')}
               value={r.ratio}
               onChange={(e) => update(i, { ratio: e.target.value })}
               aria-invalid={invalid || undefined}
@@ -116,7 +160,9 @@ export function ModelRatioRows({
               size='icon'
               variant='ghost'
               className='h-8 w-8 shrink-0'
-              onClick={() => setRows((prev) => prev.filter((_, idx) => idx !== i))}
+              onClick={() =>
+                setRows((prev) => prev.filter((_, idx) => idx !== i))
+              }
             >
               <X className='h-4 w-4' />
             </Button>
