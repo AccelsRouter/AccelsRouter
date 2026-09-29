@@ -18,18 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
+import { useMediaQuery } from '@/hooks'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
+import { useTableUrlState } from '@/hooks/use-table-url-state'
 import {
   DISABLED_ROW_DESKTOP,
   DISABLED_ROW_MOBILE,
   DataTablePage,
   useDataTable,
 } from '@/components/data-table'
-import { useMediaQuery } from '@/hooks'
-import { useTableUrlState } from '@/hooks/use-table-url-state'
-
+import { adminUserOrgRelations } from '@/features/organizations-admin/api'
 import { getUsers, searchUsers } from '../api'
 import {
   USER_STATUS,
@@ -50,7 +49,6 @@ function isDisabledUserRow(user: User) {
 
 export function UsersTable() {
   const { t } = useTranslation()
-  const columns = useUsersColumns()
   const { refreshTrigger } = useUsers()
   const isMobile = useMediaQuery('(max-width: 640px)')
 
@@ -133,6 +131,15 @@ export function UsersTable() {
   })
 
   const users = data?.items || []
+  // Organization ties for the rows on this page (fork), one batched call.
+  const userIds = users.map((u) => u.id)
+  const { data: relations } = useQuery({
+    queryKey: ['user-org-relations', userIds.join(',')],
+    queryFn: () => adminUserOrgRelations(userIds),
+    enabled: userIds.length > 0,
+    staleTime: 30_000,
+  })
+  const columns = useUsersColumns(relations)
 
   const { table } = useDataTable({
     data: users,

@@ -38,6 +38,7 @@ import type {
   SsoDomain,
   SsoProvider,
   UpdateOrgPayload,
+  UserOrgRelation,
 } from './types'
 
 type ApiResp<T> = {
@@ -335,4 +336,16 @@ export async function getOrgUsage(
   if (!res.data?.success || !res.data.data)
     throw new Error(res.data?.message || 'Failed to load usage')
   return res.data.data
+}
+
+// Organization ties of the given users, keyed by user id (users without a
+// tie are absent). Fork-only endpoint; the upstream user list is untouched.
+export async function adminUserOrgRelations(
+  ids: number[]
+): Promise<Record<number, UserOrgRelation[]>> {
+  if (ids.length === 0) return {}
+  const res = await api.get<ApiResp<Record<number, UserOrgRelation[]>>>(
+    `/api/admin/organizations/user-relations?ids=${ids.join(',')}`
+  )
+  return res.data?.data ?? {}
 }

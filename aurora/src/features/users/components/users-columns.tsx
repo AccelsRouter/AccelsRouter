@@ -18,12 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
-
-import { BadgeCell } from '@/components/data-table'
-import { GroupBadge } from '@/components/group-badge'
-import { LongText } from '@/components/long-text'
-import { StatusBadge } from '@/components/status-badge'
-import { TableId } from '@/components/table-id'
+import { formatQuota, formatTimestamp } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -31,9 +27,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { formatQuota, formatTimestamp } from '@/lib/format'
-import { cn } from '@/lib/utils'
-
+import { BadgeCell } from '@/components/data-table'
+import { GroupBadge } from '@/components/group-badge'
+import { LongText } from '@/components/long-text'
+import { StatusBadge } from '@/components/status-badge'
+import { TableId } from '@/components/table-id'
+import type { UserOrgRelation } from '@/features/organizations-admin/types'
 import {
   USER_STATUS,
   USER_STATUSES,
@@ -42,6 +41,7 @@ import {
 } from '../constants'
 import type { User } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
+import { OrgRelationLines } from './org-relation-lines'
 
 function getQuotaProgressColor(percentage: number): string {
   if (percentage <= 10) return '[&_[data-slot=progress-indicator]]:bg-rose-500'
@@ -49,7 +49,10 @@ function getQuotaProgressColor(percentage: number): string {
   return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
 }
 
-export function useUsersColumns(): ColumnDef<User>[] {
+// relations: organization ties per user id (fork), for the Organization column.
+export function useUsersColumns(
+  relations?: Record<number, UserOrgRelation[]>
+): ColumnDef<User>[] {
   const { t } = useTranslation()
   return [
     {
@@ -247,6 +250,19 @@ export function useUsersColumns(): ColumnDef<User>[] {
       },
       size: 140,
       meta: { mobileOrder: 30 },
+    },
+    {
+      id: 'organization',
+      header: t('Organization'),
+      cell: ({ row }) => (
+        <OrgRelationLines
+          relations={relations?.[row.original.id]}
+          emptyText='-'
+        />
+      ),
+      enableSorting: false,
+      size: 220,
+      meta: { mobileOrder: 32 },
     },
     {
       id: 'token_count',
