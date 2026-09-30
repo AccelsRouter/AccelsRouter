@@ -314,6 +314,23 @@ export function RoutingPanel(props: {
     closePicker()
   }
 
+  // Rename a matrix row in place — e.g. turn "glm-5-2" into the prefix
+  // "glm-" after adding it from the effective-model chips. Cells move with
+  // the row; an empty or duplicate name leaves the row unchanged.
+  const renameRow = (from: string, rawTo: string) => {
+    const to = rawTo.trim().toLowerCase()
+    if (!to || to === from) return
+    if (matrix[to]) {
+      toast.error(t('"{{model}}" is already in the matrix', { model: to }))
+      return
+    }
+    setMatrix((prev) => {
+      const next: Matrix = {}
+      for (const [k, v] of Object.entries(prev)) next[k === from ? to : k] = v
+      return next
+    })
+  }
+
   const removeRow = (model: string) => {
     setMatrix((prev) => {
       const next = { ...prev }
@@ -681,7 +698,21 @@ export function RoutingPanel(props: {
                   <tbody className='divide-border/60 divide-y'>
                     {modelRows.map((model) => (
                       <tr key={model} className='hover:bg-muted/30'>
-                        <td className='px-3 py-2 font-mono text-xs'>{model}</td>
+                        <td className='px-2 py-1.5'>
+                          <Input
+                            key={model}
+                            defaultValue={model}
+                            aria-label={t('Model name or prefix')}
+                            title={t(
+                              'Edit to a prefix (e.g. glm-) to cover a whole series'
+                            )}
+                            className='h-7 min-w-40 px-1.5 font-mono text-xs'
+                            onBlur={(e) => renameRow(model, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur()
+                            }}
+                          />
+                        </td>
                         {boundSorted.map((id) => {
                           const cell = matrix[model]?.[id]
                           return (

@@ -237,14 +237,22 @@ export function OrganizationsAdmin() {
                           {o.type === 'reseller' &&
                           o.wholesale_ratios &&
                           Object.keys(o.wholesale_ratios).length > 0 ? (
-                            <span
-                              className='inline-block max-w-[180px] truncate rounded bg-amber-500/15 px-1.5 py-0.5 align-middle text-xs font-semibold text-amber-600 dark:text-amber-400'
-                              title={Object.entries(o.wholesale_ratios)
-                                .map(([m, r]) => `${m}: ${r.toFixed(2)}`)
-                                .join('\n')}
-                            >
-                              {Object.keys(o.wholesale_ratios).join(', ')}
-                            </span>
+                            <div className='flex max-w-[260px] flex-wrap gap-1'>
+                              {Object.entries(o.wholesale_ratios).map(
+                                ([m, r]) => (
+                                  <span
+                                    key={m}
+                                    className='rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400'
+                                    title={m}
+                                  >
+                                    <span className='font-mono font-normal'>
+                                      {m}
+                                    </span>{' '}
+                                    {r.toFixed(2)}
+                                  </span>
+                                )
+                              )}
+                            </div>
                           ) : (
                             <span className='text-muted-foreground'>-</span>
                           )}

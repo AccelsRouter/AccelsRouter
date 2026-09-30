@@ -44,6 +44,7 @@ import {
 } from '@/features/organization-console/api'
 import { ApplyPanel } from '@/features/organization-console/apply-panel'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
+import { CallableModelsTab } from '@/features/organization-console/callable-models-tab'
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
 import { ResellerRecordsTab } from './records-tab'
@@ -132,6 +133,9 @@ export function ResellerConsole() {
               <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                 <TabsTrigger value='customers'>{t('Customers')}</TabsTrigger>
                 <TabsTrigger value='keys'>{t('API Keys')}</TabsTrigger>
+                <TabsTrigger value='models'>
+                  {t('Available models')}
+                </TabsTrigger>
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
                 <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
@@ -147,6 +151,15 @@ export function ResellerConsole() {
                   showCreatedBy
                   description={t(
                     'Keys here draw on the distributor wallet at your wholesale price and route through your assigned upstreams, exactly like your customers’ calls. Distributors have no personal keys.'
+                  )}
+                />
+              </TabsContent>
+              <TabsContent value='models' className='pt-4'>
+                <CallableModelsTab
+                  api={resellerKeysApi}
+                  queryKey='reseller-keys'
+                  description={t(
+                    'Models the platform lets you offer: the catalog your own keys can call and the widest set you can assign to a customer.'
                   )}
                 />
               </TabsContent>

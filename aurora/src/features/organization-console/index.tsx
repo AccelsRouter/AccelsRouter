@@ -39,12 +39,14 @@ import { SectionPageLayout } from '@/components/layout'
 import { OrgKeysPanel } from '@/features/org-keys'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { AccountsTab } from './accounts-tab'
+import { myOrgKeysApi } from './api'
 import { exportMyOrgLogs, getOrgContext, listOrgLogs } from './api'
 import { getOrgSelf } from './api'
 import { ApplyPanel } from './apply-panel'
 import { AuditTab } from './audit-tab'
 import { ByokTab } from './byok-tab'
 import { CallRecords } from './call-records'
+import { CallableModelsTab } from './callable-models-tab'
 import { InvitationsTab } from './invitations-tab'
 import { LedgerTab } from './ledger-tab'
 import { SsoTab } from './sso-tab'
@@ -139,6 +141,9 @@ export function OrganizationConsole() {
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                 <TabsTrigger value='keys'>{t('API Keys')}</TabsTrigger>
+                <TabsTrigger value='models'>
+                  {t('Available models')}
+                </TabsTrigger>
                 {canManage && (
                   <>
                     <TabsTrigger value='accounts'>{t('Members')}</TabsTrigger>
@@ -167,6 +172,15 @@ export function OrganizationConsole() {
               </TabsList>
               <TabsContent value='keys' className='pt-4'>
                 <OrgKeysPanel showCreatedBy={canManage} />
+              </TabsContent>
+              <TabsContent value='models' className='pt-4'>
+                <CallableModelsTab
+                  api={myOrgKeysApi}
+                  queryKey='org-keys'
+                  description={t(
+                    'Models this organization may call: the platform catalog narrowed by the allow-lists that apply to it. A key can be limited further to a subset.'
+                  )}
+                />
               </TabsContent>
               <TabsContent value='accounts' className='pt-4'>
                 <AccountsTab orgType={self.type} />
