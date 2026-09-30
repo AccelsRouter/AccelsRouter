@@ -178,6 +178,10 @@ type CreditLedger struct {
 	TradeNo     string `json:"trade_no" gorm:"type:varchar(64);index"`
 	Remark      string `json:"remark" gorm:"type:varchar(255)"`
 	CreatedTime int64  `json:"created_time"`
+	// FromOrgName / ToOrgName are computed, non-persisted display names so a
+	// console can read a row as "allocated to Acme" instead of org ids.
+	FromOrgName string `json:"from_org_name,omitempty" gorm:"-"`
+	ToOrgName   string `json:"to_org_name,omitempty" gorm:"-"`
 }
 
 // Workspace is a policy/budget container inside an organization. It is NOT a
@@ -1092,8 +1096,24 @@ func ListOrgLedger(orgId int, offset, limit int) ([]*CreditLedger, int64, error)
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&rows).Error
-	return rows, total, err
+	if err := q.Order("id DESC").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	ids := map[int]struct{}{}
+	for _, r := range rows {
+		if r.FromOrgId > 0 {
+			ids[r.FromOrgId] = struct{}{}
+		}
+		if r.ToOrgId > 0 {
+			ids[r.ToOrgId] = struct{}{}
+		}
+	}
+	names := orgNames(ids)
+	for _, r := range rows {
+		r.FromOrgName = names[r.FromOrgId]
+		r.ToOrgName = names[r.ToOrgId]
+	}
+	return rows, total, nil
 }
 
 // ---------------------------------------------------------------------------

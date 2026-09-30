@@ -75,8 +75,10 @@ export type OrgLedgerEntry = {
   id: number
   from_org_id: number
   to_org_id: number
+  from_org_name?: string
+  to_org_name?: string
   quota: number
-  type: string
+  type: string // purchase | allocate | revoke
   operator_id: number
   trade_no: string
   remark: string
