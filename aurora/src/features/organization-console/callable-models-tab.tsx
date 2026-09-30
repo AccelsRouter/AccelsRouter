@@ -100,9 +100,22 @@ export function CallableModelsTab({
           {shown.map((m) => (
             <li
               key={m}
-              className='border-border/60 px-3 py-2 font-mono text-xs sm:border-b'
+              className='border-border/60 group flex items-center justify-between gap-2 px-3 py-1.5 font-mono text-xs sm:border-b'
             >
-              {m}
+              <span className='truncate'>{m}</span>
+              <Button
+                size='icon'
+                variant='ghost'
+                className='h-6 w-6 shrink-0 opacity-60 group-hover:opacity-100'
+                title={t('Copy')}
+                aria-label={t('Copy')}
+                onClick={() => {
+                  void navigator.clipboard?.writeText(m)
+                  toast.success(t('Copied'))
+                }}
+              >
+                <Copy className='h-3 w-3' />
+              </Button>
             </li>
           ))}
         </ul>
