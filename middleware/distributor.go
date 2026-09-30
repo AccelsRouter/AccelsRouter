@@ -277,8 +277,11 @@ func Distribute() func(c *gin.Context) {
 								// Smart routing's circuit breaker (see common/smartroute):
 								// only a hard run of consecutive failures on this sticky
 								// channel gives up the affinity, not merely another
-								// candidate scoring higher right now.
-								!smartroute.IsCircuitOpen(preferred.Id, modelRequest.Model) {
+								// candidate scoring higher right now. Bypassed entirely
+								// when setting.SmartRoutingEnabled is off, so the off
+								// switch reverts affinity to its exact pre-smart-routing
+								// usability check.
+								(!setting.SmartRoutingEnabled || !smartroute.IsCircuitOpen(preferred.Id, modelRequest.Model)) {
 								if usingGroup == "auto" {
 									userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 									autoGroups := service.GetRequestAutoGroups(c, userGroup)

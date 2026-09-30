@@ -2,10 +2,11 @@ package model
 
 import (
 	"fmt"
-	"github.com/QuantumNous/new-api/common/smartroute"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/smartroute"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting"
 )
 
 // GetChannelPricingChannel picks a channel for a "channel pricing mode"
@@ -82,9 +83,6 @@ func GetChannelPricingChannel(userId int, modelName string, retry int, requestPa
 		candidateIds = append(candidateIds, id)
 	}
 
-	// Reuse the same request-path/advanced-custom filter group-based
-	// selection already applies, so a channel-pricing user's bound
-	// channels are held to the same bar as any other channel.
 	candidateIds = filterChannelsByRequestPathAndModel(candidateIds, requestPath, modelName)
 	hadCandidates := len(candidateIds) > 0
 	candidateIds = filterChannelsByTokenBudget(candidateIds)
@@ -93,12 +91,21 @@ func GetChannelPricingChannel(userId int, modelName string, retry int, requestPa
 		return nil, overBudget, nil
 	}
 
-	candidates := make([]smartroute.Candidate, 0, len(candidateIds))
-	for _, id := range candidateIds {
-		ratio, _ := GetUserChannelBindingRatio(userId, id, modelName)
-		candidates = append(candidates, smartroute.Candidate{ChannelId: id, Price: ratio})
+	var ranked []int
+	if setting.SmartRoutingEnabled {
+		candidates := make([]smartroute.Candidate, 0, len(candidateIds))
+		for _, id := range candidateIds {
+			ratio, _ := GetUserChannelBindingRatio(userId, id, modelName)
+			candidates = append(candidates, smartroute.Candidate{ChannelId: id, Price: ratio})
+		}
+		ranked = smartroute.RankChannels(candidates, modelName, smartroute.DefaultWeights)
+	} else {
+		// Legacy (setting.SmartRoutingEnabled off): candidateIds is
+		// already in ascending channel_id order (see
+		// getUserBoundChannelIdsForModel), so it doubles as the "ranked"
+		// list unchanged — the exact pre-smart-routing ordering.
+		ranked = candidateIds
 	}
-	ranked := smartroute.RankChannels(candidates, modelName, smartroute.DefaultWeights)
 
 	if retry < 0 || retry >= len(ranked) {
 		return nil, overBudget, nil
@@ -229,12 +236,21 @@ func getChannelPricingChannelFromDB(userId int, channelIds []int, modelName stri
 		return nil, overBudget, nil
 	}
 
-	candidates := make([]smartroute.Candidate, 0, len(candidateIds))
-	for _, id := range candidateIds {
-		ratio, _ := GetUserChannelBindingRatio(userId, id, modelName)
-		candidates = append(candidates, smartroute.Candidate{ChannelId: id, Price: ratio})
+	var ranked []int
+	if setting.SmartRoutingEnabled {
+		candidates := make([]smartroute.Candidate, 0, len(candidateIds))
+		for _, id := range candidateIds {
+			ratio, _ := GetUserChannelBindingRatio(userId, id, modelName)
+			candidates = append(candidates, smartroute.Candidate{ChannelId: id, Price: ratio})
+		}
+		ranked = smartroute.RankChannels(candidates, modelName, smartroute.DefaultWeights)
+	} else {
+		// Legacy (setting.SmartRoutingEnabled off): candidateIds is
+		// already in ascending channel_id order (see
+		// getUserBoundChannelIdsForModel), so it doubles as the "ranked"
+		// list unchanged — the exact pre-smart-routing ordering.
+		ranked = candidateIds
 	}
-	ranked := smartroute.RankChannels(candidates, modelName, smartroute.DefaultWeights)
 
 	if retry < 0 || retry >= len(ranked) {
 		return nil, overBudget, nil

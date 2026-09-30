@@ -106,3 +106,26 @@ func UserDailyTokenLimitKey(userId int) string {
 func ChannelDailyTokenLimitKey(channelId int) string {
 	return fmt.Sprintf("dailyTokenLimit:v1:channel:%d", channelId)
 }
+
+// ---------------------------------------------------------------------------
+// Smart routing.
+//
+// Replaces channel/ability Priority and Weight as the mechanism for
+// choosing among several channels serving the same model, with a
+// composite score (success rate, latency, and — in channel-pricing mode
+// only — price) computed from rolling per-(channel, model) stats kept in
+// Redis (see common/smartroute). Applies to both group-mode selection
+// (model.GetRandomSatisfiedChannel / model.GetChannel) and
+// channel-pricing-mode selection (model.GetChannelPricingChannel); reseller
+// routing (service.SelectResellerChannel) is untouched regardless of this
+// setting.
+//
+// Defaults to true — this is meant to take effect automatically, not as an
+// opt-in a user has to request. The switch exists purely as an operator
+// escape hatch: turning it off reverts every affected selection path to
+// its exact pre-smart-routing behavior — priority tiers + weighted-random
+// in group mode, ascending channel_id order in channel-pricing mode, and
+// channel affinity's usability check without the consecutive-failure
+// circuit breaker (see common/smartroute.IsCircuitOpen) — entirely
+// without needing a rollback deploy.
+var SmartRoutingEnabled = true

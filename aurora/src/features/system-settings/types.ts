@@ -53,9 +53,9 @@ export type ConfirmPaymentComplianceResponse = {
 export type SystemTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
 export type SystemTask<
-  TPayload = Record<string, unknown>,
-  TState = Record<string, unknown>,
-  TResult = Record<string, unknown>,
+    TPayload = Record<string, unknown>,
+    TState = Record<string, unknown>,
+    TResult = Record<string, unknown>,
 > = {
   id: number
   task_id: string
@@ -89,9 +89,9 @@ export type LogCleanupTaskResult = {
 }
 
 export type LogCleanupTask = SystemTask<
-  LogCleanupTaskPayload,
-  LogCleanupTaskState,
-  LogCleanupTaskResult
+    LogCleanupTaskPayload,
+    LogCleanupTaskState,
+    LogCleanupTaskResult
 >
 
 export type SystemTaskResponse<TTask = SystemTask | null> = {
@@ -238,13 +238,10 @@ export type ModelSettings = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
-  'monitor_setting.upstream_probe_enabled': boolean
-  'monitor_setting.upstream_probe_minutes': number
-  'monitor_setting.upstream_probe_all_models': boolean
   'monitor_setting.channel_test_mode':
-    | 'scheduled_all'
-    | 'auto_ban_only'
-    | 'passive_recovery'
+      | 'scheduled_all'
+      | 'auto_ban_only'
+      | 'passive_recovery'
   'channel_affinity_setting.enabled': boolean
   'channel_affinity_setting.switch_on_success': boolean
   'channel_affinity_setting.keep_on_channel_disabled': boolean
@@ -395,6 +392,7 @@ export type SecuritySettings = {
   ModelRequestRateLimitGroup: string
   UserDailyTokenLimitEnabled: boolean
   ChannelDailyTokenLimitEnabled: boolean
+  SmartRoutingEnabled: boolean
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
   SensitiveWords: string
@@ -418,16 +416,16 @@ export type UpstreamChannel = {
 }
 
 export type RatioType =
-  | 'model_ratio'
-  | 'completion_ratio'
-  | 'cache_ratio'
-  | 'create_cache_ratio'
-  | 'image_ratio'
-  | 'audio_ratio'
-  | 'audio_completion_ratio'
-  | 'model_price'
-  | 'billing_mode'
-  | 'billing_expr'
+    | 'model_ratio'
+    | 'completion_ratio'
+    | 'cache_ratio'
+    | 'create_cache_ratio'
+    | 'image_ratio'
+    | 'audio_ratio'
+    | 'audio_completion_ratio'
+    | 'model_price'
+    | 'billing_mode'
+    | 'billing_expr'
 
 export type RatioDifference = {
   current: number | string | null
@@ -436,8 +434,8 @@ export type RatioDifference = {
 }
 
 export type DifferencesMap = Record<
-  string,
-  Partial<Record<RatioType, RatioDifference>>
+    string,
+    Partial<Record<RatioType, RatioDifference>>
 >
 
 export type UpstreamChannelsResponse = {

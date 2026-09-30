@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { RateLimitSection } from '../request-limits/rate-limit-section'
 import { SensitiveWordsSection } from '../request-limits/sensitive-words-section'
+import { SmartRoutingSection } from '../request-limits/smart-routing-section'
 import { SSRFSection } from '../request-limits/ssrf-section'
 import { TokenLimitSection } from '../request-limits/token-limit-section'
 import { TokenRateLimitSection } from '../request-limits/token-rate-limit-section'
@@ -25,97 +26,108 @@ import type { SecuritySettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
 const SECURITY_SECTIONS = [
-  {
-    id: 'rate-limit',
-    titleKey: 'Rate Limiting',
-    build: (settings: SecuritySettings) => (
-      <RateLimitSection
-        defaultValues={{
-          ModelRequestRateLimitEnabled: settings.ModelRequestRateLimitEnabled,
-          ModelRequestRateLimitCount: settings.ModelRequestRateLimitCount,
-          ModelRequestRateLimitSuccessCount:
-            settings.ModelRequestRateLimitSuccessCount,
-          ModelRequestRateLimitDurationMinutes:
-            settings.ModelRequestRateLimitDurationMinutes,
-          ModelRequestRateLimitGroup: settings.ModelRequestRateLimitGroup,
-        }}
-      />
-    ),
-  },
-  {
-    id: 'token-rate-limit',
-    titleKey: 'Daily Token Limit',
-    build: (settings: SecuritySettings) => (
-      <TokenRateLimitSection
-        defaultValues={{
-          UserDailyTokenLimitEnabled: settings.UserDailyTokenLimitEnabled,
-          ChannelDailyTokenLimitEnabled:
-            settings.ChannelDailyTokenLimitEnabled,
-        }}
-      />
-    ),
-  },
-  {
-    id: 'sensitive-words',
-    titleKey: 'Sensitive Words',
-    build: (settings: SecuritySettings) => (
-      <SensitiveWordsSection
-        defaultValues={{
-          CheckSensitiveEnabled: settings.CheckSensitiveEnabled,
-          CheckSensitiveOnPromptEnabled: settings.CheckSensitiveOnPromptEnabled,
-          SensitiveWords: settings.SensitiveWords,
-        }}
-      />
-    ),
-  },
-  {
-    id: 'ssrf',
-    titleKey: 'SSRF Protection',
-    build: (settings: SecuritySettings) => (
-      <SSRFSection
-        defaultValues={{
-          'fetch_setting.enable_ssrf_protection':
-            settings['fetch_setting.enable_ssrf_protection'],
-          'fetch_setting.allow_private_ip':
-            settings['fetch_setting.allow_private_ip'],
-          'fetch_setting.domain_filter_mode':
-            settings['fetch_setting.domain_filter_mode'],
-          'fetch_setting.ip_filter_mode':
-            settings['fetch_setting.ip_filter_mode'],
-          'fetch_setting.domain_list': settings['fetch_setting.domain_list'],
-          'fetch_setting.ip_list': settings['fetch_setting.ip_list'],
-          'fetch_setting.allowed_ports':
-            settings['fetch_setting.allowed_ports'],
-          'fetch_setting.apply_ip_filter_for_domain':
-            settings['fetch_setting.apply_ip_filter_for_domain'],
-        }}
-      />
-    ),
-  },
-  {
-    id: 'token-limits',
-    titleKey: 'Token Limits',
-    build: (settings: SecuritySettings) => (
-      <TokenLimitSection
-        defaultValues={{
-          'token_setting.max_user_tokens':
-            settings['token_setting.max_user_tokens'],
-        }}
-      />
-    ),
-  },
+    {
+        id: 'rate-limit',
+        titleKey: 'Rate Limiting',
+        build: (settings: SecuritySettings) => (
+            <RateLimitSection
+                defaultValues={{
+                    ModelRequestRateLimitEnabled: settings.ModelRequestRateLimitEnabled,
+                    ModelRequestRateLimitCount: settings.ModelRequestRateLimitCount,
+                    ModelRequestRateLimitSuccessCount:
+                    settings.ModelRequestRateLimitSuccessCount,
+                    ModelRequestRateLimitDurationMinutes:
+                    settings.ModelRequestRateLimitDurationMinutes,
+                    ModelRequestRateLimitGroup: settings.ModelRequestRateLimitGroup,
+                }}
+            />
+        ),
+    },
+    {
+        id: 'token-rate-limit',
+        titleKey: 'Daily Token Limit',
+        build: (settings: SecuritySettings) => (
+            <TokenRateLimitSection
+                defaultValues={{
+                    UserDailyTokenLimitEnabled: settings.UserDailyTokenLimitEnabled,
+                    ChannelDailyTokenLimitEnabled:
+                    settings.ChannelDailyTokenLimitEnabled,
+                }}
+            />
+        ),
+    },
+    {
+        id: 'smart-routing',
+        titleKey: 'Smart Routing',
+        build: (settings: SecuritySettings) => (
+            <SmartRoutingSection
+                defaultValues={{
+                    SmartRoutingEnabled: settings.SmartRoutingEnabled,
+                }}
+            />
+        ),
+    },
+    {
+        id: 'sensitive-words',
+        titleKey: 'Sensitive Words',
+        build: (settings: SecuritySettings) => (
+            <SensitiveWordsSection
+                defaultValues={{
+                    CheckSensitiveEnabled: settings.CheckSensitiveEnabled,
+                    CheckSensitiveOnPromptEnabled: settings.CheckSensitiveOnPromptEnabled,
+                    SensitiveWords: settings.SensitiveWords,
+                }}
+            />
+        ),
+    },
+    {
+        id: 'ssrf',
+        titleKey: 'SSRF Protection',
+        build: (settings: SecuritySettings) => (
+            <SSRFSection
+                defaultValues={{
+                    'fetch_setting.enable_ssrf_protection':
+                        settings['fetch_setting.enable_ssrf_protection'],
+                    'fetch_setting.allow_private_ip':
+                        settings['fetch_setting.allow_private_ip'],
+                    'fetch_setting.domain_filter_mode':
+                        settings['fetch_setting.domain_filter_mode'],
+                    'fetch_setting.ip_filter_mode':
+                        settings['fetch_setting.ip_filter_mode'],
+                    'fetch_setting.domain_list': settings['fetch_setting.domain_list'],
+                    'fetch_setting.ip_list': settings['fetch_setting.ip_list'],
+                    'fetch_setting.allowed_ports':
+                        settings['fetch_setting.allowed_ports'],
+                    'fetch_setting.apply_ip_filter_for_domain':
+                        settings['fetch_setting.apply_ip_filter_for_domain'],
+                }}
+            />
+        ),
+    },
+    {
+        id: 'token-limits',
+        titleKey: 'Token Limits',
+        build: (settings: SecuritySettings) => (
+            <TokenLimitSection
+                defaultValues={{
+                    'token_setting.max_user_tokens':
+                        settings['token_setting.max_user_tokens'],
+                }}
+            />
+        ),
+    },
 ] as const
 
 export type SecuritySectionId = (typeof SECURITY_SECTIONS)[number]['id']
 
 const securityRegistry = createSectionRegistry<
-  SecuritySectionId,
-  SecuritySettings
+    SecuritySectionId,
+    SecuritySettings
 >({
-  sections: SECURITY_SECTIONS,
-  defaultSection: 'rate-limit',
-  basePath: '/system-settings/security',
-  urlStyle: 'path',
+    sections: SECURITY_SECTIONS,
+    defaultSection: 'rate-limit',
+    basePath: '/system-settings/security',
+    urlStyle: 'path',
 })
 
 export const SECURITY_SECTION_IDS = securityRegistry.sectionIds

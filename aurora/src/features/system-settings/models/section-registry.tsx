@@ -29,198 +29,192 @@ import { PersonalByokSection } from './personal-byok-section'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
-  const raw = (value ?? '').toString().trim()
-  if (!raw) return fallback
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
-  } catch {
-    return fallback
-  }
+    const raw = (value ?? '').toString().trim()
+    if (!raw) return fallback
+    try {
+        return JSON.stringify(JSON.parse(raw), null, 2)
+    } catch {
+        return fallback
+    }
 }
 
 const MODELS_SECTIONS = [
-  {
-    id: 'global',
-    titleKey: 'Global Model Configuration',
-    build: (settings: ModelSettings) => (
-      <GlobalSettingsCard
-        defaultValues={{
-          global: {
-            pass_through_request_enabled:
-              settings['global.pass_through_request_enabled'],
-            thinking_model_blacklist: formatJsonForEditor(
-              settings['global.thinking_model_blacklist'],
-              '[]'
-            ),
-            chat_completions_to_responses_policy: formatJsonForEditor(
-              settings['global.chat_completions_to_responses_policy'],
-              '{}'
-            ),
-          },
-          general_setting: {
-            ping_interval_enabled:
-              settings['general_setting.ping_interval_enabled'],
-            ping_interval_seconds:
-              settings['general_setting.ping_interval_seconds'],
-          },
-        }}
-      />
-    ),
-  },
-  {
-    id: 'routing-reliability',
-    titleKey: 'Routing Reliability',
-    build: (settings: ModelSettings) => (
-      <RoutingReliabilitySection
-        defaultValues={{
-          RetryTimes: settings.RetryTimes,
-          ChannelDisableThreshold: settings.ChannelDisableThreshold,
-          AutomaticDisableChannelEnabled:
-            settings.AutomaticDisableChannelEnabled,
-          AutomaticEnableChannelEnabled: settings.AutomaticEnableChannelEnabled,
-          AutomaticDisableKeywords: settings.AutomaticDisableKeywords,
-          AutomaticDisableStatusCodes: settings.AutomaticDisableStatusCodes,
-          AutomaticRetryStatusCodes: settings.AutomaticRetryStatusCodes,
-          'monitor_setting.auto_test_channel_enabled':
-            settings['monitor_setting.auto_test_channel_enabled'],
-          'monitor_setting.auto_test_channel_minutes':
-            settings['monitor_setting.auto_test_channel_minutes'],
-          'monitor_setting.channel_test_concurrency':
-            settings['monitor_setting.channel_test_concurrency'],
-          'monitor_setting.channel_test_mode':
-            settings['monitor_setting.channel_test_mode'],
-          'monitor_setting.upstream_probe_enabled':
-            settings['monitor_setting.upstream_probe_enabled'],
-          'monitor_setting.upstream_probe_minutes':
-            settings['monitor_setting.upstream_probe_minutes'],
-          'monitor_setting.upstream_probe_all_models':
-            settings['monitor_setting.upstream_probe_all_models'],
-        }}
-      />
-    ),
-  },
-  {
-    id: 'auto-models',
-    titleKey: 'Auto Models',
-    build: (settings: ModelSettings) => (
-      <AutoModelsSection
-        defaultValues={{
-          AutoModelConfigs: settings.AutoModelConfigs,
-        }}
-      />
-    ),
-  },
-  {
-    id: 'gemini',
-    titleKey: 'Gemini',
-    build: (settings: ModelSettings) => (
-      <GeminiSettingsCard
-        defaultValues={{
-          gemini: {
-            safety_settings: settings['gemini.safety_settings'],
-            version_settings: settings['gemini.version_settings'],
-            supported_imagine_models:
-              settings['gemini.supported_imagine_models'],
-            thinking_adapter_enabled:
-              settings['gemini.thinking_adapter_enabled'],
-            thinking_adapter_budget_tokens_percentage:
-              settings['gemini.thinking_adapter_budget_tokens_percentage'],
-            function_call_thought_signature_enabled:
-              settings['gemini.function_call_thought_signature_enabled'],
-            remove_function_response_id_enabled:
-              settings['gemini.remove_function_response_id_enabled'],
-          },
-        }}
-      />
-    ),
-  },
-  {
-    id: 'claude',
-    titleKey: 'Claude',
-    build: (settings: ModelSettings) => (
-      <ClaudeSettingsCard
-        defaultValues={{
-          claude: {
-            model_headers_settings: settings['claude.model_headers_settings'],
-            default_max_tokens: settings['claude.default_max_tokens'],
-            thinking_adapter_enabled:
-              settings['claude.thinking_adapter_enabled'],
-            thinking_adapter_budget_tokens_percentage:
-              settings['claude.thinking_adapter_budget_tokens_percentage'],
-          },
-        }}
-      />
-    ),
-  },
-  {
-    id: 'grok',
-    titleKey: 'Grok',
-    build: (settings: ModelSettings) => (
-      <GrokSettingsCard
-        defaultValues={{
-          'grok.violation_deduction_enabled':
-            settings['grok.violation_deduction_enabled'] ?? true,
-          'grok.violation_deduction_amount':
-            settings['grok.violation_deduction_amount'] ?? 0.05,
-        }}
-      />
-    ),
-  },
-  {
-    id: 'channel-affinity',
-    titleKey: 'Channel Affinity',
-    build: (settings: ModelSettings) => (
-      <ChannelAffinitySection
-        defaultValues={{
-          'channel_affinity_setting.enabled':
-            settings['channel_affinity_setting.enabled'],
-          'channel_affinity_setting.switch_on_success':
-            settings['channel_affinity_setting.switch_on_success'],
-          'channel_affinity_setting.keep_on_channel_disabled':
-            settings['channel_affinity_setting.keep_on_channel_disabled'],
-          'channel_affinity_setting.max_entries':
-            settings['channel_affinity_setting.max_entries'],
-          'channel_affinity_setting.default_ttl_seconds':
-            settings['channel_affinity_setting.default_ttl_seconds'],
-          'channel_affinity_setting.rules':
-            settings['channel_affinity_setting.rules'],
-        }}
-      />
-    ),
-  },
-  {
-    id: 'model-deployment',
-    titleKey: 'Model Deployment',
-    build: (settings: ModelSettings) => (
-      <IoNetDeploymentSettingsSection
-        defaultValues={{
-          enabled: settings['model_deployment.ionet.enabled'],
-          apiKey: settings['model_deployment.ionet.api_key'],
-        }}
-      />
-    ),
-  },
-  {
-    id: 'personal-byok',
-    titleKey: 'Personal BYOK',
-    build: (settings: ModelSettings) => (
-      <PersonalByokSection
-        defaultValues={{
-          PersonalByokEnabled: settings.PersonalByokEnabled,
-          ByokFeeRatio: settings.ByokFeeRatio,
-        }}
-      />
-    ),
-  },
+    {
+        id: 'global',
+        titleKey: 'Global Model Configuration',
+        build: (settings: ModelSettings) => (
+            <GlobalSettingsCard
+                defaultValues={{
+                    global: {
+                        pass_through_request_enabled:
+                            settings['global.pass_through_request_enabled'],
+                        thinking_model_blacklist: formatJsonForEditor(
+                            settings['global.thinking_model_blacklist'],
+                            '[]'
+                        ),
+                        chat_completions_to_responses_policy: formatJsonForEditor(
+                            settings['global.chat_completions_to_responses_policy'],
+                            '{}'
+                        ),
+                    },
+                    general_setting: {
+                        ping_interval_enabled:
+                            settings['general_setting.ping_interval_enabled'],
+                        ping_interval_seconds:
+                            settings['general_setting.ping_interval_seconds'],
+                    },
+                }}
+            />
+        ),
+    },
+    {
+        id: 'routing-reliability',
+        titleKey: 'Routing Reliability',
+        build: (settings: ModelSettings) => (
+            <RoutingReliabilitySection
+                defaultValues={{
+                    RetryTimes: settings.RetryTimes,
+                    ChannelDisableThreshold: settings.ChannelDisableThreshold,
+                    AutomaticDisableChannelEnabled:
+                    settings.AutomaticDisableChannelEnabled,
+                    AutomaticEnableChannelEnabled: settings.AutomaticEnableChannelEnabled,
+                    AutomaticDisableKeywords: settings.AutomaticDisableKeywords,
+                    AutomaticDisableStatusCodes: settings.AutomaticDisableStatusCodes,
+                    AutomaticRetryStatusCodes: settings.AutomaticRetryStatusCodes,
+                    'monitor_setting.auto_test_channel_enabled':
+                        settings['monitor_setting.auto_test_channel_enabled'],
+                    'monitor_setting.auto_test_channel_minutes':
+                        settings['monitor_setting.auto_test_channel_minutes'],
+                    'monitor_setting.channel_test_concurrency':
+                        settings['monitor_setting.channel_test_concurrency'],
+                    'monitor_setting.channel_test_mode':
+                        settings['monitor_setting.channel_test_mode'],
+                }}
+            />
+        ),
+    },
+    {
+        id: 'auto-models',
+        titleKey: 'Auto Models',
+        build: (settings: ModelSettings) => (
+            <AutoModelsSection
+                defaultValues={{
+                    AutoModelConfigs: settings.AutoModelConfigs,
+                }}
+            />
+        ),
+    },
+    {
+        id: 'gemini',
+        titleKey: 'Gemini',
+        build: (settings: ModelSettings) => (
+            <GeminiSettingsCard
+                defaultValues={{
+                    gemini: {
+                        safety_settings: settings['gemini.safety_settings'],
+                        version_settings: settings['gemini.version_settings'],
+                        supported_imagine_models:
+                            settings['gemini.supported_imagine_models'],
+                        thinking_adapter_enabled:
+                            settings['gemini.thinking_adapter_enabled'],
+                        thinking_adapter_budget_tokens_percentage:
+                            settings['gemini.thinking_adapter_budget_tokens_percentage'],
+                        function_call_thought_signature_enabled:
+                            settings['gemini.function_call_thought_signature_enabled'],
+                        remove_function_response_id_enabled:
+                            settings['gemini.remove_function_response_id_enabled'],
+                    },
+                }}
+            />
+        ),
+    },
+    {
+        id: 'claude',
+        titleKey: 'Claude',
+        build: (settings: ModelSettings) => (
+            <ClaudeSettingsCard
+                defaultValues={{
+                    claude: {
+                        model_headers_settings: settings['claude.model_headers_settings'],
+                        default_max_tokens: settings['claude.default_max_tokens'],
+                        thinking_adapter_enabled:
+                            settings['claude.thinking_adapter_enabled'],
+                        thinking_adapter_budget_tokens_percentage:
+                            settings['claude.thinking_adapter_budget_tokens_percentage'],
+                    },
+                }}
+            />
+        ),
+    },
+    {
+        id: 'grok',
+        titleKey: 'Grok',
+        build: (settings: ModelSettings) => (
+            <GrokSettingsCard
+                defaultValues={{
+                    'grok.violation_deduction_enabled':
+                        settings['grok.violation_deduction_enabled'] ?? true,
+                    'grok.violation_deduction_amount':
+                        settings['grok.violation_deduction_amount'] ?? 0.05,
+                }}
+            />
+        ),
+    },
+    {
+        id: 'channel-affinity',
+        titleKey: 'Channel Affinity',
+        build: (settings: ModelSettings) => (
+            <ChannelAffinitySection
+                defaultValues={{
+                    'channel_affinity_setting.enabled':
+                        settings['channel_affinity_setting.enabled'],
+                    'channel_affinity_setting.switch_on_success':
+                        settings['channel_affinity_setting.switch_on_success'],
+                    'channel_affinity_setting.keep_on_channel_disabled':
+                        settings['channel_affinity_setting.keep_on_channel_disabled'],
+                    'channel_affinity_setting.max_entries':
+                        settings['channel_affinity_setting.max_entries'],
+                    'channel_affinity_setting.default_ttl_seconds':
+                        settings['channel_affinity_setting.default_ttl_seconds'],
+                    'channel_affinity_setting.rules':
+                        settings['channel_affinity_setting.rules'],
+                }}
+            />
+        ),
+    },
+    {
+        id: 'model-deployment',
+        titleKey: 'Model Deployment',
+        build: (settings: ModelSettings) => (
+            <IoNetDeploymentSettingsSection
+                defaultValues={{
+                    enabled: settings['model_deployment.ionet.enabled'],
+                    apiKey: settings['model_deployment.ionet.api_key'],
+                }}
+            />
+        ),
+    },
+    {
+        id: 'personal-byok',
+        titleKey: 'Personal BYOK',
+        build: (settings: ModelSettings) => (
+            <PersonalByokSection
+                defaultValues={{
+                    PersonalByokEnabled: settings.PersonalByokEnabled,
+                    ByokFeeRatio: settings.ByokFeeRatio,
+                }}
+            />
+        ),
+    },
 ] as const
 
 export type ModelSectionId = (typeof MODELS_SECTIONS)[number]['id']
 
 const modelsRegistry = createSectionRegistry<ModelSectionId, ModelSettings>({
-  sections: MODELS_SECTIONS,
-  defaultSection: 'global',
-  basePath: '/system-settings/models',
-  urlStyle: 'path',
+    sections: MODELS_SECTIONS,
+    defaultSection: 'global',
+    basePath: '/system-settings/models',
+    urlStyle: 'path',
 })
 
 export const MODELS_SECTION_IDS = modelsRegistry.sectionIds

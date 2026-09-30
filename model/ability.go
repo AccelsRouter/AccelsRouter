@@ -81,6 +81,10 @@ func getChannelQuery(group string, model string) *gorm.DB {
 // tier-clamping behavior that CacheGetRandomSatisfiedChannel's auto-group
 // cycling depends on — nil is the only "nothing left to try" signal.
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	if !setting.SmartRoutingEnabled {
+		return getChannelLegacy(group, model, retry, requestPath)
+	}
+
 	var abilities []Ability
 	err := getChannelQuery(group, model).Find(&abilities).Error
 	if err != nil {
@@ -115,6 +119,80 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 
 	channel := Channel{}
 	err = DB.First(&channel, "id = ?", ranked[retry]).Error
+	return &channel, err
+}
+
+// getPriorityLegacy and getChannelLegacy are model.GetChannel's exact
+// pre-smart-routing behavior — narrow to a single priority tier, then
+// weighted-random within it — kept only for setting.SmartRoutingEnabled's
+// off switch (see setting/rate_limit.go). Not called while that setting
+// is on.
+func getPriorityLegacy(group string, model string, retry int) (int, error) {
+	var priorities []int
+	err := DB.Model(&Ability{}).
+		Select("DISTINCT(priority)").
+		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Order("priority DESC").
+		Pluck("priority", &priorities).Error
+	if err != nil {
+		return 0, err
+	}
+	if len(priorities) == 0 {
+		return 0, errors.New("数据库一致性被破坏")
+	}
+	var priorityToUse int
+	if retry >= len(priorities) {
+		priorityToUse = priorities[len(priorities)-1]
+	} else {
+		priorityToUse = priorities[retry]
+	}
+	return priorityToUse, nil
+}
+
+func getChannelQueryLegacy(group string, model string, retry int) (*gorm.DB, error) {
+	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
+	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
+	if retry != 0 {
+		priority, err := getPriorityLegacy(group, model, retry)
+		if err != nil {
+			return nil, err
+		}
+		channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
+	}
+	return channelQuery, nil
+}
+
+func getChannelLegacy(group string, model string, retry int, requestPath string) (*Channel, error) {
+	common.SysLog(fmt.Sprintf("[DEBUG] getChannelLegacy: smart routing is OFF, using priority+weight, group=%s model=%s retry=%d", group, model, retry))
+	var abilities []Ability
+	channelQuery, err := getChannelQueryLegacy(group, model, retry)
+	if err != nil {
+		return nil, err
+	}
+	err = channelQuery.Order("weight DESC").Find(&abilities).Error
+	if err != nil {
+		return nil, err
+	}
+	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
+	abilities = filterAbilitiesByTokenBudget(abilities)
+	channel := Channel{}
+	if len(abilities) > 0 {
+		weightSum := uint(0)
+		for _, ability_ := range abilities {
+			weightSum += ability_.Weight + 10
+		}
+		weight := common.GetRandomInt(int(weightSum))
+		for _, ability_ := range abilities {
+			weight -= int(ability_.Weight) + 10
+			if weight <= 0 {
+				channel.Id = ability_.ChannelId
+				break
+			}
+		}
+	} else {
+		return nil, nil
+	}
+	err = DB.First(&channel, "id = ?", channel.Id).Error
 	return &channel, err
 }
 
