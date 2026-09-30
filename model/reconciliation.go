@@ -1,8 +1,17 @@
 // Admin financial reconciliation: multi-dimensional consumption aggregation for
-// a time window, plus the reseller retail discount given (let-give) per customer
-// org. Built on the pre-aggregated quota_data rollup (day-bucketed, keyed by
-// model/channel/group/user) so it stays fast without scanning raw logs; the
-// discount side reuses per-org usage (GetOrgUsage) over the customer orgs only.
+// a time window, plus what the platform actually received. Built on the
+// pre-aggregated quota_data rollup (hour-bucketed, keyed by
+// model/channel/group/user) so it stays fast without scanning raw logs.
+//
+// Money model. quota_data and the consume log always carry the STANDARD price.
+// Reseller traffic (a reseller's customers and the reseller's own keys) is
+// paid to the platform from the reseller wallet at WHOLESALE (org_usage_daily
+// .cost_quota), so for the platform:
+//
+//	standard = wholesale discount + received
+//
+// The retail price a customer pays its reseller (org_usage_daily.charged_quota)
+// is the reseller's business and is shown per reseller for reference only.
 //
 // "Upstream" here means per-channel consumption (which upstream channel routed
 // how much) — the platform does not track a separate upstream USD cost.
@@ -22,15 +31,15 @@ type ReconRow struct {
 	Tokens   int64  `json:"tokens"`
 }
 
-// ReconResellerRow is one reseller's discount reconciliation, aggregated over
-// all of that reseller's customers (the admin view groups by reseller, not by
-// individual customer).
+// ReconResellerRow is one reseller's reconciliation, aggregated over all of
+// that reseller's traffic (its customers plus its own keys).
 type ReconResellerRow struct {
 	OrgId         int    `json:"org_id"`
 	Name          string `json:"name"`
 	StandardQuota int64  `json:"standard_quota"`
-	ChargedQuota  int64  `json:"charged_quota"`
-	DiscountQuota int64  `json:"discount_quota"`
+	DiscountQuota int64  `json:"discount_quota"` // wholesale discount: standard - received
+	ReceivedQuota int64  `json:"received_quota"` // what the platform received (wholesale)
+	ChargedQuota  int64  `json:"charged_quota"`  // what customers paid the reseller (retail), reference
 	Requests      int64  `json:"requests"`
 }
 
@@ -45,8 +54,8 @@ type ReconSeriesPoint struct {
 // ReconSummary is the headline reconciliation for the window.
 type ReconSummary struct {
 	StandardQuota int64 `json:"standard_quota"` // platform standard-price consumption
-	DiscountQuota int64 `json:"discount_quota"` // reseller retail let-give
-	ChargedQuota  int64 `json:"charged_quota"`  // standard - discount (actually charged)
+	DiscountQuota int64 `json:"discount_quota"` // wholesale discount given to resellers
+	ReceivedQuota int64 `json:"received_quota"` // standard - discount: what the platform received
 	Requests      int64 `json:"requests"`
 	Tokens        int64 `json:"tokens"`
 	Channels      int64 `json:"channels"`
@@ -78,7 +87,8 @@ func reconTotals(from, to int64) (quota, requests, tokens, channels int64, err e
 	}
 	var tr totalRow
 	err = DB.Table("quota_data").
-		Select("COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens, COUNT(DISTINCT channel_id) as channels").
+		// Rows written before channel_id existed carry 0; don't count that as a channel.
+		Select("COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens, COUNT(DISTINCT CASE WHEN channel_id > 0 THEN channel_id END) as channels").
 		Where("created_at >= ? and created_at <= ?", from, to).
 		Scan(&tr).Error
 	return tr.Quota, tr.Requests, tr.Tokens, tr.Channels, err
@@ -146,38 +156,40 @@ func reconChannelRows(from, to int64) ([]ReconRow, error) {
 	return rows, nil
 }
 
-// reconSeries returns daily buckets (quota_data.created_at is already a day
-// bucket), re-aggregated to the requested granularity in Go for cross-DB safety.
-func reconSeries(from, to int64, granularity string) ([]ReconSeriesPoint, error) {
-	var daily []ReconSeriesPoint
+// reconSeries returns the consumption series at the requested granularity.
+// quota_data.created_at is an HOUR bucket, so every granularity (day included)
+// is re-aggregated in Go for cross-DB safety, in the caller's time zone `loc`
+// so a "day" is the admin's calendar day, not the server's.
+func reconSeries(from, to int64, granularity string, loc *time.Location) ([]ReconSeriesPoint, error) {
+	var hourly []ReconSeriesPoint
 	if err := DB.Table("quota_data").
 		Select("created_at as period, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
 		Where("created_at >= ? and created_at <= ?", from, to).
 		Group("created_at").
 		Order("created_at asc").
-		Scan(&daily).Error; err != nil {
+		Scan(&hourly).Error; err != nil {
 		return nil, err
 	}
-	if granularity == "day" || granularity == "" {
-		return daily, nil
+	if loc == nil {
+		loc = time.UTC
 	}
 	bucketStart := func(unix int64) int64 {
-		t := time.Unix(unix, 0).UTC()
+		t := time.Unix(unix, 0).In(loc)
 		switch granularity {
 		case "week":
 			// ISO-ish: back up to Monday.
 			offset := (int(t.Weekday()) + 6) % 7
 			d := t.AddDate(0, 0, -offset)
-			return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC).Unix()
+			return time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, loc).Unix()
 		case "month":
-			return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC).Unix()
+			return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, loc).Unix()
 		default:
-			return unix
+			return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc).Unix()
 		}
 	}
 	byBucket := map[int64]*ReconSeriesPoint{}
 	order := make([]int64, 0)
-	for _, p := range daily {
+	for _, p := range hourly {
 		b := bucketStart(p.Period)
 		agg := byBucket[b]
 		if agg == nil {
@@ -196,16 +208,17 @@ func reconSeries(from, to int64, granularity string) ([]ReconSeriesPoint, error)
 	return out, nil
 }
 
-// reconResellerDiscounts computes the reseller retail let-give aggregated per
-// RESELLER over the window (standard vs actually-charged), from the immutable
-// org_usage_daily rollup — so it reflects what customers actually paid at call
-// time and never drifts when a ratio is later changed.
+// reconResellerDiscounts computes, per RESELLER over the window, the wholesale
+// discount the platform gave (standard − what the reseller wallet actually
+// paid) from the immutable org_usage_daily rollup — so it reflects the ratios
+// in force at call time and never drifts when a ratio is later changed. The
+// retail amount customers paid the reseller rides along for reference.
 func reconResellerDiscounts(from, to int64) ([]ReconResellerRow, int64, int64, error) {
 	dailyRows, err := fetchOrgUsageDaily("reseller_org_id > 0", nil, from, to)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	type agg struct{ std, charged, req int64 }
+	type agg struct{ std, charged, cost, req int64 }
 	byReseller := map[int]*agg{}
 	for _, r := range dailyRows {
 		a := byReseller[r.ResellerOrgId]
@@ -215,12 +228,13 @@ func reconResellerDiscounts(from, to int64) ([]ReconResellerRow, int64, int64, e
 		}
 		a.std += r.StandardQuota
 		a.charged += r.ChargedQuota
+		a.cost += r.CostQuota
 		a.req += r.Requests
 	}
 	rows := make([]ReconResellerRow, 0, len(byReseller))
 	var totalDiscount, totalStandard int64
 	for resellerId, a := range byReseller {
-		discount := a.std - a.charged
+		discount := a.std - a.cost
 		totalDiscount += discount
 		totalStandard += a.std
 		if a.req == 0 && a.std == 0 {
@@ -234,8 +248,9 @@ func reconResellerDiscounts(from, to int64) ([]ReconResellerRow, int64, int64, e
 			OrgId:         resellerId,
 			Name:          name,
 			StandardQuota: a.std,
-			ChargedQuota:  a.charged,
 			DiscountQuota: discount,
+			ReceivedQuota: a.cost,
+			ChargedQuota:  a.charged,
 			Requests:      a.req,
 		})
 	}
@@ -249,8 +264,9 @@ func reconResellerDiscounts(from, to int64) ([]ReconResellerRow, int64, int64, e
 	return rows, totalDiscount, totalStandard, nil
 }
 
-// GetReconciliation builds the full admin reconciliation report.
-func GetReconciliation(from, to int64, granularity string) (*ReconReport, error) {
+// GetReconciliation builds the full admin reconciliation report. `loc` is the
+// admin's time zone for the series buckets.
+func GetReconciliation(from, to int64, granularity string, loc *time.Location) (*ReconReport, error) {
 	report := &ReconReport{From: from, To: to}
 
 	byModel, err := reconByColumn(from, to, "model_name")
@@ -277,7 +293,7 @@ func GetReconciliation(from, to int64, granularity string) (*ReconReport, error)
 	}
 	report.ByChannel = byChannel
 
-	series, err := reconSeries(from, to, granularity)
+	series, err := reconSeries(from, to, granularity, loc)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +312,7 @@ func GetReconciliation(from, to int64, granularity string) (*ReconReport, error)
 	report.Summary = ReconSummary{
 		StandardQuota: standard,
 		DiscountQuota: totalDiscount,
-		ChargedQuota:  standard - totalDiscount,
+		ReceivedQuota: standard - totalDiscount,
 		Requests:      requests,
 		Tokens:        tokens,
 		Channels:      channels,

@@ -29,8 +29,9 @@ export type ReconResellerRow = {
   org_id: number
   name: string
   standard_quota: number
-  charged_quota: number
-  discount_quota: number
+  discount_quota: number // wholesale discount: standard - received
+  received_quota: number // what the platform received (wholesale)
+  charged_quota: number // what customers paid the reseller (retail), reference
   requests: number
 }
 
@@ -43,8 +44,8 @@ export type ReconSeriesPoint = {
 
 export type ReconSummary = {
   standard_quota: number
-  discount_quota: number
-  charged_quota: number
+  discount_quota: number // wholesale discount given to resellers
+  received_quota: number // standard - discount: what the platform received
   requests: number
   tokens: number
   channels: number
@@ -71,6 +72,8 @@ function rangeQuery(from?: number, to?: number, granularity?: Granularity) {
   if (from != null) qs.set('from', String(from))
   if (to != null) qs.set('to', String(to))
   if (granularity) qs.set('granularity', granularity)
+  // Minutes east of UTC, so day/week/month buckets follow the admin's calendar.
+  qs.set('tz_offset', String(-new Date().getTimezoneOffset()))
   const s = qs.toString()
   return s ? `?${s}` : ''
 }
