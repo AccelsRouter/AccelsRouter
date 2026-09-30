@@ -204,6 +204,7 @@
     "Ledger": "Ledger",
     "No ledger entries.": "No ledger entries.",
     "Suspended": "Suspended",
+    "Copied {{model}}": "Copied {{model}}",
     "Available models": "Available models",
     "Copy list": "Copy list",
     "No models are available to this organization yet.": "No models are available to this organization yet.",

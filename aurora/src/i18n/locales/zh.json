@@ -213,6 +213,7 @@
     "Ledger": "账目",
     "No ledger entries.": "暂无账目记录。",
     "Suspended": "已暂停",
+    "Copied {{model}}": "已复制 {{model}}",
     "Available models": "可用模型",
     "Copy list": "复制列表",
     "No models are available to this organization yet.": "该组织目前没有可用的模型。",
