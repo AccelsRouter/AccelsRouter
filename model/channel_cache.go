@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/common/limiter"
+	"github.com/QuantumNous/new-api/common/smartroute"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -114,6 +114,14 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
+// GetRandomSatisfiedChannel picks a channel for (group, model) from every
+// currently enabled, non-over-budget candidate — smart routing (see
+// common/smartroute) ranks them by recent success rate and latency, and
+// retry walks that ranked list (0 = best) instead of indexing into
+// priority tiers as before. Out-of-range retry clamps to the last
+// (worst-ranked) candidate rather than erroring, matching the previous
+// tier-clamping behavior that CacheGetRandomSatisfiedChannel's auto-group
+// cycling depends on — nil is the only "nothing left to try" signal.
 func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
@@ -133,12 +141,11 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	}
 
 	// Drop channels that have already exhausted their configured daily
-	// token budget (resets at 00:00 UTC). Filtering here (before
-	// priority/weight grouping) means an over-budget channel is
-	// transparently skipped in favor of the next channel/priority tier, and
-	// if every channel in this group is over budget, the caller naturally
-	// falls through to the next group for "auto" combinations, or reports
-	// no channel available.
+	// token budget (resets at 00:00 UTC). Filtering here means an
+	// over-budget channel is transparently skipped in favor of the next
+	// ranked candidate, and if every channel in this group is over
+	// budget, the caller naturally falls through to the next group for
+	// "auto" combinations, or reports no channel available.
 	channels = filterChannelsByTokenBudget(channels)
 
 	if len(channels) == 0 {
@@ -152,72 +159,38 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
 	}
 
-	uniquePriorities := make(map[int]bool)
+	seen := make(map[int]struct{}, len(channels))
+	candidates := make([]smartroute.Candidate, 0, len(channels))
 	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
-			uniquePriorities[int(channel.GetPriority())] = true
-		} else {
+		if _, ok := seen[channelId]; ok {
+			continue
+		}
+		if _, ok := channelsIDM[channelId]; !ok {
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
-	}
-	var sortedUniquePriorities []int
-	for priority := range uniquePriorities {
-		sortedUniquePriorities = append(sortedUniquePriorities, priority)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
-
-	if retry >= len(uniquePriorities) {
-		retry = len(uniquePriorities) - 1
-	}
-	targetPriority := int64(sortedUniquePriorities[retry])
-
-	// get the priority for the given retry number
-	var sumWeight = 0
-	var targetChannels []*Channel
-	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
-			if channel.GetPriority() == targetPriority {
-				sumWeight += channel.GetWeight()
-				targetChannels = append(targetChannels, channel)
-			}
-		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
-		}
+		seen[channelId] = struct{}{}
+		// Price is deliberately 0 for every candidate here: group pricing
+		// doesn't vary by which channel within the group serves the
+		// request, so there's no real price signal to rank on — see
+		// smartroute.Candidate.Price.
+		candidates = append(candidates, smartroute.Candidate{ChannelId: channelId})
 	}
 
-	if len(targetChannels) == 0 {
-		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
+	ranked := smartroute.RankChannels(candidates, model, smartroute.DefaultWeights)
+	if len(ranked) == 0 {
+		return nil, errors.New("channel not found")
 	}
-
-	// smoothing factor and adjustment
-	smoothingFactor := 1
-	smoothingAdjustment := 0
-
-	if sumWeight == 0 {
-		// when all channels have weight 0, set sumWeight to the number of channels and set smoothing adjustment to 100
-		// each channel's effective weight = 100
-		sumWeight = len(targetChannels) * 100
-		smoothingAdjustment = 100
-	} else if sumWeight/len(targetChannels) < 10 {
-		// when the average weight is less than 10, set smoothing factor to 100
-		smoothingFactor = 100
+	if retry < 0 {
+		retry = 0
 	}
-
-	// Calculate the total weight of all channels up to endIdx
-	totalWeight := sumWeight * smoothingFactor
-
-	// Generate a random value in the range [0, totalWeight)
-	randomWeight := rand.Intn(totalWeight)
-
-	// Find a channel based on its weight
-	for _, channel := range targetChannels {
-		randomWeight -= channel.GetWeight()*smoothingFactor + smoothingAdjustment
-		if randomWeight < 0 {
-			return channel, nil
-		}
+	if retry >= len(ranked) {
+		retry = len(ranked) - 1
 	}
-	// return null if no channel is not found
-	return nil, errors.New("channel not found")
+	channel, ok := channelsIDM[ranked[retry]]
+	if !ok {
+		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", ranked[retry])
+	}
+	return channel, nil
 }
 
 // filterChannelsByRequestPathAndModel restricts candidates by request path and

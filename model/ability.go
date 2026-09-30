@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/common/limiter"
+	"github.com/QuantumNous/new-api/common/smartroute"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting"
@@ -64,99 +65,56 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
-func getPriority(group string, model string, retry int) (int, error) {
-
-	var priorities []int
-	err := DB.Model(&Ability{}).
-		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-		Order("priority DESC").              // 按优先级降序排序
-		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
-
-	if err != nil {
-		// 处理错误
-		return 0, err
-	}
-
-	if len(priorities) == 0 {
-		// 如果没有查询到优先级，则返回错误
-		return 0, errors.New("数据库一致性被破坏")
-	}
-
-	// 确定要使用的优先级
-	var priorityToUse int
-	if retry >= len(priorities) {
-		// 如果重试次数大于优先级数，则使用最小的优先级
-		priorityToUse = priorities[len(priorities)-1]
-	} else {
-		priorityToUse = priorities[retry]
-	}
-	return priorityToUse, nil
+// getChannelQuery is every enabled ability for (group, model) — GetChannel
+// no longer narrows this to a single priority tier the way it used to;
+// smart routing (see common/smartroute) ranks the full set instead.
+func getChannelQuery(group string, model string) *gorm.DB {
+	return DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
 }
 
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
-	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
-	if retry != 0 {
-		priority, err := getPriority(group, model, retry)
-		if err != nil {
-			return nil, err
-		} else {
-			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
-		}
-	}
-
-	return channelQuery, nil
-}
-
+// GetChannel picks a channel for (group, model) from every currently
+// enabled, non-over-budget candidate — smart routing (see
+// common/smartroute) ranks them by recent success rate and latency, and
+// retry walks that ranked list (0 = best) instead of indexing into
+// priority tiers as before. Out-of-range retry clamps to the last
+// (worst-ranked) candidate rather than erroring, matching the previous
+// tier-clamping behavior that CacheGetRandomSatisfiedChannel's auto-group
+// cycling depends on — nil is the only "nothing left to try" signal.
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
-	common.SysLog(fmt.Sprintf("[DEBUG] GetChannel (DB path) called: group=%s model=%s retry=%d", group, model, retry))
 	var abilities []Ability
-
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
+	err := getChannelQuery(group, model).Find(&abilities).Error
 	if err != nil {
 		return nil, err
 	}
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	}
-	if err != nil {
-		return nil, err
-	}
-	common.SysLog(fmt.Sprintf("[DEBUG] GetChannel: %d abilities from priority/weight query, channel_ids=%v", len(abilities), func() []int {
-		ids := make([]int, len(abilities))
-		for i, a := range abilities {
-			ids[i] = a.ChannelId
-		}
-		return ids
-	}()))
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
 	abilities = filterAbilitiesByTokenBudget(abilities)
-	common.SysLog(fmt.Sprintf("[DEBUG] GetChannel: %d abilities remain after path/model + token-budget filtering", len(abilities)))
-	channel := Channel{}
-	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
-		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
-		}
-		// Randomly choose one
-		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
-			if weight <= 0 {
-				channel.Id = ability_.ChannelId
-				break
-			}
-		}
-	} else {
+	if len(abilities) == 0 {
 		return nil, nil
 	}
-	err = DB.First(&channel, "id = ?", channel.Id).Error
+
+	candidates := make([]smartroute.Candidate, 0, len(abilities))
+	seen := make(map[int]struct{}, len(abilities))
+	for _, a := range abilities {
+		if _, ok := seen[a.ChannelId]; ok {
+			continue
+		}
+		seen[a.ChannelId] = struct{}{}
+		// Price is deliberately 0 for every candidate here: group pricing
+		// doesn't vary by which channel within the group serves the
+		// request, so there's no real price signal to rank on — see
+		// smartroute.Candidate.Price.
+		candidates = append(candidates, smartroute.Candidate{ChannelId: a.ChannelId})
+	}
+	ranked := smartroute.RankChannels(candidates, model, smartroute.DefaultWeights)
+	if retry < 0 {
+		retry = 0
+	}
+	if retry >= len(ranked) {
+		retry = len(ranked) - 1
+	}
+
+	channel := Channel{}
+	err = DB.First(&channel, "id = ?", ranked[retry]).Error
 	return &channel, err
 }
 

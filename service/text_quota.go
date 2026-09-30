@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/smartroute"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
@@ -453,6 +454,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 	if billingUsage != nil {
 		RecordTokenRateLimitUsage(relayInfo, billingUsage.TotalTokens)
+	}
+	// Smart routing's success/latency signal (see common/smartroute) — a
+	// request that never got any response back has no meaningful latency
+	// to record and, per the retry loop, would have surfaced as an error
+	// long before reaching this settlement path anyway; HasSendResponse
+	// guards against a zero/garbage FirstResponseTime in that edge case.
+	if relayInfo.HasSendResponse() {
+		latencyMs := relayInfo.FirstResponseTime.Sub(relayInfo.StartTime).Milliseconds()
+		smartroute.RecordOutcome(relayInfo.ChannelId, relayInfo.OriginModelName, latencyMs, true)
 	}
 
 	logModel := summary.ModelName

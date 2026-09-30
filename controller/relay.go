@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/smartroute"
 	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
@@ -301,6 +302,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
+
+		// Smart routing's failure signal (see common/smartroute) — this
+		// channel was actually dispatched to and failed, as opposed to a
+		// channelErr above (no candidate could even be selected), which
+		// was never this specific channel's fault.
+		smartroute.RecordOutcome(channel.Id, relayInfo.OriginModelName, time.Since(relayInfo.StartTime).Milliseconds(), false)
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 

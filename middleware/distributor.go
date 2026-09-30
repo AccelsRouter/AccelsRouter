@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/smartroute"
 	"github.com/QuantumNous/new-api/constant"
 	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
@@ -272,7 +273,12 @@ func Distribute() func(c *gin.Context) {
 							preferred, err := model.CacheGetChannel(preferredChannelID)
 							if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
 								channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) &&
-								!model.IsChannelOverDailyTokenBudget(preferred) {
+								!model.IsChannelOverDailyTokenBudget(preferred) &&
+								// Smart routing's circuit breaker (see common/smartroute):
+								// only a hard run of consecutive failures on this sticky
+								// channel gives up the affinity, not merely another
+								// candidate scoring higher right now.
+								!smartroute.IsCircuitOpen(preferred.Id, modelRequest.Model) {
 								if usingGroup == "auto" {
 									userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 									autoGroups := service.GetRequestAutoGroups(c, userGroup)
@@ -299,6 +305,10 @@ func Distribute() func(c *gin.Context) {
 									service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
 								}
 							}
+							common.SysLog(fmt.Sprintf(
+								"[DEBUG] Distribute: channel affinity for model=%q preferredChannelId=%d usable=%v",
+								modelRequest.Model, preferredChannelID, affinityUsable,
+							))
 							if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
 								service.ClearCurrentChannelAffinityCache(c)
 							}
