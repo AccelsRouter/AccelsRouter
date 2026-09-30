@@ -25,6 +25,7 @@ prices against the platform's. Admin-only.
 import { useMemo, useState } from 'react'
 import {
   keepPreviousData,
+  useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
@@ -45,7 +46,14 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionPageLayout } from '@/components/layout'
 import { StatCard } from '@/features/dashboard/components/ui/stat-card'
-import { getUpstreamHealth, getUpstreamPrices, probeAllUpstreams } from './api'
+import {
+  getUpstreamHealth,
+  getUpstreamPrices,
+  probeAllUpstreams,
+  setProbeConfig,
+  type UpstreamHealthResponse,
+  type UpstreamProbeConfig,
+} from './api'
 import { AvailabilityTab } from './availability-tab'
 import { PRICE_STATUS_META, PricesTab } from './prices-tab'
 import { fmtAgo } from './shared'
@@ -77,6 +85,18 @@ export function UpstreamMonitor() {
   const [refreshingPrices, setRefreshingPrices] = useState(false)
   const [sweeping, setSweeping] = useState(false)
   const probe = health.data?.probe
+  // Pause/interval overrides. The saved config is written straight into the
+  // cached health response so the badges flip without waiting for a refetch.
+  const saveConfig = useMutation({
+    mutationFn: (next: UpstreamProbeConfig) => setProbeConfig(next),
+    onSuccess: (saved) => {
+      queryClient.setQueryData<UpstreamHealthResponse>(healthKey, (old) =>
+        old ? { ...old, probe: { ...old.probe, config: saved } } : old
+      )
+      toast.success(t('Probe settings saved'))
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
   const startSweep = async () => {
     setSweeping(true)
     try {
@@ -156,6 +176,11 @@ export function UpstreamMonitor() {
     }
   }, [health.data, prices.data, hours])
 
+  const pausedChannels = Object.values(probe?.config?.channels ?? {}).filter(
+    (c) => c.paused
+  ).length
+  const pausedModels = probe?.config?.paused_models?.length ?? 0
+
   const availabilityText =
     summary.availability < 0
       ? '-'
@@ -228,6 +253,11 @@ export function UpstreamMonitor() {
                   probed: probe.last.probed,
                   failed: probe.last.failed,
                 })}{' '}
+              {(pausedChannels > 0 || pausedModels > 0) &&
+                t('Paused: {{c}} channels, {{m}} models.', {
+                  c: pausedChannels,
+                  m: pausedModels,
+                }) + ' '}
               <Link
                 to='/system-settings/models/$section'
                 params={{ section: 'routing-reliability' }}
@@ -296,7 +326,12 @@ export function UpstreamMonitor() {
                   <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
                 </div>
               ) : health.data ? (
-                <AvailabilityTab data={health.data} queryKey={healthKey} />
+                <AvailabilityTab
+                  data={health.data}
+                  queryKey={healthKey}
+                  onSaveConfig={(next) => saveConfig.mutateAsync(next)}
+                  saving={saveConfig.isPending}
+                />
               ) : (
                 <p className='text-destructive text-sm'>
                   {health.error instanceof Error

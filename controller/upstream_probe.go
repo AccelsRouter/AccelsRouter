@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -26,6 +27,9 @@ type upstreamProbeSummary struct {
 	Probed     int   `json:"probed"`
 	Failed     int   `json:"failed"`
 	Skipped    int   `json:"skipped"` // unsupported channel types
+	// Paused by the admin (setting.UpstreamProbeConfig), not probed.
+	PausedChannels int `json:"paused_channels"`
+	PausedModels   int `json:"paused_models"`
 }
 
 var (
@@ -33,6 +37,9 @@ var (
 	upstreamProbeRunning bool
 	upstreamProbeLast    upstreamProbeSummary
 	upstreamProbeOnce    sync.Once
+	// When each channel was last swept, so a channel with its own interval is
+	// probed on its own clock (see StartUpstreamProbeScheduler).
+	upstreamProbeLastByChannel = map[int]int64{}
 )
 
 // upstreamProbeStatus is what the monitor page shows about the scheduler.
@@ -40,18 +47,26 @@ func upstreamProbeStatus() gin.H {
 	cfg := operation_setting.GetMonitorSetting()
 	upstreamProbeMu.Lock()
 	defer upstreamProbeMu.Unlock()
+	lastByChannel := make(map[int]int64, len(upstreamProbeLastByChannel))
+	for k, v := range upstreamProbeLastByChannel {
+		lastByChannel[k] = v
+	}
 	return gin.H{
-		"enabled":    cfg.UpstreamProbeEnabled,
-		"minutes":    cfg.UpstreamProbeMinutes,
-		"all_models": cfg.UpstreamProbeAllModels,
-		"running":    upstreamProbeRunning,
-		"last":       upstreamProbeLast,
+		"enabled":         cfg.UpstreamProbeEnabled,
+		"minutes":         cfg.UpstreamProbeMinutes,
+		"all_models":      cfg.UpstreamProbeAllModels,
+		"running":         upstreamProbeRunning,
+		"last":            upstreamProbeLast,
+		"config":          setting.GetUpstreamProbeConfig(),
+		"last_by_channel": lastByChannel,
 	}
 }
 
-// runUpstreamProbeSweep probes every enabled channel's models once. Returns
-// false when a sweep is already running.
-func runUpstreamProbeSweep(ctx context.Context) bool {
+// runUpstreamProbeSweep probes every enabled channel's models once — or, when
+// `only` is given, just those channels (the scheduler's due set). Channels and
+// models the admin paused (setting.UpstreamProbeConfig) are skipped and
+// counted. Returns false when a sweep is already running.
+func runUpstreamProbeSweep(ctx context.Context, only map[int]bool) bool {
 	upstreamProbeMu.Lock()
 	if upstreamProbeRunning {
 		upstreamProbeMu.Unlock()
@@ -88,17 +103,31 @@ func runUpstreamProbeSweep(ctx context.Context) bool {
 		model   string
 	}
 	var jobs []job
+	probedChannels := make([]int, 0, len(channels))
 	for _, ch := range channels {
 		if ch.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		if only != nil && !only[ch.Id] {
 			continue
 		}
 		if lo.Contains(unsupportedTestChannelTypes, ch.Type) {
 			summary.Skipped++
 			continue
 		}
+		if paused, _ := setting.UpstreamProbeChannel(ch.Id); paused {
+			summary.PausedChannels++
+			continue
+		}
 		summary.Channels++
+		probedChannels = append(probedChannels, ch.Id)
 		if !cfg.UpstreamProbeAllModels {
-			jobs = append(jobs, job{ch, resolveChannelTestModel(ch, "")})
+			m := resolveChannelTestModel(ch, "")
+			if setting.UpstreamProbeModelPaused(m) {
+				summary.PausedModels++
+				continue
+			}
+			jobs = append(jobs, job{ch, m})
 			continue
 		}
 		seen := map[string]bool{}
@@ -108,9 +137,19 @@ func runUpstreamProbeSweep(ctx context.Context) bool {
 				continue
 			}
 			seen[m] = true
+			if setting.UpstreamProbeModelPaused(m) {
+				summary.PausedModels++
+				continue
+			}
 			jobs = append(jobs, job{ch, m})
 		}
 	}
+	now := common.GetTimestamp()
+	upstreamProbeMu.Lock()
+	for _, id := range probedChannels {
+		upstreamProbeLastByChannel[id] = now
+	}
+	upstreamProbeMu.Unlock()
 	concurrency := cfg.ChannelTestConcurrency
 	if concurrency < 2 {
 		concurrency = 2
@@ -162,18 +201,46 @@ func StartUpstreamProbeScheduler() {
 				if !cfg.UpstreamProbeEnabled {
 					continue
 				}
-				interval := time.Duration(cfg.UpstreamProbeMinutes * float64(time.Minute))
-				if interval < 5*time.Minute {
-					interval = 5 * time.Minute
+				globalMinutes := cfg.UpstreamProbeMinutes
+				if globalMinutes < setting.UpstreamProbeMinMinutes {
+					globalMinutes = setting.UpstreamProbeMinMinutes
 				}
 				upstreamProbeMu.Lock()
-				last := upstreamProbeLast.StartedAt
 				running := upstreamProbeRunning
 				upstreamProbeMu.Unlock()
-				if running || time.Since(time.Unix(last, 0)) < interval {
+				if running {
 					continue
 				}
-				runUpstreamProbeSweep(context.Background())
+				// A channel is due on its own interval when it has one, else on the
+				// global one; paused channels are never due.
+				channels, err := model.GetAllChannels(0, 0, true, false)
+				if err != nil {
+					common.SysError("upstream probe scheduler: " + err.Error())
+					continue
+				}
+				due := map[int]bool{}
+				nowTs := common.GetTimestamp()
+				upstreamProbeMu.Lock()
+				for _, ch := range channels {
+					if ch.Status != common.ChannelStatusEnabled {
+						continue
+					}
+					paused, minutes := setting.UpstreamProbeChannel(ch.Id)
+					if paused {
+						continue
+					}
+					if minutes <= 0 {
+						minutes = globalMinutes
+					}
+					if float64(nowTs-upstreamProbeLastByChannel[ch.Id]) >= minutes*60 {
+						due[ch.Id] = true
+					}
+				}
+				upstreamProbeMu.Unlock()
+				if len(due) == 0 {
+					continue
+				}
+				runUpstreamProbeSweep(context.Background(), due)
 			}
 		}()
 	})
@@ -189,6 +256,33 @@ func AdminUpstreamProbeAll(c *gin.Context) {
 		common.ApiErrorMsg(c, "a probe sweep is already running")
 		return
 	}
-	go runUpstreamProbeSweep(context.Background())
+	go runUpstreamProbeSweep(context.Background(), nil)
 	common.ApiSuccess(c, gin.H{"started": true})
+}
+
+// AdminGetUpstreamProbeConfig — GET /api/admin/upstream/probe-config
+func AdminGetUpstreamProbeConfig(c *gin.Context) {
+	common.ApiSuccess(c, setting.GetUpstreamProbeConfig())
+}
+
+// AdminSetUpstreamProbeConfig — PUT /api/admin/upstream/probe-config
+// Body: {"channels": {"<id>": {"paused": bool, "minutes": n}}, "paused_models": [...]}.
+// Persisted as the UpstreamProbeConfig option (validated and applied through
+// the option map, so every node picks it up).
+func AdminSetUpstreamProbeConfig(c *gin.Context) {
+	var body setting.UpstreamProbeConfig
+	if err := c.ShouldBindJSON(&body); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	raw, err := common.Marshal(body)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.UpdateOption("UpstreamProbeConfig", string(raw)); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	common.ApiSuccess(c, setting.GetUpstreamProbeConfig())
 }
