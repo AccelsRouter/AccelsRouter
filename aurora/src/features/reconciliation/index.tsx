@@ -17,10 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /*
-Admin financial reconciliation. Standard-price consumption, reseller retail
-discount (let-give) and actual charged, broken down by model / channel
-(upstream) / group / user / reseller customer, over a date range and a
-day/week/month time series, with CSV export.
+Admin financial reconciliation. Standard-price consumption, the wholesale
+discount given to resellers and what the platform actually received
+(standard = discount + received), broken down by model / channel (upstream) /
+group / user / reseller, over a date range and a day/week/month time series,
+with CSV export.
 */
 import { useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
@@ -202,14 +203,14 @@ export function Reconciliation() {
                   hint={t('Platform standard price')}
                 />
                 <StatCard
-                  label={t('Reseller discount')}
+                  label={t('Wholesale discount')}
                   value={q(data.summary.discount_quota)}
-                  hint={t('Let-give to customers')}
+                  hint={t('Given to resellers')}
                 />
                 <StatCard
-                  label={t('Charged')}
-                  value={q(data.summary.charged_quota)}
-                  hint={t('Standard minus discount')}
+                  label={t('Platform received')}
+                  value={q(data.summary.received_quota)}
+                  hint={t('Standard minus wholesale discount')}
                 />
                 <StatCard
                   label={t('Requests')}
@@ -328,10 +329,18 @@ export function Reconciliation() {
                               {t('Standard')}
                             </th>
                             <th className='px-3 py-2 text-right font-medium'>
-                              {t('Discount')}
+                              {t('Wholesale discount')}
                             </th>
                             <th className='px-3 py-2 text-right font-medium'>
-                              {t('Charged')}
+                              {t('Platform received')}
+                            </th>
+                            <th
+                              className='px-3 py-2 text-right font-medium'
+                              title={t(
+                                'Retail amount the customers paid this reseller; reference only'
+                              )}
+                            >
+                              {t('Customers paid')}
                             </th>
                             <th className='px-3 py-2 text-right font-medium'>
                               {t('Requests')}
@@ -351,6 +360,9 @@ export function Reconciliation() {
                                 {q(r.discount_quota)}
                               </td>
                               <td className='px-3 py-2 text-right font-medium tabular-nums'>
+                                {q(r.received_quota)}
+                              </td>
+                              <td className='text-muted-foreground px-3 py-2 text-right tabular-nums'>
                                 {q(r.charged_quota)}
                               </td>
                               <td className='px-3 py-2 text-right tabular-nums'>
