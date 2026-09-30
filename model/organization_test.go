@@ -145,6 +145,15 @@ func TestTransferOrgCredit(t *testing.T) {
 	customer := mustCreateOrg(t, "customer", OrgTypeEnterprise, 0)
 
 	require.NoError(t, TransferOrgCredit(reseller.Id, customer.Id, 60, 1, LedgerTypeAllocate, ""))
+	// The ledger row carries both counterpart names for the consoles.
+	rows, total, lErr := ListOrgLedger(reseller.Id, 0, 10)
+	require.NoError(t, lErr)
+	require.GreaterOrEqual(t, total, int64(1))
+	// Newest first: the allocation just made (the initial wallet credit from
+	// mustCreateOrg is the older purchase row).
+	assert.Equal(t, LedgerTypeAllocate, rows[0].Type)
+	assert.Equal(t, "reseller", rows[0].FromOrgName)
+	assert.Equal(t, "customer", rows[0].ToOrgName)
 	r, _ := GetOrganizationById(reseller.Id)
 	c, _ := GetOrganizationById(customer.Id)
 	assert.Equal(t, 40, r.WalletQuota)

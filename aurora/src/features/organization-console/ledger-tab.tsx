@@ -24,10 +24,9 @@ import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-
-import { Button } from '@/components/ui/button'
 import { formatQuotaWithCurrency } from '@/lib/currency'
-
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { listOrgLedger } from './api'
 import { Td, Th, fmtTime } from './shared'
 import type { OrgLedgerEntry, PagedResponse } from './types'
@@ -44,11 +43,58 @@ type LedgerFetcher = (params: {
 export function LedgerTab({
   fetchLedger = listOrgLedger,
   queryKey = 'org-ledger',
+  selfOrgId,
 }: {
   fetchLedger?: LedgerFetcher
   queryKey?: string
+  // The viewing org: rows are described from its point of view (allocated
+  // to X / allocation from X) and signed (+ received, − given).
+  selfOrgId?: number
 } = {}) {
   const { t } = useTranslation()
+
+  const typeLabel = (type: string) =>
+    type === 'purchase'
+      ? t('Purchase')
+      : type === 'allocate'
+        ? t('Allocate')
+        : type === 'revoke'
+          ? t('Revoke')
+          : type || '-'
+  const orgLabel = (id: number, name?: string) =>
+    name || (id > 0 ? `#${id}` : t('Platform'))
+  // Human sentence for a row, from the viewer's side when known.
+  const describe = (e: OrgLedgerEntry): string => {
+    const from = orgLabel(e.from_org_id, e.from_org_name)
+    const to = orgLabel(e.to_org_id, e.to_org_name)
+    if (e.type === 'purchase') {
+      return e.from_org_id === 0
+        ? t('Credit purchased into {{name}}', { name: to })
+        : t('Transfer from {{from}} to {{to}}', { from, to })
+    }
+    if (e.type === 'allocate') {
+      if (selfOrgId && e.from_org_id === selfOrgId)
+        return t('Allocated to {{name}}', { name: to })
+      if (selfOrgId && e.to_org_id === selfOrgId)
+        return t('Allocation from {{name}}', { name: from })
+      return t('{{from}} allocated to {{to}}', { from, to })
+    }
+    if (e.type === 'revoke') {
+      if (selfOrgId && e.to_org_id === selfOrgId)
+        return t('Reclaimed from {{name}}', { name: from })
+      if (selfOrgId && e.from_org_id === selfOrgId)
+        return t('Reclaimed by {{name}}', { name: to })
+      return t('{{to}} reclaimed from {{from}}', { from, to })
+    }
+    return `${from} → ${to}`
+  }
+  // Sign from the viewer's side: quota arriving at the viewer is +, leaving −.
+  const signed = (e: OrgLedgerEntry): 'in' | 'out' | 'none' => {
+    if (!selfOrgId) return 'none'
+    if (e.to_org_id === selfOrgId) return 'in'
+    if (e.from_org_id === selfOrgId) return 'out'
+    return 'none'
+  }
   const [page, setPage] = useState(1)
 
   const { data, isLoading, isFetching } = useQuery({
@@ -84,6 +130,7 @@ export function LedgerTab({
           <thead className='bg-muted/40 text-muted-foreground text-xs'>
             <tr>
               <Th>{t('Type')}</Th>
+              <Th>{t('Details')}</Th>
               <Th className='text-right'>{t('Quota')}</Th>
               <Th>{t('Trade No.')}</Th>
               <Th>{t('Remark')}</Th>
@@ -93,8 +140,30 @@ export function LedgerTab({
           <tbody className='divide-border/60 divide-y'>
             {items.map((e) => (
               <tr key={e.id} className='hover:bg-muted/30'>
-                <Td>{e.type || '-'}</Td>
-                <Td className='text-right tabular-nums'>
+                <Td>
+                  <Badge
+                    variant={
+                      e.type === 'revoke'
+                        ? 'destructive'
+                        : e.type === 'purchase'
+                          ? 'default'
+                          : 'secondary'
+                    }
+                  >
+                    {typeLabel(e.type)}
+                  </Badge>
+                </Td>
+                <Td className='text-muted-foreground'>{describe(e)}</Td>
+                <Td
+                  className={`text-right tabular-nums ${
+                    signed(e) === 'in'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : signed(e) === 'out'
+                        ? 'text-destructive'
+                        : ''
+                  }`}
+                >
+                  {signed(e) === 'in' ? '+' : signed(e) === 'out' ? '−' : ''}
                   {formatQuotaWithCurrency(e.quota)}
                 </Td>
                 <Td>
@@ -103,7 +172,7 @@ export function LedgerTab({
                   </span>
                 </Td>
                 <Td className='text-muted-foreground'>{e.remark || '-'}</Td>
-                <Td className='text-muted-foreground whitespace-nowrap text-xs'>
+                <Td className='text-muted-foreground text-xs whitespace-nowrap'>
                   {fmtTime(e.created_time)}
                 </Td>
               </tr>

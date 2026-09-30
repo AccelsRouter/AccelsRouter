@@ -219,7 +219,7 @@ export function OrganizationConsole() {
                 <SsoTab />
               </TabsContent>
               <TabsContent value='ledger' className='pt-4'>
-                <LedgerTab />
+                <LedgerTab selfOrgId={self.id} />
               </TabsContent>
               <TabsContent value='audit' className='pt-4'>
                 <AuditTab />

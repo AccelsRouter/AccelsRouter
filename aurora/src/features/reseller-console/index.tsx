@@ -173,6 +173,7 @@ export function ResellerConsole() {
                 <LedgerTab
                   fetchLedger={listResellerLedger}
                   queryKey='reseller-ledger'
+                  selfOrgId={self.id}
                 />
               </TabsContent>
               <TabsContent value='audit' className='pt-4'>
