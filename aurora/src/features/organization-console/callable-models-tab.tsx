@@ -98,24 +98,21 @@ export function CallableModelsTab({
       ) : (
         <ul className='border-border/60 divide-border/60 grid divide-y rounded-md border sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-3'>
           {shown.map((m) => (
-            <li
-              key={m}
-              className='border-border/60 group flex items-center justify-between gap-2 px-3 py-1.5 font-mono text-xs sm:border-b'
-            >
-              <span className='truncate'>{m}</span>
-              <Button
-                size='icon'
-                variant='ghost'
-                className='h-6 w-6 shrink-0 opacity-60 group-hover:opacity-100'
-                title={t('Copy')}
-                aria-label={t('Copy')}
+            <li key={m} className='border-border/60 sm:border-b'>
+              {/* The whole row copies the name; the icon sits right beside
+                  the text so it can't be read as belonging to the next column. */}
+              <button
+                type='button'
+                title={t('Click to copy')}
+                className='hover:bg-muted/40 flex w-full items-center gap-1.5 px-3 py-1.5 text-left font-mono text-xs'
                 onClick={() => {
                   void navigator.clipboard?.writeText(m)
-                  toast.success(t('Copied'))
+                  toast.success(t('Copied {{model}}', { model: m }))
                 }}
               >
-                <Copy className='h-3 w-3' />
-              </Button>
+                <span className='truncate'>{m}</span>
+                <Copy className='text-muted-foreground h-3 w-3 shrink-0 opacity-60' />
+              </button>
             </li>
           ))}
         </ul>
