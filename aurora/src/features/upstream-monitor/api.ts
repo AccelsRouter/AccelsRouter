@@ -57,6 +57,15 @@ export type UpstreamChannelHealth = {
   buckets: UpstreamBucket[]
 }
 
+// Admin overrides for the automatic sweep (the UpstreamProbeConfig option):
+// pause a channel, give it its own interval (0 = global, else 5..1440 min),
+// and pause models by name on every channel. Manual probes ignore all of it.
+export type UpstreamProbeChannelConfig = { paused?: boolean; minutes?: number }
+export type UpstreamProbeConfig = {
+  channels: Record<string, UpstreamProbeChannelConfig>
+  paused_models: string[]
+}
+
 export type UpstreamProbeStatus = {
   enabled: boolean
   minutes: number
@@ -69,7 +78,11 @@ export type UpstreamProbeStatus = {
     probed: number
     failed: number
     skipped: number
+    paused_channels: number
+    paused_models: number
   }
+  config: UpstreamProbeConfig
+  last_by_channel: Record<string, number>
 }
 
 export type UpstreamHealthResponse = {
@@ -77,6 +90,16 @@ export type UpstreamHealthResponse = {
   since: number
   channels: UpstreamChannelHealth[]
   probe: UpstreamProbeStatus
+}
+
+export async function setProbeConfig(
+  body: UpstreamProbeConfig
+): Promise<UpstreamProbeConfig> {
+  const res = await api.put<ApiResp<UpstreamProbeConfig>>(
+    '/api/admin/upstream/probe-config',
+    body
+  )
+  return unwrap(res, 'Failed to save probe config')
 }
 
 export async function probeAllUpstreams(): Promise<void> {

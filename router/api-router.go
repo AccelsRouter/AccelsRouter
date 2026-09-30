@@ -185,6 +185,8 @@ func SetApiRouter(router *gin.Engine) {
 			upstreamRoute.GET("/health", controller.AdminUpstreamHealth)
 			upstreamRoute.GET("/history", controller.AdminUpstreamHistory)
 			upstreamRoute.POST("/probe-all", controller.AdminUpstreamProbeAll)
+			upstreamRoute.GET("/probe-config", controller.AdminGetUpstreamProbeConfig)
+			upstreamRoute.PUT("/probe-config", controller.AdminSetUpstreamProbeConfig)
 			upstreamRoute.GET("/prices", controller.AdminUpstreamPrices)
 			upstreamRoute.GET("/price-source/:channel_id", controller.AdminGetUpstreamPriceSource)
 			upstreamRoute.PUT("/price-source/:channel_id", controller.AdminSetUpstreamPriceSource)

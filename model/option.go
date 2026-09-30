@@ -172,6 +172,10 @@ func InitOptionMap() {
 	common.OptionMap["ChannelDailyTokenLimitEnabled"] = strconv.FormatBool(setting.ChannelDailyTokenLimitEnabled)
 	common.OptionMap["SmartRoutingEnabled"] = strconv.FormatBool(setting.SmartRoutingEnabled)
 	common.OptionMap["ResellerRoutingEnabled"] = strconv.FormatBool(setting.ResellerRoutingEnabled)
+	// Auto virtual models (fork). See setting/auto_model.go.
+	common.OptionMap["AutoModelConfigs"] = setting.AutoModelConfigsJSON()
+	// Upstream probe per-channel / per-model tuning (fork). See setting/upstream_probe.go.
+	common.OptionMap["UpstreamProbeConfig"] = setting.UpstreamProbeConfigJSON()
 	common.OptionMap["CheckSensitiveOnPromptEnabled"] = strconv.FormatBool(setting.CheckSensitiveOnPromptEnabled)
 	common.OptionMap["StopOnSensitiveEnabled"] = strconv.FormatBool(setting.StopOnSensitiveEnabled)
 	common.OptionMap["SensitiveWords"] = setting.SensitiveWordsToString()
@@ -416,6 +420,10 @@ func updateOptionMap(key string, value string) (err error) {
 		common.SMTPPort = intValue
 	case "SMTPAccount":
 		common.SMTPAccount = value
+	case "AutoModelConfigs":
+		err = setting.UpdateAutoModelConfigs(value)
+	case "UpstreamProbeConfig":
+		err = setting.UpdateUpstreamProbeConfig(value)
 	case "SMTPFrom":
 		common.SMTPFrom = value
 	case "SMTPToken":
