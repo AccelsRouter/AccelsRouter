@@ -52,7 +52,13 @@ func VerifyCodeWithKey(key string, code string, purpose string) bool {
 	if !okay || int(now.Sub(value.time).Seconds()) >= VerificationValidMinutes*60 {
 		return false
 	}
-	return code == value.code
+	// Codes are lowercase hex; accept what a person types (case, stray
+	// whitespace) rather than what the mail client rendered.
+	return normalizeVerificationCode(code) == normalizeVerificationCode(value.code)
+}
+
+func normalizeVerificationCode(code string) string {
+	return strings.ToLower(strings.TrimSpace(code))
 }
 
 func DeleteKey(key string, purpose string) {
