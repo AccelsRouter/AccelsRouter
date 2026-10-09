@@ -979,6 +979,34 @@ func UpdateOrganizationFields(id int, fields map[string]interface{}) error {
 	return DB.Model(&Organization{}).Where("id = ?", id).Updates(fields).Error
 }
 
+// ErrOrgOwnerCannotLeave: the owner is the org's accountable party; it can
+// only be removed by the platform admin (or after ownership changes hands).
+var ErrOrgOwnerCannotLeave = errors.New("组织所有者不能退出组织")
+
+// ErrNotInOrganization is returned when the user has no organization to leave.
+var ErrNotInOrganization = errors.New("你不属于任何组织")
+
+// LeaveOrganization is the member's own exit: the same detach an admin would
+// do (account row gone, workspace bindings cleared, payer cache dropped), but
+// refused for the owner. Returns the account that was removed so the caller
+// can audit it under the right org.
+func LeaveOrganization(userId int) (*OrgAccount, error) {
+	acc, err := GetOrgAccountByUser(userId)
+	if err != nil {
+		return nil, err
+	}
+	if acc == nil {
+		return nil, ErrNotInOrganization
+	}
+	if acc.Role == OrgRoleOwner {
+		return nil, ErrOrgOwnerCannotLeave
+	}
+	if err := DetachOrgAccount(acc.OrgId, userId); err != nil {
+		return nil, err
+	}
+	return acc, nil
+}
+
 // AttachOrgAccount binds a user to an organization. Fails when the user is
 // already managed anywhere (UNIQUE user_id) — detach first, explicitly.
 func AttachOrgAccount(acc *OrgAccount) error {

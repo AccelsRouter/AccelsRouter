@@ -235,6 +235,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.GET("/accounts", controller.ListMyOrgAccounts)
 			orgRoute.PUT("/accounts/:user_id", controller.UpdateMyOrgAccount)
 			orgRoute.DELETE("/accounts/:user_id", controller.DetachMyOrgAccount)
+			orgRoute.POST("/leave", middleware.CriticalRateLimit(), controller.LeaveMyOrganization)
 			orgRoute.GET("/ledger", controller.ListMyOrgLedger)
 			orgRoute.POST("/allocate", middleware.CriticalRateLimit(), controller.AllocateFromMyOrg)
 			orgRoute.POST("/revoke", middleware.CriticalRateLimit(), controller.RevokeFromMyOrg)

@@ -187,6 +187,21 @@ func DetachMyOrgAccount(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+// LeaveMyOrganization — POST /api/organization/leave
+// A member or admin removes itself from its organization. The owner cannot
+// leave (platform admin removes or reassigns it). Keys the user created keep
+// existing under the user's own account; they just stop being paid by the org.
+func LeaveMyOrganization(c *gin.Context) {
+	userId := c.GetInt("id")
+	acc, err := model.LeaveOrganization(userId)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(acc.OrgId, userId, "account.leave", fmt.Sprintf("user:%d", userId), "")
+	common.ApiSuccess(c, nil)
+}
+
 // ListMyOrgLedger — GET /api/organization/ledger
 // GetMyOrgLogs — GET /api/organization/logs
 // The org's own individual call records (consume logs), paginated — so a
