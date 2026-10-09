@@ -263,7 +263,17 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				continue
 			}
 			logger.LogError(c, channelErr.Error())
-			newAPIError = channelErr
+			// A failed re-selection on a retry is not the request's real
+			// problem: an upstream already answered (e.g. 400 prompt too long)
+			// and that answer is what the client must see — clients such as
+			// Claude Code recover from "prompt is too long" automatically but
+			// cannot act on "no available channel". Only the first attempt
+			// reports the channel-selection failure itself.
+			if relayInfo.LastError != nil {
+				newAPIError = relayInfo.LastError
+			} else {
+				newAPIError = channelErr
+			}
 			break
 		}
 		addUsedChannel(c, channel.Id)
@@ -645,7 +655,11 @@ func RelayTask(c *gin.Context) {
 			channel, channelErr = getChannel(c, relayInfo, retryParam)
 			if channelErr != nil {
 				logger.LogError(c, channelErr.Error())
-				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				// Same rule as the chat loop: on a retry, keep the upstream's
+				// last error (still in taskErr) rather than masking it.
+				if taskErr == nil {
+					taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				}
 				break
 			}
 		}
