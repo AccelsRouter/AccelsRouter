@@ -36,7 +36,13 @@ export type OrgHubView = 'org' | 'reseller'
 
 const VIEW_STORAGE_KEY = 'org-hub-view'
 
-export function OrganizationHub({ view }: { view?: OrgHubView }) {
+export function OrganizationHub({
+  view,
+  tab,
+}: {
+  view?: OrgHubView
+  tab?: string
+}) {
   const { t } = useTranslation()
   const { data: ctx, isLoading } = useQuery({
     queryKey: ['org-context'],
@@ -86,7 +92,11 @@ export function OrganizationHub({ view }: { view?: OrgHubView }) {
   // Distributor admin only: the distributor console. Member/customer only,
   // or no org at all (the console shows the apply page): the org console.
   if (!both) {
-    return isResellerAdmin ? <ResellerConsole /> : <OrganizationConsole />
+    return isResellerAdmin ? (
+      <ResellerConsole initialTab={tab} />
+    ) : (
+      <OrganizationConsole initialTab={tab} />
+    )
   }
 
   return (
@@ -99,7 +109,11 @@ export function OrganizationHub({ view }: { view?: OrgHubView }) {
           </TabsList>
         </Tabs>
       </div>
-      {chosen === 'reseller' ? <ResellerConsole /> : <OrganizationConsole />}
+      {chosen === 'reseller' ? (
+        <ResellerConsole initialTab={tab} />
+      ) : (
+        <OrganizationConsole initialTab={tab} />
+      )}
     </div>
   )
 }

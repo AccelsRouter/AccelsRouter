@@ -51,9 +51,9 @@ import { ResellerRecordsTab } from './records-tab'
 import { ResellerTopUpDialog } from './reseller-topup-dialog'
 import { ResellerUsageTab } from './usage-tab'
 
-export function ResellerConsole() {
+export function ResellerConsole({ initialTab }: { initialTab?: string }) {
   const { t } = useTranslation()
-  const [tab, setTab] = useState('customers')
+  const [tab, setTab] = useState(initialTab || 'customers')
   const [auditPage, setAuditPage] = useState(1)
   const [topUpOpen, setTopUpOpen] = useState(false)
   const [allocationMode, setAllocationMode] = useState<AllocationMode | null>(

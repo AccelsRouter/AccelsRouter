@@ -65,9 +65,9 @@ function recToUnix(date?: Date): number | undefined {
   return date ? Math.floor(date.getTime() / 1000) : undefined
 }
 
-export function OrganizationConsole() {
+export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
   const { t } = useTranslation()
-  const [tab, setTab] = useState('keys')
+  const [tab, setTab] = useState(initialTab || 'keys')
   // Call-records date range, defaulting to today (with the picker's 7d/30d/custom
   // presets available).
   const [recordsRange, setRecordsRange] = useState<{
