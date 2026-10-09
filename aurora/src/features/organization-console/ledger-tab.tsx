@@ -60,7 +60,9 @@ export function LedgerTab({
         ? t('Allocate')
         : type === 'revoke'
           ? t('Revoke')
-          : type || '-'
+          : type === 'debit'
+            ? t('Platform debit')
+            : type || '-'
   const orgLabel = (id: number, name?: string) =>
     name || (id > 0 ? `#${id}` : t('Platform'))
   // Human sentence for a row, from the viewer's side when known.
@@ -85,6 +87,9 @@ export function LedgerTab({
       if (selfOrgId && e.from_org_id === selfOrgId)
         return t('Reclaimed by {{name}}', { name: to })
       return t('{{to}} reclaimed from {{from}}', { from, to })
+    }
+    if (e.type === 'debit') {
+      return t('Debited by the platform from {{name}}', { name: from })
     }
     return `${from} → ${to}`
   }
@@ -143,7 +148,7 @@ export function LedgerTab({
                 <Td>
                   <Badge
                     variant={
-                      e.type === 'revoke'
+                      e.type === 'revoke' || e.type === 'debit'
                         ? 'destructive'
                         : e.type === 'purchase'
                           ? 'default'

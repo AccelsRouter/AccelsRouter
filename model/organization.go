@@ -42,6 +42,9 @@ const (
 	LedgerTypePurchase = "purchase"
 	LedgerTypeAllocate = "allocate"
 	LedgerTypeRevoke   = "revoke"
+	// debit: the platform takes quota back out of an org wallet (correction,
+	// refund, admin "reduce"/"set" adjustment). Row: from org → to 0.
+	LedgerTypeDebit = "debit"
 )
 
 // Organization is the paying entity for managed accounts. Deliberately has NO
@@ -173,7 +176,7 @@ type CreditLedger struct {
 	FromOrgId   int    `json:"from_org_id" gorm:"index"` // 0 = platform (purchase)
 	ToOrgId     int    `json:"to_org_id" gorm:"index"`
 	Quota       int    `json:"quota"`                        // always positive
-	Type        string `json:"type" gorm:"type:varchar(16)"` // purchase | allocate | revoke
+	Type        string `json:"type" gorm:"type:varchar(16)"` // purchase | allocate | revoke | debit
 	OperatorId  int    `json:"operator_id"`                  // acting user
 	TradeNo     string `json:"trade_no" gorm:"type:varchar(64);index"`
 	Remark      string `json:"remark" gorm:"type:varchar(255)"`
@@ -747,20 +750,60 @@ func PlatformCreditOrg(orgId, quota, operatorId int, tradeNo, remark string) err
 	if quota <= 0 {
 		return errors.New("credit quota must be positive")
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
+	_, err := PlatformAdjustOrg(orgId, PlatformAdjustAdd, quota, operatorId, tradeNo, remark)
+	return err
+}
+
+const (
+	PlatformAdjustAdd    = "add"    // wallet += amount (purchase row)
+	PlatformAdjustReduce = "reduce" // wallet -= amount, never below zero (debit row)
+	PlatformAdjustSet    = "set"    // wallet = amount (purchase or debit row for the difference)
+)
+
+// PlatformAdjustOrg is the admin's wallet adjustment: add, reduce, or set the
+// balance, atomically under the org row lock so "set" cannot race a
+// concurrent charge. A reduce/set that would go below zero is refused, since
+// consumed quota cannot be taken back. Returns the signed change applied
+// (0 when "set" matched the current balance; no ledger row is written then).
+func PlatformAdjustOrg(orgId int, op string, amount, operatorId int, tradeNo, remark string) (int, error) {
+	if amount < 0 || (op != PlatformAdjustSet && amount == 0) {
+		return 0, errors.New("amount must be positive")
+	}
+	delta := 0
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var org Organization
 		if err := lockForUpdate(tx).Where("id = ?", orgId).First(&org).Error; err != nil {
 			return errors.New("organization not found")
 		}
+		switch op {
+		case PlatformAdjustAdd:
+			delta = amount
+		case PlatformAdjustReduce:
+			delta = -amount
+		case PlatformAdjustSet:
+			delta = amount - org.WalletQuota
+		default:
+			return errors.New("invalid adjustment")
+		}
+		if delta == 0 {
+			return nil
+		}
+		if delta < 0 && org.WalletQuota < -delta {
+			return fmt.Errorf("balance is only %d; cannot reduce by %d", org.WalletQuota, -delta)
+		}
 		if err := tx.Model(&Organization{}).Where("id = ?", orgId).
 			Updates(map[string]interface{}{
-				"wallet_quota": gorm.Expr("wallet_quota + ?", quota),
+				"wallet_quota": gorm.Expr("wallet_quota + ?", delta),
 				"updated_time": common.GetTimestamp(),
 			}).Error; err != nil {
 			return err
 		}
-		return insertLedger(tx, 0, orgId, quota, operatorId, LedgerTypePurchase, tradeNo, remark)
+		if delta > 0 {
+			return insertLedger(tx, 0, orgId, delta, operatorId, LedgerTypePurchase, tradeNo, remark)
+		}
+		return insertLedger(tx, orgId, 0, -delta, operatorId, LedgerTypeDebit, tradeNo, remark)
 	})
+	return delta, err
 }
 
 // TransferOrgCredit moves quota between two org wallets (allocate: reseller →

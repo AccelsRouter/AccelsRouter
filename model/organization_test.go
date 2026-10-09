@@ -530,3 +530,57 @@ func TestLeaveOrganization(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, still, "the owner stays")
 }
+
+// The admin wallet adjustment: add writes a purchase row, reduce/set write a
+// debit row for the difference, nothing may take the balance below zero, and
+// a "set" equal to the current balance is a no-op without a ledger row.
+func TestPlatformAdjustOrg(t *testing.T) {
+	migrateOrgTables(t)
+	org := mustCreateOrg(t, "adjust-org", OrgTypeEnterprise, 0)
+	balance := func() int {
+		fresh, err := GetOrganizationById(org.Id)
+		require.NoError(t, err)
+		return fresh.WalletQuota
+	}
+	ledgerTypes := func() []string {
+		var rows []CreditLedger
+		require.NoError(t, DB.Where("from_org_id = ? OR to_org_id = ?", org.Id, org.Id).Order("id asc").Find(&rows).Error)
+		out := make([]string, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, r.Type)
+		}
+		return out
+	}
+
+	delta, err := PlatformAdjustOrg(org.Id, PlatformAdjustAdd, 1000, 1, "inv-1", "")
+	require.NoError(t, err)
+	assert.Equal(t, 1000, delta)
+	assert.Equal(t, 1000, balance())
+
+	delta, err = PlatformAdjustOrg(org.Id, PlatformAdjustReduce, 300, 1, "", "correction")
+	require.NoError(t, err)
+	assert.Equal(t, -300, delta)
+	assert.Equal(t, 700, balance())
+
+	_, err = PlatformAdjustOrg(org.Id, PlatformAdjustReduce, 701, 1, "", "")
+	require.Error(t, err, "cannot go below zero")
+	assert.Equal(t, 700, balance())
+
+	delta, err = PlatformAdjustOrg(org.Id, PlatformAdjustSet, 1200, 1, "inv-2", "")
+	require.NoError(t, err)
+	assert.Equal(t, 500, delta)
+	delta, err = PlatformAdjustOrg(org.Id, PlatformAdjustSet, 1200, 1, "", "")
+	require.NoError(t, err)
+	assert.Zero(t, delta, "set to the current balance is a no-op")
+	delta, err = PlatformAdjustOrg(org.Id, PlatformAdjustSet, 0, 1, "", "zero out")
+	require.NoError(t, err)
+	assert.Equal(t, -1200, delta)
+	assert.Zero(t, balance())
+
+	_, err = PlatformAdjustOrg(org.Id, PlatformAdjustAdd, 0, 1, "", "")
+	require.Error(t, err)
+	_, err = PlatformAdjustOrg(org.Id, "bogus", 1, 1, "", "")
+	require.Error(t, err)
+
+	assert.Equal(t, []string{LedgerTypePurchase, LedgerTypeDebit, LedgerTypePurchase, LedgerTypeDebit}, ledgerTypes())
+}

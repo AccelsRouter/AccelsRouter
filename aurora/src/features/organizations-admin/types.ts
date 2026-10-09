@@ -121,6 +121,9 @@ export type UpdateOrgPayload = {
 }
 
 export type CreditOrgPayload = {
+  // add: wallet += quota; reduce: wallet -= quota (never below zero);
+  // set: wallet = quota. The backend writes a purchase or debit ledger row.
+  op: 'add' | 'reduce' | 'set'
   quota: number
   trade_no: string
   remark: string
