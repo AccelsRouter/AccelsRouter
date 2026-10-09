@@ -48,6 +48,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
+import { getOrgContext } from '@/features/organization-console/api'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserModels } from '@/lib/api'
 import { MOTION_TRANSITION } from '@/lib/motion'
@@ -88,10 +89,42 @@ type DashboardActionPath =
   | '/usage-logs'
   | '/pricing'
 
+// Where "Create API Key" goes. A reseller party (distributor admin, reseller
+// org member or reseller customer) has no personal keys; its keys live in the
+// organization console, so the link lands on that console's keys tab.
+type KeysTarget =
+  | { to: '/keys' }
+  | { to: '/organization'; search: { view: 'org' | 'reseller'; tab: 'keys' } }
+
+function KeysLink(props: {
+  target: KeysTarget
+  className?: string
+  children?: React.ReactNode
+}) {
+  if (props.target.to === '/organization') {
+    return (
+      <Link
+        to='/organization'
+        search={props.target.search}
+        className={props.className}
+      >
+        {props.children}
+      </Link>
+    )
+  }
+  return (
+    <Link to='/keys' className={props.className}>
+      {props.children}
+    </Link>
+  )
+}
+
 interface StartStep {
   title: string
   description: string
   to: DashboardActionPath
+  // Set on the keys step: overrides `to` with the reseller-aware target.
+  keysTarget?: KeysTarget
   icon: LucideIcon
   completed: boolean
 }
@@ -100,6 +133,7 @@ interface QuickAction {
   title: string
   description: string
   to: DashboardActionPath
+  keysTarget?: KeysTarget
   icon: LucideIcon
   adminOnly?: boolean
 }
@@ -244,10 +278,7 @@ function StartStepItem(props: {
         />
       </span>
 
-      <Link
-        to={props.step.to}
-        className='bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
-      >
+      <StepLink step={props.step}>
         <span className='flex min-w-0 items-start gap-2.5'>
           <span className='bg-muted mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg'>
             <Icon className='size-3.5' aria-hidden='true' />
@@ -268,14 +299,33 @@ function StartStepItem(props: {
           className='text-muted-foreground size-4 shrink-0'
           aria-hidden='true'
         />
-      </Link>
+      </StepLink>
     </li>
+  )
+}
+
+const STEP_LINK_CLASS =
+  'bg-background/70 hover:bg-muted/50 focus-visible:ring-ring flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left shadow-xs transition-colors outline-none focus-visible:ring-2'
+
+function StepLink(props: { step: StartStep; children: React.ReactNode }) {
+  if (props.step.keysTarget) {
+    return (
+      <KeysLink target={props.step.keysTarget} className={STEP_LINK_CLASS}>
+        {props.children}
+      </KeysLink>
+    )
+  }
+  return (
+    <Link to={props.step.to} className={STEP_LINK_CLASS}>
+      {props.children}
+    </Link>
   )
 }
 
 function RequestPreview(props: {
   example: RequestExample
   signals: HeroSignal[]
+  keysTarget: KeysTarget
 }) {
   const { t } = useTranslation()
   const shouldReduceMotion = useReducedMotion()
@@ -360,7 +410,11 @@ function RequestPreview(props: {
             {isCopying ? t('Loading') : t('Copy')}
           </Button>
         ) : (
-          <Button size='sm' variant='outline' render={<Link to='/keys' />}>
+          <Button
+            size='sm'
+            variant='outline'
+            render={<KeysLink target={props.keysTarget} />}
+          >
             {t('Create API Key')}
           </Button>
         )}
@@ -421,7 +475,13 @@ function QuickActionItem(props: { action: QuickAction }) {
     <Button
       variant='outline'
       className='h-auto justify-start rounded-xl px-3 py-3 text-left'
-      render={<Link to={props.action.to} />}
+      render={
+        props.action.keysTarget ? (
+          <KeysLink target={props.action.keysTarget} />
+        ) : (
+          <Link to={props.action.to} />
+        )
+      }
     >
       <span className='bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg'>
         <Icon className='size-4' aria-hidden='true' />
@@ -446,7 +506,13 @@ function CompactQuickAction(props: { action: QuickAction }) {
       variant='outline'
       size='sm'
       className='bg-background/70 h-8 min-w-24 gap-1.5 px-2.5'
-      render={<Link to={props.action.to} />}
+      render={
+        props.action.keysTarget ? (
+          <KeysLink target={props.action.keysTarget} />
+        ) : (
+          <Link to={props.action.to} />
+        )
+      }
     >
       <Icon data-icon='inline-start' />
       <span>{props.action.title}</span>
@@ -496,12 +562,27 @@ export function OverviewDashboard() {
     [apiKeysQuery.data]
   )
 
+  const orgContextQuery = useQuery({
+    queryKey: ['org-context'],
+    queryFn: getOrgContext,
+    staleTime: 60_000,
+  })
+  const keysTarget = useMemo<KeysTarget>(() => {
+    const ctx = orgContextQuery.data
+    if (!ctx?.is_reseller_party) return { to: '/keys' }
+    return {
+      to: '/organization',
+      search: { view: ctx.is_reseller_admin ? 'reseller' : 'org', tab: 'keys' },
+    }
+  }, [orgContextQuery.data])
+
   const startSteps = useMemo<StartStep[]>(
     () => [
       {
         title: t('Create API Key'),
         description: t('Create a key for your app or service'),
         to: '/keys',
+        keysTarget,
         icon: KeyRound,
         completed: Boolean(preferredKey),
       },
@@ -520,7 +601,7 @@ export function OverviewDashboard() {
         completed: requestCount > 0,
       },
     ],
-    [preferredKey, remainQuota, requestCount, t, usedQuota]
+    [keysTarget, preferredKey, remainQuota, requestCount, t, usedQuota]
   )
 
   const quickActions = useMemo<QuickAction[]>(
@@ -529,6 +610,7 @@ export function OverviewDashboard() {
         title: t('API Keys'),
         description: t('Create a key for your app or service'),
         to: '/keys',
+        keysTarget,
         icon: KeyRound,
       },
       {
@@ -551,7 +633,7 @@ export function OverviewDashboard() {
         icon: BookOpen,
       },
     ],
-    [t]
+    [keysTarget, t]
   )
 
   const visibleQuickActions = useMemo(
@@ -646,7 +728,10 @@ export function OverviewDashboard() {
                         <ChevronUp data-icon='inline-start' />
                         {t('Hide setup guide')}
                       </Button>
-                      <Button size='sm' render={<Link to='/keys' />}>
+                      <Button
+                        size='sm'
+                        render={<KeysLink target={keysTarget} />}
+                      >
                         <KeyRound data-icon='inline-start' />
                         {t('Create API Key')}
                       </Button>
@@ -668,6 +753,7 @@ export function OverviewDashboard() {
                 <RequestPreview
                   example={requestExample}
                   signals={heroSignals}
+                  keysTarget={keysTarget}
                 />
               </div>
             </div>
