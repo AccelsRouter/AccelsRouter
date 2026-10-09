@@ -1,22 +1,35 @@
-// Package smartroute holds the Redis-backed per-(channel, model)
-// performance stats and scoring logic behind "smart routing": choosing
-// among several channels that all serve the same model by their recent
-// success rate, latency, and (in channel-pricing mode) price, instead of
-// an admin-configured static Priority/Weight.
+// Package smartroute holds the Redis-backed per-(channel, model) health
+// tracking and ordering logic behind "smart routing": choosing among
+// several channels that all serve the same model by recent reliability and
+// (in channel-pricing mode) price, instead of an admin-configured static
+// Priority/Weight. The approach follows OpenRouter's default routing:
+//
+//  1. Channels that have recently been failing are tried last.
+//  2. Among the rest, selection is a weighted random draw favoring the
+//     cheaper channel (weight = 1/price^2), so traffic is spread out
+//     rather than always landing on a single winner.
+//  3. Latency has no scoring role of its own: a response slower than the
+//     limit for its kind (see MaxLatencyStreamMs / MaxLatencyNonStreamMs)
+//     is simply recorded as a failure, and so feeds the health check in
+//     (1).
 //
 // This is its own package — not part of model or service — specifically
 // to avoid an import cycle: model.GetChannel/GetRandomSatisfiedChannel
-// and model.GetChannelPricingChannel (which need to call PickBestChannel)
-// are themselves called from service, so smartroute can depend only on
-// common (mirroring common/limiter, which has the same constraint for the
-// same reason).
+// and model.GetChannelPricingChannel (which call RankChannels) are
+// themselves called from service, so smartroute can depend only on common
+// (mirroring common/limiter, which has the same constraint for the same
+// reason).
 package smartroute
 
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
+	"math"
+	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -26,46 +39,67 @@ const (
 	keyPrefix = "smart_route:v1"
 
 	// ewmaAlpha weights each new sample's influence on the rolling
-	// average: 0.2 means the last sample moves the average 20% of the
-	// way toward itself, so a handful of consecutive samples already
-	// meaningfully shift it, while a single blip doesn't swing it wildly.
+	// averages kept for diagnostics (avg_latency_ms, success_rate): the
+	// last sample moves the average 20% of the way toward itself. The
+	// health check itself only uses consecutive_fails and last_fail_at.
 	ewmaAlpha = 0.2
 
-	// ConsecutiveFailThreshold is channel affinity's circuit breaker: this
-	// many failures in a row on the sticky channel (for this specific
-	// model) is treated as "completely unusable right now", overriding
-	// the otherwise-strong preference to keep reusing it. Anything short
-	// of this — even if smart routing would currently score another
-	// candidate higher — is not enough to give up the sticky channel.
+	// ConsecutiveFailThreshold and UnhealthyWindow together define
+	// "recently failing": a (channel, model) pair is unhealthy while it
+	// has failed this many times in a row AND its latest failure is
+	// within the window. Once the window passes with no new failure the
+	// pair is healthy again and gets traffic, so a recovered channel is
+	// not shut out forever; if it is still broken, a single further
+	// failure (the count is still at or above the threshold) marks it
+	// unhealthy again immediately.
 	ConsecutiveFailThreshold = 3
+	UnhealthyWindow          = 5 * time.Minute
+
+	// The slowest latency still counted as a success, set for the slowest
+	// legitimate case; a response at or beyond it is recorded as a failure.
+	// Streaming and non-streaming measure different things, so they get
+	// separate limits: for a stream the latency is time to the first
+	// response chunk (a reasoning model can take tens of seconds to
+	// produce its first token), for a non-streaming request it is the
+	// time until the complete response is back (a long generation can
+	// take minutes). Note this only changes the health statistics — the
+	// request itself already completed.
+	MaxLatencyStreamMs    = 60 * 1000
+	MaxLatencyNonStreamMs = 300 * 1000
 
 	// statsTTLSeconds bounds how long a (channel, model) pair's stats
-	// survive with no traffic at all — a channel that stops serving a
-	// model shouldn't keep influencing (or being circuit-broken by) stale
-	// numbers from weeks ago. Refreshed on every write, so any actively
-	// used pair never expires.
+	// survive with no traffic at all. Refreshed on every write, so any
+	// actively used pair never expires.
 	statsTTLSeconds = 7 * 24 * 60 * 60
 )
 
-// Stats is one (channel, model) pair's rolling performance signal, as
-// stored in Redis.
+// Stats is one (channel, model) pair's tracked state, as stored in Redis.
 type Stats struct {
 	AvgLatencyMs     float64
 	SuccessRate      float64
 	SampleCount      int64
 	ConsecutiveFails int64
+	LastFailAt       int64
 	UpdatedAt        int64
+}
+
+// Unhealthy reports whether the pair is currently in its failure window.
+// A pair with no recorded failure time (including data written before
+// last_fail_at existed) is never unhealthy — silence is not failure.
+func (s Stats) Unhealthy(now time.Time) bool {
+	if s.ConsecutiveFails < ConsecutiveFailThreshold || s.LastFailAt <= 0 {
+		return false
+	}
+	return now.Sub(time.Unix(s.LastFailAt, 0)) < UnhealthyWindow
 }
 
 func statsKey(channelId int, modelName string) string {
 	return fmt.Sprintf("%s:channel:%d:model:%s", keyPrefix, channelId, modelName)
 }
 
-// GetStats reads channelId's rolling stats for modelName. found is false
+// GetStats reads channelId's tracked state for modelName. found is false
 // when Redis is disabled, this pair has no recorded traffic yet, or the
-// read failed — every caller (PickBestChannel, IsCircuitOpen) treats that
-// the same way: no data to judge by, so don't penalize or specially favor
-// this candidate on that dimension.
+// read failed — callers treat all of those as "no data, assume healthy".
 func GetStats(channelId int, modelName string) (stats Stats, found bool) {
 	if !common.RedisEnabled || common.RDB == nil || channelId <= 0 || modelName == "" {
 		return Stats{}, false
@@ -89,25 +123,26 @@ func GetStats(channelId int, modelName string) (stats Stats, found bool) {
 		SuccessRate:      parseFloat(raw["success_rate"]),
 		SampleCount:      parseInt(raw["sample_count"]),
 		ConsecutiveFails: parseInt(raw["consecutive_fails"]),
+		LastFailAt:       parseInt(raw["last_fail_at"]),
 		UpdatedAt:        parseInt(raw["updated_at"]),
 	}, true
 }
 
 // RecordOutcome feeds one completed request's outcome into
-// channelId+modelName's rolling stats. Call this once per request that
+// channelId+modelName's tracked state. Call this once per request that
 // actually reached this channel (success or failure) — a request rejected
-// before ever dispatching to a channel (over budget, disabled, no
-// candidates at all) was never that channel's fault and must not be
-// recorded against it.
+// before ever dispatching to a channel was never that channel's fault and
+// must not be recorded against it.
 //
-// The read-modify-write here is intentionally not wrapped in an atomic
-// Lua script: under concurrent requests to the same (channel, model) it
-// can lose an update to a race, but this is a soft, self-correcting
-// signal feeding a routing decision — not billing or an enforced limit —
-// so simple, easy-to-verify code wins over strict atomicity here. A lost
-// update just means the average catches up on the very next request
-// instead of this one.
-func RecordOutcome(channelId int, modelName string, latencyMs int64, success bool) {
+// latencyMs is time to the first response chunk when stream is true, or
+// time until the full response when it is false. A "successful" request at
+// or beyond the limit for its kind is recorded as a failure instead.
+//
+// The read-modify-write here is intentionally not atomic: under concurrent
+// requests to the same pair it can lose an update to a race, but this is a
+// soft, self-correcting signal feeding a routing decision — not billing or
+// an enforced limit — so simple code wins over strict atomicity.
+func RecordOutcome(channelId int, modelName string, latencyMs int64, stream bool, success bool) {
 	if !common.RedisEnabled || common.RDB == nil || channelId <= 0 || modelName == "" {
 		common.SysLog(fmt.Sprintf(
 			"[DEBUG] smartroute.RecordOutcome: skipped for channel=%d model=%q (redisEnabled=%v channelId>0=%v modelName!=\"\"=%v)",
@@ -116,10 +151,23 @@ func RecordOutcome(channelId int, modelName string, latencyMs int64, success boo
 		return
 	}
 
+	maxLatencyMs := int64(MaxLatencyNonStreamMs)
+	if stream {
+		maxLatencyMs = MaxLatencyStreamMs
+	}
+	if success && latencyMs >= maxLatencyMs {
+		common.SysLog(fmt.Sprintf(
+			"[DEBUG] smartroute.RecordOutcome: channel=%d model=%q stream=%v latencyMs=%d >= %d, counting as a failure",
+			channelId, modelName, stream, latencyMs, maxLatencyMs,
+		))
+		success = false
+	}
+
 	successValue := 0.0
 	if success {
 		successValue = 1.0
 	}
+	now := time.Now().Unix()
 
 	next := Stats{
 		AvgLatencyMs: float64(latencyMs),
@@ -128,19 +176,22 @@ func RecordOutcome(channelId int, modelName string, latencyMs int64, success boo
 	}
 	if !success {
 		next.ConsecutiveFails = 1
+		next.LastFailAt = now
 	}
 
 	if prev, hadPrev := GetStats(channelId, modelName); hadPrev {
 		next.AvgLatencyMs = prev.AvgLatencyMs*(1-ewmaAlpha) + float64(latencyMs)*ewmaAlpha
 		next.SuccessRate = prev.SuccessRate*(1-ewmaAlpha) + successValue*ewmaAlpha
 		next.SampleCount = prev.SampleCount + 1
+		next.LastFailAt = prev.LastFailAt
 		if success {
 			next.ConsecutiveFails = 0
 		} else {
 			next.ConsecutiveFails = prev.ConsecutiveFails + 1
+			next.LastFailAt = now
 		}
 	}
-	next.UpdatedAt = time.Now().Unix()
+	next.UpdatedAt = now
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -150,6 +201,7 @@ func RecordOutcome(channelId int, modelName string, latencyMs int64, success boo
 		"success_rate":      next.SuccessRate,
 		"sample_count":      next.SampleCount,
 		"consecutive_fails": next.ConsecutiveFails,
+		"last_fail_at":      next.LastFailAt,
 		"updated_at":        next.UpdatedAt,
 	}).Err()
 	if err != nil {
@@ -158,24 +210,20 @@ func RecordOutcome(channelId int, modelName string, latencyMs int64, success boo
 	}
 	_ = common.RDB.Expire(ctx, key, statsTTLSeconds*time.Second).Err()
 	common.SysLog(fmt.Sprintf(
-		"[DEBUG] smartroute.RecordOutcome: channel=%d model=%q success=%v latencyMs=%d -> avg_latency_ms=%.1f success_rate=%.3f sample_count=%d consecutive_fails=%d",
-		channelId, modelName, success, latencyMs, next.AvgLatencyMs, next.SuccessRate, next.SampleCount, next.ConsecutiveFails,
+		"[DEBUG] smartroute.RecordOutcome: channel=%d model=%q stream=%v success=%v latencyMs=%d -> avg_latency_ms=%.1f success_rate=%.3f sample_count=%d consecutive_fails=%d",
+		channelId, modelName, stream, success, latencyMs, next.AvgLatencyMs, next.SuccessRate, next.SampleCount, next.ConsecutiveFails,
 	))
 }
 
-// IsCircuitOpen reports whether channelId has failed modelName
-// ConsecutiveFailThreshold times in a row. This is channel affinity's
-// signal to abandon a sticky channel and let PickBestChannel choose
-// fresh, even though every other affinity usability check (enabled,
-// request-path support, daily token budget) still passes. A channel with
-// no recorded failures, or no data at all, is never considered open here
-// — silence is not failure.
+// IsCircuitOpen reports whether channelId is currently unhealthy for
+// modelName (see Stats.Unhealthy). Channel affinity uses it to abandon a
+// sticky channel even though every other usability check still passes.
 func IsCircuitOpen(channelId int, modelName string) bool {
 	stats, found := GetStats(channelId, modelName)
 	if !found {
 		return false
 	}
-	open := stats.ConsecutiveFails >= ConsecutiveFailThreshold
+	open := stats.Unhealthy(time.Now())
 	if open {
 		common.SysLog(fmt.Sprintf(
 			"[DEBUG] smartroute.IsCircuitOpen: channel=%d model=%q consecutive_fails=%d threshold=%d -> OPEN (affinity will abandon this channel)",
@@ -185,214 +233,121 @@ func IsCircuitOpen(channelId int, modelName string) bool {
 	return open
 }
 
-// Candidate is one channel being scored by PickBestChannel.
+// Candidate is one channel being ordered by RankChannels.
 type Candidate struct {
 	ChannelId int
-	// Price is this candidate's effective per-unit cost for the request:
-	// the group ratio in group-mode selection (identical for every
-	// candidate there, so it never actually changes the ranking — group
-	// pricing doesn't vary by which channel within the group serves the
-	// request; callers may simply pass 0 for every candidate in that
-	// mode) or the per-(user, channel, model) binding ratio in
-	// channel-pricing-mode selection (genuinely different per candidate,
-	// so it does matter there). Lower is better. Zero or negative means
-	// "no usable price signal for this candidate" and is excluded from
-	// scoring entirely (see PickBestChannel) rather than scored as
-	// free/best.
+	// Price is this candidate's effective cost multiplier: the per-(user,
+	// channel, model) binding ratio in channel-pricing mode. Group mode
+	// has no per-channel price, so callers pass 0 and RankChannels draws
+	// uniformly. Lower is cheaper and more likely to be drawn.
 	Price float64
 }
 
-// Weights controls how much each dimension counts toward
-// PickBestChannel's composite score.
-type Weights struct {
-	SuccessRate float64
-	Latency     float64
-	Price       float64
-}
-
-// DefaultWeights: success rate matters most (an unreliable channel is the
-// worst choice regardless of how cheap or fast it is when it does work),
-// latency second, price least.
-var DefaultWeights = Weights{
-	SuccessRate: 0.5,
-	Latency:     0.3,
-	Price:       0.2,
-}
-
-// RankChannels scores every candidate on success rate, latency, and
-// price, and returns their channel IDs sorted best-first. This is the
-// entire selection mechanism now — it replaces channel/ability Priority
-// and Weight, for both group-mode and channel-pricing-mode selection.
-// Candidates are whatever the caller's own filtering already narrowed
-// down to (matching group+model+enabled, or a user's own channel
-// bindings, minus anything already excluded for being disabled or over
-// its daily token budget) — this function only ranks what it's given, it
-// doesn't re-check usability.
-//
-// Callers retrying after a failure index further into this same ranked
-// list (rank 0 = best, rank 1 = second-best, ...) instead of excluding
-// the failed channel and re-ranking — simpler, and every attempt for a
-// given request still sees a consistent order.
-//
-// A candidate with no recorded traffic yet for one or more dimensions is
-// scored as exactly the average of its peers who do have data on that
-// dimension (not worst, not best), so a newly added channel gets a real
-// chance to be picked and start accumulating its own stats instead of
-// being starved forever by channels with an established track record. If
-// literally nobody in the candidate set has data yet, everyone scores the
-// same on that dimension and it doesn't influence the outcome at all.
-func RankChannels(candidates []Candidate, modelName string, weights Weights) []int {
-	if len(candidates) == 0 {
-		return nil
+// uniform returns a number in (0, 1) for (seed, channelId). The same seed
+// always yields the same number for the same channel, so every attempt of
+// one request (retries included) sees one consistent order; an empty seed
+// yields a fresh random number on every call.
+func uniform(seed string, channelId int) float64 {
+	if seed == "" {
+		u := rand.Float64()
+		if u <= 0 {
+			u = math.SmallestNonzeroFloat64
+		}
+		return u
 	}
-	if len(candidates) == 1 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(fmt.Sprintf("%s:%d", seed, channelId)))
+	// FNV alone leaves the high bits almost unchanged between seeds that
+	// differ only in their last characters, which made the draw nearly
+	// deterministic; run its output through the murmur3 finalizer so every
+	// input bit affects every output bit before taking the top 53 bits.
+	x := h.Sum64()
+	x ^= x >> 33
+	x *= 0xff51afd7ed558ccd
+	x ^= x >> 33
+	x *= 0xc4ceb9fe1a85ec53
+	x ^= x >> 33
+	return (float64(x>>11) + 0.5) / float64(uint64(1)<<53)
+}
+
+// RankChannels returns candidate channel IDs in the order they should be
+// tried: every healthy channel first, then the unhealthy ones (so they
+// still serve if nothing healthy is left). Within each group the order is
+// a weighted random draw without replacement, weight = 1/price^2 when
+// every candidate has a price (so a channel at half the price is four
+// times as likely to come first), equal weights otherwise.
+//
+// Callers retrying after a failure index further into this same list
+// (rank 0 first, rank 1 next, ...). Pass the same non-empty seed for every
+// attempt of one request — the request ID — so those attempts agree on
+// the order and a retry cannot land on the channel that just failed.
+//
+// Candidates are whatever the caller's own filtering already narrowed
+// down to (matching group+model+enabled, or a user's own bindings, minus
+// anything disabled or over its daily token budget); this function only
+// orders them. Candidate IDs must be unique.
+func RankChannels(candidates []Candidate, modelName string, seed string) []int {
+	switch len(candidates) {
+	case 0:
+		return nil
+	case 1:
 		common.SysLog(fmt.Sprintf(
-			"[DEBUG] smartroute.RankChannels: model=%q single candidate channel=%d, skipping scoring",
+			"[DEBUG] smartroute.RankChannels: model=%q single candidate channel=%d, skipping ordering",
 			modelName, candidates[0].ChannelId,
 		))
 		return []int{candidates[0].ChannelId}
 	}
 
-	candidateIds := make([]int, len(candidates))
-	for i, c := range candidates {
-		candidateIds[i] = c.ChannelId
-	}
-	common.SysLog(fmt.Sprintf(
-		"[DEBUG] smartroute.RankChannels: model=%q scoring %d candidates=%v weights={success:%.2f latency:%.2f price:%.2f}",
-		modelName, len(candidates), candidateIds, weights.SuccessRate, weights.Latency, weights.Price,
-	))
-
-	statsByChannel := make(map[int]Stats, len(candidates))
-	var latencySamples, successSamples, priceSamples []float64
-
+	usePrice := true
 	for _, c := range candidates {
-		if stats, found := GetStats(c.ChannelId, modelName); found {
-			statsByChannel[c.ChannelId] = stats
-			latencySamples = append(latencySamples, stats.AvgLatencyMs)
-			successSamples = append(successSamples, stats.SuccessRate)
-		}
-		if c.Price > 0 {
-			priceSamples = append(priceSamples, c.Price)
+		if c.Price <= 0 {
+			usePrice = false
+			break
 		}
 	}
 
-	avgOf := func(values []float64) float64 {
-		if len(values) == 0 {
-			return 0
-		}
-		sum := 0.0
-		for _, v := range values {
-			sum += v
-		}
-		return sum / float64(len(values))
-	}
-	minMaxOf := func(values []float64) (lo, hi float64) {
-		if len(values) == 0 {
-			return 0, 0
-		}
-		lo, hi = values[0], values[0]
-		for _, v := range values[1:] {
-			if v < lo {
-				lo = v
-			}
-			if v > hi {
-				hi = v
-			}
-		}
-		return lo, hi
-	}
-
-	fallbackLatency := avgOf(latencySamples)
-	// Fork: unlike latency (which naturally neutralizes to a full score
-	// for everyone when minLatency==maxLatency==0, see
-	// normalizeLowerIsBetter) and price (explicitly excluded via
-	// priceWeight=0 below when nobody has a sample), success rate is used
-	// directly as a 0..1 score with no such safety net. avgOf an empty
-	// slice returns 0 — literally "always fails" — which would wrongly
-	// tank every candidate's score whenever NONE of them have data yet
-	// (the common cold-start case), violating the "not worst, not best"
-	// promise documented above. Default to 1.0 (optimistic: assume it
-	// works until proven otherwise) in that specific case instead; when
-	// at least one candidate does have data, the average of those real
-	// samples is used exactly as before.
-	fallbackSuccess := 1.0
-	if len(successSamples) > 0 {
-		fallbackSuccess = avgOf(successSamples)
-	}
-	fallbackPrice := avgOf(priceSamples)
-	minLatency, maxLatency := minMaxOf(latencySamples)
-	minPrice, maxPrice := minMaxOf(priceSamples)
-
-	// Normalizes to "higher is better", 0..1, relative to this candidate
-	// set only — smart routing only ever needs to rank these candidates
-	// against each other, never against some absolute scale.
-	normalizeLowerIsBetter := func(value, lo, hi float64) float64 {
-		if hi <= lo {
-			return 1 // every candidate with data lands at the same spot (or there's only one data point) — don't let a degenerate range arbitrarily favor anyone
-		}
-		return 1 - (value-lo)/(hi-lo)
-	}
-
-	priceWeight := weights.Price
-	if len(priceSamples) == 0 {
-		priceWeight = 0 // nobody in this candidate set has a usable price signal — exclude the dimension rather than treating everyone as free
-	}
-	totalWeight := weights.SuccessRate + weights.Latency + priceWeight
-	if totalWeight <= 0 {
-		totalWeight = 1
-	}
-
-	type scored struct {
+	type entry struct {
 		channelId int
-		score     float64
-		hasStats  bool
+		weight    float64
+		fails     int64
+		healthy   bool
+		key       float64
 	}
-	results := make([]scored, 0, len(candidates))
+	now := time.Now()
+	entries := make([]entry, 0, len(candidates))
 	for _, c := range candidates {
-		latencyMs, successRate := fallbackLatency, fallbackSuccess
-		_, hasStats := statsByChannel[c.ChannelId]
-		if hasStats {
-			latencyMs, successRate = statsByChannel[c.ChannelId].AvgLatencyMs, statsByChannel[c.ChannelId].SuccessRate
+		weight := 1.0
+		if usePrice {
+			weight = 1 / (c.Price * c.Price)
 		}
-		price := fallbackPrice
-		if c.Price > 0 {
-			price = c.Price
+		e := entry{channelId: c.ChannelId, weight: weight, healthy: true}
+		if stats, found := GetStats(c.ChannelId, modelName); found {
+			e.fails = stats.ConsecutiveFails
+			e.healthy = !stats.Unhealthy(now)
 		}
-
-		score := weights.SuccessRate*successRate +
-			weights.Latency*normalizeLowerIsBetter(latencyMs, minLatency, maxLatency) +
-			priceWeight*normalizeLowerIsBetter(price, minPrice, maxPrice)
-		score /= totalWeight
-
-		common.SysLog(fmt.Sprintf(
-			"[DEBUG] smartroute.RankChannels:   candidate channel=%d hasStats=%v avg_latency_ms=%.1f success_rate=%.3f price=%.4f -> score=%.4f",
-			c.ChannelId, hasStats, latencyMs, successRate, price, score,
-		))
-
-		results = append(results, scored{channelId: c.ChannelId, score: score, hasStats: hasStats})
+		// Weighted sampling without replacement (Efraimidis–Spirakis):
+		// sorting by u^(1/w) descending, computed as ln(u)/w for
+		// numerical stability, draws each channel first with probability
+		// proportional to its weight.
+		e.key = math.Log(uniform(seed, c.ChannelId)) / weight
+		entries = append(entries, e)
 	}
-	sort.SliceStable(results, func(i, j int) bool {
-		return results[i].score > results[j].score
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].healthy != entries[j].healthy {
+			return entries[i].healthy
+		}
+		return entries[i].key > entries[j].key
 	})
+
+	ranked := make([]int, len(entries))
+	parts := make([]string, len(entries))
+	for i, e := range entries {
+		ranked[i] = e.channelId
+		parts[i] = fmt.Sprintf("ch%d(weight=%.3f consecutive_fails=%d healthy=%v)", e.channelId, e.weight, e.fails, e.healthy)
+	}
 	common.SysLog(fmt.Sprintf(
-		"[DEBUG] smartroute.RankChannels: model=%q final ranking (best first)=%+v",
-		modelName, results,
+		"[DEBUG] smartroute.RankChannels: model=%q seeded=%v priceWeighted=%v order=[%s]",
+		modelName, seed != "", usePrice, strings.Join(parts, " "),
 	))
-
-	ranked := make([]int, len(results))
-	for i, r := range results {
-		ranked[i] = r.channelId
-	}
 	return ranked
-}
-
-// PickBestChannel is a convenience wrapper over RankChannels for callers
-// that only ever want the single top-ranked candidate (channel affinity's
-// "score every candidate" fallback path, channel-pricing's initial pick).
-func PickBestChannel(candidates []Candidate, modelName string, weights Weights) int {
-	ranked := RankChannels(candidates, modelName, weights)
-	if len(ranked) == 0 {
-		return 0
-	}
-	return ranked[0]
 }

@@ -117,20 +117,26 @@ func SyncChannelCache(frequency int) {
 
 // GetRandomSatisfiedChannel picks a channel for (group, model) from every
 // currently enabled, non-over-budget candidate — smart routing (see
-// common/smartroute) ranks them by recent success rate and latency, and
-// retry walks that ranked list (0 = best) instead of indexing into
+// common/smartroute) orders them (healthy channels first, then a random draw —
+// see smartroute.RankChannels), and retry walks that order (0 = first) instead of indexing into
 // priority tiers as before. Out-of-range retry clamps to the last
 // (worst-ranked) candidate rather than erroring, matching the previous
 // tier-clamping behavior that CacheGetRandomSatisfiedChannel's auto-group
 // cycling depends on — nil is the only "nothing left to try" signal.
 func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	return GetRandomSatisfiedChannelSeeded(group, model, retry, requestPath, "")
+}
+
+// GetRandomSatisfiedChannelSeeded is GetRandomSatisfiedChannel with a
+// per-request seed (the request ID); see GetChannelSeeded.
+func GetRandomSatisfiedChannelSeeded(group string, model string, retry int, requestPath string, seed string) (*Channel, error) {
 	if !setting.SmartRoutingEnabled {
 		return getRandomSatisfiedChannelLegacy(group, model, retry, requestPath)
 	}
 
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, requestPath)
+		return GetChannelSeeded(group, model, retry, requestPath, seed)
 	}
 
 	channelSyncLock.RLock()
@@ -181,7 +187,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		candidates = append(candidates, smartroute.Candidate{ChannelId: channelId})
 	}
 
-	ranked := smartroute.RankChannels(candidates, model, smartroute.DefaultWeights)
+	ranked := smartroute.RankChannels(candidates, model, seed)
 	if len(ranked) == 0 {
 		return nil, errors.New("channel not found")
 	}

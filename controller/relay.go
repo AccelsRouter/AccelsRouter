@@ -307,7 +307,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// channel was actually dispatched to and failed, as opposed to a
 		// channelErr above (no candidate could even be selected), which
 		// was never this specific channel's fault.
-		smartroute.RecordOutcome(channel.Id, relayInfo.OriginModelName, time.Since(relayInfo.StartTime).Milliseconds(), false)
+		smartroute.RecordOutcome(channel.Id, relayInfo.OriginModelName, time.Since(relayInfo.StartTime).Milliseconds(), relayInfo.IsStream, false)
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 

@@ -22,12 +22,11 @@ import (
 // per-model ratio row is what actually authorizes routing that model to
 // that channel for this user (see GetUserChannelBindingRatio).
 //
-// Candidates are ranked by smart routing (see common/smartroute) — success
-// rate and latency exactly as in group mode, plus each candidate's own
-// binding ratio as a genuine price signal (unlike group mode, where every
-// candidate bills at the same group rate). retry walks that ranked list
-// (0 = best); retry >= len(ranked) means "no more channels to try",
-// mirroring how GetRandomSatisfiedChannel signals exhaustion.
+// Candidates are ordered by smart routing (see common/smartroute): healthy
+// channels first, then a random draw weighted toward the cheaper binding
+// ratio. retry walks that order (0 = first); retry >= len(ranked) means
+// "no more channels to try", mirroring how GetRandomSatisfiedChannel
+// signals exhaustion.
 //
 // A bound channel is only a live candidate if it's currently enabled,
 // still declares support for modelName in its own model list (a binding
@@ -49,6 +48,13 @@ import (
 // through to a direct DB query instead of silently seeing every candidate
 // as "not found".
 func GetChannelPricingChannel(userId int, modelName string, retry int, requestPath string) (channel *Channel, overBudget bool, err error) {
+	return GetChannelPricingChannelSeeded(userId, modelName, retry, requestPath, "")
+}
+
+// GetChannelPricingChannelSeeded is GetChannelPricingChannel with a
+// per-request seed (the request ID); see GetChannelSeeded. The initial
+// attempt and every retry must pass the same seed.
+func GetChannelPricingChannelSeeded(userId int, modelName string, retry int, requestPath string, seed string) (channel *Channel, overBudget bool, err error) {
 	channelIds, err := getUserBoundChannelIdsForModel(userId, modelName)
 	if err != nil {
 		return nil, false, err
@@ -58,7 +64,7 @@ func GetChannelPricingChannel(userId int, modelName string, retry int, requestPa
 	}
 
 	if !common.MemoryCacheEnabled {
-		return getChannelPricingChannelFromDB(userId, channelIds, modelName, retry, requestPath)
+		return getChannelPricingChannelFromDB(userId, channelIds, modelName, retry, requestPath, seed)
 	}
 
 	channelSyncLock.RLock()
@@ -98,7 +104,7 @@ func GetChannelPricingChannel(userId int, modelName string, retry int, requestPa
 			ratio, _ := GetUserChannelBindingRatio(userId, id, modelName)
 			candidates = append(candidates, smartroute.Candidate{ChannelId: id, Price: ratio})
 		}
-		ranked = smartroute.RankChannels(candidates, modelName, smartroute.DefaultWeights)
+		ranked = smartroute.RankChannels(candidates, modelName, seed)
 	} else {
 		// Legacy (setting.SmartRoutingEnabled off): candidateIds is
 		// already in ascending channel_id order (see
@@ -178,7 +184,7 @@ func GetUserBoundEnabledModels(userId int) ([]string, error) {
 // when the in-memory channel cache is disabled (common.MemoryCacheEnabled
 // == false, the project's default) — queries the bound channels directly
 // instead of relying on channelsIDM, which is never populated in that mode.
-func getChannelPricingChannelFromDB(userId int, channelIds []int, modelName string, retry int, requestPath string) (channel *Channel, overBudget bool, err error) {
+func getChannelPricingChannelFromDB(userId int, channelIds []int, modelName string, retry int, requestPath string, seed string) (channel *Channel, overBudget bool, err error) {
 	var channels []*Channel
 	if err := DB.Where("id IN ? AND status = ?", channelIds, common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
 		return nil, false, err
@@ -243,7 +249,7 @@ func getChannelPricingChannelFromDB(userId int, channelIds []int, modelName stri
 			ratio, _ := GetUserChannelBindingRatio(userId, id, modelName)
 			candidates = append(candidates, smartroute.Candidate{ChannelId: id, Price: ratio})
 		}
-		ranked = smartroute.RankChannels(candidates, modelName, smartroute.DefaultWeights)
+		ranked = smartroute.RankChannels(candidates, modelName, seed)
 	} else {
 		// Legacy (setting.SmartRoutingEnabled off): candidateIds is
 		// already in ascending channel_id order (see

@@ -455,14 +455,17 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if billingUsage != nil {
 		RecordTokenRateLimitUsage(relayInfo, billingUsage.TotalTokens)
 	}
-	// Smart routing's success/latency signal (see common/smartroute) — a
-	// request that never got any response back has no meaningful latency
-	// to record and, per the retry loop, would have surfaced as an error
-	// long before reaching this settlement path anyway; HasSendResponse
-	// guards against a zero/garbage FirstResponseTime in that edge case.
-	if relayInfo.HasSendResponse() {
-		latencyMs := relayInfo.FirstResponseTime.Sub(relayInfo.StartTime).Milliseconds()
-		smartroute.RecordOutcome(relayInfo.ChannelId, relayInfo.OriginModelName, latencyMs, true)
+	// Smart routing's success signal (see common/smartroute). Reaching
+	// settlement means the request succeeded, so it is always recorded.
+	// Streaming requests report time to the first chunk; everything else
+	// has no first-chunk time (it is only set by the stream scanner and a
+	// few specific channels), so the whole request's elapsed time is used.
+	{
+		latencyMs := time.Since(relayInfo.StartTime).Milliseconds()
+		if relayInfo.IsStream && relayInfo.HasSendResponse() {
+			latencyMs = relayInfo.FirstResponseTime.Sub(relayInfo.StartTime).Milliseconds()
+		}
+		smartroute.RecordOutcome(relayInfo.ChannelId, relayInfo.OriginModelName, latencyMs, relayInfo.IsStream, true)
 	}
 
 	logModel := summary.ModelName

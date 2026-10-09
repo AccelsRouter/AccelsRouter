@@ -74,13 +74,20 @@ func getChannelQuery(group string, model string) *gorm.DB {
 
 // GetChannel picks a channel for (group, model) from every currently
 // enabled, non-over-budget candidate — smart routing (see
-// common/smartroute) ranks them by recent success rate and latency, and
-// retry walks that ranked list (0 = best) instead of indexing into
+// common/smartroute) orders them (healthy channels first, then a random draw —
+// see smartroute.RankChannels), and retry walks that order (0 = first) instead of indexing into
 // priority tiers as before. Out-of-range retry clamps to the last
 // (worst-ranked) candidate rather than erroring, matching the previous
 // tier-clamping behavior that CacheGetRandomSatisfiedChannel's auto-group
 // cycling depends on — nil is the only "nothing left to try" signal.
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	return GetChannelSeeded(group, model, retry, requestPath, "")
+}
+
+// GetChannelSeeded is GetChannel with a per-request seed (the request ID) so
+// every attempt of one request, retries included, sees the same order from
+// smartroute.RankChannels. An empty seed draws a fresh order every call.
+func GetChannelSeeded(group string, model string, retry int, requestPath string, seed string) (*Channel, error) {
 	if !setting.SmartRoutingEnabled {
 		return getChannelLegacy(group, model, retry, requestPath)
 	}
@@ -109,7 +116,7 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 		// smartroute.Candidate.Price.
 		candidates = append(candidates, smartroute.Candidate{ChannelId: a.ChannelId})
 	}
-	ranked := smartroute.RankChannels(candidates, model, smartroute.DefaultWeights)
+	ranked := smartroute.RankChannels(candidates, model, seed)
 	if retry < 0 {
 		retry = 0
 	}

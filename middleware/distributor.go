@@ -129,7 +129,7 @@ func Distribute() func(c *gin.Context) {
 				// ratio that gets corrected only at settlement.
 				if common.GetContextKeyString(c, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
 					userId := c.GetInt("id")
-					pricingChannel, overBudget, pcErr := model.GetChannelPricingChannel(userId, modelRequest.Model, 0, c.Request.URL.Path)
+					pricingChannel, overBudget, pcErr := model.GetChannelPricingChannelSeeded(userId, modelRequest.Model, 0, c.Request.URL.Path, c.GetString(common.RequestIdKey))
 					if pcErr != nil {
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable,
 							fmt.Sprintf("获取用户 %d 绑定渠道下模型 %s 的可用渠道失败: %s", userId, modelRequest.Model, pcErr.Error()),
