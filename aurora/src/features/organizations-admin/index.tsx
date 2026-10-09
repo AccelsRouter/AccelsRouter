@@ -79,7 +79,12 @@ import {
 } from './api'
 import { ApplicationsPanel } from './applications'
 import { RoutingPanel } from './routing-panel'
-import type { Organization, OrgStatus, OrgType } from './types'
+import type {
+  CreditOrgPayload,
+  Organization,
+  OrgStatus,
+  OrgType,
+} from './types'
 
 const PAGE_SIZE = 20
 
@@ -274,7 +279,7 @@ export function OrganizationsAdmin() {
                               variant='outline'
                               onClick={() => setCreditOrg(o)}
                             >
-                              {t('Credit')}
+                              {t('Adjust balance')}
                             </Button>
                             <Button
                               size='sm'
@@ -859,6 +864,7 @@ function CreditOrgDialog(props: {
 }) {
   const { t } = useTranslation()
   const org = props.org
+  const [op, setOp] = useState<CreditOrgPayload['op']>('add')
   const [dollars, setDollars] = useState('')
   const [tradeNo, setTradeNo] = useState('')
   const [remark, setRemark] = useState('')
@@ -866,41 +872,56 @@ function CreditOrgDialog(props: {
 
   if (org && org.id !== loadedId) {
     setLoadedId(org.id)
+    setOp('add')
     setDollars('')
     setTradeNo('')
     setRemark('')
   }
 
-  // Admins record top-ups by the invoiced dollar amount; the API works in raw
-  // quota units, so convert before submitting.
+  // Admins enter dollars; the API works in raw quota units, so convert before
+  // submitting. "set" takes the target balance, the others an amount.
   const usd = Number(dollars) || 0
-  const credit = quotaFromUSD(usd)
+  const amount = quotaFromUSD(usd)
+  const current = org?.wallet_quota ?? 0
+  const resulting =
+    op === 'add'
+      ? current + amount
+      : op === 'reduce'
+        ? current - amount
+        : amount
 
   const mutation = useMutation({
     mutationFn: () =>
       creditOrganization(org!.id, {
-        quota: credit,
+        op,
+        quota: amount,
         trade_no: tradeNo.trim(),
         remark: remark.trim(),
       }),
     onSuccess: () => {
-      toast.success(t('Organization credited'))
+      toast.success(t('Balance updated'))
       props.onSaved()
       props.onClose()
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
-  const canSubmit = credit > 0 && tradeNo.trim().length > 0
+  // An addition is an invoiced top-up and needs its trade number; taking
+  // quota away needs a written reason instead.
+  const hasAmount = op === 'set' ? dollars.trim() !== '' : amount > 0
+  const canSubmit =
+    hasAmount &&
+    resulting >= 0 &&
+    (op === 'add' ? tradeNo.trim().length > 0 : remark.trim().length > 0)
 
   return (
     <Dialog open={!!org} onOpenChange={(o) => !o && props.onClose()}>
       <DialogContent className='sm:max-w-md'>
         <DialogHeader>
-          <DialogTitle>{t('Credit Organization')}</DialogTitle>
+          <DialogTitle>{t('Adjust organization balance')}</DialogTitle>
           <DialogDescription>
             {t(
-              'Record an invoiced top-up to this organization wallet. Enter the invoiced amount in USD.'
+              'Add, reduce or set this organization wallet balance in USD. Additions are recorded as invoiced top-ups; reductions as platform debits.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -915,7 +936,25 @@ function CreditOrgDialog(props: {
           </div>
         )}
         <div className='flex flex-col gap-3'>
-          <Field label={t('Amount to credit (USD)')}>
+          <Tabs
+            value={op}
+            onValueChange={(v) => setOp(v as CreditOrgPayload['op'])}
+          >
+            <TabsList className='w-full'>
+              <TabsTrigger value='add' className='flex-1'>
+                {t('Add')}
+              </TabsTrigger>
+              <TabsTrigger value='reduce' className='flex-1'>
+                {t('Reduce')}
+              </TabsTrigger>
+              <TabsTrigger value='set' className='flex-1'>
+                {t('Set to')}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Field
+            label={op === 'set' ? t('New balance (USD)') : t('Amount (USD)')}
+          >
             <div className='relative'>
               <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
                 $
@@ -929,9 +968,13 @@ function CreditOrgDialog(props: {
                 className='pl-6'
               />
             </div>
-            {credit > 0 && (
-              <span className='text-muted-foreground text-xs'>
-                = {credit.toLocaleString()} {t('credit units')}
+            {hasAmount && (
+              <span
+                className={`text-xs ${resulting < 0 ? 'text-destructive' : 'text-muted-foreground'}`}
+              >
+                {resulting < 0
+                  ? t('Balance cannot go below zero')
+                  : `${t('Resulting balance')}: ${formatQuotaWithCurrency(resulting)}`}
               </span>
             )}
           </Field>
@@ -963,7 +1006,11 @@ function CreditOrgDialog(props: {
             className='gap-1.5'
           >
             {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
-            {t('Credit')}
+            {op === 'add'
+              ? t('Add')
+              : op === 'reduce'
+                ? t('Reduce')
+                : t('Set to')}
           </Button>
         </DialogFooter>
       </DialogContent>

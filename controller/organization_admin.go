@@ -230,6 +230,8 @@ func AdminUpdateOrganization(c *gin.Context) {
 }
 
 type adminCreditOrgRequest struct {
+	// add (default) | reduce | set — see model.PlatformAdjustOrg.
+	Op      string `json:"op"`
 	Quota   int    `json:"quota"`
 	TradeNo string `json:"trade_no"`
 	Remark  string `json:"remark"`
@@ -245,16 +247,25 @@ func AdminCreditOrganization(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if req.Quota <= 0 {
+	op := req.Op
+	if op == "" {
+		op = model.PlatformAdjustAdd
+	}
+	if op != model.PlatformAdjustAdd && op != model.PlatformAdjustReduce && op != model.PlatformAdjustSet {
+		common.ApiErrorMsg(c, "invalid op")
+		return
+	}
+	if req.Quota < 0 || (op != model.PlatformAdjustSet && req.Quota <= 0) {
 		common.ApiErrorMsg(c, "quota must be positive")
 		return
 	}
-	if err := model.PlatformCreditOrg(id, req.Quota, c.GetInt("id"), req.TradeNo, req.Remark); err != nil {
+	delta, err := model.PlatformAdjustOrg(id, op, req.Quota, c.GetInt("id"), req.TradeNo, req.Remark)
+	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	model.RecordOrgAudit(id, c.GetInt("id"), "org.credit", fmt.Sprintf("org:%d", id), fmt.Sprintf("quota=%d trade=%s", req.Quota, req.TradeNo))
-	common.ApiSuccess(c, nil)
+	model.RecordOrgAudit(id, c.GetInt("id"), "org."+op, fmt.Sprintf("org:%d", id), fmt.Sprintf("quota=%d delta=%d trade=%s", req.Quota, delta, req.TradeNo))
+	common.ApiSuccess(c, gin.H{"delta": delta})
 }
 
 // AdminListOrgAudit — GET /api/admin/organizations/:id/audit
