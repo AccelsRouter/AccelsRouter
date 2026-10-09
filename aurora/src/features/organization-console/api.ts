@@ -324,6 +324,14 @@ export async function setCustomerOffer(
     throw new Error(res.data?.message || 'Failed to save models and pricing')
 }
 
+// The caller removes itself from its organization (owner refused by the
+// backend). Keys it created stay on its own account.
+export async function leaveMyOrganization(): Promise<void> {
+  const res = await api.post<ApiResp<unknown>>('/api/organization/leave')
+  if (!res.data?.success)
+    throw new Error(res.data?.message || 'Failed to leave organization')
+}
+
 export async function revokeCustomerInvitation(
   customerId: number,
   invId: number

@@ -492,3 +492,41 @@ func TestGetOrgUsage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(80), windowed.TotalQuota)
 }
+
+// A member or admin can leave on its own: the account row disappears and its
+// workspace bindings are cleared, exactly like an admin detach. The owner is
+// refused, and a user outside any org gets a clear error.
+func TestLeaveOrganization(t *testing.T) {
+	migrateOrgTables(t)
+	require.NoError(t, DB.AutoMigrate(&Token{}))
+	DB.Exec("DELETE FROM tokens")
+	org := mustCreateOrg(t, "leave-org", OrgTypeEnterprise, 0)
+	require.NoError(t, AttachOrgAccount(&OrgAccount{OrgId: org.Id, UserId: 101, Relation: OrgRelationMember, Role: OrgRoleOwner}))
+	require.NoError(t, AttachOrgAccount(&OrgAccount{OrgId: org.Id, UserId: 102, Relation: OrgRelationMember, Role: OrgRoleMember}))
+	ws := &Workspace{OrgId: org.Id, Name: "ws"}
+	require.NoError(t, DB.Create(ws).Error)
+	tok := &Token{UserId: 102, Name: "k", Key: "leave-test-key", Status: 1}
+	require.NoError(t, DB.Create(tok).Error)
+	require.NoError(t, DB.Create(&WorkspaceToken{WorkspaceId: ws.Id, TokenId: tok.Id}).Error)
+
+	_, err := LeaveOrganization(101)
+	require.ErrorIs(t, err, ErrOrgOwnerCannotLeave)
+	_, err = LeaveOrganization(999)
+	require.ErrorIs(t, err, ErrNotInOrganization)
+
+	left, err := LeaveOrganization(102)
+	require.NoError(t, err)
+	assert.Equal(t, org.Id, left.OrgId, "caller audits under the org that was left")
+	gone, err := GetOrgAccountByUser(102)
+	require.NoError(t, err)
+	assert.Nil(t, gone)
+	var bindings int64
+	require.NoError(t, DB.Model(&WorkspaceToken{}).Where("token_id = ?", tok.Id).Count(&bindings).Error)
+	assert.Zero(t, bindings, "workspace bindings are cleared")
+	var tokens int64
+	require.NoError(t, DB.Model(&Token{}).Where("user_id = ?", 102).Count(&tokens).Error)
+	assert.Equal(t, int64(1), tokens, "the user's own keys are kept")
+	still, err := GetOrgAccountByUser(101)
+	require.NoError(t, err)
+	require.NotNil(t, still, "the owner stays")
+}

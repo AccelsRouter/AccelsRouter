@@ -29,18 +29,26 @@ user so this page is reachable.
 */
 import { useState } from 'react'
 import dayjs from 'dayjs'
-import { useQuery } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Loader2, LogOut } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SectionPageLayout } from '@/components/layout'
 import { OrgKeysPanel } from '@/features/org-keys'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { AccountsTab } from './accounts-tab'
 import { myOrgKeysApi } from './api'
-import { exportMyOrgLogs, getOrgContext, listOrgLogs } from './api'
+import {
+  exportMyOrgLogs,
+  getOrgContext,
+  leaveMyOrganization,
+  listOrgLogs,
+} from './api'
 import { getOrgSelf } from './api'
 import { ApplyPanel } from './apply-panel'
 import { AuditTab } from './audit-tab'
@@ -89,6 +97,21 @@ export function OrganizationConsole() {
   // management tabs (the backing endpoints are owner/admin-only anyway).
   const canManage = self?.role !== 'member'
 
+  // Members and admins can leave on their own; the owner is the accountable
+  // party and can only be removed by the platform admin.
+  const queryClient = useQueryClient()
+  const [leaveOpen, setLeaveOpen] = useState(false)
+  const leave = useMutation({
+    mutationFn: leaveMyOrganization,
+    onSuccess: () => {
+      setLeaveOpen(false)
+      toast.success(t('You have left the organization.'))
+      void queryClient.invalidateQueries({ queryKey: ['org-self'] })
+      void queryClient.invalidateQueries({ queryKey: ['org-context'] })
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
+
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('My Organization')}</SectionPageLayout.Title>
@@ -128,15 +151,40 @@ export function OrganizationConsole() {
                   </span>
                 )}
               </div>
-              <div className='flex flex-col items-end'>
-                <span className='text-muted-foreground text-xs'>
-                  {t('Wallet Balance')}
-                </span>
-                <span className='text-lg font-bold tabular-nums'>
-                  {formatQuotaWithCurrency(self.wallet_quota)}
-                </span>
+              <div className='flex items-center gap-4'>
+                <div className='flex flex-col items-end'>
+                  <span className='text-muted-foreground text-xs'>
+                    {t('Wallet Balance')}
+                  </span>
+                  <span className='text-lg font-bold tabular-nums'>
+                    {formatQuotaWithCurrency(self.wallet_quota)}
+                  </span>
+                </div>
+                {self.role !== 'owner' && (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    className='gap-1.5'
+                    onClick={() => setLeaveOpen(true)}
+                  >
+                    <LogOut className='h-3.5 w-3.5' />
+                    {t('Leave organization')}
+                  </Button>
+                )}
               </div>
             </div>
+            <ConfirmDialog
+              open={leaveOpen}
+              onOpenChange={setLeaveOpen}
+              title={t('Leave this organization?')}
+              desc={t(
+                'You lose access to its wallet, models and shared keys. Keys you created stay on your own account but are no longer paid by the organization. Rejoining requires a new invitation.'
+              )}
+              destructive
+              isLoading={leave.isPending}
+              confirmText={t('Leave')}
+              handleConfirm={() => leave.mutate()}
+            />
 
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
