@@ -27,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 
@@ -72,6 +73,17 @@ func applyChannelTestCanary(request dto.Request, canary *channelTestCanary) {
 		req.Messages = []dto.ClaudeMessage{{Role: "user", Content: canary.Prompt}}
 		req.MaxTokens = lo.ToPtr(canary.MaxTokens)
 	}
+}
+
+// isTaskUsageBilledModel reports whether the model's billing expression
+// reads task usage facts, i.e. it is a task (video/image) model whose
+// requests never go through the chat test path.
+func isTaskUsageBilledModel(modelName string) bool {
+	expr, ok := billing_setting.GetBillingExpr(modelName)
+	if !ok {
+		return false
+	}
+	return len(billingexpr.UsedUsageKeys(expr)) > 0
 }
 
 // recordProbe feeds a channel test outcome into the upstream monitor.
@@ -173,6 +185,15 @@ func runChannelTestWithCanary(ctx context.Context, channel *model.Channel, testU
 	c, _ := gin.CreateTestContext(w)
 
 	testModel = resolveChannelTestModel(channel, testModel)
+	// Video/image task models are priced from task usage facts (u("tokens"),
+	// u("resolution"), ...) that only a real task submission carries; a
+	// chat-style canary cannot even be priced, so say so instead of surfacing
+	// the expression engine's error.
+	if isTaskUsageBilledModel(testModel) {
+		return testResult{
+			localErr: fmt.Errorf("%s is billed by task usage; chat-style channel tests cannot probe task models", testModel),
+		}
+	}
 
 	endpointType = normalizeChannelTestEndpoint(channel, endpointType)
 

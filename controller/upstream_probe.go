@@ -26,7 +26,7 @@ type upstreamProbeSummary struct {
 	Channels   int   `json:"channels"`
 	Probed     int   `json:"probed"`
 	Failed     int   `json:"failed"`
-	Skipped    int   `json:"skipped"` // unsupported channel types
+	Skipped    int   `json:"skipped"` // unsupported channel types and task models
 	// Paused by the admin (setting.UpstreamProbeConfig), not probed.
 	PausedChannels int `json:"paused_channels"`
 	PausedModels   int `json:"paused_models"`
@@ -144,6 +144,13 @@ func runUpstreamProbeSweep(ctx context.Context, only map[int]bool) bool {
 			seen[m] = true
 			if setting.UpstreamProbeModelPaused(m) {
 				summary.PausedModels++
+				continue
+			}
+			// Task models cannot be probed with a chat canary (see
+			// isTaskUsageBilledModel); leave them out instead of logging a
+			// failure every sweep.
+			if isTaskUsageBilledModel(m) {
+				summary.Skipped++
 				continue
 			}
 			jobs = append(jobs, job{ch, m})
