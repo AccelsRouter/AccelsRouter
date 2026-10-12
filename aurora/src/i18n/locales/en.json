@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Click to view details": "Click to view details",
     "(ID: {{id}})": "(ID: {{id}})",
     "{{bytes}} bytes": "{{bytes}} bytes",
     "{{channels}} channels, {{tasks}} in-flight tasks": "{{channels}} channels, {{tasks}} in-flight tasks",

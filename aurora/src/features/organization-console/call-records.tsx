@@ -8,16 +8,45 @@ import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
 import { Download, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
-import { Button } from '@/components/ui/button'
 import { formatQuotaWithCurrency } from '@/lib/currency'
-
+import { Button } from '@/components/ui/button'
+import { DetailsDialog } from '@/features/usage-logs/components/dialogs/details-dialog'
+import type { UsageLog } from '@/features/usage-logs/data/schema'
 import type { OrgLog } from './api'
 import { MONEY_OPTS, Td, Th, fmtTime } from './shared'
 import type { PagedResponse } from './types'
 
 const PAGE_SIZE = 20
 const LOG_TYPE_ERROR = 5
+
+// The details dialog is the usage-log one in its non-admin form: it never
+// renders the channel, routing or admin sections, and the server has already
+// blanked those fields for console viewers.
+function toUsageLog(l: OrgLog): UsageLog {
+  return {
+    id: l.id,
+    user_id: l.user_id ?? 0,
+    created_at: l.created_at,
+    type: l.type ?? 2,
+    content: l.content ?? '',
+    username: l.username ?? '',
+    token_name: l.token_name ?? '',
+    model_name: l.model_name ?? '',
+    quota: l.quota ?? 0,
+    prompt_tokens: l.prompt_tokens ?? 0,
+    completion_tokens: l.completion_tokens ?? 0,
+    use_time: l.use_time ?? 0,
+    is_stream: l.is_stream ?? false,
+    channel: 0,
+    channel_name: '',
+    token_id: l.token_id ?? 0,
+    group: l.group ?? '',
+    ip: l.ip ?? '',
+    other: l.other ?? '',
+    request_id: l.request_id ?? '',
+    upstream_request_id: '',
+  }
+}
 type LogFetcher = (params: {
   page: number
   pageSize: number
@@ -36,6 +65,7 @@ export function CallRecords({
 }) {
   const { t } = useTranslation()
   const [page, setPage] = useState(1)
+  const [detail, setDetail] = useState<OrgLog | null>(null)
 
   const exportMutation = useMutation({
     mutationFn: () => onExport!(),
@@ -116,75 +146,93 @@ export function CallRecords({
             {items.map((l) => {
               const isError = l.type === LOG_TYPE_ERROR
               return (
-              <tr key={l.id} className='hover:bg-muted/30'>
-                <Td className='text-xs'>{fmtTime(l.created_at)}</Td>
-                {showCustomer && (
-                  <Td className='whitespace-nowrap'>{l.customer_name || '-'}</Td>
-                )}
-                <Td>{l.model_name || '-'}</Td>
-                {!showCustomer && (
-                  <Td className='text-muted-foreground'>
-                    {l.token_name || '-'}
+                <tr
+                  key={l.id}
+                  className='hover:bg-muted/30 cursor-pointer'
+                  title={t('Click to view details')}
+                  onClick={() => setDetail(l)}
+                >
+                  <Td className='text-xs'>{fmtTime(l.created_at)}</Td>
+                  {showCustomer && (
+                    <Td className='whitespace-nowrap'>
+                      {l.customer_name || '-'}
+                    </Td>
+                  )}
+                  <Td>{l.model_name || '-'}</Td>
+                  {!showCustomer && (
+                    <Td className='text-muted-foreground'>
+                      {l.token_name || '-'}
+                    </Td>
+                  )}
+                  <Td>
+                    {isError ? (
+                      <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs whitespace-nowrap'>
+                        {t('Failed')}
+                      </span>
+                    ) : (
+                      <span className='rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs whitespace-nowrap text-emerald-600 dark:text-emerald-400'>
+                        {t('Success')}
+                      </span>
+                    )}
                   </Td>
-                )}
-                <Td>
-                  {isError ? (
-                    <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs whitespace-nowrap'>
-                      {t('Failed')}
-                    </span>
-                  ) : (
-                    <span className='rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs whitespace-nowrap text-emerald-600 dark:text-emerald-400'>
-                      {t('Success')}
-                    </span>
-                  )}
-                </Td>
-                {/* Tokens merged into one column: input / output. */}
-                <Td className='text-right tabular-nums whitespace-nowrap'>
-                  {isError
-                    ? '-'
-                    : `${l.prompt_tokens} / ${l.completion_tokens}`}
-                </Td>
-                {/* Price merged: charged (bold) + standard·discount% as subtext. */}
-                <Td className='text-right tabular-nums whitespace-nowrap'>
-                  {isError ? (
-                    '-'
-                  ) : showRetail ? (
-                    <div className='flex flex-col items-end'>
-                      <span className='font-medium'>
-                        {formatQuotaWithCurrency(
-                          l.retail_quota ?? l.quota,
-                          MONEY_OPTS
-                        )}
+                  {/* Tokens merged into one column: input / output. */}
+                  <Td className='text-right whitespace-nowrap tabular-nums'>
+                    {isError
+                      ? '-'
+                      : `${l.prompt_tokens} / ${l.completion_tokens}`}
+                  </Td>
+                  {/* Price merged: charged (bold) + standard·discount% as subtext. */}
+                  <Td className='text-right whitespace-nowrap tabular-nums'>
+                    {isError ? (
+                      '-'
+                    ) : showRetail ? (
+                      <div className='flex flex-col items-end'>
+                        <span className='font-medium'>
+                          {formatQuotaWithCurrency(
+                            l.retail_quota ?? l.quota,
+                            MONEY_OPTS
+                          )}
+                        </span>
+                        <span className='text-muted-foreground text-xs'>
+                          {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
+                          {l.retail_ratio != null
+                            ? ` · ${Math.round(l.retail_ratio * 100)}%`
+                            : ''}
+                        </span>
+                      </div>
+                    ) : (
+                      formatQuotaWithCurrency(l.quota, MONEY_OPTS)
+                    )}
+                  </Td>
+                  <Td className='text-muted-foreground text-xs'>
+                    {isError && l.content ? (
+                      <span
+                        className='inline-block max-w-[240px] truncate align-middle'
+                        title={l.content}
+                      >
+                        {l.content}
                       </span>
-                      <span className='text-muted-foreground text-xs'>
-                        {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
-                        {l.retail_ratio != null
-                          ? ` · ${Math.round(l.retail_ratio * 100)}%`
-                          : ''}
-                      </span>
-                    </div>
-                  ) : (
-                    formatQuotaWithCurrency(l.quota, MONEY_OPTS)
-                  )}
-                </Td>
-                <Td className='text-muted-foreground text-xs'>
-                  {isError && l.content ? (
-                    <span
-                      className='inline-block max-w-[240px] truncate align-middle'
-                      title={l.content}
-                    >
-                      {l.content}
-                    </span>
-                  ) : (
-                    '-'
-                  )}
-                </Td>
-              </tr>
+                    ) : (
+                      '-'
+                    )}
+                  </Td>
+                </tr>
               )
             })}
           </tbody>
         </table>
       </div>
+      {detail && (
+        <DetailsDialog
+          log={toUsageLog(detail)}
+          isAdmin={false}
+          isRoot={false}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDetail(null)
+          }}
+        />
+      )}
       <div className='flex items-center justify-between'>
         <span className='text-muted-foreground text-xs'>
           {t('{{n}} records', { n: total })}

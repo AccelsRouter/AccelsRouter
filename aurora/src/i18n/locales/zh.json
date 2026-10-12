@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Click to view details": "点击查看详情",
     "(ID: {{id}})": "（ID: {{id}}）",
     "{{bytes}} bytes": "{{bytes}} 字节",
     "{{channels}} channels, {{tasks}} in-flight tasks": "{{channels}} 个渠道，{{tasks}} 个在途任务",

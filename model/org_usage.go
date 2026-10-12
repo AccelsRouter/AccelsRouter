@@ -82,6 +82,16 @@ type logUsageRow struct {
 	CompletionTokens int64
 }
 
+// formatOrgLogs is formatUserLogs for org and reseller call records: besides
+// the channel and admin-only blobs, the upstream's own request id is dropped
+// too, since a customer must not learn which provider served a call.
+func formatOrgLogs(logs []*Log, startIdx int) {
+	formatUserLogs(logs, startIdx)
+	for i := range logs {
+		logs[i].UpstreamRequestId = ""
+	}
+}
+
 // ListOrgLogs returns the org's individual consume call records (newest first,
 // paginated) for [from, to]. Cross-DB safe: the org's token ids are resolved
 // from the main DB, and the logs are read from LOG_DB by token_id (no join),
@@ -118,7 +128,7 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 	}
 	// Strip admin-only fields (Other.admin_info/audit_info, ChannelName) — these
 	// viewers (reseller admin, org owner/admin) are not platform admins.
-	formatUserLogs(logs, startIdx)
+	formatOrgLogs(logs, startIdx)
 	// Overlay the reseller's per-model retail discount so each row shows the
 	// discounted price the customer's org wallet actually paid. Reporting only;
 	// mirrors ApplyRetailDiscounts on the aggregate report and the live charge
@@ -182,7 +192,7 @@ func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*
 	if err := tx.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
-	formatUserLogs(logs, startIdx)
+	formatOrgLogs(logs, startIdx)
 	// Per customer: the retail discount (for the overlay) and the org name (for
 	// the aggregated call log's customer column).
 	discountsByOrg := map[int]map[string]float64{}
