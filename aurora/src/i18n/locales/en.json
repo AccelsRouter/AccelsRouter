@@ -204,6 +204,8 @@
     "Ledger": "Ledger",
     "No ledger entries.": "No ledger entries.",
     "Suspended": "Suspended",
+    "Probing off": "Probing off",
+    "Probe every {{n}} min (global)": "Probe every {{n}} min (global)",
     "Channel enabled": "Channel enabled",
     "Global probes off": "Global probes off",
     "Verified": "Verified",

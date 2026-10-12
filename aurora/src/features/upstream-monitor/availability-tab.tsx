@@ -354,6 +354,8 @@ function ChannelCard(props: {
               >
                 {t(status.key)}
               </Badge>
+              {/* Probe state, always shown so the channel badge is never
+                  mistaken for it. */}
               {probePaused ? (
                 <Badge
                   variant='outline'
@@ -362,12 +364,23 @@ function ChannelCard(props: {
                   <Pause className='h-2.5 w-2.5' />
                   {t('Probing paused')}
                 </Badge>
+              ) : !props.globalEnabled ? (
+                <Badge
+                  variant='outline'
+                  className='border-muted-foreground/40 text-muted-foreground text-[10px]'
+                >
+                  {t('Probing off')}
+                </Badge>
+              ) : probeMinutes > 0 ? (
+                <Badge variant='outline' className='text-[10px]'>
+                  {t('Probe every {{n}} min', { n: probeMinutes })}
+                </Badge>
               ) : (
-                probeMinutes > 0 && (
-                  <Badge variant='outline' className='text-[10px]'>
-                    {t('Probe every {{n}} min', { n: probeMinutes })}
-                  </Badge>
-                )
+                <Badge variant='outline' className='text-[10px]'>
+                  {t('Probe every {{n}} min (global)', {
+                    n: props.globalMinutes,
+                  })}
+                </Badge>
               )}
             </div>
             <div className='text-muted-foreground mt-0.5 text-xs'>

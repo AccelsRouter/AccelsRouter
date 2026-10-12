@@ -244,6 +244,8 @@
     "Ledger": "帳目",
     "No ledger entries.": "尚無帳目記錄。",
     "Suspended": "已暫停",
+    "Probing off": "自動探測已關閉",
+    "Probe every {{n}} min (global)": "每 {{n}} 分鐘探測（全域）",
     "Channel enabled": "渠道已啟用",
     "Global probes off": "全域自動探測已關閉",
     "Verified": "已驗證",
