@@ -252,7 +252,7 @@ export function IdentityDialog(props: {
                       <div>{t(CHECK_LABEL[c.name] ?? c.name)}</div>
                       {c.note && (
                         <div className='text-muted-foreground text-xs'>
-                          {c.note}
+                          {t(c.note)}
                         </div>
                       )}
                     </td>

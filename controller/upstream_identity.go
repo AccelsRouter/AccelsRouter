@@ -80,10 +80,18 @@ func identityFamily(modelName string, channelType int) string {
 
 var identityIdPrefix = map[string]string{"claude": "msg_", "openai": "chatcmpl-"}
 
+// identityPromptTokenLocalTolerance applies when the expectation comes from
+// the gateway's own tiktoken count (OpenAI models only): the local chat
+// framing arithmetic is close to, not identical with, OpenAI's.
+const identityPromptTokenLocalTolerance = 6
+
 // evaluateIdentity turns a canary answer into checks and a verdict. `family`
-// is the channel's API family, `upstreamModel` the name sent upstream after
-// mapping, `baseline` the trusted fingerprint (nil = none captured yet).
-func evaluateIdentity(family, upstreamModel string, resp *dto.OpenAITextResponse, baseline *model.ModelFingerprint) ([]identityCheck, string) {
+// is the API family of the requested model, `upstreamModel` the name sent
+// upstream after mapping, `baseline` the trusted fingerprint (nil = none
+// captured yet) and `localEstimate` the gateway's own tokenizer count of the
+// canary, used as the expectation for OpenAI models when no baseline exists
+// (0 = not applicable).
+func evaluateIdentity(family, upstreamModel string, resp *dto.OpenAITextResponse, baseline *model.ModelFingerprint, localEstimate int) ([]identityCheck, string) {
 	checks := make([]identityCheck, 0, 4)
 	failed := false
 	unknown := false
@@ -119,25 +127,35 @@ func evaluateIdentity(family, upstreamModel string, resp *dto.OpenAITextResponse
 	// 3. Tokenizer fingerprint: the canary's input-token count as reported by
 	// the genuine model. Different model families count the same text
 	// differently; a proxy cannot fake this without re-implementing the
-	// provider's tokenizer.
-	tc := identityCheck{Name: "prompt_tokens", Actual: strconv.Itoa(resp.PromptTokens)}
-	if baseline == nil {
-		tc.Status, tc.Expected, tc.Note = "unknown", "-", "no baseline captured for this model yet"
-		unknown = true
-	} else {
-		tc.Expected = strconv.Itoa(baseline.PromptTokens)
-		diff := resp.PromptTokens - baseline.PromptTokens
+	// provider's tokenizer. The expectation is the captured baseline, or for
+	// OpenAI models the gateway's own tiktoken count; without either the
+	// check is left out and the verdict stays "unverified".
+	expected, tolerance, note := 0, 0, ""
+	switch {
+	case baseline != nil:
+		expected, tolerance, note = baseline.PromptTokens, identityPromptTokenTolerance, "does not match the baseline"
+	case family == "openai" && localEstimate > 0:
+		expected, tolerance, note = localEstimate, identityPromptTokenLocalTolerance, "does not match the local tokenizer count"
+	}
+	if expected > 0 {
+		tc := identityCheck{Name: "prompt_tokens", Expected: strconv.Itoa(expected), Actual: strconv.Itoa(resp.PromptTokens)}
+		diff := resp.PromptTokens - expected
 		if diff < 0 {
 			diff = -diff
 		}
-		if diff <= identityPromptTokenTolerance {
+		if diff <= tolerance {
 			tc.Status = "pass"
+			if baseline == nil {
+				tc.Note = "matches the local tokenizer count; capture a baseline for a stronger check"
+			}
 		} else {
-			tc.Status, tc.Note = "fail", fmt.Sprintf("off by %d tokens from the baseline (channel #%d)", diff, baseline.SourceChannelId)
+			tc.Status, tc.Note = "fail", note
 			failed = true
 		}
+		checks = append(checks, tc)
+	} else {
+		unknown = true
 	}
-	checks = append(checks, tc)
 
 	// 4. Informational: where the usage came from. A locally estimated count
 	// is not evidence either way.
@@ -241,7 +259,7 @@ func AdminUpstreamIdentityProbe(c *gin.Context) {
 		res.Checks = common.GetJsonString([]identityCheck{{Name: "probe", Expected: "an answer", Actual: probeErr.Error(), Status: "fail"}})
 	} else {
 		baseline, _ := model.GetModelFingerprint(modelName)
-		checks, verdict := evaluateIdentity(identityFamily(modelName, channel.Type), out.Result.upstreamModel, out.Response, baseline)
+		checks, verdict := evaluateIdentity(identityFamily(modelName, channel.Type), out.Result.upstreamModel, out.Response, baseline, out.Result.promptEstimate)
 		res.Verdict = verdict
 		res.Checks = common.GetJsonString(checks)
 	}
@@ -283,7 +301,7 @@ func AdminUpstreamIdentityBaseline(c *gin.Context) {
 		return
 	}
 	// The source channel is, by definition, verified against its own baseline.
-	checks, verdict := evaluateIdentity(identityFamily(modelName, channel.Type), out.Result.upstreamModel, out.Response, fp)
+	checks, verdict := evaluateIdentity(identityFamily(modelName, channel.Type), out.Result.upstreamModel, out.Response, fp, out.Result.promptEstimate)
 	_ = model.SaveUpstreamIdentityResult(&model.UpstreamIdentityResult{
 		ChannelId: channel.Id, ModelName: modelName, Verdict: verdict,
 		Checks: common.GetJsonString(checks), Evidence: fp.Evidence, LatencyMs: out.Latency,

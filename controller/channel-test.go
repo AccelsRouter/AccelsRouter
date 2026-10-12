@@ -48,6 +48,8 @@ type testResult struct {
 	requestBody   []byte
 	responseBody  []byte
 	usage         *dto.Usage
+	// Local tokenizer count of the canary (only computed for canary probes).
+	promptEstimate int
 }
 
 // channelTestCanary replaces the default "hi" test prompt with a fixed text
@@ -328,6 +330,13 @@ func runChannelTestWithCanary(ctx context.Context, channel *model.Channel, testU
 	// 更新请求中的模型名称
 	request.SetModelName(testModel)
 
+	promptEstimate := 0
+	if canary != nil {
+		if n, err := service.EstimateRequestToken(c, request.GetTokenCountMeta(), info); err == nil {
+			promptEstimate = n
+		}
+	}
+
 	apiType, _ := common.ChannelType2APIType(channel.Type)
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact &&
 		!common.SupportsResponsesCompact(channel.Type, apiType) {
@@ -574,13 +583,14 @@ func runChannelTestWithCanary(ctx context.Context, channel *model.Channel, testU
 	})
 	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
 	return testResult{
-		context:       c,
-		localErr:      nil,
-		newAPIError:   nil,
-		upstreamModel: testModel,
-		requestBody:   jsonData,
-		responseBody:  respBody,
-		usage:         usage,
+		context:        c,
+		localErr:       nil,
+		newAPIError:    nil,
+		upstreamModel:  testModel,
+		requestBody:    jsonData,
+		responseBody:   respBody,
+		usage:          usage,
+		promptEstimate: promptEstimate,
 	}
 }
 
