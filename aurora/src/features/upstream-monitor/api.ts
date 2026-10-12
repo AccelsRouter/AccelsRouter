@@ -102,6 +102,82 @@ export async function setProbeConfig(
   return unwrap(res, 'Failed to save probe config')
 }
 
+// Model identity verification: a fixed canary through a channel, compared
+// with the baseline fingerprint captured from a trusted channel.
+export type IdentityVerdict = 'verified' | 'suspect' | 'unverified' | 'error'
+export type IdentityCheck = {
+  name: string
+  expected: string
+  actual: string
+  status: 'pass' | 'fail' | 'unknown'
+  note?: string
+}
+export type UpstreamIdentityResult = {
+  channel_id: number
+  model_name: string
+  verdict: IdentityVerdict
+  checks: string // JSON IdentityCheck[]
+  evidence?: string // JSON {request, response, ...}; only on the detail call
+  latency_ms: number
+  created_time: number
+}
+export type ModelFingerprint = {
+  model_name: string
+  source_channel_id: number
+  prompt_tokens: number
+  response_model: string
+  id_prefix: string
+  updated_time: number
+}
+
+export async function listUpstreamIdentity(): Promise<{
+  results: UpstreamIdentityResult[]
+  fingerprints: ModelFingerprint[]
+}> {
+  const res = await api.get<
+    ApiResp<{
+      results: UpstreamIdentityResult[]
+      fingerprints: ModelFingerprint[]
+    }>
+  >('/api/admin/upstream/identity')
+  return unwrap(res, 'Failed to load identity results')
+}
+
+export async function getUpstreamIdentityResult(
+  channelId: number,
+  model: string
+): Promise<UpstreamIdentityResult> {
+  const res = await api.get<ApiResp<UpstreamIdentityResult>>(
+    '/api/admin/upstream/identity/result',
+    { params: { channel_id: channelId, model } }
+  )
+  return unwrap(res, 'Failed to load identity result')
+}
+
+export async function probeUpstreamIdentity(
+  channelId: number,
+  model: string
+): Promise<UpstreamIdentityResult> {
+  const res = await api.post<ApiResp<UpstreamIdentityResult>>(
+    '/api/admin/upstream/identity/probe',
+    { channel_id: channelId, model },
+    { timeout: 120_000 }
+  )
+  return unwrap(res, 'Identity probe failed')
+}
+
+export async function setUpstreamIdentityBaseline(
+  channelId: number,
+  model: string
+): Promise<ModelFingerprint> {
+  const res = await api.post<ApiResp<ModelFingerprint>>(
+    '/api/admin/upstream/identity/baseline',
+    { channel_id: channelId, model },
+    { timeout: 120_000 }
+  )
+  return unwrap(res, 'Failed to capture baseline')
+}
+
 export async function probeAllUpstreams(): Promise<void> {
   const res = await api.post<ApiResp<{ started: boolean }>>(
     '/api/admin/upstream/probe-all'

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
   ChevronRight,
@@ -27,6 +27,7 @@ import {
   Pause,
   Play,
   Search,
+  ShieldCheck,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -37,13 +38,21 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { ModelMultiPicker } from '@/components/model-multi-picker'
 import {
+  listUpstreamIdentity,
   probeUpstreamModel,
+  type ModelFingerprint,
   type UpstreamChannelHealth,
   type UpstreamHealthResponse,
+  type UpstreamIdentityResult,
   type UpstreamModelHealth,
   type UpstreamProbeChannelConfig,
   type UpstreamProbeConfig,
 } from './api'
+import {
+  IDENTITY_QUERY_KEY,
+  IdentityDialog,
+  VERDICT_META,
+} from './identity-dialog'
 import {
   AvailabilityText,
   HistoryStrip,
@@ -80,14 +89,21 @@ const PROBE_MAX_MINUTES = 1440
 
 function ModelRow(props: {
   channelId: number
+  channelName: string
   m: UpstreamModelHealth
   queryKey: unknown[]
   paused: boolean // automatic probes skip this model on every channel
   saving: boolean
   onTogglePause: () => void
+  identity?: UpstreamIdentityResult
+  baseline?: ModelFingerprint
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const [identityOpen, setIdentityOpen] = useState(false)
+  const verdictMeta = props.identity
+    ? VERDICT_META[props.identity.verdict]
+    : undefined
   const probe = useMutation({
     mutationFn: () => probeUpstreamModel(props.channelId, props.m.model),
     onSuccess: (res) => {
@@ -139,6 +155,19 @@ function ModelRow(props: {
               {t('paused')}
             </Badge>
           )}
+          {verdictMeta && (
+            <Badge
+              variant='outline'
+              className={cn(
+                'cursor-pointer text-[10px]',
+                verdictMeta.className
+              )}
+              title={t('Model identity: click for the checks and evidence')}
+              onClick={() => setIdentityOpen(true)}
+            >
+              {t(verdictMeta.key)}
+            </Badge>
+          )}
         </div>
       </td>
       <td className='px-3 py-2 text-right'>
@@ -175,6 +204,25 @@ function ModelRow(props: {
         )}
       </td>
       <td className='px-2 py-2 text-right whitespace-nowrap'>
+        <Button
+          size='sm'
+          variant='ghost'
+          className='h-7 gap-1 text-xs'
+          onClick={() => setIdentityOpen(true)}
+          title={t('Verify that this channel really serves this model')}
+        >
+          <ShieldCheck className='h-3.5 w-3.5' />
+          {t('Identity')}
+        </Button>
+        <IdentityDialog
+          open={identityOpen}
+          onOpenChange={setIdentityOpen}
+          channelId={props.channelId}
+          channelName={props.channelName}
+          model={m.model}
+          summary={props.identity}
+          baseline={props.baseline}
+        />
         <Button
           size='sm'
           variant='ghost'
@@ -227,6 +275,8 @@ function ChannelCard(props: {
   saving: boolean
   onSetChannel: (patch: UpstreamProbeChannelConfig) => void
   onToggleModel: (model: string) => void
+  identity: Map<string, UpstreamIdentityResult> // key: model
+  fingerprints: Map<string, ModelFingerprint> // key: model
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(props.defaultOpen)
@@ -445,11 +495,14 @@ function ChannelCard(props: {
                     <ModelRow
                       key={m.model}
                       channelId={ch.id}
+                      channelName={ch.name}
                       m={m}
                       queryKey={props.queryKey}
                       paused={props.pausedModels.has(m.model.toLowerCase())}
                       saving={props.saving}
                       onTogglePause={() => props.onToggleModel(m.model)}
+                      identity={props.identity.get(m.model)}
+                      baseline={props.fingerprints.get(m.model)}
                     />
                   ))}
                 </tbody>
@@ -474,6 +527,34 @@ export function AvailabilityTab(props: {
   const [query, setQuery] = useState('')
   const [problemsOnly, setProblemsOnly] = useState(false)
   const [showRemoved, setShowRemoved] = useState(false)
+
+  // Latest identity verdicts and baselines, keyed for the rows.
+  const identityQuery = useQuery({
+    queryKey: IDENTITY_QUERY_KEY,
+    queryFn: listUpstreamIdentity,
+    staleTime: 30_000,
+  })
+  const identityByChannel = useMemo(() => {
+    const m = new Map<number, Map<string, UpstreamIdentityResult>>()
+    for (const r of identityQuery.data?.results ?? []) {
+      if (!m.has(r.channel_id)) m.set(r.channel_id, new Map())
+      m.get(r.channel_id)!.set(r.model_name, r)
+    }
+    return m
+  }, [identityQuery.data])
+  const fingerprints = useMemo(
+    () =>
+      new Map(
+        (identityQuery.data?.fingerprints ?? []).map((f) => [f.model_name, f])
+      ),
+    [identityQuery.data]
+  )
+  const suspectCount = useMemo(
+    () =>
+      (identityQuery.data?.results ?? []).filter((r) => r.verdict === 'suspect')
+        .length,
+    [identityQuery.data]
+  )
 
   const config = props.data.probe?.config ?? EMPTY_CONFIG
   const pausedModels = useMemo(
@@ -582,6 +663,11 @@ export function AvailabilityTab(props: {
           {t('Paused models ({{count}})', { count: pausedModels.size })}
         </Button>
         <span className='text-muted-foreground ml-auto text-xs'>
+          {suspectCount > 0 && (
+            <span className='mr-2 text-red-600 dark:text-red-400'>
+              {t('{{count}} suspect model identities', { count: suspectCount })}
+            </span>
+          )}
           {t('{{count}} channels', { count: channels.length })}
         </span>
       </div>
@@ -644,6 +730,8 @@ export function AvailabilityTab(props: {
               saving={props.saving}
               onSetChannel={(patch) => setChannel(ch.id, patch)}
               onToggleModel={toggleModel}
+              identity={identityByChannel.get(ch.id) ?? new Map()}
+              fingerprints={fingerprints}
             />
           ))}
         </div>

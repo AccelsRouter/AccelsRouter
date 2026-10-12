@@ -42,6 +42,34 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 	// model actually probed (resolved from the channel when none was given)
 	model string
+	// Set on success: what was sent upstream and what came back, for callers
+	// that inspect the answer (model identity verification).
+	upstreamModel string
+	requestBody   []byte
+	responseBody  []byte
+	usage         *dto.Usage
+}
+
+// channelTestCanary replaces the default "hi" test prompt with a fixed text
+// and output cap, so the same request can be compared across channels.
+type channelTestCanary struct {
+	Prompt    string
+	MaxTokens uint
+}
+
+func applyChannelTestCanary(request dto.Request, canary *channelTestCanary) {
+	if canary == nil {
+		return
+	}
+	switch req := request.(type) {
+	case *dto.GeneralOpenAIRequest:
+		req.Messages = []dto.Message{{Role: "user", Content: canary.Prompt}}
+		req.MaxTokens = lo.ToPtr(canary.MaxTokens)
+		req.MaxCompletionTokens = nil
+	case *dto.ClaudeRequest:
+		req.Messages = []dto.ClaudeMessage{{Role: "user", Content: canary.Prompt}}
+		req.MaxTokens = lo.ToPtr(canary.MaxTokens)
+	}
 }
 
 // recordProbe feeds a channel test outcome into the upstream monitor.
@@ -124,6 +152,10 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 }
 
 func runChannelTest(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+	return runChannelTestWithCanary(ctx, channel, testUserID, testModel, endpointType, isStream, nil)
+}
+
+func runChannelTestWithCanary(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool, canary *channelTestCanary) testResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -259,6 +291,7 @@ func runChannelTest(ctx context.Context, channel *model.Channel, testUserID int,
 	}
 
 	request := buildTestRequest(testModel, endpointType, channel, isStream)
+	applyChannelTestCanary(request, canary)
 
 	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 
@@ -541,9 +574,13 @@ func runChannelTest(ctx context.Context, channel *model.Channel, testUserID int,
 	})
 	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
 	return testResult{
-		context:     c,
-		localErr:    nil,
-		newAPIError: nil,
+		context:       c,
+		localErr:      nil,
+		newAPIError:   nil,
+		upstreamModel: testModel,
+		requestBody:   jsonData,
+		responseBody:  respBody,
+		usage:         usage,
 	}
 }
 
