@@ -213,6 +213,8 @@
     "Ledger": "账目",
     "No ledger entries.": "暂无账目记录。",
     "Suspended": "已暂停",
+    "Channel enabled": "渠道已启用",
+    "Global probes off": "全局自动探测已关闭",
     "Verified": "已验证",
     "Suspect": "可疑",
     "Unverified": "未验证",

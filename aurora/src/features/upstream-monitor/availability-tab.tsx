@@ -63,7 +63,7 @@ import {
 
 const CHANNEL_STATUS: Record<number, { key: string; className: string }> = {
   1: {
-    key: 'Enabled',
+    key: 'Channel enabled',
     className: 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400',
   },
   2: {
@@ -271,6 +271,7 @@ function ChannelCard(props: {
   showRemoved: boolean
   probeConfig: UpstreamProbeChannelConfig | undefined
   globalMinutes: number
+  globalEnabled: boolean
   pausedModels: Set<string>
   saving: boolean
   onSetChannel: (patch: UpstreamProbeChannelConfig) => void
@@ -443,9 +444,11 @@ function ChannelCard(props: {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
                 }}
-                placeholder={t('Global ({{n}} min)', {
-                  n: props.globalMinutes,
-                })}
+                placeholder={
+                  props.globalEnabled
+                    ? t('Global ({{n}} min)', { n: props.globalMinutes })
+                    : t('Global probes off')
+                }
                 className='h-7 w-32 text-xs'
               />
               {t('minutes')}
@@ -726,6 +729,7 @@ export function AvailabilityTab(props: {
                 PROBE_MIN_MINUTES,
                 props.data.probe?.minutes ?? PROBE_MIN_MINUTES
               )}
+              globalEnabled={props.data.probe?.enabled ?? false}
               pausedModels={pausedModels}
               saving={props.saving}
               onSetChannel={(patch) => setChannel(ch.id, patch)}

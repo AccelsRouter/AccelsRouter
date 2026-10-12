@@ -204,6 +204,8 @@
     "Ledger": "Ledger",
     "No ledger entries.": "No ledger entries.",
     "Suspended": "Suspended",
+    "Channel enabled": "Channel enabled",
+    "Global probes off": "Global probes off",
     "Verified": "Verified",
     "Suspect": "Suspect",
     "Unverified": "Unverified",

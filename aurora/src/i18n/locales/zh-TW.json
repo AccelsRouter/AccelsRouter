@@ -244,6 +244,8 @@
     "Ledger": "帳目",
     "No ledger entries.": "尚無帳目記錄。",
     "Suspended": "已暫停",
+    "Channel enabled": "渠道已啟用",
+    "Global probes off": "全域自動探測已關閉",
     "Verified": "已驗證",
     "Suspect": "可疑",
     "Unverified": "未驗證",
