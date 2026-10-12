@@ -179,7 +179,7 @@ export function IdentityDialog(props: {
   const meta = result ? VERDICT_META[result.verdict] : undefined
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className='sm:max-w-2xl'>
+      <DialogContent className='flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-2xl'>
         <DialogHeader>
           <DialogTitle className='flex items-center gap-2'>
             <ShieldCheck className='h-4 w-4' />
@@ -221,8 +221,14 @@ export function IdentityDialog(props: {
         </div>
 
         {checks.length > 0 && (
-          <div className='border-border/60 overflow-hidden rounded-md border'>
-            <table className='w-full text-sm'>
+          <div className='border-border/60 min-w-0 overflow-x-auto rounded-md border'>
+            <table className='w-full table-fixed text-sm'>
+              <colgroup>
+                <col className='w-[38%]' />
+                <col className='w-[20%]' />
+                <col className='w-[30%]' />
+                <col className='w-[12%]' />
+              </colgroup>
               <thead className='bg-muted/40 text-muted-foreground text-xs'>
                 <tr>
                   <th className='px-3 py-2 text-left font-medium'>
@@ -284,11 +290,11 @@ export function IdentityDialog(props: {
         )}
 
         {evidence && (
-          <details className='text-xs'>
+          <details className='min-w-0 text-xs'>
             <summary className='text-muted-foreground cursor-pointer'>
               {t('Evidence (exact request and response)')}
             </summary>
-            <pre className='bg-muted/40 mt-2 max-h-56 overflow-auto rounded-md p-2 font-mono whitespace-pre-wrap'>
+            <pre className='bg-muted/40 mt-2 max-h-56 max-w-full overflow-auto rounded-md p-2 font-mono break-all whitespace-pre-wrap'>
               {evidence.request}
               {'\n\n--- response ---\n'}
               {evidence.error ? evidence.error : evidence.response}

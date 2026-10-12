@@ -59,6 +59,19 @@ func TestEvaluateIdentity(t *testing.T) {
 		_, verdict := evaluateIdentity("claude", "claude-fable-5", genuine(), nil)
 		assert.Equal(t, model.IdentityVerdictUnverified, verdict)
 	})
+	t.Run("family follows the model name, then the channel type", func(t *testing.T) {
+		assert.Equal(t, "claude", identityFamily("claude-opus-4-8", 1), "OpenAI-compatible proxy fronting Claude")
+		assert.Equal(t, "openai", identityFamily("gpt-5.5", 14))
+		assert.Equal(t, "gemini", identityFamily("gemini-3-pro", 1))
+		assert.Equal(t, "claude", identityFamily("my-alias", 33), "unknown name: Bedrock channel")
+		assert.Equal(t, "generic", identityFamily("deepseek-v4-flash", 1))
+	})
+	t.Run("Bedrock ids are Anthropic ids", func(t *testing.T) {
+		r := genuine()
+		r.Id = "msg_bdrk_01XYZ"
+		_, verdict := evaluateIdentity("claude", "claude-fable-5", r, baseline)
+		assert.Equal(t, model.IdentityVerdictVerified, verdict)
+	})
 	t.Run("generic family skips the id check", func(t *testing.T) {
 		r := genuine()
 		r.Id = "whatever"

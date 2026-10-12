@@ -52,14 +52,25 @@ type identityEvidence struct {
 	Error         string `json:"error,omitempty"`
 }
 
-// identityFamily groups channel types by the API whose response shape the
-// genuine model must exhibit.
-func identityFamily(channelType int) string {
+// identityFamily is the API family whose response shape the genuine model
+// exhibits. It follows the MODEL that was asked for, not the channel's
+// protocol: an OpenAI-compatible proxy channel fronting Bedrock still has to
+// come back with Anthropic's msg_ ids for a claude-* model. The channel type
+// only decides when the model name says nothing.
+func identityFamily(modelName string, channelType int) string {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	switch {
+	case strings.HasPrefix(name, "claude"):
+		return "claude"
+	case strings.HasPrefix(name, "gpt-"), strings.HasPrefix(name, "chatgpt"),
+		strings.HasPrefix(name, "o1"), strings.HasPrefix(name, "o3"), strings.HasPrefix(name, "o4"):
+		return "openai"
+	case strings.HasPrefix(name, "gemini"):
+		return "gemini"
+	}
 	switch channelType {
 	case constant.ChannelTypeAnthropic, constant.ChannelTypeAws, constant.ChannelTypeVertexAi:
 		return "claude"
-	case constant.ChannelTypeOpenAI, constant.ChannelTypeAzure:
-		return "openai"
 	case constant.ChannelTypeGemini:
 		return "gemini"
 	default:
@@ -230,7 +241,7 @@ func AdminUpstreamIdentityProbe(c *gin.Context) {
 		res.Checks = common.GetJsonString([]identityCheck{{Name: "probe", Expected: "an answer", Actual: probeErr.Error(), Status: "fail"}})
 	} else {
 		baseline, _ := model.GetModelFingerprint(modelName)
-		checks, verdict := evaluateIdentity(identityFamily(channel.Type), out.Result.upstreamModel, out.Response, baseline)
+		checks, verdict := evaluateIdentity(identityFamily(modelName, channel.Type), out.Result.upstreamModel, out.Response, baseline)
 		res.Verdict = verdict
 		res.Checks = common.GetJsonString(checks)
 	}
@@ -272,7 +283,7 @@ func AdminUpstreamIdentityBaseline(c *gin.Context) {
 		return
 	}
 	// The source channel is, by definition, verified against its own baseline.
-	checks, verdict := evaluateIdentity(identityFamily(channel.Type), out.Result.upstreamModel, out.Response, fp)
+	checks, verdict := evaluateIdentity(identityFamily(modelName, channel.Type), out.Result.upstreamModel, out.Response, fp)
 	_ = model.SaveUpstreamIdentityResult(&model.UpstreamIdentityResult{
 		ChannelId: channel.Id, ModelName: modelName, Verdict: verdict,
 		Checks: common.GetJsonString(checks), Evidence: fp.Evidence, LatencyMs: out.Latency,
