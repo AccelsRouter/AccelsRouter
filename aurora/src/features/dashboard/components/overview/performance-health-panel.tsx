@@ -21,6 +21,7 @@ import { Gauge, HeartPulse, Timer } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
 import {
@@ -30,35 +31,20 @@ import {
   getSuccessRateDotClass,
   getSuccessRateTextClass,
 } from '@/features/performance-metrics/lib/format'
-import type { PerfModelSummary } from '@/features/performance-metrics/types'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 const PERFORMANCE_WINDOW_HOURS = 24
 const TOP_MODEL_LIMIT = 6
 
-type WeightedMetric = 'avg_latency_ms' | 'avg_tps' | 'success_rate'
-
-function simpleAverage(
-  rows: PerfModelSummary[],
-  metric: WeightedMetric,
-  isValid: (value: number) => boolean
-): number {
-  let total = 0
-  let count = 0
-  for (const row of rows) {
-    const value = Number(row[metric])
-    if (!isValid(value)) continue
-    total += value
-    count++
-  }
-  return count > 0 ? total / count : NaN
-}
-
 export function PerformanceHealthPanel() {
   const { t } = useTranslation()
   const metricsQuery = useQuery({
     queryKey: ['perf-metrics-summary', PERFORMANCE_WINDOW_HOURS],
-    queryFn: () => getPerfMetricsSummary(PERFORMANCE_WINDOW_HOURS),
+    queryFn: async () =>
+      requireServerSuccess(
+        await getPerfMetricsSummary(PERFORMANCE_WINDOW_HOURS)
+      ),
     staleTime: 60 * 1000,
     retry: false,
   })
@@ -68,23 +54,7 @@ export function PerformanceHealthPanel() {
     [metricsQuery.data]
   )
 
-  const summary = useMemo(() => {
-    return {
-      avgLatencyMs: Math.round(
-        simpleAverage(
-          models,
-          'avg_latency_ms',
-          (v) => Number.isFinite(v) && v > 0
-        )
-      ),
-      avgTps: simpleAverage(
-        models,
-        'avg_tps',
-        (v) => Number.isFinite(v) && v > 0
-      ),
-      successRate: simpleAverage(models, 'success_rate', Number.isFinite),
-    }
-  }, [models])
+  const summary = metricsQuery.data?.data.summary
 
   const topModels = useMemo(() => models.slice(0, TOP_MODEL_LIMIT), [models])
   const loading = metricsQuery.isLoading
@@ -93,10 +63,9 @@ export function PerformanceHealthPanel() {
   return (
     <section className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
       <div className='flex items-center gap-2 border-b px-4 py-3 sm:px-5'>
-        <HeartPulse
-          className='text-muted-foreground/60 size-4 shrink-0'
-          aria-hidden='true'
-        />
+        <IconBadge tone='success' size='sm'>
+          <HeartPulse />
+        </IconBadge>
         <h3 className='text-sm font-semibold'>{t('Performance health')}</h3>
         <span className='text-muted-foreground ml-auto text-xs'>
           {t('Performance metrics for the last 24 hours')}
@@ -108,28 +77,33 @@ export function PerformanceHealthPanel() {
           <MetricCell
             icon={HeartPulse}
             label={t('Success rate')}
-            value={formatUptimePct(summary.successRate)}
+            value={formatUptimePct(summary?.success_rate ?? Number.NaN)}
             loading={loading}
-            valueClassName={getSuccessRateTextClass(summary.successRate)}
+            valueClassName={getSuccessRateTextClass(
+              summary?.success_rate ?? Number.NaN
+            )}
+            tone='success'
           />
           <MetricCell
             icon={Timer}
             label={t('Average latency')}
-            value={formatLatency(summary.avgLatencyMs)}
+            value={formatLatency(summary?.avg_latency_ms ?? 0)}
             loading={loading}
+            tone='warning'
           />
           <MetricCell
             icon={Gauge}
             label={t('Throughput')}
-            value={formatThroughput(summary.avgTps)}
+            value={formatThroughput(summary?.avg_tps ?? 0)}
             loading={loading}
+            tone='info'
           />
         </div>
 
         {loading ? (
           <div className='space-y-1'>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className='h-5 w-full rounded' />
+            {['success', 'latency', 'throughput'].map((key) => (
+              <Skeleton key={key} className='h-5 w-full rounded' />
             ))}
           </div>
         ) : (
@@ -181,12 +155,15 @@ function MetricCell(props: {
   value: string
   loading: boolean
   valueClassName?: string
+  tone: IconBadgeTone
 }) {
   const Icon = props.icon
   return (
     <div className='bg-muted/40 rounded-xl px-3 py-2.5'>
       <div className='text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium'>
-        <Icon className='size-3 shrink-0' aria-hidden='true' />
+        <IconBadge tone={props.tone} size='xs'>
+          <Icon />
+        </IconBadge>
         <span className='truncate'>{props.label}</span>
       </div>
       {props.loading ? (

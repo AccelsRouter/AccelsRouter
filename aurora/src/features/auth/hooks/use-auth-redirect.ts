@@ -18,107 +18,109 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useNavigate } from '@tanstack/react-router'
 import i18n from 'i18next'
+import { useCallback, useEffect, useRef } from 'react'
 
-import type { User } from '@/features/users/types'
-import { applyAuthBundle, getSelf } from '@/lib/api'
+import {
+  getSavedLanguage,
+  sanitizeAuthRedirect,
+} from '@/features/auth/lib/auth-redirect'
+import { applyAuthBundle, isAuthBundle } from '@/lib/api'
+import { AuthOperationError } from '@/lib/secure-verification'
 import { useAuthStore, type AuthBundle } from '@/stores/auth-store'
 
-import { saveUserId } from '../lib/storage'
-
-function getSavedLanguage(user: User): string | undefined {
-  const userData = user as Record<string, unknown>
-  if (typeof userData.language === 'string') {
-    return userData.language
-  }
-
-  if (typeof userData.setting !== 'string') {
-    return undefined
-  }
-
-  try {
-    const setting = JSON.parse(userData.setting) as { language?: unknown }
-    return typeof setting.language === 'string' ? setting.language : undefined
-  } catch {
-    return undefined
-  }
-}
+import { isLoginChallenge } from '../secure-verification/api'
 
 /**
  * Hook for handling authentication redirects and user data management
  */
 export function useAuthRedirect() {
   const navigate = useNavigate()
-  const { auth } = useAuthStore()
+  const sessionID = useAuthStore((state) => state.auth.session?.sid)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   /**
    * Handle successful login
-   * @param bundle - Auth bundle (access token + session) from login response
+   * @param userData - Optional user data from login response
    * @param redirectTo - Redirect path after login
    */
-  const handleLoginSuccess = async (
-    bundle: AuthBundle,
-    redirectTo?: string
-  ) => {
-    // Store the access token + session so subsequent calls are authenticated.
-    applyAuthBundle(bundle)
-
-    // Save user ID if the bundle already carries one.
-    if (bundle.user?.id) {
-      saveUserId(bundle.user.id)
-    }
-
-    // Fetch and set the full user profile (needs the token set above).
-    try {
-      const self = await getSelf()
-      if (self?.success && self.data) {
-        const user = self.data as User
-        auth.setUser(user)
-
-        // Update user ID if not already set
-        if (user.id) {
-          saveUserId(user.id)
-        }
-
-        // Restore saved language preference
-        const savedLang = getSavedLanguage(user)
-        if (savedLang && savedLang !== i18n.language) {
-          i18n.changeLanguage(savedLang)
-        }
+  const handleLoginSuccess = useCallback(
+    async (bundle: AuthBundle, redirectTo?: string) => {
+      if (
+        !mounted.current ||
+        useAuthStore.getState().auth.session?.sid !== sessionID
+      ) {
+        return
       }
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to fetch user data:', error)
-    }
+      applyAuthBundle(bundle)
+      const savedLang = getSavedLanguage(bundle.user)
+      if (savedLang && savedLang !== i18n.language) {
+        await i18n.changeLanguage(savedLang)
+      }
 
-    // Navigate to target page
-    const targetPath = redirectTo || '/dashboard'
-    navigate({ to: targetPath, replace: true })
-  }
+      const targetPath =
+        sanitizeAuthRedirect(redirectTo, window.location.origin) ?? '/dashboard'
+      await navigate({ href: targetPath, replace: true })
+    },
+    [navigate, sessionID]
+  )
 
   /**
-   * Redirect to 2FA page
+   * Every primary login transport returns the same bundle-or-challenge contract.
    */
-  const redirectTo2FA = () => {
-    navigate({ to: '/otp', replace: true })
-  }
+  const handleLoginResult = useCallback(
+    async (result: unknown, redirectTo?: string): Promise<boolean> => {
+      if (
+        !mounted.current ||
+        useAuthStore.getState().auth.session?.sid !== sessionID
+      ) {
+        return false
+      }
+      if (isAuthBundle(result)) {
+        await handleLoginSuccess(result, redirectTo)
+        return true
+      }
+      if (!isLoginChallenge(result)) {
+        throw new AuthOperationError('Login failed')
+      }
+      if (result.expires_at * 1000 <= Date.now()) {
+        throw new AuthOperationError(
+          'Login flow expired. Please sign in again.'
+        )
+      }
+      useAuthStore.getState().auth.setPendingLoginVerification({
+        challenge: result,
+        redirectTo:
+          sanitizeAuthRedirect(redirectTo, window.location.origin) ?? undefined,
+      })
+      await navigate({ to: '/otp', replace: true })
+      return false
+    },
+    [handleLoginSuccess, navigate, sessionID]
+  )
 
   /**
    * Redirect to login page
    */
-  const redirectToLogin = () => {
-    navigate({ to: '/sign-in', replace: true })
-  }
+  const redirectToLogin = useCallback(() => {
+    void navigate({ to: '/sign-in', replace: true })
+  }, [navigate])
 
   /**
    * Redirect to register page
    */
-  const redirectToRegister = () => {
-    navigate({ to: '/sign-up', replace: true })
-  }
+  const redirectToRegister = useCallback(() => {
+    void navigate({ to: '/sign-up', replace: true })
+  }, [navigate])
 
   return {
     handleLoginSuccess,
-    redirectTo2FA,
+    handleLoginResult,
     redirectToLogin,
     redirectToRegister,
   }

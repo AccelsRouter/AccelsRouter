@@ -47,7 +47,7 @@ func (user *UserBase) GetSetting() dto.UserSetting {
 	if user.Setting != "" {
 		err := common.Unmarshal([]byte(user.Setting), &setting)
 		if err != nil {
-			common.SysLog("failed to unmarshal setting: " + err.Error())
+			common.SysLog(common.LogText("failed to unmarshal setting: %s", err.Error()))
 		}
 	}
 	return setting
@@ -115,7 +115,7 @@ func GetUserCache(userId int) (*UserBase, error) {
 			if errors.Is(err, ErrUserAuthCachePending) {
 				return nil, err
 			}
-			common.SysLog("failed to synchronously populate user cache: " + err.Error())
+			common.SysLog(common.LogText("failed to synchronously populate user cache: %s", err.Error()))
 		}
 	}
 	return user.ToBaseUser(), nil
@@ -167,7 +167,7 @@ func syncCreditUserQuotaCache(userId int, quota int, operation string) {
 		return
 	}
 	if err := cacheIncrUserQuota(userId, int64(quota)); err != nil {
-		common.SysLog(fmt.Sprintf("failed to sync %s credit to user quota cache: %s", operation, err.Error()))
+		common.SysLog(common.LogText("failed to sync %s credit to user quota cache: %s", operation, err.Error()))
 	}
 }
 
@@ -260,7 +260,7 @@ func updateUserSettingCache(userId int, setting string) error {
 // updateUserCacheField prevents individual cache refreshes from bypassing the
 // auth-version fence. It intentionally does nothing when the complete hash is
 // absent; the next GetUserCache call will repopulate it from the database.
-func updateUserCacheField(userId int, field string, value interface{}) error {
+func updateUserCacheField(userId int, field string, value any) error {
 	if !common.RedisEnabled {
 		return nil
 	}

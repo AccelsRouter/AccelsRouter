@@ -37,7 +37,6 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { get2FAStatus } from '@/lib/api'
 import { formatQuotaWithCurrency, getCurrencyLabel } from '@/lib/currency'
 import { parseQuotaFromDollars, quotaUnitsToDollars } from '@/lib/format'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -62,6 +61,7 @@ import {
   type OrgKeysApi,
 } from '@/features/organization-console/api'
 import { fmtTime } from '@/features/organization-console/shared'
+import { get2FAStatus } from '@/features/security/api'
 
 interface Props {
   // Endpoint set; defaults to the enterprise member console's own keys.
@@ -135,11 +135,8 @@ export function OrgKeysPanel({
   const twoFA = useQuery({
     queryKey: ['2fa-status'],
     queryFn: async () => {
-      const res = (await get2FAStatus()) as {
-        success?: boolean
-        data?: { enabled?: boolean }
-      }
-      return Boolean(res?.success && res.data?.enabled)
+      const status = await get2FAStatus()
+      return Boolean(status?.enabled)
     },
     staleTime: 30_000,
   })

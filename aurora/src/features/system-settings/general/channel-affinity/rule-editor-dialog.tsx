@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import {
   Select,
   SelectContent,
@@ -43,8 +44,9 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 
 import { SettingsSwitchField } from '../../components/settings-form-layout'
+import { policyLabel } from '../../request-policies/policy-label'
 import { RULE_TEMPLATES } from './constants'
-import type { AffinityRule, KeySource } from './types'
+import type { AffinityRule, KeySource, SessionMode } from './types'
 
 type KeySourceRow = KeySource & {
   rowId: string
@@ -72,6 +74,7 @@ const CONTEXT_KEY_PRESETS = [
 const RULE_FORM_ID = 'channel-affinity-rule-form'
 
 interface RuleFormValues {
+  session_mode?: AffinityRule['session_mode']
   name: string
   model_regex_text: string
   path_regex_text: string
@@ -94,8 +97,8 @@ function normalizeStringList(text: string): string[] {
 
 function normalizeKeySource(src: Partial<KeySource>): KeySource {
   const type = (src?.type || 'gjson') as KeySource['type']
-  if (type === 'gjson') return { type, key: '', path: src?.path || '' }
-  return { type, key: src?.key || '', path: '' }
+  if (type === 'gjson') return { ...src, type, key: '', path: src?.path || '' }
+  return { ...src, type, key: src?.key || '', path: '' }
 }
 
 interface Props {
@@ -104,6 +107,7 @@ interface Props {
   rule: AffinityRule | null
   onSave: (rule: AffinityRule) => void
   templateKey?: string | null
+  globalSessionMode?: SessionMode | ''
 }
 
 export function RuleEditorDialog(props: Props) {
@@ -121,6 +125,7 @@ export function RuleEditorDialog(props: Props) {
 
   const form = useForm<RuleFormValues>({
     defaultValues: {
+      session_mode: 'inherit',
       name: '',
       model_regex_text: '',
       path_regex_text: '',
@@ -137,6 +142,8 @@ export function RuleEditorDialog(props: Props) {
 
   const resetFromRule = (r: Partial<AffinityRule>) => {
     form.reset({
+      session_mode:
+        r.session_mode || (r.skip_retry_on_failure ? 'strict' : 'prefer'),
       name: r.name || '',
       model_regex_text: (r.model_regex || []).join('\n'),
       path_regex_text: (r.path_regex || []).join('\n'),
@@ -169,6 +176,7 @@ export function RuleEditorDialog(props: Props) {
       resetFromRule(RULE_TEMPLATES[props.templateKey])
     } else {
       form.reset({
+        session_mode: 'inherit',
         name: '',
         model_regex_text: '',
         path_regex_text: '',
@@ -194,7 +202,7 @@ export function RuleEditorDialog(props: Props) {
     }
 
     const validKeySources = keySources
-      .map(normalizeKeySource)
+      .map(({ rowId: _, ...source }) => normalizeKeySource(source))
       .filter((s) => s.type && (s.type === 'gjson' ? s.path : s.key))
     if (validKeySources.length === 0) {
       toast.error(t('At least one valid key source is required'))
@@ -221,6 +229,8 @@ export function RuleEditorDialog(props: Props) {
     }
 
     const rule: AffinityRule = {
+      ...props.rule,
+      session_mode: values.session_mode || 'inherit',
       id: props.rule?.id,
       name: values.name.trim(),
       model_regex: modelRegex,
@@ -245,7 +255,7 @@ export function RuleEditorDialog(props: Props) {
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={isEdit ? t('Edit Rule') : t('Add Rule')}
-      contentClassName='max-w-2xl'
+      contentClassName='sm:max-w-5xl'
       contentHeight='auto'
       bodyClassName='pr-2'
       footer={
@@ -269,8 +279,11 @@ export function RuleEditorDialog(props: Props) {
         className='min-w-0 space-y-4 overflow-x-clip'
       >
         <div className='grid gap-1.5'>
-          <Label>{t('Name')} *</Label>
+          <Label required htmlFor='affinity-rule-name'>
+            {t('Name')}
+          </Label>
           <Input
+            id='affinity-rule-name'
             placeholder='prefer-by-conversation-id'
             {...form.register('name', { required: true })}
           />
@@ -278,7 +291,7 @@ export function RuleEditorDialog(props: Props) {
 
         <div className='grid gap-3 sm:grid-cols-2'>
           <div className='grid gap-1.5'>
-            <Label>{t('Model Regex (one per line)')} *</Label>
+            <Label required>{t('Model Regex (one per line)')}</Label>
             <Textarea
               rows={4}
               placeholder={'^gpt-4o.*$\n^claude-3.*$'}
@@ -295,11 +308,36 @@ export function RuleEditorDialog(props: Props) {
           </div>
         </div>
 
-        <SettingsSwitchField
-          checked={form.watch('skip_retry_on_failure')}
-          onCheckedChange={(v) => form.setValue('skip_retry_on_failure', v)}
-          label={t('Skip retry on failure')}
-        />
+        <div className='space-y-1.5'>
+          <Label htmlFor='rule-session-mode'>{t('Session behavior')}</Label>
+          <NativeSelect
+            id='rule-session-mode'
+            className='w-full'
+            aria-describedby='rule-session-mode-description'
+            {...form.register('session_mode')}
+          >
+            <NativeSelectOption value='inherit'>
+              {t('Inherit global default')}
+            </NativeSelectOption>
+            <NativeSelectOption value='off'>
+              {t('Do not keep sessions')}
+            </NativeSelectOption>
+            <NativeSelectOption value='prefer'>
+              {t('Prefer the original channel, allow switching')}
+            </NativeSelectOption>
+            <NativeSelectOption value='strict'>
+              {t('Require the original channel')}
+            </NativeSelectOption>
+          </NativeSelect>
+          <p
+            id='rule-session-mode-description'
+            className='text-muted-foreground text-xs'
+          >
+            {t('Global default: {{mode}}', {
+              mode: policyLabel(t, props.globalSessionMode || 'prefer'),
+            })}
+          </p>
+        </div>
 
         <Separator />
 

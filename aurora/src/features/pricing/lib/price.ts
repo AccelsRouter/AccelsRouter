@@ -16,10 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { formatCurrencyFromUSD } from '@/lib/currency'
+import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 
 import { QUOTA_TYPE_VALUES, TOKEN_UNIT_DIVISORS } from '../constants'
 import type { PricingModel, TokenUnit, PriceType } from '../types'
+import { getConfiguredGroupRatio, getDisplayGroupRatio } from './model-helpers'
 
 // ----------------------------------------------------------------------------
 // Price Calculation Utilities
@@ -36,11 +37,11 @@ export function stripTrailingZeros(formatted: string): string {
   const [, symbol, number, suffix] = match
 
   // Remove commas for processing
-  const cleanNumber = number.replace(/,/g, '')
+  const cleanNumber = number.replaceAll(',', '')
 
   // Convert to number and back to remove trailing zeros
-  const parsed = parseFloat(cleanNumber)
-  if (isNaN(parsed)) return formatted
+  const parsed = Number.parseFloat(cleanNumber)
+  if (Number.isNaN(parsed)) return formatted
 
   // Convert to string, which automatically removes trailing zeros
   let result = parsed.toString()
@@ -51,38 +52,6 @@ export function stripTrailingZeros(formatted: string): string {
   }
 
   return `${symbol}${result}${suffix}`
-}
-
-/**
- * Pick the group ratio used for the pricing page's standard/base price.
- *
- * We show the `default` group's ratio — the price a normal (default-group)
- * user actually pays — rather than the cheapest group, which was misleading
- * (a model with a discounted group looked cheaper than default users get).
- * If a model is not available in the default group, fall back to the lowest
- * enabled group ratio so a price still renders.
- */
-function getDisplayGroupRatio(
-  enableGroups: string[],
-  groupRatio: Record<string, number>
-): number {
-  if (enableGroups.length === 0) return 1
-
-  if (enableGroups.includes('default')) {
-    const defaultRatio = groupRatio['default']
-    return defaultRatio !== undefined ? defaultRatio : 1
-  }
-
-  let minRatio = Number.POSITIVE_INFINITY
-
-  for (const group of enableGroups) {
-    const ratio = groupRatio[group]
-    if (ratio !== undefined && ratio < minRatio) {
-      minRatio = ratio
-    }
-  }
-
-  return minRatio === Number.POSITIVE_INFINITY ? 1 : minRatio
 }
 
 /**
@@ -106,26 +75,26 @@ function calculateTokenPrice(
     case 'cache':
       return hasRatio(model.cache_ratio)
         ? base * Number(model.cache_ratio)
-        : NaN
+        : Number.NaN
     case 'create_cache':
       return hasRatio(model.create_cache_ratio)
         ? base * Number(model.create_cache_ratio)
-        : NaN
+        : Number.NaN
     case 'image':
       return hasRatio(model.image_ratio)
         ? base * Number(model.image_ratio)
-        : NaN
+        : Number.NaN
     case 'audio_input':
       return hasRatio(model.audio_ratio)
         ? base * Number(model.audio_ratio)
-        : NaN
+        : Number.NaN
     case 'audio_output':
       return hasRatio(model.audio_ratio) &&
         hasRatio(model.audio_completion_ratio)
         ? base *
             Number(model.audio_ratio) *
             Number(model.audio_completion_ratio)
-        : NaN
+        : Number.NaN
   }
 }
 
@@ -139,7 +108,7 @@ function hasRatio(value: number | null | undefined): boolean {
  * priceRate represents how much users need to recharge (in the display currency)
  * to get 1 USD credit. usdExchangeRate is the real exchange rate.
  *
- * The returned value will be formatted by formatCurrencyFromUSD, which will
+ * The returned value will be formatted by formatBillingCurrencyFromUSD, which will
  * multiply by the display currency's exchange rate.
  *
  * Examples:
@@ -149,14 +118,14 @@ function hasRatio(value: number | null | undefined): boolean {
  *    - priceRate = 0.5 (recharge $0.5 to get $1 credit)
  *    - usdExchangeRate = 1
  *    - Return: 1 × 0.5 / 1 = 0.5
- *    - formatCurrencyFromUSD(0.5) → $0.5 ✓
+ *    - formatBillingCurrencyFromUSD(0.5) → $0.5 ✓
  *
  * 2. Display currency = CNY:
  *    - Model: 1 USD
  *    - priceRate = 4 (recharge ¥4 to get $1 credit)
  *    - usdExchangeRate = 7 (real rate: 1 USD = ¥7)
  *    - Return: 1 × 4 / 7 = 0.571
- *    - formatCurrencyFromUSD(0.571) → 0.571 × 7 = ¥4 ✓
+ *    - formatBillingCurrencyFromUSD(0.571) → 0.571 × 7 = ¥4 ✓
  *    - Normal price: ¥7, Recharge price: ¥4 (cheaper!)
  */
 function applyRechargeRate(
@@ -178,19 +147,17 @@ export function formatPrice(
   tokenUnit: TokenUnit,
   showWithRecharge = false,
   priceRate = 1,
-  usdExchangeRate = 1
+  usdExchangeRate = 1,
+  selectedGroup?: string,
+  showCurrencySymbol = true
 ): string {
   if (model.quota_type === QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }
 
-  const enableGroups = Array.isArray(model.enable_groups)
-    ? model.enable_groups
-    : []
-  const groupRatio = model.group_ratio || {}
-  const displayRatio = getDisplayGroupRatio(enableGroups, groupRatio)
+  const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
 
-  let priceInUSD = calculateTokenPrice(model, type, displayRatio)
+  let priceInUSD = calculateTokenPrice(model, type, displayGroupRatio)
   priceInUSD = applyRechargeRate(
     priceInUSD,
     showWithRecharge,
@@ -199,7 +166,8 @@ export function formatPrice(
   )
 
   const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
-  return formatCurrencyFromUSD(price, {
+  return formatBillingCurrencyFromUSD(price, {
+    showSymbol: showCurrencySymbol,
     digitsLarge: 4,
     digitsSmall: 6,
     abbreviate: false,
@@ -223,7 +191,7 @@ export function formatGroupPrice(
     return '-'
   }
 
-  const ratio = groupRatio[group] || 1
+  const ratio = getConfiguredGroupRatio(groupRatio, group)
   let priceInUSD = calculateTokenPrice(model, type, ratio)
 
   priceInUSD = applyRechargeRate(
@@ -234,7 +202,7 @@ export function formatGroupPrice(
   )
 
   const price = priceInUSD / TOKEN_UNIT_DIVISORS[tokenUnit]
-  return formatCurrencyFromUSD(price, {
+  return formatBillingCurrencyFromUSD(price, {
     digitsLarge: 4,
     digitsSmall: 6,
     abbreviate: false,
@@ -256,7 +224,7 @@ export function formatFixedPrice(
     return '-'
   }
 
-  const ratio = groupRatio[group] || 1
+  const ratio = getConfiguredGroupRatio(groupRatio, group)
   let priceInUSD = (model.model_price || 0) * ratio
 
   priceInUSD = applyRechargeRate(
@@ -266,7 +234,7 @@ export function formatFixedPrice(
     usdExchangeRate
   )
 
-  return formatCurrencyFromUSD(priceInUSD, {
+  return formatBillingCurrencyFromUSD(priceInUSD, {
     digitsLarge: 4,
     digitsSmall: 4,
     abbreviate: false,
@@ -280,19 +248,17 @@ export function formatRequestPrice(
   model: PricingModel,
   showWithRecharge = false,
   priceRate = 1,
-  usdExchangeRate = 1
+  usdExchangeRate = 1,
+  selectedGroup?: string,
+  showCurrencySymbol = true
 ): string {
   if (model.quota_type !== QUOTA_TYPE_VALUES.REQUEST) {
     return '-'
   }
 
-  const enableGroups = Array.isArray(model.enable_groups)
-    ? model.enable_groups
-    : []
-  const groupRatio = model.group_ratio || {}
-  const displayRatio = getDisplayGroupRatio(enableGroups, groupRatio)
+  const displayGroupRatio = getDisplayGroupRatio(model, selectedGroup)
 
-  let priceInUSD = (model.model_price || 0) * displayRatio
+  let priceInUSD = (model.model_price || 0) * displayGroupRatio
 
   priceInUSD = applyRechargeRate(
     priceInUSD,
@@ -301,7 +267,8 @@ export function formatRequestPrice(
     usdExchangeRate
   )
 
-  return formatCurrencyFromUSD(priceInUSD, {
+  return formatBillingCurrencyFromUSD(priceInUSD, {
+    showSymbol: showCurrencySymbol,
     digitsLarge: 4,
     digitsSmall: 4,
     abbreviate: false,

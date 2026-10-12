@@ -20,7 +20,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -41,20 +41,22 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { register, wechatLoginByCode } from '@/features/auth/api'
-import { previewInvitation } from '@/features/organization-console/api'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { registerFormSchema } from '@/features/auth/constants'
 import { useAuthRedirect } from '@/features/auth/hooks/use-auth-redirect'
 import { useEmailVerification } from '@/features/auth/hooks/use-email-verification'
+import { previewInvitation } from '@/features/organization-console/api'
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import {
   getAffiliateCode,
   saveAffiliateCode,
 } from '@/features/auth/lib/storage'
 import { useStatus } from '@/hooks/use-status'
+import { handleServerError } from '@/lib/handle-server-error'
+import { AuthOperationError } from '@/lib/secure-verification'
+import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
-import type { AuthBundle } from '@/stores/auth-store'
 
 export function SignUpForm({
   className,
@@ -69,6 +71,7 @@ export function SignUpForm({
   const [wechatCode, setWeChatCode] = useState('')
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
+  const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
 
   const { status } = useStatus()
@@ -76,12 +79,10 @@ export function SignUpForm({
     isTurnstileEnabled,
     turnstileSiteKey,
     turnstileToken,
-    turnstileResetSignal,
     setTurnstileToken,
-    resetTurnstile,
     validateTurnstile,
   } = useTurnstile()
-  const { redirectToLogin, handleLoginSuccess } = useAuthRedirect()
+  const { redirectToLogin, handleLoginResult } = useAuthRedirect()
   const {
     isSending: isSendingCode,
     secondsLeft,
@@ -101,6 +102,8 @@ export function SignUpForm({
       confirmPassword: '',
     },
   })
+
+  const emailValue = form.watch('email')
 
   // When arriving from an organization invite link, prefill the invited email so
   // the new account matches the invitation and is auto-joined on return.
@@ -122,8 +125,6 @@ export function SignUpForm({
       form.setValue('email', invited)
     }
   }, [invitePreview, form])
-
-  const emailValue = form.watch('email')
   const emailVerificationRequired = !!status?.email_verification
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
@@ -209,21 +210,21 @@ export function SignUpForm({
           redirectToLogin()
         }
       } else {
-        toast.error(res?.message || t('Failed to create account'))
+        handleServerError(createServerError(res, t('Failed to create account')))
       }
-    } catch (_error) {
-      // Errors are handled by global interceptor
+    } catch (error) {
+      handleServerError(
+        AuthOperationError.from(error, t('Failed to create account'))
+      )
     } finally {
       setIsLoading(false)
-      // Turnstile tokens are single-use; refresh after every register attempt
-      // so a retry (or the earlier send-code) never reuses a spent token.
-      if (isTurnstileEnabled) resetTurnstile()
     }
   }
 
   async function handleSendVerificationCode() {
     if (await sendCode(emailValue || '')) {
-      resetTurnstile()
+      setTurnstileToken('')
+      setTurnstileWidgetKey((current) => current + 1)
     }
   }
 
@@ -254,17 +255,29 @@ export function SignUpForm({
     try {
       const res = await wechatLoginByCode(wechatCode)
       if (res?.success) {
-        await handleLoginSuccess(res.data as AuthBundle)
-        toast.success(t('Signed in via WeChat'))
         handleWeChatDialogChange(false)
+        if (await handleLoginResult(res.data)) {
+          toast.success(t('Signed in via WeChat'))
+        }
       } else {
-        toast.error(res?.message || t('Login failed'))
+        handleServerError(createServerError(res, t('Login failed')))
       }
-    } catch (_error) {
-      toast.error(t('Login failed'))
+    } catch (error: unknown) {
+      handleServerError(
+        new AuthOperationError(t('Login failed'), undefined, { cause: error })
+      )
     } finally {
       setIsWeChatSubmitting(false)
     }
+  }
+
+  let verificationCodeAction: ReactNode = t('Send code')
+  if (isActive) {
+    verificationCodeAction = t('Resend ({{seconds}}s)', {
+      seconds: secondsLeft,
+    })
+  } else if (isSendingCode) {
+    verificationCodeAction = <Loader2 className='h-4 w-4 animate-spin' />
   }
 
   return (
@@ -298,7 +311,7 @@ export function SignUpForm({
               <FormLabel>{t('Password')}</FormLabel>
               <FormControl>
                 <PasswordInput
-                  placeholder={t('Enter password (8-20 characters)')}
+                  placeholder={t('Enter password (8–128 characters)')}
                   {...field}
                 />
               </FormControl>
@@ -367,13 +380,7 @@ export function SignUpForm({
                 }
                 onClick={handleSendVerificationCode}
               >
-                {isActive ? (
-                  t('Resend ({{seconds}}s)', { seconds: secondsLeft })
-                ) : isSendingCode ? (
-                  <Loader2 className='h-4 w-4 animate-spin' />
-                ) : (
-                  t('Send code')
-                )}
+                {verificationCodeAction}
               </Button>
             </div>
           </>
@@ -383,9 +390,9 @@ export function SignUpForm({
         {isTurnstileEnabled && (
           <div className='mt-2'>
             <Turnstile
+              key={turnstileWidgetKey}
               siteKey={turnstileSiteKey}
               onVerify={setTurnstileToken}
-              resetSignal={turnstileResetSignal}
             />
           </div>
         )}

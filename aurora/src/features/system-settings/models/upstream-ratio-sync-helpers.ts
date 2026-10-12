@@ -16,87 +16,191 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { RatioType } from '../types'
-import { RATIO_TYPE_OPTIONS } from './constants'
+import { createContext, useContext } from 'react'
 
-export type RatioDifferenceEntry = {
-  current: number | string | null
-  upstreams: Record<string, number | string | 'same'>
-  confidence: Record<string, boolean>
-}
+import { BILLING_PRICING_VARS, splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
+import { tryParseVisualConfig } from '@/features/pricing/lib/tier-expr'
 
-export type ModelRow = {
-  key: string
-  model: string
-  ratioTypes: Partial<Record<RatioType, RatioDifferenceEntry>>
-  billingConflict: boolean
-}
+import type { PricingSyncValues } from '../types'
+import {
+  OFFICIAL_CHANNEL_ID,
+  OFFICIAL_CHANNEL_NAME,
+  MODELS_DEV_PRESET_ID,
+  MODELS_DEV_PRESET_NAME,
+} from './constants'
+import { formatPricingNumber } from './pricing-format'
 
-export type ResolutionsMap = Record<string, Record<string, number | string>>
+export type PricingSourceSelection = { model: string; source: string }
+export type PricingSourceSelections = Record<string, string>
 
-export const RATIO_SYNC_FIELDS: RatioType[] = [
-  'model_ratio',
-  'completion_ratio',
-  'cache_ratio',
-  'create_cache_ratio',
-  'image_ratio',
-  'audio_ratio',
-  'audio_completion_ratio',
-]
-
-export const SYNC_FIELD_ORDER: RatioType[] = [
-  ...RATIO_SYNC_FIELDS,
-  'model_price',
-  'billing_mode',
-  'billing_expr',
-]
-
-export const NUMERIC_SYNC_FIELDS = new Set<string>([
-  ...RATIO_SYNC_FIELDS,
-  'model_price',
-])
-
-export function getSyncFieldLabel(
-  ratioType: string,
+export function getUpstreamDisplayName(
+  sourceName: string,
   t: (key: string) => string
 ): string {
-  const opt = RATIO_TYPE_OPTIONS.find((o) => o.value === ratioType)
-  if (opt) return t(opt.label)
-  return ratioType
-}
-
-export function getOrderedRatioTypes(
-  ratioTypes: Partial<Record<RatioType, RatioDifferenceEntry>>,
-  filter?: string
-): RatioType[] {
-  const keys = Object.keys(ratioTypes) as RatioType[]
-  const ordered = [
-    ...SYNC_FIELD_ORDER.filter((f) => keys.includes(f)),
-    ...keys.filter((f) => !SYNC_FIELD_ORDER.includes(f)),
-  ]
-  if (!filter || filter === '__all__') return ordered
-  return ordered.filter((f) => f === filter)
-}
-
-export function getPreferredSyncField(
-  ratioTypes: Partial<Record<RatioType, RatioDifferenceEntry>>,
-  ratioType: RatioType,
-  sourceName: string
-): RatioType {
-  const exprValue = ratioTypes.billing_expr?.upstreams?.[sourceName]
   if (
-    ratioType !== 'billing_expr' &&
-    exprValue !== null &&
-    exprValue !== undefined &&
-    exprValue !== 'same'
+    sourceName === OFFICIAL_CHANNEL_NAME ||
+    sourceName === `${OFFICIAL_CHANNEL_NAME}(${OFFICIAL_CHANNEL_ID})`
   ) {
-    return 'billing_expr'
+    return t('Official pricing preset')
   }
-  return ratioType
+  if (
+    sourceName === MODELS_DEV_PRESET_NAME ||
+    sourceName === `${MODELS_DEV_PRESET_NAME}(${MODELS_DEV_PRESET_ID})`
+  ) {
+    return t('models.dev pricing preset')
+  }
+  return sourceName
 }
 
-export function isSelectableUpstreamValue(
-  value: number | string | 'same' | null | undefined
+export function getSyncPriceKind(
+  values?: PricingSyncValues
+): 'expression' | 'request' | 'token' | 'unset' {
+  if (
+    values?.billing_mode === 'tiered_expr' &&
+    typeof values.billing_expr === 'string' &&
+    values.billing_expr.trim()
+  ) {
+    return 'expression'
+  }
+  if (typeof values?.model_price === 'number') return 'request'
+  if (typeof values?.model_ratio === 'number') return 'token'
+  return 'unset'
+}
+
+export function sameSyncPrice(
+  left: PricingSyncValues,
+  right: PricingSyncValues
 ): boolean {
-  return value !== null && value !== undefined && value !== 'same'
+  const fields = new Set([...Object.keys(left), ...Object.keys(right)])
+  for (const field of fields) {
+    const a = left[field as keyof PricingSyncValues]
+    const b = right[field as keyof PricingSyncValues]
+    if (typeof a === 'number' && typeof b === 'number') {
+      if (Math.abs(a - b) >= 1e-9) return false
+    } else if (a !== b) return false
+  }
+  return true
+}
+
+// Prices are USD before group or recharge adjustments. Audio output uses
+// the audio input price as its base, matching realtime quota calculation.
+export function getSyncPriceLines(
+  values: PricingSyncValues,
+  t: (key: string) => string
+): Array<{ label: string; value: string }> {
+  if (getSyncPriceKind(values) === 'request') {
+    return [
+      {
+        label: t('Per-request'),
+        value: `$${formatPricingNumber(values.model_price)}`,
+      },
+    ]
+  }
+  if (getSyncPriceKind(values) !== 'token') return []
+  const input = Number(values.model_ratio) * 2
+  const formattedInput = formatPricingNumber(input)
+  const lines = [
+    { label: t('Input'), value: formattedInput ? `$${formattedInput}` : '—' },
+  ]
+  const multipliers = [
+    ['completion_ratio', t('Output')],
+    ['cache_ratio', t('Cache Read')],
+    ['create_cache_ratio', t('Cache write')],
+    ['image_ratio', t('Image input')],
+    ['audio_ratio', t('Audio input')],
+    ['audio_completion_ratio', t('Audio output')],
+  ] as const
+  for (const [field, label] of multipliers) {
+    const ratio = values[field]
+    if (typeof ratio !== 'number') continue
+    let price = input * ratio
+    if (field === 'audio_completion_ratio') {
+      if (typeof values.audio_ratio !== 'number') {
+        lines.push({ label, value: '—' })
+        continue
+      }
+      price *= values.audio_ratio
+    }
+    const formatted = formatPricingNumber(price)
+    lines.push({ label, value: formatted ? `$${formatted}` : '—' })
+  }
+  return lines
+}
+
+export function getSyncExpressionPricing(expression: string, t: (key: string) => string) {
+  const { billingExpr, requestRuleExpr } = splitBillingExprAndRequestRules(expression)
+  const config = tryParseVisualConfig(billingExpr)
+  if (!config) return null
+  // Do not turn malformed or overflowing upstream numbers into free prices.
+  const body = billingExpr.replace(/"(?:\\.|[^"\\])*"/g, '')
+  for (const match of body.matchAll(/\*\s*([+\-\d.eE]+)/g)) {
+    if (!Number.isFinite(Number(match[1])) || Number(match[1]) < 0) return null
+  }
+  const fields = BILLING_PRICING_VARS.filter((field) =>
+    field.tierField && new RegExp(`\\b${field.key}\\s*\\*`).test(body)
+  )
+  const conditionLabels = { p: t('Input tokens'), c: t('Output tokens'), len: t('Length') }
+  return {
+    requestRuleExpr,
+    tiers: config.tiers.map((tier) => ({
+      label: tier.label,
+      condition: tier.conditions.map((condition) =>
+        `${conditionLabels[condition.var]} ${condition.op} ${Number(condition.value).toLocaleString()}`
+      ).join(' ∧ '),
+      lines: fields.map((field) => ({
+        label: t(field.shortLabel),
+        value: `$${formatPricingNumber(Number(tier[field.tierField!]))}`,
+      })),
+    })),
+  }
+}
+
+export function describeSyncPrice(
+  values: PricingSyncValues,
+  t: (key: string) => string
+): string {
+  const kind = getSyncPriceKind(values)
+  if (kind === 'expression') {
+    const parsed = getSyncExpressionPricing(String(values.billing_expr), t)
+    if (parsed) {
+      return [
+        t('Expression pricing'),
+        `USD / ${t('1M token')}`,
+        ...parsed.tiers.flatMap((tier) => [
+          ...(parsed.tiers.length > 1 ? [tier.condition || tier.label || t('Default')] : []),
+          ...tier.lines.map((line) => `${line.label}: ${line.value}`),
+        ]),
+        ...(parsed.requestRuleExpr ? [`${t('Includes request rules')}: ${parsed.requestRuleExpr}`] : []),
+      ].join('\n')
+    }
+    return `${t('Expression pricing')}\n${values.billing_expr}`
+  }
+  if (kind === 'unset') return t('Unset price')
+  const unit =
+    kind === 'request' ? `USD / ${t('request')}` : `USD / ${t('1M token')}`
+  return [
+    unit,
+    ...getSyncPriceLines(values, t).map(
+      (line) => `${line.label}: ${line.value}`
+    ),
+  ].join('\n')
+}
+
+export type SyncPriceSelectionContext = {
+  bulkStates: Record<
+    string,
+    { selections: PricingSourceSelection[]; selectedModels: string[] }
+  >
+  selectedSources: PricingSourceSelections
+  isDisabled: boolean
+  onSelectPrices: (selections: PricingSourceSelection[]) => void
+  onUnselectPrices: (models: string[]) => void
+}
+export const SyncPriceContext = createContext<SyncPriceSelectionContext | null>(
+  null
+)
+export function useSyncPriceSelection() {
+  const context = useContext(SyncPriceContext)
+  if (!context) throw new Error('Sync price selection provider is required')
+  return context
 }

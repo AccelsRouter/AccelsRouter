@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { User } from '@/features/users/types'
+import type { AuthBundle } from '@/stores/auth-store'
+import type { LoginResult } from './secure-verification/types'
 
 // ============================================================================
 // API Payloads
@@ -26,13 +27,12 @@ export interface LoginPayload {
   username: string
   password: string
   turnstile?: string
+  passwordEncryptionEnabled?: boolean
 }
 
 export interface TwoFAPayload {
   code: string
-  // Short-lived login flow token issued by the password step (rc.22 replaced
-  // the server-side 2FA login session with a stateless AuthFlow token).
-  flow_token?: string
+  flow_token: string
 }
 
 export interface RegisterPayload {
@@ -55,8 +55,9 @@ export interface EmailVerificationPayload {
 }
 
 export interface BindEmailPayload {
-  email: string
-  code: string
+  flow_token: string
+  new_code: string
+  old_code?: string
 }
 
 // ============================================================================
@@ -66,25 +67,19 @@ export interface BindEmailPayload {
 export interface LoginResponse {
   success: boolean
   message: string
-  data?: {
-    require_2fa?: boolean
-    id?: number
-    // Present when require_2fa is true: pass back to /api/user/login/2fa.
-    flow_token?: string
-    expires_at?: number
-  }
+  data?: LoginResult
 }
 
 export interface Login2FAResponse {
   success: boolean
   message: string
-  data?: User
+  data?: AuthBundle
 }
 
-export interface ApiResponse {
+export interface ApiResponse<T = unknown> {
   success: boolean
   message: string
-  data?: unknown
+  data?: T
 }
 
 // ============================================================================
@@ -109,8 +104,12 @@ export interface SystemStatus {
     linuxdo_oauth?: boolean
     linuxdo_client_id?: string
     telegram_oauth?: boolean
+    telegram_oauth_configured?: boolean
+    telegram_bot_name?: string
     passkey_login?: boolean
     wechat_login?: boolean
+    personal_byok_enabled?: boolean
+    reseller_routing_enabled?: boolean
     wechat_qrcode?: string
     wechat_qr_code?: string
     wechat_qrcode_image_url?: string
@@ -134,8 +133,8 @@ export interface SystemStatus {
     oauth_register_enabled?: boolean
     register_enabled?: boolean
     password_login_enabled?: boolean
+    password_login_encryption_enabled?: boolean
     password_register_enabled?: boolean
-    personal_byok_enabled?: boolean
     custom_oauth_providers?: CustomOAuthProviderInfo[]
     [key: string]: unknown
   }
@@ -154,8 +153,12 @@ export interface SystemStatus {
   linuxdo_oauth?: boolean
   linuxdo_client_id?: string
   telegram_oauth?: boolean
+  telegram_oauth_configured?: boolean
+  telegram_bot_name?: string
   passkey_login?: boolean
   wechat_login?: boolean
+  personal_byok_enabled?: boolean
+  reseller_routing_enabled?: boolean
   wechat_qrcode?: string
   wechat_qr_code?: string
   wechat_qrcode_image_url?: string
@@ -179,9 +182,8 @@ export interface SystemStatus {
   oauth_register_enabled?: boolean
   register_enabled?: boolean
   password_login_enabled?: boolean
+  password_login_encryption_enabled?: boolean
   password_register_enabled?: boolean
-  personal_byok_enabled?: boolean
-  reseller_routing_enabled?: boolean
   custom_oauth_providers?: CustomOAuthProviderInfo[]
   [key: string]: unknown
 }

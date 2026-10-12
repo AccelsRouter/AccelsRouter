@@ -104,15 +104,15 @@ export function Playground() {
           isModelLoading={isLoadingModels}
           modelValue={config.model}
           models={models}
-          onConfigChange={updateConfig}
           onGroupChange={(value) => updateConfig('group', value)}
+          onConfigChange={updateConfig}
           onClearMessages={handleClearMessages}
           onModelChange={(value) => updateConfig('model', value)}
           onParameterEnabledChange={updateParameterEnabled}
           onStop={stopGeneration}
           onSubmit={handleSendMessage}
-          hasMessages={messages.length > 0}
           parameterEnabled={parameterEnabled}
+          hasMessages={messages.length > 0}
         />
       </div>
     </div>

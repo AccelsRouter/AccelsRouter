@@ -18,10 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { useMediaQuery } from '@/hooks'
+import type { OnChangeFn, SortingState } from '@tanstack/react-table'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
-import { useTableUrlState } from '@/hooks/use-table-url-state'
+
 import {
   DISABLED_ROW_DESKTOP,
   DISABLED_ROW_MOBILE,
@@ -29,19 +29,35 @@ import {
   useDataTable,
 } from '@/components/data-table'
 import { adminUserOrgRelations } from '@/features/organizations-admin/api'
-import { getUsers, searchUsers } from '../api'
+import { useMediaQuery } from '@/hooks'
+import { useTableUrlState } from '@/hooks/use-table-url-state'
+import {
+  createServerError,
+  requireServerSuccess,
+} from '@/lib/server-error-message'
+
+import { getGroups, getUsers, searchUsers } from '../api'
 import {
   USER_STATUS,
   getUserStatusOptions,
   getUserRoleOptions,
   isUserDeleted,
 } from '../constants'
-import type { User } from '../types'
+import type { User, UserSortBy } from '../types'
 import { DataTableBulkActions } from './data-table-bulk-actions'
 import { useUsersColumns } from './users-columns'
 import { useUsers } from './users-provider'
 
 const route = getRouteApi('/_authenticated/users/')
+
+const USER_SORTABLE_COLUMNS = new Set<UserSortBy>([
+  'id',
+  'username',
+  'quota',
+  'group',
+  'created_at',
+  'last_login_at',
+])
 
 function isDisabledUserRow(user: User) {
   return isUserDeleted(user) || user.status === USER_STATUS.DISABLED
@@ -51,6 +67,7 @@ export function UsersTable() {
   const { t } = useTranslation()
   const { refreshTrigger } = useUsers()
   const isMobile = useMediaQuery('(max-width: 640px)')
+  const [sorting, setSorting] = useState<SortingState>([])
 
   const {
     globalFilter,
@@ -68,7 +85,7 @@ export function UsersTable() {
     columnFilters: [
       { columnId: 'status', searchKey: 'status', type: 'array' },
       { columnId: 'role', searchKey: 'role', type: 'array' },
-      { columnId: 'group', searchKey: 'group', type: 'string' },
+      { columnId: 'group', searchKey: 'group', type: 'array' },
     ],
   })
   const statusFilter =
@@ -80,8 +97,37 @@ export function UsersTable() {
       | string[]
       | undefined) ?? []
   const groupFilter =
-    (columnFilters.find((filter) => filter.id === 'group')?.value as string) ??
-    ''
+    (columnFilters.find((filter) => filter.id === 'group')?.value as
+      | string[]
+      | undefined) ?? []
+
+  const { data: groupsData } = useQuery({
+    queryKey: ['groups'],
+    queryFn: async () => requireServerSuccess(await getGroups()),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const sortParams = useMemo(() => {
+    const activeSort = sorting[0]
+    if (
+      !activeSort ||
+      !USER_SORTABLE_COLUMNS.has(activeSort.id as UserSortBy)
+    ) {
+      return {}
+    }
+
+    return {
+      sort_by: activeSort.id as UserSortBy,
+      sort_order: activeSort.desc ? 'desc' : 'asc',
+    } as const
+  }, [sorting])
+
+  const handleSortingChange: OnChangeFn<SortingState> = (updater) => {
+    setSorting(updater)
+    if (pagination.pageIndex > 0) {
+      onPaginationChange({ ...pagination, pageIndex: 0 })
+    }
+  }
 
   // Fetch data with React Query
   const { data, isLoading, isFetching } = useQuery({
@@ -93,15 +139,19 @@ export function UsersTable() {
       statusFilter,
       roleFilter,
       groupFilter,
+      sortParams,
       refreshTrigger,
     ],
     queryFn: async () => {
       const hasFilter = globalFilter?.trim()
       const hasColumnFilter =
-        statusFilter.length > 0 || roleFilter.length > 0 || Boolean(groupFilter)
+        statusFilter.length > 0 ||
+        roleFilter.length > 0 ||
+        groupFilter.length > 0
       const params = {
         p: pagination.pageIndex + 1,
         page_size: pagination.pageSize,
+        ...sortParams,
       }
 
       const result =
@@ -111,15 +161,15 @@ export function UsersTable() {
               keyword: globalFilter,
               status: statusFilter[0] ?? '',
               role: roleFilter[0] ?? '',
-              group: groupFilter,
+              group: groupFilter[0] ?? '',
             })
           : await getUsers(params)
 
       if (!result.success) {
-        toast.error(
-          result.message || `Failed to ${hasFilter ? 'search' : 'load'} users`
+        throw createServerError(
+          result,
+          t(hasFilter ? 'Failed to search users' : 'Failed to load users')
         )
-        return { items: [], total: 0 }
       }
 
       return {
@@ -148,6 +198,7 @@ export function UsersTable() {
     columnFilters,
     globalFilter,
     pagination,
+    sorting,
     globalFilterFn: (row, _columnId, filterValue) => {
       const searchValue = String(filterValue).toLowerCase()
       const fields = [
@@ -164,8 +215,10 @@ export function UsersTable() {
     onPaginationChange,
     onGlobalFilterChange,
     onColumnFiltersChange,
+    onSortingChange: handleSortingChange,
     manualPagination: true,
     manualFiltering: true,
+    manualSorting: true,
     totalCount: data?.total || 0,
     ensurePageInRange,
   })
@@ -198,15 +251,21 @@ export function UsersTable() {
             options: getUserRoleOptions(t),
             singleSelect: true,
           },
+          {
+            columnId: 'group',
+            title: t('User Group'),
+            options: (groupsData?.data ?? []).map((group) => ({
+              label: group,
+              value: group,
+            })),
+            singleSelect: true,
+          },
         ],
       }}
-      getRowClassName={(row, { isMobile }) =>
-        isDisabledUserRow(row.original)
-          ? isMobile
-            ? DISABLED_ROW_MOBILE
-            : DISABLED_ROW_DESKTOP
-          : undefined
-      }
+      getRowClassName={(row, { isMobile }) => {
+        if (!isDisabledUserRow(row.original)) return undefined
+        return isMobile ? DISABLED_ROW_MOBILE : DISABLED_ROW_DESKTOP
+      }}
       bulkActions={<DataTableBulkActions table={table} />}
     />
   )

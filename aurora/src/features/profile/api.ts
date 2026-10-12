@@ -17,16 +17,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import type { CustomOAuthBinding } from '@/lib/oauth'
+import { authRequestOptions, authResult } from '@/lib/secure-verification'
 import type { LoginSession } from '@/stores/auth-store'
 
+import { normalizeUserSettings } from './lib/user-settings'
 import type {
   ApiResponse,
   UserProfile,
   UpdateUserRequest,
   UpdateUserSettingsRequest,
-  DeleteAccountRequest,
   CheckinStatusResponse,
   CheckinResponse,
+  AccountSecurityResult,
+  EmailBindingFlow,
 } from './types'
 
 // ============================================================================
@@ -47,8 +51,26 @@ export async function getUserProfile(): Promise<ApiResponse<UserProfile>> {
 export async function updateUserProfile(
   data: UpdateUserRequest
 ): Promise<ApiResponse> {
-  const res = await api.put('/api/user/self', data)
+  const res = await api.put('/api/user/self', data, {
+    acceptAuthRotation: Boolean(data.password),
+  })
   return res.data
+}
+
+export function changeAccountPassword(
+  data: UpdateUserRequest,
+  proofToken: string,
+  signal: AbortSignal
+): Promise<AccountSecurityResult & { has_password: boolean }> {
+  return authResult(
+    api.put('/api/user/self', data, {
+      ...authRequestOptions,
+      headers: { 'X-Security-Proof': proofToken },
+      acceptAuthRotation: true,
+      singleUseAuthorization: true,
+      signal,
+    })
+  )
 }
 
 /**
@@ -57,7 +79,12 @@ export async function updateUserProfile(
 export async function updateUserSettings(
   data: UpdateUserSettingsRequest
 ): Promise<ApiResponse> {
-  const res = await api.put('/api/user/setting', data)
+  const profile = await getUserProfile()
+  if (!profile.success || !profile.data) {
+    return { success: false, message: profile.message }
+  }
+  const settings = normalizeUserSettings(profile.data.setting)
+  const res = await api.put('/api/user/setting', { ...settings, ...data })
   return res.data
 }
 
@@ -74,19 +101,19 @@ export async function updateUserLanguage(
 /**
  * Delete user account
  */
-export async function deleteUserAccount(
-  data?: DeleteAccountRequest
-): Promise<ApiResponse> {
-  const res = await api.delete('/api/user/self', { data })
-  return res.data
-}
-
-/**
- * Generate/regenerate system access token
- */
-export async function generateAccessToken(): Promise<ApiResponse<string>> {
-  const res = await api.get('/api/user/token')
-  return res.data
+export function deleteUserAccount(
+  proof: string,
+  signal: AbortSignal
+): Promise<AccountSecurityResult> {
+  return authResult(
+    api.delete('/api/user/self', {
+      ...authRequestOptions,
+      headers: { 'X-Security-Proof': proof },
+      singleUseAuthorization: true,
+      signal,
+    }),
+    'Failed to delete account'
+  )
 }
 
 // ============================================================================
@@ -111,22 +138,93 @@ export async function sendEmailVerification(
 /**
  * Bind email account
  */
-export async function bindEmail(
+export function startEmailBinding(
   email: string,
-  code: string
-): Promise<ApiResponse> {
-  const res = await api.post('/api/oauth/email/bind', {
-    email,
-    code,
-  })
-  return res.data
+  proofToken: string,
+  signal: AbortSignal
+): Promise<EmailBindingFlow> {
+  return authResult(
+    api.post(
+      '/api/oauth/email/bind/start',
+      { email },
+      {
+        ...authRequestOptions,
+        headers: { 'X-Security-Proof': proofToken },
+        singleUseAuthorization: true,
+        signal,
+      }
+    )
+  )
+}
+
+export function resendEmailBinding(
+  flowToken: string,
+  signal: AbortSignal
+): Promise<EmailBindingFlow> {
+  return authResult(
+    api.post(
+      '/api/oauth/email/bind/resend',
+      { flow_token: flowToken },
+      {
+        ...authRequestOptions,
+        singleUseAuthorization: true,
+        signal,
+      }
+    )
+  )
+}
+
+export function bindEmail(
+  flowToken: string,
+  newCode: string,
+  oldCode: string,
+  signal: AbortSignal
+): Promise<AccountSecurityResult> {
+  return authResult(
+    api.post(
+      '/api/oauth/email/bind',
+      { flow_token: flowToken, new_code: newCode, old_code: oldCode },
+      {
+        ...authRequestOptions,
+        singleUseAuthorization: true,
+        signal,
+      }
+    )
+  )
 }
 
 /**
  * Bind WeChat account
  */
-export async function bindWeChat(code: string): Promise<ApiResponse> {
-  const res = await api.get(`/api/oauth/wechat/bind?code=${code}`)
+export function bindWeChat(
+  code: string,
+  proofToken: string,
+  signal: AbortSignal
+): Promise<AccountSecurityResult> {
+  return authResult(
+    api.post(
+      '/api/oauth/wechat/bind',
+      { code },
+      {
+        ...authRequestOptions,
+        headers: { 'X-Security-Proof': proofToken },
+        singleUseAuthorization: true,
+        signal,
+      }
+    )
+  )
+}
+
+export interface TelegramBindFlow {
+  flow_token: string
+  callback_url: string
+  expires_at: number
+}
+
+export async function startTelegramBind(): Promise<
+  ApiResponse<TelegramBindFlow>
+> {
+  const res = await api.post('/api/oauth/telegram/bind/start')
   return res.data
 }
 
@@ -134,25 +232,16 @@ export async function bindWeChat(code: string): Promise<ApiResponse> {
 // Login Session APIs
 // ============================================================================
 
-/**
- * List the current user's active login sessions
- */
 export async function getLoginSessions(): Promise<ApiResponse<LoginSession[]>> {
   const res = await api.get('/api/user/sessions')
   return res.data
 }
 
-/**
- * Revoke a single login session by its session id
- */
 export async function revokeLoginSession(sid: string): Promise<ApiResponse> {
   const res = await api.delete(`/api/user/sessions/${encodeURIComponent(sid)}`)
   return res.data
 }
 
-/**
- * Revoke every login session except the current one
- */
 export async function revokeOtherLoginSessions(): Promise<ApiResponse> {
   const res = await api.post('/api/user/sessions/revoke-others')
   return res.data
@@ -161,12 +250,6 @@ export async function revokeOtherLoginSessions(): Promise<ApiResponse> {
 // ============================================================================
 // Custom OAuth Binding APIs
 // ============================================================================
-
-export interface CustomOAuthBinding {
-  provider_id: string
-  provider_name: string
-  external_id?: string
-}
 
 /**
  * Get current user's custom OAuth bindings
@@ -181,11 +264,19 @@ export async function getSelfOAuthBindings(): Promise<
 /**
  * Unbind a custom OAuth provider for current user
  */
-export async function unbindCustomOAuth(
-  providerId: string
-): Promise<ApiResponse> {
-  const res = await api.delete(`/api/user/oauth/bindings/${providerId}`)
-  return res.data
+export function unbindCustomOAuth(
+  providerId: number,
+  proofToken: string,
+  signal: AbortSignal
+): Promise<AccountSecurityResult> {
+  return authResult(
+    api.delete(`/api/user/oauth/bindings/${providerId}`, {
+      ...authRequestOptions,
+      headers: { 'X-Security-Proof': proofToken },
+      singleUseAuthorization: true,
+      signal,
+    })
+  )
 }
 
 // ============================================================================

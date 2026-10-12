@@ -171,7 +171,7 @@ func SelectResellerChannel(param *RetryParam, resellerOrgId int) (*model.Channel
 		if originGroup == "" {
 			return nil, group, nil
 		}
-		ch, err := model.GetRandomSatisfiedChannel(originGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		ch, err := model.GetRandomSatisfiedChannelSeeded(originGroup, param.ModelName, param.GetRetry(), GetChannelConstraints(param.Ctx).Filters, smartRouteSeed(param.Ctx))
 		return ch, originGroup, err
 	}
 
@@ -196,7 +196,7 @@ func SelectResellerChannel(param *RetryParam, resellerOrgId int) (*model.Channel
 	if !cfg.Fallback || originGroup == "" {
 		return nil, group, nil
 	}
-	ch, err := model.GetRandomSatisfiedChannel(originGroup, param.ModelName, retry-len(tiers), param.RequestPath)
+	ch, err := model.GetRandomSatisfiedChannelSeeded(originGroup, param.ModelName, retry-len(tiers), GetChannelConstraints(param.Ctx).Filters, smartRouteSeed(param.Ctx))
 	if ch != nil {
 		recordResellerDecision(param.Ctx, "fallback_origin_group", nil, ch, retry)
 	}

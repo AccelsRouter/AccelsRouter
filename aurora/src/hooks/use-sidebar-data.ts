@@ -22,6 +22,7 @@ import {
   Activity,
   Box,
   Building2,
+  ClipboardList,
   CreditCard,
   FileText,
   FlaskConical,
@@ -30,10 +31,12 @@ import {
   LayoutDashboard,
   ListTodo,
   MessageSquare,
+  PlugZap,
   Radio,
   Scale,
   ServerCog,
   Settings,
+  ShieldCheck,
   Ticket,
   User,
   Users,
@@ -202,6 +205,11 @@ export function useSidebarData(): SidebarData {
       url: '/profile',
       icon: User,
     },
+    {
+      title: t('Security & Access'),
+      url: '/security',
+      icon: ShieldCheck,
+    },
   ]
 
   return {
@@ -255,6 +263,11 @@ export function useSidebarData(): SidebarData {
                 } as NavItem,
               ]
             : []),
+          {
+            title: t('Audit Logs'),
+            url: '/usage-logs/audit',
+            icon: ClipboardList,
+          },
           {
             title: t('Task Logs'),
             url: '/usage-logs/task',
@@ -320,10 +333,17 @@ export function useSidebarData(): SidebarData {
             requiredRole: ROLE.SUPER_ADMIN,
           },
           {
+            title: t('Task Plugins'),
+            url: '/task-plugins',
+            icon: PlugZap,
+            requiredRole: ROLE.SUPER_ADMIN,
+          },
+          {
             title: t('System Settings'),
             url: '/system-settings/site',
             activeUrls: ['/system-settings'],
             icon: Settings,
+            requiredRole: ROLE.SUPER_ADMIN,
           },
         ],
       },

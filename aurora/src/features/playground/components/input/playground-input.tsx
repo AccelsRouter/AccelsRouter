@@ -44,22 +44,22 @@ interface PlaygroundInputProps {
   isGenerating?: boolean
   models: ModelOption[]
   modelValue: string
-  onConfigChange: <K extends keyof PlaygroundConfig>(
-    key: K,
-    value: PlaygroundConfig[K]
-  ) => void
   onModelChange: (value: string) => void
   isModelLoading?: boolean
   groups: GroupOption[]
   groupValue: string
   onGroupChange: (value: string) => void
+  hasMessages?: boolean
+  onConfigChange: <K extends keyof PlaygroundConfig>(
+    key: K,
+    value: PlaygroundConfig[K]
+  ) => void
+  onClearMessages?: () => void
   onParameterEnabledChange: (
     key: keyof ParameterEnabled,
     value: boolean
   ) => void
   parameterEnabled: ParameterEnabled
-  hasMessages?: boolean
-  onClearMessages?: () => void
 }
 
 export function PlaygroundInput({
@@ -70,16 +70,16 @@ export function PlaygroundInput({
   isGenerating,
   models,
   modelValue,
-  onConfigChange,
   onModelChange,
   isModelLoading = false,
   groups,
   groupValue,
   onGroupChange,
+  hasMessages = false,
+  onConfigChange,
+  onClearMessages,
   onParameterEnabledChange,
   parameterEnabled,
-  hasMessages = false,
-  onClearMessages,
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
@@ -129,8 +129,8 @@ export function PlaygroundInput({
                 config={config}
                 disabled={disabled}
                 hasMessages={hasMessages}
-                onClearMessages={onClearMessages}
                 onConfigChange={onConfigChange}
+                onClearMessages={onClearMessages}
                 onParameterEnabledChange={onParameterEnabledChange}
                 parameterEnabled={parameterEnabled}
               />

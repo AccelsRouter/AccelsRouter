@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { api } from './api'
+import type { SystemStatus } from '@/features/auth/types'
 
 // ============================================================================
 // OAuth URL Builders
@@ -83,85 +83,53 @@ export function buildLinuxDOOAuthUrl(clientId: string, state: string): string {
   return `https://connect.linux.do/oauth2/authorize?response_type=code&client_id=${clientId}&state=${state}`
 }
 
-// ============================================================================
-// OAuth Helper Functions
-// ============================================================================
-
-/**
- * Get OAuth state token
- * Includes affiliate code from localStorage if available
- */
-export async function getOAuthState(
+export function buildOAuthAuthorizationUrl(
   provider: string,
-  intent: 'login' | 'bind' = 'bind'
-): Promise<string | null> {
-  try {
-    // rc.22 backend: POST /api/oauth/state with provider + intent so the
-    // callback can verify the provider bound at state creation. A GET here
-    // matched the GET /oauth/:provider callback route (provider="state") and
-    // failed with "Unknown OAuth provider".
-    const aff = localStorage.getItem('aff') ?? ''
-    const res = await api.post('/api/oauth/state', { provider, intent, aff })
-    if (res.data.success) {
-      // rc.22 nests the token under data.flow_token (older builds returned it
-      // as data directly). Returning the whole object would serialize to
-      // "[object Object]" in the OAuth state param → callback "State parameter
-      // is empty or mismatched".
-      const data = res.data.data
-      if (typeof data === 'string') return data
-      if (typeof data?.flow_token === 'string') return data.flow_token
+  state: string,
+  status: SystemStatus
+): string {
+  switch (provider) {
+    case 'github':
+      if (status.github_client_id) {
+        return buildGitHubOAuthUrl(status.github_client_id, state)
+      }
+      break
+    case 'discord':
+      if (status.discord_client_id) {
+        return buildDiscordOAuthUrl(status.discord_client_id, state)
+      }
+      break
+    case 'oidc':
+      if (status.oidc_authorization_endpoint && status.oidc_client_id) {
+        return buildOIDCOAuthUrl(
+          status.oidc_authorization_endpoint,
+          status.oidc_client_id,
+          state
+        )
+      }
+      break
+    case 'linuxdo':
+      if (status.linuxdo_client_id) {
+        return buildLinuxDOOAuthUrl(status.linuxdo_client_id, state)
+      }
+      break
+    default: {
+      const custom = status.custom_oauth_providers?.find(
+        (candidate) => candidate.slug === provider
+      )
+      if (custom) {
+        const url = new URL(custom.authorization_endpoint)
+        url.searchParams.set('client_id', custom.client_id)
+        url.searchParams.set(
+          'redirect_uri',
+          `${window.location.origin}/oauth/${provider}`
+        )
+        url.searchParams.set('response_type', 'code')
+        url.searchParams.set('state', state)
+        if (custom.scopes) url.searchParams.set('scope', custom.scopes)
+        return url.toString()
+      }
     }
-    return null
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('Failed to get OAuth state:', error)
-    return null
   }
-}
-
-/**
- * Handle GitHub OAuth binding/login
- */
-export async function handleGitHubOAuth(clientId: string): Promise<void> {
-  const state = await getOAuthState('github')
-  if (!state) return
-
-  const url = buildGitHubOAuthUrl(clientId, state)
-  window.open(url, '_blank')
-}
-
-/**
- * Handle Discord OAuth binding/login
- */
-export async function handleDiscordOAuth(clientId: string): Promise<void> {
-  const state = await getOAuthState('discord')
-  if (!state) return
-
-  const url = buildDiscordOAuthUrl(clientId, state)
-  window.open(url, '_blank')
-}
-
-/**
- * Handle OIDC OAuth binding/login
- */
-export async function handleOIDCOAuth(
-  authUrl: string,
-  clientId: string
-): Promise<void> {
-  const state = await getOAuthState('oidc')
-  if (!state) return
-
-  const url = buildOIDCOAuthUrl(authUrl, clientId, state)
-  window.open(url, '_blank')
-}
-
-/**
- * Handle LinuxDO OAuth binding/login
- */
-export async function handleLinuxDOOAuth(clientId: string): Promise<void> {
-  const state = await getOAuthState('linuxdo')
-  if (!state) return
-
-  const url = buildLinuxDOOAuthUrl(clientId, state)
-  window.open(url, '_blank')
+  throw new Error('No linked OAuth provider is available.')
 }

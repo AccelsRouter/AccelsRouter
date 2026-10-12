@@ -393,6 +393,9 @@ func InvalidateOrgPayerCache(userId int) {
 // GetOrgPayerInfo resolves the managing organization for a user, or nil when
 // the user pays for itself. Single indexed lookup, TTL-cached.
 func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
+	if DB == nil {
+		return nil, nil
+	}
 	if v, ok := orgPayerCache.Load(userId); ok {
 		entry := v.(orgPayerCacheEntry)
 		if time.Now().Before(entry.expiresAt) {
@@ -709,7 +712,7 @@ func GetWorkspaceBillingInfo(tokenId int) (*WorkspaceBillingInfo, error) {
 }
 
 func GetTokenWorkspaceId(tokenId int) (int, error) {
-	if tokenId == 0 {
+	if tokenId == 0 || DB == nil {
 		return 0, nil
 	}
 	if v, ok := tokenWorkspaceCache.Load(tokenId); ok {
