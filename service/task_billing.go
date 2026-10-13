@@ -114,6 +114,13 @@ func taskIsSubscription(task *model.Task) bool {
 
 // taskAdjustFunding 调整任务的资金来源（钱包或订阅），delta > 0 表示扣费，delta < 0 表示退还。
 func taskAdjustFunding(task *model.Task, delta int) error {
+	if task.PrivateData.OrgFunding != nil {
+		// Fork: Settle applies the retail discount to the customer wallet and
+		// the wholesale ratio to the reseller wallet for either sign, so a
+		// full refund (-quota) and an overshoot (+delta) both land where the
+		// submission reserved.
+		return OrgWalletFundingFromSnapshot(task.PrivateData.OrgFunding).Settle(delta)
+	}
 	if taskIsSubscription(task) {
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
 	}

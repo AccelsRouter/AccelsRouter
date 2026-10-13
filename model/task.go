@@ -121,6 +121,10 @@ type TaskPrivateData struct {
 	TokenId        int                 `json:"token_id,omitempty"`        // 令牌 ID，用于令牌额度退款
 	NodeName       string              `json:"node_name,omitempty"`       // 发起任务的节点名，轮询结算阶段据此归属日志而非最后查询节点
 	BillingContext *TaskBillingContext `json:"billing_context,omitempty"` // 计费参数快照（用于轮询阶段重新计算）
+	// OrgFunding (fork) is set when the submission reserved from an org wallet
+	// instead of the member's balance; the async settlement charges and
+	// refunds those same wallets through it (see service.OrgWalletFunding).
+	OrgFunding *TaskOrgFunding `json:"org_funding,omitempty"`
 	// ResponsesBackground records that the openai_responses create request
 	// asked for background:true. Every task is durable and survives client
 	// disconnect regardless; this only echoes the protocol-level request
@@ -169,6 +173,21 @@ type TaskBillingContext struct {
 	OriginModelName string                       `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
 	PerCallBilling  bool                         `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
 	TieredSnapshot  *billingexpr.BillingSnapshot `json:"tiered_snapshot,omitempty"`
+}
+
+// TaskOrgFunding is the fork's serialisable snapshot of an org-wallet funded
+// task's funding: the wallets reserved from, the ratios applied, and the
+// amounts reserved, so settlement after the request is gone can unwind or
+// extend exactly what the submission charged.
+type TaskOrgFunding struct {
+	OrgId            int     `json:"org_id"`
+	UserId           int     `json:"user_id"`
+	WorkspaceId      int     `json:"workspace_id,omitempty"`
+	DiscountRatio    float64 `json:"discount_ratio,omitempty"`
+	ResellerOrgId    int     `json:"reseller_org_id,omitempty"`
+	WholesaleRatio   float64 `json:"wholesale_ratio,omitempty"`
+	Consumed         int     `json:"consumed"`
+	ResellerConsumed int     `json:"reseller_consumed,omitempty"`
 }
 
 // ResultRetrievable reports whether retrieval surfaces (native query routes,

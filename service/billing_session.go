@@ -151,6 +151,17 @@ func (s *BillingSession) needsRefundLocked() bool {
 }
 
 // GetPreConsumedQuota 返回实际预扣的额度。
+// OrgFunding returns the org-wallet funding snapshot when this session bills
+// an organization, nil for personal wallet or subscription billing.
+func (s *BillingSession) OrgFunding() *model.TaskOrgFunding {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if funding, ok := s.funding.(*OrgWalletFunding); ok {
+		return funding.Snapshot()
+	}
+	return nil
+}
+
 func (s *BillingSession) GetPreConsumedQuota() int {
 	return s.preConsumedQuota
 }

@@ -727,6 +727,11 @@ func executeTaskSubmissionWith(
 	task.PrivateData.Execution = service.TaskExecutionSnapshotFromContext(c)
 	task.PrivateData.UpstreamTaskID = result.UpstreamTaskID
 	task.PrivateData.BillingSource = relayInfo.BillingSource
+	if session, ok := relayInfo.Billing.(*service.BillingSession); ok {
+		// Fork: an org-funded task settles against the org (and reseller)
+		// wallet the submission reserved from, never the member's balance.
+		task.PrivateData.OrgFunding = session.OrgFunding()
+	}
 	task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 	task.PrivateData.TokenId = relayInfo.TokenId
 	task.PrivateData.NodeName = common.NodeName
