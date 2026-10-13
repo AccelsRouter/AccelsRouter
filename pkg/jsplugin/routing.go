@@ -211,6 +211,10 @@ type ProtocolBinding struct {
 	Protocol  string
 	Operation HostProtocolOperation
 	Model     string
+	// Gateway marks the OpenAI-format video gateway candidate: the plugin does
+	// not declare Model itself but relays it to a gateway that speaks the
+	// OpenAI video API (see middleware.PinTaskPluginEndpoint).
+	Gateway bool
 }
 
 const (

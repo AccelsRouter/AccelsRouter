@@ -423,6 +423,27 @@ func PinTaskPluginEndpoint() gin.HandlerFunc {
 			binding = candidates[0]
 		}
 
+		// Fork: an OpenAI-format video gateway — an OpenAI-type channel, or a
+		// New API channel bound to the plugin that speaks the OpenAI video
+		// API — relays any video model it lists, the way releases before the
+		// plugin system did. Offer that plugin as a trailing candidate so such
+		// channels stay eligible; vendor channels still execute their own
+		// plugin, which comes first.
+		if binding.Protocol == "openai_video" {
+			gateway, ok := generation.GetByChannelType(constant.ChannelTypeOpenAI)
+			if ok && gateway != nil &&
+				slices.ContainsFunc(gateway.Meta.Protocols, func(claim pluginruntime.ProtocolClaim) bool { return claim.Name == binding.Protocol }) &&
+				!slices.ContainsFunc(candidates, func(candidate pluginruntime.ProtocolBinding) bool { return candidate.Plugin == gateway }) {
+				candidates = append(candidates, pluginruntime.ProtocolBinding{
+					Plugin:    gateway,
+					Protocol:  binding.Protocol,
+					Operation: binding.Operation,
+					Model:     pinModel,
+					Gateway:   true,
+				})
+			}
+		}
+
 		pin := pluginruntime.PinnedPlugin{Generation: generation, Plugin: binding.Plugin}
 		pinnedEndpoint := pluginruntime.PinnedEndpoint{
 			Generation:  generation,
@@ -649,7 +670,7 @@ func PrepareTaskPluginEndpoint() gin.HandlerFunc {
 			} else if model, _ := result["model"].(string); strings.TrimSpace(model) == "" {
 				reason = "invalid_model"
 				detail = "decoded request is missing a model"
-			} else if model != pinned.Model || (pinned.MappedModel == "" && !slices.Contains(candidate.Plugin.Meta.Models, model)) {
+			} else if model != pinned.Model || (pinned.MappedModel == "" && !candidate.Gateway && !slices.Contains(candidate.Plugin.Meta.Models, model)) {
 				reason = "resolved_model_not_owned"
 				detail = fmt.Sprintf("model %q is not served by this plugin", model)
 			}
