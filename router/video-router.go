@@ -14,6 +14,16 @@ func SetVideoRouter(router *gin.Engine) {
 	videoSharedRouter.Use(middleware.SystemPerformanceCheck())
 	videoSharedRouter.POST(
 		"/video/generations",
+		// Fork: the legacy path predates the plugin endpoints and is not in
+		// the protocol index, so the pin below never matched it and the
+		// plugin fell back to the channel type — which a New API gateway
+		// channel (type 60) has no mapping for ("invalid api platform: 60").
+		// Serve it as /v1/videos so the plugin is resolved from the model
+		// exactly like the new path; the original URI is untouched.
+		func(c *gin.Context) {
+			c.Request.URL.Path = "/v1/videos"
+			c.Next()
+		},
 		middleware.PinTaskPluginEndpoint(),
 		middleware.TaskPluginEndpointOnly(middleware.ModelRequestRateLimit()),
 		middleware.PrepareTaskPluginEndpoint(),
