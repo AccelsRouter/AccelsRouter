@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -490,7 +491,31 @@ func encodeFilePlaceholder(placeholder map[string]any, form *multipart.Form, lim
 	return "data:" + mimeType + ";base64," + encoded, nil
 }
 
+// LOCAL TEST ONLY: user 11's Seedance requests never reach the real upstream.
+// Submit returns a fake task ID; FetchTask reports that task as already
+// succeeded with one fixed video. The bodies use the Volcengine Ark shapes the
+// doubao plugin parses.
+const (
+	mockUserID   = 11
+	mockVideoURL = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+	mockIDPrefix = "cgt-mock-"
+)
+
+var mockTaskSeq int64
+
+func mockResponse(body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewReader([]byte(body))),
+	}
+}
+
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, body io.Reader) (*http.Response, error) {
+	if info.UserId == mockUserID && strings.Contains(strings.ToLower(info.OriginModelName), "seedance") {
+		id := fmt.Sprintf("%s%d-%d", mockIDPrefix, time.Now().Unix(), atomic.AddInt64(&mockTaskSeq, 1))
+		return mockResponse(fmt.Sprintf(`{"id":%q}`, id)), nil
+	}
 	wasStream := info.IsStream
 	info.IsStream = false
 	defer func() { info.IsStream = wasStream }()
@@ -652,6 +677,11 @@ func (a *TaskAdaptor) FetchBatchTasks(baseURL, key string, tasks []*model.Task, 
 }
 
 func (a *TaskAdaptor) FetchTask(baseURL, key string, task *model.Task, proxy string) (*http.Response, error) {
+	if id := task.PrivateData.UpstreamTaskID; strings.HasPrefix(id, mockIDPrefix) {
+		return mockResponse(fmt.Sprintf(
+			`{"id":%q,"status":"succeeded","content":{"video_url":%q},"usage":{"completion_tokens":100000,"total_tokens":100000}}`,
+			id, mockVideoURL)), nil
+	}
 	ctx, err := a.queryContext(task, key, baseURL, proxy)
 	if err != nil {
 		return nil, err
