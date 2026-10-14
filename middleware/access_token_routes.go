@@ -335,6 +335,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/admin/organizations/applications":                    accessTokenScopeRule("user:read"),
 	"GET /api/admin/organizations/sso-providers":                   accessTokenScopeRule("user:read"),
 	"GET /api/admin/organizations/user-relations":                  accessTokenScopeRule("user:read"),
+	"GET /api/admin/inflight":                                      accessTokenScopeRule("ops:read"),
 	"GET /api/admin/reconciliation":                                accessTokenScopeRule("billing:read"),
 	"GET /api/admin/reconciliation/export":                         accessTokenScopeRule("billing:read"),
 	"GET /api/admin/topup-orders/":                                 accessTokenScopeRule("wallet:read"),

@@ -1,5 +1,18 @@
 {
   "translation": {
+    "Live Concurrency": "Live Concurrency",
+    "In flight": "In flight",
+    "Peak (1h)": "Peak (1h)",
+    "Nodes": "Nodes",
+    "By user": "By user",
+    "By organization": "By organization",
+    "By model": "By model",
+    "By channel": "By channel",
+    "Age": "Age",
+    "No requests in flight right now.": "No requests in flight right now.",
+    "Peaks are summed across nodes over the last hour, so a fleet-wide peak may read slightly high.": "Peaks are summed across nodes over the last hour, so a fleet-wide peak may read slightly high.",
+    "Refreshes every 3 seconds": "Refreshes every 3 seconds",
+    "Live requests": "Live requests",
     "Click to view details": "Click to view details",
     "(ID: {{id}})": "(ID: {{id}})",
     "{{bytes}} bytes": "{{bytes}} bytes",

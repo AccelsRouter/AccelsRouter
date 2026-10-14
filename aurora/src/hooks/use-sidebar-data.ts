@@ -26,6 +26,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  Gauge,
   Key,
   KeyRound,
   LayoutDashboard,
@@ -300,6 +301,11 @@ export function useSidebarData(): SidebarData {
             title: t('Upstream Monitor'),
             url: '/upstream',
             icon: Activity,
+          },
+          {
+            title: t('Live Concurrency'),
+            url: '/inflight',
+            icon: Gauge,
           },
           {
             title: t('Models'),

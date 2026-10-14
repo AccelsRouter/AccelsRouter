@@ -290,7 +290,11 @@ func Distribute() func(c *gin.Context) {
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+		// Fork: count the request as in flight for the admin concurrency view
+		// until the relay handler returns (streams included).
+		finished := service.InflightBegin(c)
 		c.Next()
+		finished()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
