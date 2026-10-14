@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Manual": "手動",
+    "Every {{count}}s": "每 {{count}} 秒",
+    "Every {{count}} min": "每 {{count}} 分鐘",
+    "Auto-refresh interval": "自動重新整理間隔",
     "Live Concurrency": "即時並發",
     "In flight": "進行中",
     "Peak (1h)": "峰值（1小時）",
@@ -11,7 +15,6 @@
     "Age": "已持續",
     "No requests in flight right now.": "目前沒有進行中的請求。",
     "Peaks are summed across nodes over the last hour, so a fleet-wide peak may read slightly high.": "最近一小時各節點峰值之和，整體峰值可能略高於實際。",
-    "Refreshes every 3 seconds": "每 3 秒重新整理",
     "Live requests": "即時請求",
     "Click to view details": "點擊檢視詳情",
     "(ID: {{id}})": "（ID: {{id}}）",
