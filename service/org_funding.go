@@ -70,6 +70,34 @@ type OrgWalletFunding struct {
 
 func (o *OrgWalletFunding) Source() string { return BillingSourceOrgWallet }
 
+// Snapshot captures the funding for a task that settles after the request
+// is gone (async video/image tasks); OrgWalletFundingFromSnapshot restores it.
+func (o *OrgWalletFunding) Snapshot() *model.TaskOrgFunding {
+	return &model.TaskOrgFunding{
+		OrgId:            o.orgId,
+		UserId:           o.userId,
+		WorkspaceId:      o.workspaceId,
+		DiscountRatio:    o.discountRatio,
+		ResellerOrgId:    o.resellerOrgId,
+		WholesaleRatio:   o.wholesaleRatio,
+		Consumed:         o.consumed,
+		ResellerConsumed: o.resellerConsumed,
+	}
+}
+
+func OrgWalletFundingFromSnapshot(snapshot *model.TaskOrgFunding) *OrgWalletFunding {
+	return &OrgWalletFunding{
+		orgId:            snapshot.OrgId,
+		userId:           snapshot.UserId,
+		workspaceId:      snapshot.WorkspaceId,
+		discountRatio:    snapshot.DiscountRatio,
+		resellerOrgId:    snapshot.ResellerOrgId,
+		wholesaleRatio:   snapshot.WholesaleRatio,
+		consumed:         snapshot.Consumed,
+		resellerConsumed: snapshot.ResellerConsumed,
+	}
+}
+
 // charge scales a standard quota amount by the retail discount, rounding
 // (half-away-from-zero) via the shared quota-math helper (never a bare cast) so
 // the charged amount stays closest to standard × ratio — truncating made a 0.4

@@ -26,11 +26,15 @@ type upstreamProbeSummary struct {
 	Channels   int   `json:"channels"`
 	Probed     int   `json:"probed"`
 	Failed     int   `json:"failed"`
-	Skipped    int   `json:"skipped"` // unsupported channel types
+	Skipped    int   `json:"skipped"` // unsupported channel types and task models
 	// Paused by the admin (setting.UpstreamProbeConfig), not probed.
 	PausedChannels int `json:"paused_channels"`
 	PausedModels   int `json:"paused_models"`
 }
+
+// upstreamProbeLastSweepKey is the option holding upstreamProbeLastByChannel
+// as JSON ({"<channel id>": unix seconds}).
+const upstreamProbeLastSweepKey = "UpstreamProbeLastSweep"
 
 var (
 	upstreamProbeMu      sync.Mutex
@@ -38,7 +42,8 @@ var (
 	upstreamProbeLast    upstreamProbeSummary
 	upstreamProbeOnce    sync.Once
 	// When each channel was last swept, so a channel with its own interval is
-	// probed on its own clock (see StartUpstreamProbeScheduler).
+	// probed on its own clock (see StartUpstreamProbeScheduler). Persisted in
+	// the option below so the clock survives a restart.
 	upstreamProbeLastByChannel = map[int]int64{}
 )
 
@@ -141,6 +146,13 @@ func runUpstreamProbeSweep(ctx context.Context, only map[int]bool) bool {
 				summary.PausedModels++
 				continue
 			}
+			// Task models cannot be probed with a chat canary (see
+			// isTaskUsageBilledModel); leave them out instead of logging a
+			// failure every sweep.
+			if isTaskUsageBilledModel(m) {
+				summary.Skipped++
+				continue
+			}
 			jobs = append(jobs, job{ch, m})
 		}
 	}
@@ -149,7 +161,13 @@ func runUpstreamProbeSweep(ctx context.Context, only map[int]bool) bool {
 	for _, id := range probedChannels {
 		upstreamProbeLastByChannel[id] = now
 	}
+	persisted, _ := common.Marshal(upstreamProbeLastByChannel)
 	upstreamProbeMu.Unlock()
+	// Remembered across restarts so a redeploy does not sweep every channel
+	// again as soon as the process comes up.
+	if err := model.UpdateOption(upstreamProbeLastSweepKey, string(persisted)); err != nil {
+		common.SysError("upstream probe: persist last sweep: " + err.Error())
+	}
 	concurrency := cfg.ChannelTestConcurrency
 	if concurrency < 2 {
 		concurrency = 2
@@ -191,6 +209,17 @@ func StartUpstreamProbeScheduler() {
 		return
 	}
 	upstreamProbeOnce.Do(func() {
+		common.OptionMapRWMutex.RLock()
+		persisted := common.OptionMap[upstreamProbeLastSweepKey]
+		common.OptionMapRWMutex.RUnlock()
+		if persisted != "" {
+			upstreamProbeMu.Lock()
+			if err := common.UnmarshalJsonStr(persisted, &upstreamProbeLastByChannel); err != nil {
+				common.SysError("upstream probe: ignoring saved last sweep times: " + err.Error())
+				upstreamProbeLastByChannel = map[int]int64{}
+			}
+			upstreamProbeMu.Unlock()
+		}
 		go func() {
 			// Let the process settle before the first sweep.
 			time.Sleep(2 * time.Minute)

@@ -16,11 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { clearAuthentication } from '@/lib/auth-session'
+
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { logout } from '@/features/auth/api'
+import { clearAuthenticatedClientState } from '@/lib/auth-session'
+import { handleServerError } from '@/lib/handle-server-error'
 
 interface SignOutDialogProps {
   open: boolean
@@ -29,19 +34,26 @@ interface SignOutDialogProps {
 
 export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [isSigningOut, setIsSigningOut] = useState(false)
 
   const handleSignOut = async () => {
+    setIsSigningOut(true)
     try {
-      await logout()
-    } catch {
-      /* empty */
-    }
-    // Clears token/session/uid and broadcasts the sign-out to other tabs.
-    clearAuthentication()
-    toast.success(t('Signed out'))
-    // Refresh the page to clear all state and update UI
-    if (typeof window !== 'undefined') {
-      window.location.reload()
+      const response = await logout()
+      if (!response.success) {
+        handleServerError(response, t('Failed to sign out session'))
+        return
+      }
+
+      clearAuthenticatedClientState(queryClient)
+      toast.success(t('Signed out'))
+      void navigate({ to: '/sign-in', replace: true })
+    } catch (error: unknown) {
+      handleServerError(error, t('Failed to sign out session'))
+    } finally {
+      setIsSigningOut(false)
     }
   }
 
@@ -55,6 +67,7 @@ export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
       )}
       confirmText={t('Sign out')}
       handleConfirm={handleSignOut}
+      isLoading={isSigningOut}
       className='sm:max-w-sm'
     />
   )

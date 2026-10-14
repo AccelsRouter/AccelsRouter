@@ -57,6 +57,8 @@ import {
 } from '@/components/ui/tooltip'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampRelative, formatTimestampToDate } from '@/lib/format'
+import { handleServerError } from '@/lib/handle-server-error'
+import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import {
@@ -500,7 +502,7 @@ export function SystemInstancesPanel() {
     queryFn: async () => {
       const res = await listSystemInstances()
       if (!res.success || !Array.isArray(res.data)) {
-        throw new Error(res.message || t('We could not load instances.'))
+        throw createServerError(res, t('We could not load instances.'))
       }
       return res.data
     },
@@ -526,7 +528,7 @@ export function SystemInstancesPanel() {
     mutationFn: async (nodeName: string) => {
       const res = await deleteStaleSystemInstance(nodeName)
       if (!res.success) {
-        throw new Error(res.message || t('Delete failed'))
+        throw createServerError(res, t('Delete failed'))
       }
       return res
     },
@@ -539,7 +541,7 @@ export function SystemInstancesPanel() {
       setDeleteTarget(null)
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : t('Delete failed'))
+      handleServerError(error, t('Delete failed'))
       void invalidateInstances()
     },
     onSettled: () => {
@@ -551,7 +553,7 @@ export function SystemInstancesPanel() {
     mutationFn: async () => {
       const res = await deleteStaleSystemInstances()
       if (!res.success) {
-        throw new Error(res.message || t('Delete failed'))
+        throw createServerError(res, t('Delete failed'))
       }
       return res
     },
@@ -565,7 +567,7 @@ export function SystemInstancesPanel() {
       setDeleteAllConfirmOpen(false)
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : t('Delete failed'))
+      handleServerError(error, t('Delete failed'))
     },
   })
 

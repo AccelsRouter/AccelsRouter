@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/smartroute"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting"
 )
 
 // GetChannelPricingChannel picks a channel for a "channel pricing mode"
@@ -20,11 +22,11 @@ import (
 // per-model ratio row is what actually authorizes routing that model to
 // that channel for this user (see GetUserChannelBindingRatio).
 //
-// Candidates are tried in a stable (ascending channel_id) order; retry
-// walks that list one at a time. retry >= len(candidates) means "no more
-// channels to try", mirroring how GetRandomSatisfiedChannel signals
-// exhaustion by returning (nil, nil) — the caller's existing retry-until-
-// RetryTimes loop handles this the same way either mode.
+// Candidates are ordered by smart routing (see common/smartroute): healthy
+// channels first, then a random draw weighted toward the cheaper binding
+// ratio. retry walks that order (0 = first); retry >= len(ranked) means
+// "no more channels to try", mirroring how GetRandomSatisfiedChannel
+// signals exhaustion.
 //
 // A bound channel is only a live candidate if it's currently enabled,
 // still declares support for modelName in its own model list (a binding
@@ -46,6 +48,13 @@ import (
 // through to a direct DB query instead of silently seeing every candidate
 // as "not found".
 func GetChannelPricingChannel(userId int, modelName string, retry int, requestPath string) (channel *Channel, overBudget bool, err error) {
+	return GetChannelPricingChannelSeeded(userId, modelName, retry, requestPath, "")
+}
+
+// GetChannelPricingChannelSeeded is GetChannelPricingChannel with a
+// per-request seed (the request ID); see GetChannelSeeded. The initial
+// attempt and every retry must pass the same seed.
+func GetChannelPricingChannelSeeded(userId int, modelName string, retry int, requestPath string, seed string) (channel *Channel, overBudget bool, err error) {
 	channelIds, err := getUserBoundChannelIdsForModel(userId, modelName)
 	if err != nil {
 		return nil, false, err
@@ -55,13 +64,13 @@ func GetChannelPricingChannel(userId int, modelName string, retry int, requestPa
 	}
 
 	if !common.MemoryCacheEnabled {
-		return getChannelPricingChannelFromDB(channelIds, modelName, retry, requestPath)
+		return getChannelPricingChannelFromDB(userId, channelIds, modelName, retry, requestPath, seed)
 	}
 
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
-	candidates := make([]int, 0, len(channelIds))
+	candidateIds := make([]int, 0, len(channelIds))
 	for _, id := range channelIds {
 		ch, ok := channelsIDM[id]
 		if !ok || ch.Status != common.ChannelStatusEnabled {
@@ -77,21 +86,37 @@ func GetChannelPricingChannel(userId int, modelName string, retry int, requestPa
 		if !supported {
 			continue
 		}
-		candidates = append(candidates, id)
+		candidateIds = append(candidateIds, id)
 	}
 
-	// Reuse the same request-path/advanced-custom filter group-based
-	// selection already applies, so a channel-pricing user's bound
-	// channels are held to the same bar as any other channel.
-	candidates = filterChannelsByRequestPathAndModel(candidates, requestPath, modelName)
-	hadCandidates := len(candidates) > 0
-	candidates = filterChannelsByTokenBudget(candidates)
-	overBudget = hadCandidates && len(candidates) == 0
-
-	if retry < 0 || retry >= len(candidates) {
+	candidateIds = filterChannelsByRequestPathAndModel(candidateIds, requestPath, modelName)
+	hadCandidates := len(candidateIds) > 0
+	candidateIds = filterChannelsByTokenBudget(candidateIds)
+	overBudget = hadCandidates && len(candidateIds) == 0
+	if len(candidateIds) == 0 {
 		return nil, overBudget, nil
 	}
-	return channelsIDM[candidates[retry]], false, nil
+
+	var ranked []int
+	if setting.SmartRoutingEnabled {
+		candidates := make([]smartroute.Candidate, 0, len(candidateIds))
+		for _, id := range candidateIds {
+			ratio, _ := GetUserChannelBindingRatio(userId, id, modelName)
+			candidates = append(candidates, smartroute.Candidate{ChannelId: id, Price: ratio})
+		}
+		ranked = smartroute.RankChannels(candidates, modelName, seed)
+	} else {
+		// Legacy (setting.SmartRoutingEnabled off): candidateIds is
+		// already in ascending channel_id order (see
+		// getUserBoundChannelIdsForModel), so it doubles as the "ranked"
+		// list unchanged — the exact pre-smart-routing ordering.
+		ranked = candidateIds
+	}
+
+	if retry < 0 || retry >= len(ranked) {
+		return nil, overBudget, nil
+	}
+	return channelsIDM[ranked[retry]], false, nil
 }
 
 // GetUserBoundEnabledModels returns every model userId has an explicit
@@ -159,7 +184,7 @@ func GetUserBoundEnabledModels(userId int) ([]string, error) {
 // when the in-memory channel cache is disabled (common.MemoryCacheEnabled
 // == false, the project's default) — queries the bound channels directly
 // instead of relying on channelsIDM, which is never populated in that mode.
-func getChannelPricingChannelFromDB(channelIds []int, modelName string, retry int, requestPath string) (channel *Channel, overBudget bool, err error) {
+func getChannelPricingChannelFromDB(userId int, channelIds []int, modelName string, retry int, requestPath string, seed string) (channel *Channel, overBudget bool, err error) {
 	var channels []*Channel
 	if err := DB.Where("id IN ? AND status = ?", channelIds, common.ChannelStatusEnabled).Find(&channels).Error; err != nil {
 		return nil, false, err
@@ -170,7 +195,7 @@ func getChannelPricingChannelFromDB(channelIds []int, modelName string, retry in
 		byId[ch.Id] = ch
 	}
 
-	candidates := make([]int, 0, len(channelIds))
+	candidateIds := make([]int, 0, len(channelIds))
 	for _, id := range channelIds {
 		ch, ok := byId[id]
 		if !ok {
@@ -192,9 +217,9 @@ func getChannelPricingChannelFromDB(channelIds []int, modelName string, retry in
 				continue
 			}
 		}
-		candidates = append(candidates, id)
+		candidateIds = append(candidateIds, id)
 	}
-	hadCandidates := len(candidates) > 0
+	hadCandidates := len(candidateIds) > 0
 
 	// Fork: filterChannelsByTokenBudget itself reads channelsIDM (the
 	// memory-cache map), which is never populated when
@@ -203,19 +228,38 @@ func getChannelPricingChannelFromDB(channelIds []int, modelName string, retry in
 	// lookup misses, so every channel is kept regardless of its actual
 	// usage). Filter directly against the *Channel objects already loaded
 	// from the DB above instead.
-	filtered := make([]int, 0, len(candidates))
-	for _, id := range candidates {
+	filtered := make([]int, 0, len(candidateIds))
+	for _, id := range candidateIds {
 		if ch, ok := byId[id]; ok && IsChannelOverDailyTokenBudget(ch) {
 			common.SysLog(fmt.Sprintf("[DEBUG] getChannelPricingChannelFromDB: dropping channel %d, over daily token budget", id))
 			continue
 		}
 		filtered = append(filtered, id)
 	}
-	candidates = filtered
-	overBudget = hadCandidates && len(candidates) == 0
-
-	if retry < 0 || retry >= len(candidates) {
+	candidateIds = filtered
+	overBudget = hadCandidates && len(candidateIds) == 0
+	if len(candidateIds) == 0 {
 		return nil, overBudget, nil
 	}
-	return byId[candidates[retry]], false, nil
+
+	var ranked []int
+	if setting.SmartRoutingEnabled {
+		candidates := make([]smartroute.Candidate, 0, len(candidateIds))
+		for _, id := range candidateIds {
+			ratio, _ := GetUserChannelBindingRatio(userId, id, modelName)
+			candidates = append(candidates, smartroute.Candidate{ChannelId: id, Price: ratio})
+		}
+		ranked = smartroute.RankChannels(candidates, modelName, seed)
+	} else {
+		// Legacy (setting.SmartRoutingEnabled off): candidateIds is
+		// already in ascending channel_id order (see
+		// getUserBoundChannelIdsForModel), so it doubles as the "ranked"
+		// list unchanged — the exact pre-smart-routing ordering.
+		ranked = candidateIds
+	}
+
+	if retry < 0 || retry >= len(ranked) {
+		return nil, overBudget, nil
+	}
+	return byId[ranked[retry]], false, nil
 }

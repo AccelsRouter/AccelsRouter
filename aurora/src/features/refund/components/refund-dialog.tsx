@@ -47,11 +47,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-import {
-  SecureVerificationDialog,
-  checkVerificationMethods,
-  useSecureVerification,
-} from '@/features/auth/secure-verification'
+import { fetchSecondFactorStatus } from '@/lib/second-factor'
 import { useNavigate } from '@tanstack/react-router'
 import {
   disableAllMyTokens,
@@ -109,7 +105,7 @@ export function RefundDialog(props: RefundDialogProps) {
   const { data: verificationMethodsData, isLoading: methodsLoading } = useQuery(
     {
       queryKey: ['refund-verification-methods'],
-      queryFn: checkVerificationMethods,
+      queryFn: fetchSecondFactorStatus,
       enabled: props.open,
       staleTime: 0,
     }
@@ -117,19 +113,6 @@ export function RefundDialog(props: RefundDialogProps) {
   const hasSecondFactor =
     !!verificationMethodsData &&
     (verificationMethodsData.has2FA || verificationMethodsData.hasPasskey)
-
-  // Secure verification — the backend requires a fresh 2FA / Passkey
-  // verification before accepting a refund submission.
-  const {
-    open: verificationOpen,
-    methods: verificationMethods,
-    state: verificationState,
-    executeVerification,
-    withVerification,
-    cancel: cancelVerification,
-    setCode: setVerificationCode,
-    switchMethod: switchVerificationMethod,
-  } = useSecureVerification()
 
   useEffect(() => {
     if (!props.open) {
@@ -162,13 +145,9 @@ export function RefundDialog(props: RefundDialogProps) {
     )
   }, [method, t])
 
-  // Success side-effects MUST live inside the apiCall closure so they
-  // only fire when the refund actually succeeds. withVerification opens
-  // the 2FA/Passkey dialog on VERIFICATION_REQUIRED and returns null
-  // before the user verifies; the real submit happens on the verified
-  // retry, which re-runs this exact closure. Running setSubmitted/toast
-  // after withVerification() returned would show a fake success when
-  // verification is still pending or the account has no second factor.
+  // The account must already hold a second factor (gated above); the backend
+  // enforces the same rule, so a submission that reaches it is accepted or
+  // rejected outright.
   const onSubmitVerified = useCallback(
     (values: FormValues) => async () => {
       await submitRefundRequest({
@@ -189,13 +168,7 @@ export function RefundDialog(props: RefundDialogProps) {
 
   async function onSubmit(values: FormValues) {
     try {
-      await withVerification(onSubmitVerified(values), {
-        preferredMethod: '2fa',
-        title: t('Verify to submit refund'),
-        description: t(
-          'Confirm your identity with 2FA or Passkey before submitting a refund request.'
-        ),
-      })
+      await onSubmitVerified(values)()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('Submission failed'))
     }
@@ -409,21 +382,6 @@ export function RefundDialog(props: RefundDialogProps) {
         )}
       </DialogContent>
     </Dialog>
-
-    <SecureVerificationDialog
-      open={verificationOpen}
-      onOpenChange={(open) => {
-        if (!open) cancelVerification()
-      }}
-      methods={verificationMethods}
-      state={verificationState}
-      onVerify={async (method, code) => {
-        await executeVerification(method, code)
-      }}
-      onCancel={cancelVerification}
-      onCodeChange={setVerificationCode}
-      onMethodChange={switchVerificationMethod}
-    />
     </>
   )
 }

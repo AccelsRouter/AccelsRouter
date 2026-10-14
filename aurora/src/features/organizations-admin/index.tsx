@@ -1537,7 +1537,7 @@ function UsageDialog(props: { org: Organization | null; onClose: () => void }) {
         if (!o) props.onClose()
       }}
     >
-      <DialogContent className='max-h-[90vh] overflow-y-auto sm:max-w-3xl'>
+      <DialogContent className='max-h-[90vh] overflow-y-auto sm:max-w-[min(96vw,1180px)]'>
         <DialogHeader>
           <DialogTitle>
             {t('Usage')}

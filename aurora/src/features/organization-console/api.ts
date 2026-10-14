@@ -196,6 +196,17 @@ export type OrgLog = {
   // Customer org name — set only in a reseller's aggregated call log (rows span
   // multiple customers); empty in single-org views.
   customer_name?: string
+  // Per-request details rendered by the shared log details dialog. The server
+  // strips every upstream field (channel, upstream request id, admin_info)
+  // before these rows leave it.
+  use_time?: number
+  is_stream?: boolean
+  group?: string
+  ip?: string
+  other?: string
+  request_id?: string
+  token_id?: number
+  user_id?: number
 }
 
 function orgLogsQuery(page: number, pageSize: number): string {

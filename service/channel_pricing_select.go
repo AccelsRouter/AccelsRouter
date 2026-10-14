@@ -17,5 +17,5 @@ import (
 // daily token budget (true) versus no supporting binding existing at all
 // (false) — see model.GetChannelPricingChannel.
 func CacheGetChannelPricingChannel(userId int, param *RetryParam) (channel *model.Channel, overBudget bool, err error) {
-	return model.GetChannelPricingChannel(userId, param.ModelName, param.GetRetry(), param.RequestPath)
+	return model.GetChannelPricingChannelSeeded(userId, param.ModelName, param.GetRetry(), param.RequestPath, smartRouteSeed(param.Ctx))
 }

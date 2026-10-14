@@ -6,7 +6,7 @@ Backend enforces the same rule (middleware.Require2FAEnabled) — this
 is the friendly front-end gate that avoids the raw 403 + double toast.
 */
 import { useCallback, useState } from 'react'
-import { checkVerificationMethods } from '@/features/auth/secure-verification'
+import { fetchSecondFactorStatus } from '@/lib/second-factor'
 import { Topup2FAGuardDialog } from '../components/dialogs/topup-2fa-guard-dialog'
 
 export function useTopupGuard() {
@@ -14,7 +14,7 @@ export function useTopupGuard() {
 
   const ensureSecondFactor = useCallback(async () => {
     try {
-      const methods = await checkVerificationMethods()
+      const methods = await fetchSecondFactorStatus()
       if (methods.has2FA || methods.hasPasskey) return true
     } catch {
       // On check failure, fall through to the guard dialog rather than

@@ -32,6 +32,7 @@ const defaultSecuritySettings: SecuritySettings = {
   ModelRequestRateLimitGroup: '',
   UserDailyTokenLimitEnabled: false,
   ChannelDailyTokenLimitEnabled: false,
+  SmartRoutingEnabled: true,
   CheckSensitiveEnabled: false,
   CheckSensitiveOnPromptEnabled: false,
   SensitiveWords: '',
@@ -48,12 +49,12 @@ const defaultSecuritySettings: SecuritySettings = {
 
 export function SecuritySettings() {
   return (
-    <SettingsPage
-      routePath='/_authenticated/system-settings/security/$section'
-      defaultSettings={defaultSecuritySettings}
-      defaultSection={SECURITY_DEFAULT_SECTION}
-      getSectionContent={getSecuritySectionContent}
-      getSectionMeta={getSecuritySectionMeta}
-    />
+      <SettingsPage
+          routePath='/_authenticated/system-settings/security/$section'
+          defaultSettings={defaultSecuritySettings}
+          defaultSection={SECURITY_DEFAULT_SECTION}
+          getSectionContent={getSecuritySectionContent}
+          getSectionMeta={getSecuritySectionMeta}
+      />
   )
 }

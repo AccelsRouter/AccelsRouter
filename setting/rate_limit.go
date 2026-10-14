@@ -1,13 +1,22 @@
 package setting
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
 )
+
+// maxRateLimitDurationSeconds is the largest window the count cap is computed
+// against (24h). Token-bucket capacity is count*duration; this keeps that
+// product inside int64 when the window is at most a day.
+const maxRateLimitDurationSeconds = 24 * 60 * 60
+
+// maxModelRequestRateLimitCount is math.MaxInt64 / maxRateLimitDurationSeconds.
+// It is the largest count that cannot overflow int64(count)*duration for a
+// window of at most 24 hours.
+const maxModelRequestRateLimitCount int64 = math.MaxInt64 / maxRateLimitDurationSeconds
 
 var ModelRequestRateLimitEnabled = false
 var ModelRequestRateLimitDurationMinutes = 1
@@ -20,9 +29,9 @@ func ModelRequestRateLimitGroup2JSONString() string {
 	ModelRequestRateLimitMutex.RLock()
 	defer ModelRequestRateLimitMutex.RUnlock()
 
-	jsonBytes, err := json.Marshal(ModelRequestRateLimitGroup)
+	jsonBytes, err := common.Marshal(ModelRequestRateLimitGroup)
 	if err != nil {
-		common.SysLog("error marshalling model ratio: " + err.Error())
+		common.SysLog(common.LogText("error marshalling model ratio: %s", err.Error()))
 	}
 	return string(jsonBytes)
 }
@@ -32,7 +41,7 @@ func UpdateModelRequestRateLimitGroupByJSONString(jsonStr string) error {
 	defer ModelRequestRateLimitMutex.RUnlock()
 
 	ModelRequestRateLimitGroup = make(map[string][2]int)
-	return json.Unmarshal([]byte(jsonStr), &ModelRequestRateLimitGroup)
+	return common.Unmarshal([]byte(jsonStr), &ModelRequestRateLimitGroup)
 }
 
 func GetGroupRateLimit(group string) (totalCount, successCount int, found bool) {
@@ -52,7 +61,7 @@ func GetGroupRateLimit(group string) (totalCount, successCount int, found bool) 
 
 func CheckModelRequestRateLimitGroup(jsonStr string) error {
 	checkModelRequestRateLimitGroup := make(map[string][2]int)
-	err := json.Unmarshal([]byte(jsonStr), &checkModelRequestRateLimitGroup)
+	err := common.Unmarshal([]byte(jsonStr), &checkModelRequestRateLimitGroup)
 	if err != nil {
 		return err
 	}
@@ -60,8 +69,8 @@ func CheckModelRequestRateLimitGroup(jsonStr string) error {
 		if limits[0] < 0 || limits[1] < 1 {
 			return fmt.Errorf("group %s has negative rate limit values: [%d, %d]", group, limits[0], limits[1])
 		}
-		if limits[0] > math.MaxInt32 || limits[1] > math.MaxInt32 {
-			return fmt.Errorf("group %s [%d, %d] has max rate limits value 2147483647", group, limits[0], limits[1])
+		if int64(limits[0]) > maxModelRequestRateLimitCount || int64(limits[1]) > maxModelRequestRateLimitCount {
+			return fmt.Errorf("group %s [%d, %d] exceeds max rate limit %d", group, limits[0], limits[1], maxModelRequestRateLimitCount)
 		}
 	}
 
@@ -106,3 +115,26 @@ func UserDailyTokenLimitKey(userId int) string {
 func ChannelDailyTokenLimitKey(channelId int) string {
 	return fmt.Sprintf("dailyTokenLimit:v1:channel:%d", channelId)
 }
+
+// ---------------------------------------------------------------------------
+// Smart routing.
+//
+// Replaces channel/ability Priority and Weight as the mechanism for
+// choosing among several channels serving the same model, with a
+// composite score (success rate, latency, and — in channel-pricing mode
+// only — price) computed from rolling per-(channel, model) stats kept in
+// Redis (see common/smartroute). Applies to both group-mode selection
+// (model.GetRandomSatisfiedChannel / model.GetChannel) and
+// channel-pricing-mode selection (model.GetChannelPricingChannel); reseller
+// routing (service.SelectResellerChannel) is untouched regardless of this
+// setting.
+//
+// Defaults to true — this is meant to take effect automatically, not as an
+// opt-in a user has to request. The switch exists purely as an operator
+// escape hatch: turning it off reverts every affected selection path to
+// its exact pre-smart-routing behavior — priority tiers + weighted-random
+// in group mode, ascending channel_id order in channel-pricing mode, and
+// channel affinity's usability check without the consecutive-failure
+// circuit breaker (see common/smartroute.IsCircuitOpen) — entirely
+// without needing a rollback deploy.
+var SmartRoutingEnabled = false

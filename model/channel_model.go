@@ -59,8 +59,16 @@ func DeleteChannelModelPriority(channelId int, modelName string) error {
 // Channel.PriorityForModel expects. Empty, not an error, when the channel
 // has no overrides.
 func GetChannelModelPriorities(channelId int) (map[string]int64, error) {
+	return getChannelModelPrioritiesWith(DB, channelId)
+}
+
+// getChannelModelPrioritiesWith is GetChannelModelPriorities on a caller-chosen
+// handle, so ability rebuilds inside a transaction read through that
+// transaction instead of a second connection (SQLite serialises writers, so
+// reading on the global handle while the transaction is open deadlocks).
+func getChannelModelPrioritiesWith(db *gorm.DB, channelId int) (map[string]int64, error) {
 	var rows []ChannelModel
-	if err := DB.Where("channel_id = ?", channelId).Find(&rows).Error; err != nil {
+	if err := db.Where("channel_id = ?", channelId).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make(map[string]int64, len(rows))

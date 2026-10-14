@@ -259,8 +259,8 @@ export function UpstreamMonitor() {
                   m: pausedModels,
                 }) + ' '}
               <Link
-                to='/system-settings/models/$section'
-                params={{ section: 'routing-reliability' }}
+                to='/system-settings/request-policies/$section'
+                params={{ section: 'health' }}
                 className='underline underline-offset-2'
               >
                 {t('Configure')}

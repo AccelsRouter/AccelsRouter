@@ -12,9 +12,11 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/common/limiter"
+	"github.com/QuantumNous/new-api/common/smartroute"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/relaykit/dto"
+	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
@@ -23,16 +25,17 @@ var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
 // channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
-var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
+var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
 	if !common.MemoryCacheEnabled {
 		InvalidatePricingCache()
+		rebuildTaskAliasView()
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
-	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
+	newChannel2advancedCustomConfig := make(map[int]*kitdto.AdvancedCustomConfig)
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
@@ -57,9 +60,9 @@ func InitChannelCache() {
 		if channel.Status != common.ChannelStatusEnabled {
 			continue // skip disabled channels
 		}
-		groups := strings.Split(channel.Group, ",")
-		for _, group := range groups {
-			models := strings.Split(channel.Models, ",")
+		groups := strings.SplitSeq(channel.Group, ",")
+		for group := range groups {
+			models := channel.GetModels()
 			for _, model := range models {
 				if _, ok := newGroup2model2channels[group][model]; !ok {
 					newGroup2model2channels[group][model] = make([]int, 0)
@@ -103,44 +106,120 @@ func InitChannelCache() {
 	// loadPricingAdvancedCustomConfigs. channelSyncLock MUST be released before
 	// invalidating the pricing cache, otherwise the reversed order deadlocks.
 	InvalidatePricingCache()
-	common.SysLog("channels synced from database")
+	rebuildTaskAliasView()
+	common.SysLog(common.LogText("channels synced from database"))
 }
 
 func SyncChannelCache(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Second)
-		common.SysLog("syncing channels from database")
+		common.SysLog(common.LogText("syncing channels from database"))
 		InitChannelCache()
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+// GetRandomSatisfiedChannel picks a channel for (group, model). Fork: with
+// smart routing on (see common/smartroute) every enabled, non-over-budget
+// candidate is ranked (healthy channels first, then a random draw) and retry
+// walks that order; with it off, the upstream priority-tier + weighted-random
+// selection (getRandomSatisfiedChannelLegacy) applies unchanged.
+func GetRandomSatisfiedChannel(group string, model string, retry int, filters []dto.ChannelFilter) (*Channel, error) {
+	return GetRandomSatisfiedChannelSeeded(group, model, retry, filters, "")
+}
+
+// GetRandomSatisfiedChannelSeeded is GetRandomSatisfiedChannel with a
+// per-request seed (the request ID); see GetChannelSeeded.
+func GetRandomSatisfiedChannelSeeded(group string, model string, retry int, filters []dto.ChannelFilter, seed string) (*Channel, error) {
+	if !setting.SmartRoutingEnabled {
+		return getRandomSatisfiedChannelLegacy(group, model, retry, filters)
+	}
+
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, requestPath)
+		return GetChannelSeeded(group, model, retry, filters, seed)
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
+	if len(channels) == 0 {
+		normalizedModel := ratio_setting.RoutingMatchModelName(model)
+		channels, _ = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
+	}
+	channels = filterChannelsByTokenBudget(channels)
+	if len(channels) == 0 {
+		return nil, nil
+	}
+	if len(channels) == 1 {
+		if channel, ok := channelsIDM[channels[0]]; ok {
+			return channel, nil
+		}
+		return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channels[0])
+	}
+
+	seen := make(map[int]struct{}, len(channels))
+	candidates := make([]smartroute.Candidate, 0, len(channels))
+	for _, channelId := range channels {
+		if _, ok := seen[channelId]; ok {
+			continue
+		}
+		if _, ok := channelsIDM[channelId]; !ok {
+			return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channelId)
+		}
+		seen[channelId] = struct{}{}
+		// Price is deliberately 0 for every candidate here: group pricing
+		// doesn't vary by which channel within the group serves the
+		// request, so there's no real price signal to rank on — see
+		// smartroute.Candidate.Price.
+		candidates = append(candidates, smartroute.Candidate{ChannelId: channelId})
+	}
+	ranked := smartroute.RankChannels(candidates, model, seed)
+	if len(ranked) == 0 {
+		return nil, errors.New("channel not found")
+	}
+	if retry < 0 {
+		retry = 0
+	}
+	if retry >= len(ranked) {
+		retry = len(ranked) - 1
+	}
+	channel, ok := channelsIDM[ranked[retry]]
+	if !ok {
+		return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", ranked[retry])
+	}
+	return channel, nil
+}
+
+// getRandomSatisfiedChannelLegacy is the upstream selection — narrow to the
+// single highest priority tier (or the tier retry indexes into), then
+// weighted-random within it. Fork: candidates over their daily token budget
+// are dropped first, so an over-budget channel is transparently skipped (and
+// an all-over-budget group falls through to the next "auto" group).
+func getRandomSatisfiedChannelLegacy(
+	group string,
+	model string,
+	retry int,
+	filters []dto.ChannelFilter,
+) (*Channel, error) {
+	// if memory cache is disabled, get channel directly from database
+	if !common.MemoryCacheEnabled {
+		return getChannelLegacy(group, model, retry, filters)
 	}
 
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
 	// First, try to find channels with the exact model name.
-	channels := filterChannelsByRequestPathAndModel(group2model2channels[group][model], requestPath, model)
+	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
 
 	// If no channels found, try to find channels with the normalized model name.
 	if len(channels) == 0 {
-		normalizedModel := ratio_setting.FormatMatchingModelName(model)
-		channels = filterChannelsByRequestPathAndModel(group2model2channels[group][normalizedModel], requestPath, model)
+		normalizedModel := ratio_setting.RoutingMatchModelName(model)
+		channels, _ = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
 	}
 
-	// Drop channels that have already exhausted their configured daily
-	// token budget (resets at 00:00 UTC). Filtering here (before
-	// priority/weight grouping) means an over-budget channel is
-	// transparently skipped in favor of the next channel/priority tier, and
-	// if every channel in this group is over budget, the caller naturally
-	// falls through to the next group for "auto" combinations, or reports
-	// no channel available.
 	channels = filterChannelsByTokenBudget(channels)
-
 	if len(channels) == 0 {
 		return nil, nil
 	}
@@ -149,7 +228,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		if channel, ok := channelsIDM[channels[0]]; ok {
 			return channel, nil
 		}
-		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
+		return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channels[0])
 	}
 
 	uniquePriorities := make(map[int]bool)
@@ -157,7 +236,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		if channel, ok := channelsIDM[channelId]; ok {
 			uniquePriorities[int(channel.GetPriority())] = true
 		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+			return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channelId)
 		}
 	}
 	var sortedUniquePriorities []int
@@ -181,7 +260,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 				targetChannels = append(targetChannels, channel)
 			}
 		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+			return nil, fmt.Errorf("database consistency error: channel #%d does not exist, please contact the administrator", channelId)
 		}
 	}
 
@@ -328,7 +407,7 @@ func CacheGetChannel(id int) (*Channel, error) {
 
 	c, ok := channelsIDM[id]
 	if !ok {
-		return nil, fmt.Errorf("渠道# %d，已不存在", id)
+		return nil, fmt.Errorf("channel #%d no longer exists", id)
 	}
 	return c, nil
 }
@@ -346,7 +425,7 @@ func CacheGetChannelInfo(id int) (*ChannelInfo, error) {
 
 	c, ok := channelsIDM[id]
 	if !ok {
-		return nil, fmt.Errorf("渠道# %d，已不存在", id)
+		return nil, fmt.Errorf("channel #%d no longer exists", id)
 	}
 	return &c.ChannelInfo, nil
 }
@@ -394,7 +473,7 @@ func CacheUpdateChannel(channel *Channel) {
 	}
 	channelsIDM[channel.Id] = channel
 	if channel2advancedCustomConfig == nil {
-		channel2advancedCustomConfig = make(map[int]*dto.AdvancedCustomConfig)
+		channel2advancedCustomConfig = make(map[int]*kitdto.AdvancedCustomConfig)
 	}
 	delete(channel2advancedCustomConfig, channel.Id)
 	if channel.Type == constant.ChannelTypeAdvancedCustom {
