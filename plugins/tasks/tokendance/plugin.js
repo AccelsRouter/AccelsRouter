@@ -16,13 +16,19 @@ function trimmed(value) {
   return String(value || "").trim();
 }
 
-// Dashed spellings the platform exposes alongside TokenDance's dotted model
-// IDs; the gateway only ever receives the dotted ID.
+// Spellings the platform exposes alongside TokenDance's dotted model IDs:
+// the platform's dashed names and Volcengine's official endpoint names (also
+// declared by the doubao plugin — a shared model executes on whichever plugin
+// the selected channel binds). The gateway only ever receives the dotted ID.
 const MODEL_ALIASES = {
   "seedance-2-0": "seedance-2.0",
   "seedance-2-0-fast": "seedance-2.0-fast",
   "seedance-2-0-mini": "seedance-2.0-mini",
   "seedance-2-5": "seedance-2.5",
+  "doubao-seedance-2-0-260128": "seedance-2.0",
+  "doubao-seedance-2-0-fast-260128": "seedance-2.0-fast",
+  "doubao-seedance-2-0-mini-260615": "seedance-2.0-mini",
+  "doubao-seedance-2-5-260628": "seedance-2.5",
 };
 const SEEDANCE_RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
 const DEFAULT_VIDEO_PROFILE = { resolutions: SEEDANCE_RESOLUTIONS, maxDuration: 30 };
@@ -111,7 +117,7 @@ export const meta = {
     en: "Seedance video generation through the TokenDance gateway",
     zh: "通过词元跳动（TokenDance）网关生成 Seedance 视频",
   },
-  version: "1.1.0",
+  version: "1.2.0",
   author: { name: "AccelsRouter" },
   website: "https://tokendance.space/docs/protocol-seedance-generations",
   baseUrl: "https://tokendance.space/gateway",
