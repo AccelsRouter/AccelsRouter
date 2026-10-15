@@ -12,6 +12,18 @@ const VIDEO_MODELS = {
   "seedance-2.0-mini": { resolutions: ["480p", "720p"], maxDuration: 15 },
   "seedance-2.5": { resolutions: ["480p", "720p", "1080p"], maxDuration: 30 },
 };
+function trimmed(value) {
+  return String(value || "").trim();
+}
+
+// Dashed spellings the platform exposes alongside TokenDance's dotted model
+// IDs; the gateway only ever receives the dotted ID.
+const MODEL_ALIASES = {
+  "seedance-2-0": "seedance-2.0",
+  "seedance-2-0-fast": "seedance-2.0-fast",
+  "seedance-2-0-mini": "seedance-2.0-mini",
+  "seedance-2-5": "seedance-2.5",
+};
 const SEEDANCE_RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
 const DEFAULT_VIDEO_PROFILE = { resolutions: SEEDANCE_RESOLUTIONS, maxDuration: 30 };
 
@@ -49,10 +61,19 @@ function seedanceUsageExamples(profile) {
   return examples;
 }
 
+function tokendanceModelId(name) {
+  const key = trimmed(name);
+  return Object.prototype.hasOwnProperty.call(MODEL_ALIASES, key) ? MODEL_ALIASES[key] : key;
+}
+
+function declaredModels() {
+  return Object.keys(VIDEO_MODELS).concat(Object.keys(MODEL_ALIASES));
+}
+
 function usageProfiles() {
   const profiles = [];
-  for (const model of Object.keys(VIDEO_MODELS)) {
-    const profile = VIDEO_MODELS[model];
+  for (const model of declaredModels()) {
+    const profile = VIDEO_MODELS[tokendanceModelId(model)];
     const schema = seedanceUsageSchema(profile);
     const examples = seedanceUsageExamples(profile);
     const shape = JSON.stringify([schema, examples]);
@@ -79,7 +100,7 @@ export const meta = {
   author: { name: "AccelsRouter" },
   website: "https://tokendance.space/docs/protocol-seedance-generations",
   baseUrl: "https://tokendance.space/gateway",
-  models: Object.keys(VIDEO_MODELS),
+  models: declaredModels(),
   fetchMode: "per_task",
   // Bindable to a New API channel; the gateway behind it is TokenDance.
   upstreams: ["vendor", "new_api"],
@@ -94,10 +115,6 @@ export const meta = {
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
 };
-
-function trimmed(value) {
-  return String(value || "").trim();
-}
 
 function tasksRoot(ctx) {
   return ctx.baseUrl + "/ark/v3/generations/tasks";
@@ -126,7 +143,7 @@ function hasVideo(content) {
 // Capability profile of the executing model; a channel mapping may rename it,
 // so the declared client model still describes it.
 function videoProfile(ctx) {
-  for (const model of [ctx && ctx.upstreamModel, ctx && ctx.model].map(trimmed)) {
+  for (const model of [ctx && ctx.upstreamModel, ctx && ctx.model].map(tokendanceModelId)) {
     if (Object.prototype.hasOwnProperty.call(VIDEO_MODELS, model)) return VIDEO_MODELS[model];
   }
   return DEFAULT_VIDEO_PROFILE;
@@ -256,7 +273,7 @@ export function buildSubmitRequest(ctx) {
   if (req.size && !body.resolution) body.resolution = normalizeResolution(req.size);
   const seconds = Number.parseInt(req.seconds || "", 10);
   if (seconds > 0 || seconds === -1) body.duration = seconds;
-  body.model = ctx.upstreamModel || body.model;
+  body.model = tokendanceModelId(ctx.upstreamModel || body.model);
   return {
     url: tasksRoot(ctx),
     method: "POST",
