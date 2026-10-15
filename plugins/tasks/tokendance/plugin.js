@@ -111,7 +111,7 @@ export const meta = {
     en: "Seedance video generation through the TokenDance gateway",
     zh: "通过词元跳动（TokenDance）网关生成 Seedance 视频",
   },
-  version: "1.0.0",
+  version: "1.1.0",
   author: { name: "AccelsRouter" },
   website: "https://tokendance.space/docs/protocol-seedance-generations",
   baseUrl: "https://tokendance.space/gateway",
