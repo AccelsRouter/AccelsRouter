@@ -27,17 +27,32 @@ const MODEL_ALIASES = {
 const SEEDANCE_RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
 const DEFAULT_VIDEO_PROFILE = { resolutions: SEEDANCE_RESOLUTIONS, maxDuration: 30 };
 
+// Max-pixel 16:9 dimensions per resolution tier, for the submit-time token
+// estimate (Ark formula: tokens = seconds × width × height × 24 / 1024);
+// completion overlays the tokens the gateway reports.
+function resolutionMaxPixels(resolution) {
+  if (resolution === "480p") return [854, 480];
+  if (resolution === "1080p") return [1920, 1080];
+  if (resolution === "4k") return [3840, 2160];
+  return [1280, 720];
+}
+
+function estimateTokens(seconds, resolution) {
+  const dims = resolutionMaxPixels(resolution);
+  return (seconds * dims[0] * dims[1] * 24) / 1024;
+}
+
 function seedanceUsageSchema(profile) {
   const resolutionLabels = {};
   for (const resolution of profile.resolutions) resolutionLabels[resolution] = { en: resolution, zh: resolution };
   return {
-    // Output duration in seconds; reserved from the request, settled from the result.
-    seconds: {
+    // Gateway billing tokens: estimated from duration and resolution at submit, actual on completion.
+    tokens: {
       type: "number",
-      unit: "second",
-      description: { en: "Video generation unit price", zh: "视频生成单价" },
+      unit: "token",
+      description: { en: "Billing token unit price", zh: "计费 Token 单价" },
     },
-    // Output video resolution; TokenDance prices Seedance per resolution tier.
+    // Output video resolution; TokenDance prices Seedance tokens per resolution tier.
     resolution: {
       enum: profile.resolutions,
       enumLabels: resolutionLabels,
@@ -55,9 +70,9 @@ function seedanceUsageSchema(profile) {
 function seedanceUsageExamples(profile) {
   const examples = profile.resolutions.map((resolution) => ({
     label: resolution + " · 5s",
-    facts: { seconds: 5, resolution: resolution, video_input: "none" },
+    facts: { tokens: Math.round(estimateTokens(5, resolution)), resolution: resolution, video_input: "none" },
   }));
-  examples.push({ label: "720p · 5s (+reference video)", facts: { seconds: 5, resolution: "720p", video_input: "video" } });
+  examples.push({ label: "720p · 5s (+reference video)", facts: { tokens: Math.round(estimateTokens(5, "720p")), resolution: "720p", video_input: "video" } });
   return examples;
 }
 
@@ -299,9 +314,11 @@ export function extractUsage(ctx) {
   // longest duration the model can produce; completion settles the real one.
   let seconds = Number(req.seconds || req.duration || metadata.duration || 0);
   if (!Number.isFinite(seconds) || seconds <= 0) seconds = profile.maxDuration;
+  seconds = Math.min(seconds, 3600);
+  const resolution = videoResolution(ctx);
   return {
-    seconds: Math.min(seconds, 3600),
-    resolution: videoResolution(ctx),
+    tokens: estimateTokens(seconds, resolution),
+    resolution: resolution,
     video_input: hasVideo(metadata.content) ? "video" : "none",
   };
 }
@@ -329,8 +346,10 @@ export function extractUsageOnComplete(task, taskResult, body) {
   if (!body || trimmed(body.status).toLowerCase() !== "succeeded") return {};
   const facts = {};
   const content = body.content || {};
-  const seconds = Number(body.duration || content.duration || 0);
-  if (Number.isFinite(seconds) && seconds > 0) facts.seconds = Math.min(seconds, 3600);
+  const usage = body.usage || {};
+  let tokens = Number(usage.completion_tokens);
+  if (!Number.isFinite(tokens) || tokens <= 0) tokens = Number(usage.total_tokens);
+  if (Number.isFinite(tokens) && tokens > 0) facts.tokens = tokens;
   const resolution = trimmed(content.resolution || body.resolution).toLowerCase();
   if (videoProfile(task).resolutions.includes(resolution)) facts.resolution = resolution;
   return facts;
