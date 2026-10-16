@@ -371,13 +371,14 @@ func InitResources() error {
 	model.StartUpstreamHealthFlusher()
 	// Upstream monitor: scheduled probe sweep (master only, monitor_setting.upstream_probe_*).
 	controller.StartUpstreamProbeScheduler()
-	service.StartInflightPublisher()
 
 	// Initialize Redis
 	err = common.InitRedisClient()
 	if err != nil {
 		return err
 	}
+	// Live concurrency view: needs the Redis client, so it starts only now.
+	service.StartInflightPublisher()
 
 	perfmetrics.Init()
 

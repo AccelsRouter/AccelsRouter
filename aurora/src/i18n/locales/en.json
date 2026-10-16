@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Manual": "Manual",
+    "Every {{count}}s": "Every {{count}}s",
+    "Every {{count}} min": "Every {{count}} min",
+    "Auto-refresh interval": "Auto-refresh interval",
     "Live Concurrency": "Live Concurrency",
     "In flight": "In flight",
     "Peak (1h)": "Peak (1h)",
@@ -11,7 +15,6 @@
     "Age": "Age",
     "No requests in flight right now.": "No requests in flight right now.",
     "Peaks are summed across nodes over the last hour, so a fleet-wide peak may read slightly high.": "Peaks are summed across nodes over the last hour, so a fleet-wide peak may read slightly high.",
-    "Refreshes every 3 seconds": "Refreshes every 3 seconds",
     "Live requests": "Live requests",
     "Click to view details": "Click to view details",
     "(ID: {{id}})": "(ID: {{id}})",

@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Manual": "手动",
+    "Every {{count}}s": "每 {{count}} 秒",
+    "Every {{count}} min": "每 {{count}} 分钟",
+    "Auto-refresh interval": "自动刷新间隔",
     "Live Concurrency": "实时并发",
     "In flight": "进行中",
     "Peak (1h)": "峰值（1小时）",
@@ -11,7 +15,6 @@
     "Age": "已持续",
     "No requests in flight right now.": "当前没有进行中的请求。",
     "Peaks are summed across nodes over the last hour, so a fleet-wide peak may read slightly high.": "最近一小时各节点峰值之和，整体峰值可能略高于实际。",
-    "Refreshes every 3 seconds": "每 3 秒刷新",
     "Live requests": "实时请求",
     "Click to view details": "点击查看详情",
     "(ID: {{id}})": "（ID: {{id}}）",

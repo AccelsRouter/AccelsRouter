@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import {
   Table,
   TableBody,
@@ -46,7 +47,19 @@ import { SectionPageLayout } from '@/components/layout'
 import { StatCard } from '@/features/dashboard/components/ui/stat-card'
 import { getInflight, type InflightCountRow } from './api'
 
-const REFRESH_MS = 3000
+// Auto-refresh choices in milliseconds; 0 = manual only. Five minutes by
+// default: the page is a check-in, not a dashboard left open all day.
+const REFRESH_OPTIONS = [0, 3_000, 10_000, 30_000, 60_000, 300_000] as const
+const DEFAULT_REFRESH_MS = 300_000
+
+function refreshLabel(
+  ms: number,
+  t: (k: string, o?: Record<string, unknown>) => string
+): string {
+  if (ms === 0) return t('Manual')
+  if (ms < 60_000) return t('Every {{count}}s', { count: ms / 1000 })
+  return t('Every {{count}} min', { count: ms / 60_000 })
+}
 
 function ageSeconds(startedAtMs: number, nowMs: number): string {
   const seconds = Math.max(0, Math.round((nowMs - startedAtMs) / 1000))
@@ -104,10 +117,11 @@ function CountTable(props: {
 export function InflightMonitor() {
   const { t } = useTranslation()
   const [tab, setTab] = useState('users')
+  const [refreshMs, setRefreshMs] = useState<number>(DEFAULT_REFRESH_MS)
   const query = useQuery({
     queryKey: ['admin-inflight'],
     queryFn: getInflight,
-    refetchInterval: REFRESH_MS,
+    refetchInterval: refreshMs > 0 ? refreshMs : false,
     placeholderData: keepPreviousData,
   })
   const data = query.data
@@ -118,9 +132,17 @@ export function InflightMonitor() {
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Live Concurrency')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
-        <span className='text-muted-foreground text-xs'>
-          {t('Refreshes every 3 seconds')}
-        </span>
+        <NativeSelect
+          value={String(refreshMs)}
+          onChange={(e) => setRefreshMs(Number(e.target.value))}
+          title={t('Auto-refresh interval')}
+        >
+          {REFRESH_OPTIONS.map((ms) => (
+            <NativeSelectOption key={ms} value={String(ms)}>
+              {refreshLabel(ms, t)}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
         <Button
           variant='outline'
           size='sm'
