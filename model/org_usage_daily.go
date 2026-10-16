@@ -6,6 +6,7 @@
 //   - standard_quota : the platform standard-price quota
 //   - charged_quota  : what the customer actually paid (retail, ratio at call time)
 //   - cost_quota     : what it cost the reseller (wholesale, ratio at call time)
+//
 // Hour-bucketed (the same grain as new-api's quota_data.created_at, see
 // usedata.go) and keyed by org/workspace/model/user so every report dimension
 // (by model, by member, by workspace, by customer, by reseller) aggregates fast
@@ -25,15 +26,15 @@ import (
 )
 
 type OrgUsageDaily struct {
-	Id            int    `json:"id" gorm:"primarykey"`
+	Id int `json:"id" gorm:"primarykey"`
 	// DayBucket holds the bucket START at hour grain (see usageBucketOf). The
 	// column keeps its original day_bucket name for schema stability across
 	// SQLite/MySQL/PostgreSQL; renaming would need a hand-written migration.
-	DayBucket     int64  `json:"day_bucket" gorm:"uniqueIndex:idx_oud_key,priority:1;not null"`
-	OrgId         int    `json:"org_id" gorm:"uniqueIndex:idx_oud_key,priority:2;index;not null"`
-	WorkspaceId   int    `json:"workspace_id" gorm:"uniqueIndex:idx_oud_key,priority:3;not null"`
-	ModelName     string `json:"model_name" gorm:"type:varchar(255);uniqueIndex:idx_oud_key,priority:4;not null"`
-	UserId        int    `json:"user_id" gorm:"uniqueIndex:idx_oud_key,priority:5;not null"`
+	DayBucket   int64  `json:"day_bucket" gorm:"uniqueIndex:idx_oud_key,priority:1;not null"`
+	OrgId       int    `json:"org_id" gorm:"uniqueIndex:idx_oud_key,priority:2;index;not null"`
+	WorkspaceId int    `json:"workspace_id" gorm:"uniqueIndex:idx_oud_key,priority:3;not null"`
+	ModelName   string `json:"model_name" gorm:"type:varchar(255);uniqueIndex:idx_oud_key,priority:4;not null"`
+	UserId      int    `json:"user_id" gorm:"uniqueIndex:idx_oud_key,priority:5;not null"`
 	// ResellerOrgId is denormalized (functionally determined by OrgId) so the
 	// admin/reseller aggregation can group by it directly. 0 = not a reseller
 	// customer.
@@ -62,6 +63,17 @@ func usageBucketOf(ts int64) int64 {
 // with the actual amounts for a settled org-billed request. Cross-DB safe:
 // UPDATE-then-INSERT with a single retry to absorb the first-write race.
 func RecordOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost, prompt, completion int64) error {
+	return upsertOrgUsageDaily(createdAt, orgId, workspaceId, resellerOrgId, userId, modelName, standard, charged, cost, 1, prompt, completion)
+}
+
+// AdjustOrgUsageDaily applies an async task's settlement (an overshoot or a
+// refund, signed) to the bucket its submission was recorded in. The request
+// was already counted at submission, so only the amounts move.
+func AdjustOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost int64) error {
+	return upsertOrgUsageDaily(createdAt, orgId, workspaceId, resellerOrgId, userId, modelName, standard, charged, cost, 0, 0, 0)
+}
+
+func upsertOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost, requests, prompt, completion int64) error {
 	if orgId <= 0 {
 		return nil
 	}
@@ -78,7 +90,7 @@ func RecordOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, use
 				"standard_quota":    gorm.Expr("standard_quota + ?", standard),
 				"charged_quota":     gorm.Expr("charged_quota + ?", charged),
 				"cost_quota":        gorm.Expr("cost_quota + ?", cost),
-				"requests":          gorm.Expr("requests + 1"),
+				"requests":          gorm.Expr("requests + ?", requests),
 				"prompt_tokens":     gorm.Expr("prompt_tokens + ?", prompt),
 				"completion_tokens": gorm.Expr("completion_tokens + ?", completion),
 				"reseller_org_id":   resellerOrgId,
@@ -104,7 +116,7 @@ func RecordOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, use
 		StandardQuota:    standard,
 		ChargedQuota:     charged,
 		CostQuota:        cost,
-		Requests:         1,
+		Requests:         requests,
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
 	}).Error

@@ -18,6 +18,7 @@ import type { PagedResponse } from './types'
 
 const PAGE_SIZE = 20
 const LOG_TYPE_ERROR = 5
+const LOG_TYPE_REFUND = 6
 
 // The details dialog is the usage-log one in its non-admin form: it never
 // renders the channel, routing or admin sections, and the server has already
@@ -145,6 +146,8 @@ export function CallRecords({
           <tbody className='divide-border/60 divide-y'>
             {items.map((l) => {
               const isError = l.type === LOG_TYPE_ERROR
+              const isRefund = l.type === LOG_TYPE_REFUND
+              const sign = isRefund ? '-' : ''
               return (
                 <tr
                   key={l.id}
@@ -169,6 +172,10 @@ export function CallRecords({
                       <span className='bg-destructive/10 text-destructive rounded px-1.5 py-0.5 text-xs whitespace-nowrap'>
                         {t('Failed')}
                       </span>
+                    ) : isRefund ? (
+                      <span className='rounded bg-amber-500/10 px-1.5 py-0.5 text-xs whitespace-nowrap text-amber-600 dark:text-amber-400'>
+                        {t('Refund')}
+                      </span>
                     ) : (
                       <span className='rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs whitespace-nowrap text-emerald-600 dark:text-emerald-400'>
                         {t('Success')}
@@ -177,7 +184,7 @@ export function CallRecords({
                   </Td>
                   {/* Tokens merged into one column: input / output. */}
                   <Td className='text-right whitespace-nowrap tabular-nums'>
-                    {isError
+                    {isError || isRefund
                       ? '-'
                       : `${l.prompt_tokens} / ${l.completion_tokens}`}
                   </Td>
@@ -188,12 +195,14 @@ export function CallRecords({
                     ) : showRetail ? (
                       <div className='flex flex-col items-end'>
                         <span className='font-medium'>
+                          {sign}
                           {formatQuotaWithCurrency(
                             l.retail_quota ?? l.quota,
                             MONEY_OPTS
                           )}
                         </span>
                         <span className='text-muted-foreground text-xs'>
+                          {sign}
                           {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
                           {l.retail_ratio != null
                             ? ` · ${Math.round(l.retail_ratio * 100)}%`
@@ -201,7 +210,7 @@ export function CallRecords({
                         </span>
                       </div>
                     ) : (
-                      formatQuotaWithCurrency(l.quota, MONEY_OPTS)
+                      `${sign}${formatQuotaWithCurrency(l.quota, MONEY_OPTS)}`
                     )}
                   </Td>
                   <Td className='text-muted-foreground text-xs'>

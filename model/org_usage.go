@@ -109,9 +109,10 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 		tokenIds = append(tokenIds, b.TokenId)
 	}
 	// Include failed requests (LogTypeError) too — e.g. a model the reseller has
-	// not opened to the customer — so the org call records show blocked attempts.
+	// not opened to the customer — so the org call records show blocked attempts,
+	// and task refunds (LogTypeRefund) so a failed video task's money trail is visible.
 	tx := LOG_DB.Model(&Log{}).Where("token_id IN ?", tokenIds).
-		Where("type IN ?", []int{LogTypeConsume, LogTypeError})
+		Where("type IN ?", []int{LogTypeConsume, LogTypeError, LogTypeRefund})
 	if from > 0 {
 		tx = tx.Where("created_at >= ?", from)
 	}
@@ -177,7 +178,7 @@ func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*
 		tokenToOrg[b.TokenId] = b.OrgId
 	}
 	tx := LOG_DB.Model(&Log{}).Where("token_id IN ?", tokenIds).
-		Where("type IN ?", []int{LogTypeConsume, LogTypeError})
+		Where("type IN ?", []int{LogTypeConsume, LogTypeError, LogTypeRefund})
 	if from > 0 {
 		tx = tx.Where("created_at >= ?", from)
 	}
@@ -376,7 +377,6 @@ func queryOrgUsageLogs(tokenIds []int, from, to int64) ([]logUsageRow, error) {
 	}
 	return rows, nil
 }
-
 
 func sortedBuckets(m map[string]*OrgUsageBucket) []OrgUsageBucket {
 	out := make([]OrgUsageBucket, 0, len(m))

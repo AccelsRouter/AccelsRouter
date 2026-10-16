@@ -90,6 +90,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 	})
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)
+	// Fork: org-billed tasks count in the org/reseller usage rollup like any
+	// other request; settlement adjusts the same bucket (taskAdjustFunding).
+	recordOrgUsageDaily(info, info.PriceData.Quota, 0, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +122,26 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 		// the wholesale ratio to the reseller wallet for either sign, so a
 		// full refund (-quota) and an overshoot (+delta) both land where the
 		// submission reserved.
-		return OrgWalletFundingFromSnapshot(task.PrivateData.OrgFunding).Settle(delta)
+		snapshot := task.PrivateData.OrgFunding
+		funding := OrgWalletFundingFromSnapshot(snapshot)
+		if err := funding.Settle(delta); err != nil {
+			return err
+		}
+		// Keep the usage rollup in step with the wallets: the delta lands in the
+		// submission's bucket at the ratios that applied then.
+		var cost int64
+		if snapshot.ResellerOrgId > 0 {
+			cost = int64(funding.wholesaleCharge(delta))
+		}
+		bucketAt := task.SubmitTime
+		if bucketAt <= 0 {
+			bucketAt = task.CreatedAt
+		}
+		if err := model.AdjustOrgUsageDaily(bucketAt, snapshot.OrgId, snapshot.WorkspaceId, snapshot.ResellerOrgId, snapshot.UserId,
+			taskModelName(task), int64(delta), int64(funding.charge(delta)), cost); err != nil {
+			common.SysError("adjust org usage daily failed: " + err.Error())
+		}
+		return nil
 	}
 	if taskIsSubscription(task) {
 		return model.PostConsumeUserSubscriptionDelta(task.PrivateData.SubscriptionId, int64(delta))
