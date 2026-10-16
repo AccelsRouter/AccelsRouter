@@ -240,7 +240,7 @@ export function StatCard(props: StatCardProps) {
           <div className='text-foreground font-mono text-2xl font-semibold tracking-tight break-all tabular-nums'>
             {props.value}
           </div>
-          <p className='text-muted-foreground/60 text-xs leading-relaxed'>
+          <p className='text-muted-foreground/60 text-xs leading-relaxed whitespace-pre-line'>
             {props.description}
           </p>
         </div>

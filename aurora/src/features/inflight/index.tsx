@@ -191,9 +191,8 @@ export function InflightMonitor() {
               title={t('Nodes')}
               value={data?.nodes.length ?? 0}
               description={
-                data?.nodes
-                  .map((n) => `${n.node}: ${n.inflight}`)
-                  .join(' · ') || '-'
+                data?.nodes.map((n) => `${n.node}: ${n.inflight}`).join('\n') ||
+                '-'
               }
               icon={Server}
               tone='gray'
