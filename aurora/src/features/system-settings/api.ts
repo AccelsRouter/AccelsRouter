@@ -139,3 +139,39 @@ export async function getChannelModelSummaries(): Promise<
     throw new Error(res.data?.message || 'Failed to load channels')
   return res.data.data ?? []
 }
+
+export type AutoRouterTier = 'simple' | 'medium' | 'complex' | 'reasoning'
+
+export type AutoRouterDimension = {
+  name: string
+  score: number
+  weight: number
+  signal: string
+}
+
+export type AutoRouterClassification = {
+  tier: AutoRouterTier
+  score: number
+  cause: string
+  signals: string[]
+  dimensions: AutoRouterDimension[]
+  estimated_tokens: number
+}
+
+// Rates a piece of text the way the auto router would. `classifier` carries
+// the classifier overrides as the settings page holds them, saved or not.
+export async function classifyAutoModelText(payload: {
+  text: string
+  has_tools?: boolean
+  has_images?: boolean
+  classifier?: unknown
+}): Promise<AutoRouterClassification> {
+  const res = await api.post<{
+    success: boolean
+    message?: string
+    data?: AutoRouterClassification
+  }>('/api/option/auto_model/classify', payload)
+  if (!res.data?.success || !res.data.data)
+    throw new Error(res.data?.message || 'Failed to rate the text')
+  return res.data.data
+}

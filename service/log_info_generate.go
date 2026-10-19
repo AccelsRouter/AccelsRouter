@@ -119,6 +119,12 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	// Fork: audit which auto virtual model (if any) the billed model came from.
 	if autoModel := common.GetContextKeyString(ctx, constant.ContextKeyAutoModelOriginal); autoModel != "" {
 		other.SetPublic("auto_model", autoModel)
+		// Routed by content: the difficulty tier, and how the model was chosen
+		// (classifier, affinity or failover).
+		if info := getAutoRouteInfo(ctx); info != nil {
+			other.SetPublic("auto_tier", info.Tier.String())
+			other.SetPublic("auto_route", info.Via)
+		}
 	}
 	other.SetPublic("model_ratio", modelRatio)
 	other.SetPublic("group_ratio", groupRatio)

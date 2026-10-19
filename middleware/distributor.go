@@ -123,7 +123,35 @@ func Distribute() func(c *gin.Context) {
 				// ratio that gets corrected only at settlement.
 				if common.GetContextKeyString(c, constant.ContextKeyUserBillingMode) == model.BillingModeChannelPricing {
 					userId := c.GetInt("id")
-					pricingChannel, overBudget, pcErr := model.GetChannelPricingChannelSeeded(userId, modelRequest.Model, 0, c.Request.URL.Path, c.GetString(common.RequestIdKey))
+					// Fork: an auto model resolves to one of the models this user has
+					// a bound, enabled channel for.
+					if resolved, isAuto := service.ResolveAutoModelForUser(c, userId, modelRequest.Model, c.Request.URL.Path); isAuto {
+						if resolved == "" {
+							abortWithOpenAiMessage(c, http.StatusServiceUnavailable,
+								fmt.Sprintf("用户 %d 没有绑定支持模型 %s 的可用渠道", userId, modelRequest.Model),
+								types.ErrorCodeModelNotFound)
+							return
+						}
+						modelRequest.Model = resolved
+					}
+					// Fork: channel affinity applies to channel-pricing users too and
+					// outranks smart routing's ordering: a conversation keeps its
+					// channel while it is still usable.
+					// If the chosen model has no usable bound channel (none bound, or all
+					// over budget), an auto model moves on to its next candidate.
+					var overBudget bool
+					var pcErr error
+					pricingChannel, pricingModel := service.WithAutoFailover(c, common.GetContextKeyString(c, constant.ContextKeyUsingGroup),
+						c.Request.URL.Path, modelRequest.Model,
+						func(candidate string) (*model.Channel, bool, bool) {
+							ch := service.PricingAffinityChannel(c, userId, candidate, c.Request.URL.Path)
+							overBudget, pcErr = false, nil
+							if ch == nil {
+								ch, overBudget, pcErr = model.GetChannelPricingChannelSeeded(userId, candidate, 0, c.Request.URL.Path, c.GetString(common.RequestIdKey))
+							}
+							return ch, ch != nil, ch == nil && pcErr == nil
+						})
+					modelRequest.Model = pricingModel
 					if pcErr != nil {
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable,
 							fmt.Sprintf("获取用户 %d 绑定渠道下模型 %s 的可用渠道失败: %s", userId, modelRequest.Model, pcErr.Error()),
@@ -267,13 +295,24 @@ func Distribute() func(c *gin.Context) {
 		if channel == nil && (pinned || shouldSelectChannel) {
 			usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 			var selectErr *service.ChannelSelectError
-			channel, _, selectErr = service.SelectChannelForRequest(c, modelRequest.Model, &service.RetryParam{
-				Ctx:         c,
-				ModelName:   modelRequest.Model,
-				TokenGroup:  usingGroup,
-				RequestPath: c.Request.URL.Path,
-				Retry:       common.GetPointer(0),
-			})
+			// Fork: an auto model whose chosen model cannot be served right now
+			// (no channel, or every channel over its budget) moves on to its next
+			// candidate instead of failing the request. For any other request
+			// WithAutoFailover just runs the selection once.
+			var finalModel string
+			channel, finalModel = service.WithAutoFailover(c, usingGroup, c.Request.URL.Path, modelRequest.Model,
+				func(candidate string) (*model.Channel, bool, bool) {
+					ch, _, err := service.SelectChannelForRequest(c, candidate, &service.RetryParam{
+						Ctx:         c,
+						ModelName:   candidate,
+						TokenGroup:  usingGroup,
+						RequestPath: c.Request.URL.Path,
+						Retry:       common.GetPointer(0),
+					})
+					selectErr = err
+					return ch, err == nil, err.CanTryNextModel()
+				})
+			modelRequest.Model = finalModel
 			if selectErr != nil {
 				if selectErr.FilterKind == taskdto.FilterTaskPluginIdentity {
 					logTaskPluginChannelDecision(c, selectErr.Channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
@@ -297,6 +336,10 @@ func Distribute() func(c *gin.Context) {
 		finished()
 		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
 			service.RecordChannelAffinity(c, channel.Id)
+			// Fork: remember the model an auto model routed by content settled
+			// on, so the conversation's next request reuses it and, with it,
+			// the channel affinity entry (see service/auto_model_affinity.go).
+			service.RecordAutoModelAffinity(c)
 		}
 	}
 }
