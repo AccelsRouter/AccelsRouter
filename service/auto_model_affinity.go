@@ -23,6 +23,7 @@ package service
 // Keep them in step with those two functions.
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -233,7 +234,7 @@ func RecordAutoModelAffinity(c *gin.Context) {
 		return
 	}
 	affinity := operation_setting.GetChannelAffinitySetting()
-	if affinity == nil || !affinity.Enabled || RequestPolicy(c).SessionMode == "off" {
+	if affinity == nil || !affinity.Enabled || (!info.ByConversation && RequestPolicy(c).SessionMode == "off") {
 		return
 	}
 	finalModel := finalAutoModel(c)
@@ -267,4 +268,46 @@ func finalAutoModel(c *gin.Context) string {
 		return ""
 	}
 	return plan[index]
+}
+
+// conversationKey is the cache key under which an auto model remembers the
+// model a conversation is on, for requests that no channel affinity rule
+// applies to (so that nothing else would keep the conversation on one model).
+// The conversation is identified by the fingerprint of its opening (see
+// autoroute.ConversationFingerprint), within the same user, token, auto model
+// and group, so two people who open with the same "hello" do not share a
+// model. It follows the channel affinity feature's global switch and default
+// lifetime, and is stored in the same cache, but it does not touch any rule or
+// anything channel affinity itself reads or writes.
+func conversationKey(c *gin.Context, autoName, usingGroup, fingerprint string) (key string, ttlSeconds int, ok bool) {
+	affinity := operation_setting.GetChannelAffinitySetting()
+	if fingerprint == "" || c == nil || affinity == nil || !affinity.Enabled {
+		return "", 0, false
+	}
+	ttlSeconds = affinity.DefaultTTLSeconds
+	if ttlSeconds <= 0 {
+		ttlSeconds = 3600
+	}
+	owner := fmt.Sprintf("u%d.t%d", c.GetInt("id"), c.GetInt("token_id"))
+	return strings.Join([]string{"auto-conv", autoName, usingGroup, owner, fingerprint}, ":"), ttlSeconds, true
+}
+
+// rememberedConversationModel returns the model a conversation was last served
+// by and the tier it had reached. found is false when nothing is remembered,
+// or the remembered model is no longer one of the auto model's candidates (the
+// admin changed the list).
+func rememberedConversationModel(am *setting.AutoModel, key string) (string, autoroute.Tier, bool) {
+	stored, found, err := getChannelAffinityCache().Get(key)
+	if err != nil || !found {
+		return "", autoroute.TierSimple, false
+	}
+	tier, hash, ok := autoroute.DecodeSticky(stored)
+	if !ok {
+		return "", autoroute.TierSimple, false
+	}
+	remembered, ok := autoroute.FindByHash(am.AllCandidates(), hash)
+	if !ok {
+		return "", autoroute.TierSimple, false
+	}
+	return remembered, tier, true
 }

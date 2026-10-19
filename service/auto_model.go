@@ -44,6 +44,8 @@ const (
 	autoViaClassifier = "classifier" // the request's text was rated
 	autoViaAffinity   = "affinity"   // the conversation's model and channel were reused
 	autoViaFailover   = "failover"   // the first model's channels were exhausted
+	// The conversation's model was reused: see conversationKey.
+	autoViaConversation = "conversation"
 )
 
 // autoRouteInfo is what the gateway remembers about one auto model request.
@@ -60,6 +62,9 @@ type autoRouteInfo struct {
 	HasAffinityKey bool
 	AffinityKey    string
 	AffinityTTL    int
+	// The key is the conversation's own (see conversationKey), not one of a
+	// channel affinity rule.
+	ByConversation bool
 }
 
 func getAutoRouteInfo(c *gin.Context) *autoRouteInfo {
@@ -197,17 +202,44 @@ func resolveTieredAutoModel(c *gin.Context, am *setting.AutoModel, usingGroup st
 	}
 
 	// 2. Rate the request and use the models of its tier.
-	input, _ := autoroute.ExtractInput(requestPath, autoRequestBody(c))
-	rated := am.Classifier().Classify(input)
-	plan := am.FailoverPlan(rated.Tier)
+	extracted := autoroute.ExtractRequest(requestPath, autoRequestBody(c))
+	rated := am.Classifier().Classify(extracted.Input)
+	tier := rated.Tier
+
+	// No channel affinity rule applies to this request, so nothing else keeps a
+	// conversation on one model: remember it on our own, by the conversation's
+	// fingerprint. The conversation keeps its model unless the request is
+	// harder than anything the conversation has asked so far, and the tier
+	// never goes down within it.
+	if !probe.ok {
+		if key, ttl, ok := conversationKey(c, am.Name(), usingGroup, extracted.Fingerprint); ok {
+			info.HasAffinityKey, info.AffinityKey, info.AffinityTTL, info.ByConversation = true, key, ttl, true
+			if remembered, storedTier, found := rememberedConversationModel(am, key); found {
+				if storedTier >= tier {
+					if available(remembered) {
+						info.Tier, info.Score, info.Cause, info.Via = storedTier, rated.Score, autoViaConversation, autoViaConversation
+						return finishAutoResolve(c, am.Name(), am.PlanFrom(remembered, storedTier), 0, info)
+					}
+					logger.LogInfo(c.Request.Context(), fmt.Sprintf(
+						"auto model %s: the conversation's model %s (tier %s) is not available now, using the models of the tier instead",
+						am.Name(), remembered, storedTier))
+				}
+				if storedTier > tier {
+					tier = storedTier
+				}
+			}
+		}
+	}
+
+	plan := am.FailoverPlan(tier)
 	index := firstAvailable(available, plan)
 	if index < 0 {
 		logger.LogWarn(c.Request.Context(),
-			"auto model "+am.Name()+" has no available candidate for tier "+rated.Tier.String()+
+			"auto model "+am.Name()+" has no available candidate for tier "+tier.String()+
 				" for "+scope)
 		return "", true
 	}
-	info.Tier, info.Score, info.Cause, info.Via = rated.Tier, rated.Score, rated.Cause, autoViaClassifier
+	info.Tier, info.Score, info.Cause, info.Via = tier, rated.Score, rated.Cause, autoViaClassifier
 	return finishAutoResolve(c, am.Name(), plan, index, info)
 }
 

@@ -23,11 +23,13 @@ const (
 const MaxBodyBytes = 16 << 20
 
 type requestProbe struct {
-	Messages  json.RawMessage `json:"messages"`
-	Input     json.RawMessage `json:"input"`
-	Prompt    json.RawMessage `json:"prompt"`
-	Tools     json.RawMessage `json:"tools"`
-	Functions json.RawMessage `json:"functions"`
+	Messages     json.RawMessage `json:"messages"`
+	Input        json.RawMessage `json:"input"`
+	Prompt       json.RawMessage `json:"prompt"`
+	Tools        json.RawMessage `json:"tools"`
+	Functions    json.RawMessage `json:"functions"`
+	System       json.RawMessage `json:"system"`       // Claude: top-level system prompt
+	Instructions json.RawMessage `json:"instructions"` // Responses: top-level system prompt
 }
 
 // DetectFormat names the body's shape. The URL path decides when it can;
@@ -81,9 +83,25 @@ func detectFormat(path string, p *requestProbe) Format {
 // code keywords and classify the file, not the request. The system prompt is
 // not read either.
 func ExtractInput(path string, body []byte) (Input, Format) {
+	e := ExtractRequest(path, body)
+	return e.Input, e.Format
+}
+
+// Extracted is what ExtractRequest reads from one request body.
+type Extracted struct {
+	Input  Input
+	Format Format
+	// Fingerprint identifies the conversation the request belongs to, or is
+	// empty when the request has none. See ConversationFingerprint.
+	Fingerprint string
+}
+
+// ExtractRequest is ExtractInput that also returns the conversation
+// fingerprint, from a single parse of the body.
+func ExtractRequest(path string, body []byte) Extracted {
 	var probe requestProbe
 	if len(body) == 0 || len(body) > MaxBodyBytes || json.Unmarshal(body, &probe) != nil {
-		return Input{}, FormatUnknown
+		return Extracted{}
 	}
 	format := detectFormat(path, &probe)
 	in := Input{HasTools: nonEmptyArray(probe.Tools) || nonEmptyArray(probe.Functions)}
@@ -95,7 +113,7 @@ func ExtractInput(path string, body []byte) (Input, Format) {
 	case FormatCompletions:
 		in.Text = fromPrompt(probe.Prompt)
 	}
-	return in, format
+	return Extracted{Input: in, Format: format, Fingerprint: fingerprintOf(format, &probe)}
 }
 
 type contentPart struct {

@@ -702,3 +702,140 @@ func TestWithAutoFailover(t *testing.T) {
 		assert.Empty(t, RequestPolicy(c).SessionMode)
 	})
 }
+
+// ---- conversation stickiness: requests no channel affinity rule applies to ----
+
+// withUnmatchedAffinity turns the affinity feature on with a rule that matches
+// none of the test models, so that no request has an affinity key.
+func withUnmatchedAffinity(t *testing.T, enabled bool) {
+	t.Helper()
+	affinity := operation_setting.GetChannelAffinitySetting()
+	origEnabled, origRules := affinity.Enabled, affinity.Rules
+	affinity.Enabled = enabled
+	affinity.Rules = []operation_setting.ChannelAffinityRule{{
+		Name:       "matches-nothing",
+		ModelRegex: []string{"^no-such-model$"},
+		KeySources: []operation_setting.ChannelAffinityKeySource{{Type: "request_header", Key: "X-Session"}},
+	}}
+	t.Cleanup(func() { affinity.Enabled, affinity.Rules = origEnabled, origRules })
+}
+
+// turnsBody is a chat request carrying a whole conversation: even entries are
+// the user's, odd ones the assistant's.
+func turnsBody(turns ...string) string {
+	messages := make([]string, 0, len(turns))
+	for i, text := range turns {
+		role := "user"
+		if i%2 == 1 {
+			role = "assistant"
+		}
+		messages = append(messages, `{"role":"`+role+`","content":"`+text+`"}`)
+	}
+	return `{"model":"auto","messages":[` + strings.Join(messages, ",") + `]}`
+}
+
+const (
+	hardQuestion    = "请详细分析一下这个分布式系统的架构设计，一步一步推理，权衡各方案的利弊"
+	complexQuestion = "用Go实现一个分布式缓存，需要考虑一致性和高并发，写出核心代码和接口定义"
+)
+
+func TestConversationStickiness(t *testing.T) {
+	setupAutoModels(t, tieredAutoConfig)
+	withUnmatchedAffinity(t, true)
+	all := map[string]bool{"default/m-small": true, "default/m-mid": true, "default/m-big": true, "default/m-top": true}
+	stubAvailability(t, all)
+	path := "/v1/chat/completions"
+
+	// serve resolves a request of the conversation and, as the distributor does
+	// after a success, remembers the model it ended on.
+	serve := func(userId int, turns ...string) (string, *gin.Context) {
+		c := newTieredTestContext(t, turnsBody(turns...))
+		c.Set("id", userId)
+		resolved, isAuto := ResolveAutoModel(c, "default", "auto", path)
+		require.True(t, isAuto)
+		if resolved != "" {
+			RecordAutoModelAffinity(c)
+		}
+		return resolved, c
+	}
+	header := func(c *gin.Context) string { return c.Writer.Header().Get(AutoRouteHeader) }
+
+	t.Run("a short follow-up keeps the model of the conversation", func(t *testing.T) {
+		first, c1 := serve(1, hardQuestion)
+		assert.Equal(t, "m-top", first)
+		assert.Contains(t, header(c1), "via=classifier")
+		second, c2 := serve(1, hardQuestion, "reply", "继续")
+		assert.Equal(t, "m-top", second, "without this the follow-up would be rated simple and answered by a weaker model")
+		assert.Contains(t, header(c2), "via=conversation")
+		assert.Contains(t, header(c2), "tier=reasoning")
+	})
+
+	t.Run("a harder question upgrades the conversation and an easier one never downgrades it", func(t *testing.T) {
+		first, _ := serve(2, "你好")
+		assert.Equal(t, "m-small", first)
+		upgraded, c2 := serve(2, "你好", "hi", hardQuestion)
+		assert.Equal(t, "m-top", upgraded, "the question is harder than anything asked so far")
+		assert.Contains(t, header(c2), "via=classifier")
+		followUp, c3 := serve(2, "你好", "hi", hardQuestion, "reply", "继续")
+		assert.Equal(t, "m-top", followUp)
+		assert.Contains(t, header(c3), "via=conversation")
+	})
+
+	t.Run("another user opening the same way is a separate conversation", func(t *testing.T) {
+		serve(3, "你好")
+		other, c := serve(4, "你好")
+		assert.Equal(t, "m-small", other)
+		assert.Contains(t, header(c), "via=classifier")
+	})
+
+	t.Run("a conversation with another opening is a new conversation", func(t *testing.T) {
+		serve(5, hardQuestion)
+		fresh, c := serve(5, "你好", "hi", "继续")
+		assert.Equal(t, "m-small", fresh)
+		assert.Contains(t, header(c), "via=classifier")
+	})
+
+	t.Run("a remembered model that is unavailable moves to a stronger one, never a weaker one", func(t *testing.T) {
+		first, _ := serve(6, complexQuestion)
+		require.Equal(t, "m-big", first)
+		unavailable := map[string]bool{"default/m-small": true, "default/m-mid": true, "default/m-top": true}
+		stubAvailability(t, unavailable) // restored to the parent's by the subtest's own cleanup
+		next, c := serve(6, complexQuestion, "reply", "继续")
+		assert.Equal(t, "m-top", next)
+		assert.Contains(t, header(c), "via=classifier")
+		assert.Contains(t, header(c), "tier=complex", "the conversation had reached complex, so a simple follow-up is not served by m-small")
+	})
+
+	t.Run("a model that left the configuration is forgotten", func(t *testing.T) {
+		serve(7, complexQuestion)
+		setupAutoModels(t, `[{"name":"auto","tiers":{"simple":["m-small"],"medium":["m-mid"],"reasoning":["m-top"]}}]`)
+		next, _ := serve(7, complexQuestion, "reply", "继续")
+		assert.NotEqual(t, "m-big", next)
+	})
+
+	t.Run("it is off with the affinity feature", func(t *testing.T) {
+		setupAutoModels(t, tieredAutoConfig) // the previous subtest replaced the configuration
+		withUnmatchedAffinity(t, false)
+		serve(8, hardQuestion)
+		next, c := serve(8, hardQuestion, "reply", "继续")
+		assert.Equal(t, "m-small", next)
+		assert.Contains(t, header(c), "via=classifier")
+	})
+}
+
+// A request that a channel affinity rule applies to keeps using channel
+// affinity, as before: the conversation fingerprint is not consulted.
+func TestConversationStickinessLeavesRuleKeyedRequestsAlone(t *testing.T) {
+	setupAutoModels(t, tieredAutoConfig)
+	rule := withAffinity(t, true)
+	stubAvailability(t, map[string]bool{"default/m-small": true, "default/m-mid": true, "default/m-big": true, "default/m-top": true})
+	c := newTieredTestContext(t, turnsBody(hardQuestion))
+	c.Request.Header.Set("X-Session", "keyed-session")
+	c.Set("id", 1)
+	resolved, _ := ResolveAutoModel(c, "default", "auto", "/v1/chat/completions")
+	require.Equal(t, "m-top", resolved)
+	info := getAutoRouteInfo(c)
+	require.NotNil(t, info)
+	assert.False(t, info.ByConversation)
+	assert.Equal(t, autoStickySuffix(rule, "auto", "default", "keyed-session"), info.AffinityKey, "the rule's key, not the conversation's")
+}
