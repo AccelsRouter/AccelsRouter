@@ -177,11 +177,16 @@ export function RoutingPanel(props: {
     return [...set].sort()
   }, [channelIds, channelById])
   const coveredKey = covered.join('\n')
+  // Report only once the channel catalog is in: before that the union is
+  // empty while channels are already bound, which would read as "nothing
+  // served" and make the parent drop every offerable model.
+  const channelsLoaded = channelsQuery.data !== undefined
   useEffect(() => {
+    if (!channelsLoaded) return
     props.onCoverageChange?.(covered, channelIds.length)
     // Depend on the joined key so an identical set does not re-fire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coveredKey, channelIds.length])
+  }, [coveredKey, channelIds.length, channelsLoaded])
 
   const { effective, uncovered } = useMemo(() => {
     if (props.offerableModels.length === 0) {

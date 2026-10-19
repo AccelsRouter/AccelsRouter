@@ -530,6 +530,13 @@ function EditOrgDialog(props: {
     Record<string, number>
   >({})
   const [wholesaleValid, setWholesaleValid] = useState(true)
+  // What the wholesale-ratio rows are (re)seeded from: the org's saved map,
+  // or the pruned map after a channel change dropped unserved models. The
+  // version remounts the rows so the dropped rows actually disappear.
+  const [ratioSeed, setRatioSeed] = useState<{
+    map: Record<string, number>
+    version: number
+  }>({ map: {}, version: 0 })
   const [allowedModels, setAllowedModels] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
   const isReseller = org?.type === 'reseller'
@@ -553,6 +560,7 @@ function EditOrgDialog(props: {
     setStatus(org.status)
     setRemark(org.remark)
     setWholesaleRatios(org.wholesale_ratios ?? {})
+    setRatioSeed({ map: org.wholesale_ratios ?? {}, version: 0 })
     setWholesaleValid(true)
     setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
     setTab('basics')
@@ -728,8 +736,8 @@ function EditOrgDialog(props: {
       </Field>
       <Field label={t('3. Per-model wholesale ratios (blank = no discount)')}>
         <ModelRatioRows
-          key={org?.id}
-          initial={org?.wholesale_ratios ?? {}}
+          key={`${org?.id}:${ratioSeed.version}`}
+          initial={ratioSeed.map}
           tokens={offerableList}
           onChange={(map, valid) => {
             setWholesaleRatios(map)
@@ -795,6 +803,49 @@ function EditOrgDialog(props: {
                       onCoverageChange={(c, n) => {
                         setCovered(c)
                         setBoundCount(n)
+                        // Unbinding a channel drops the offerable models (and
+                        // their wholesale ratios) it alone served, instead of
+                        // leaving entries the save would refuse. With no
+                        // channel bound the list is kept and the save stays
+                        // blocked, since blank would mean every model.
+                        if (n === 0) return
+                        const served = (token: string) =>
+                          c.some((m) => modelMatchesToken(token, m))
+                        const droppedModels = offerableList.filter(
+                          (e) => !served(e)
+                        )
+                        const droppedRatios = Object.keys(
+                          wholesaleRatios
+                        ).filter((k) => !served(k))
+                        if (!droppedModels.length && !droppedRatios.length)
+                          return
+                        if (droppedModels.length) {
+                          setAllowedModels(
+                            offerableList.filter(served).join('\n')
+                          )
+                        }
+                        if (droppedRatios.length) {
+                          const next = Object.fromEntries(
+                            Object.entries(wholesaleRatios).filter(([k]) =>
+                              served(k)
+                            )
+                          )
+                          setWholesaleRatios(next)
+                          setRatioSeed((seed) => ({
+                            map: next,
+                            version: seed.version + 1,
+                          }))
+                        }
+                        toast.info(
+                          t(
+                            'Removed models no bound channel serves, with their wholesale ratios: {{models}}',
+                            {
+                              models: Array.from(
+                                new Set([...droppedModels, ...droppedRatios])
+                              ).join(', '),
+                            }
+                          )
+                        )
                       }}
                       embedded
                       onSaveHandle={(fn) => {

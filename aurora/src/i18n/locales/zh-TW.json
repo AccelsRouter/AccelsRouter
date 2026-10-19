@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Removed models no bound channel serves, with their wholesale ratios: {{models}}": "已移除沒有已綁定渠道提供的模型及其批發折扣：{{models}}",
     "Allow users to export logs": "允許使用者匯出日誌",
     "Another log export is running. Try again after it finishes.": "已有一個日誌匯出正在進行，請等它完成後再試。",
     "Choose a time range of up to {{days}} days. The other filters on this page also apply.": "選擇要匯出的時間範圍，最長 {{days}} 天。頁面上的其他篩選條件同樣生效。",
