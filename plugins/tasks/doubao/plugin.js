@@ -99,6 +99,35 @@ const IMAGE_MODELS = {
     fastPromptMode: true,
   },
 };
+// BytePlus ModelArk, Volcengine's international platform, serves the same
+// Seedance and Seedream models under its own IDs with the same wire format and
+// price tiers. Each ID shares the capability profile of its mainland
+// counterpart and is sent upstream as the client named it, so a channel pointed
+// at BytePlus receives the name it knows.
+const OVERSEAS_MODELS = {
+  "dreamina-seedance-2-0-260128": "doubao-seedance-2-0-260128",
+  "dreamina-seedance-2-0-fast-260128": "doubao-seedance-2-0-fast-260128",
+  "dreamina-seedance-2-0-mini-260615": "doubao-seedance-2-0-mini-260615",
+  "dreamina-seedance-2-5-260628": "doubao-seedance-2-5-260628",
+  "seedance-1-0-pro-250528": "doubao-seedance-1-0-pro-250528",
+  "seedance-1-5-pro-251215": "doubao-seedance-1-5-pro-251215",
+  "dola-seedream-5-0-pro-260628": "doubao-seedream-5-0-pro-260628",
+  "dola-seedream-5-0-flash-260915": "doubao-seedream-5-0-flash-260915",
+  "seedream-5-0-lite-260128": "doubao-seedream-5-0-lite-260128",
+  "seedream-5-0-260128": "doubao-seedream-5-0-260128",
+  "seedream-4-5-251128": "doubao-seedream-4-5-251128",
+  "seedream-4-0-250828": "doubao-seedream-4-0-250828",
+};
+Object.keys(OVERSEAS_MODELS).forEach((overseas) => {
+  const mainland = OVERSEAS_MODELS[overseas];
+  if (VIDEO_MODELS[mainland]) VIDEO_MODELS[overseas] = VIDEO_MODELS[mainland];
+  else IMAGE_MODELS[overseas] = IMAGE_MODELS[mainland];
+});
+
+// Mainland ID whose rate rows an overseas ID shares.
+function mainlandModel(model) {
+  return OVERSEAS_MODELS[model] || model;
+}
 const IMAGE_RESOLUTIONS = ["1K", "1.5K", "2K", "3K", "4K"];
 // Square pixel area of each preset, used only for the submit-time tier estimate.
 const IMAGE_PRESET_PIXELS = { "1K": 1048576, "1.5K": 2359296, "2K": 4194304, "3K": 9437184, "4K": 16777216 };
@@ -300,10 +329,10 @@ export const meta = {
   name: "Doubao",
   icon: "Doubao.Color",
   description: {
-    en: "Volcengine Doubao Seedance video generation and Seedream image generation",
-    zh: "火山引擎豆包 Seedance 视频生成与 Seedream 图片生成",
+    en: "Volcengine Doubao and BytePlus Seedance video generation and Seedream image generation",
+    zh: "火山引擎豆包与 BytePlus 的 Seedance 视频生成与 Seedream 图片生成",
   },
-  version: "1.3.0",
+  version: "1.3.1",
   author: { name: "QuantumNous" },
   channelTypes: [54, 45], // VolcEngine-type channels serve Ark video models with the same wire format
   models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS)),
@@ -441,6 +470,7 @@ function estimateTokens(seconds, resolution) {
 function videoInputRatio(model, resolution, content) {
   const video = hasVideo(content);
   const res = trimmed(resolution).toLowerCase();
+  model = mainlandModel(model);
   if (model === "doubao-seedance-2-5-260628") {
     if (res === "1080p") return video ? 7.0 / 10.7 : 11.7 / 10.7;
     return video ? 42 / 70 : 1;
