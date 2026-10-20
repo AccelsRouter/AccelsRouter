@@ -29,6 +29,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { getChannelTypeConfig } from '@/features/channels/lib/channel-type-config'
 import { updateSystemOption } from '@/features/system-settings/api'
 import {
   getResellerRouting,
@@ -100,7 +101,13 @@ export function RoutingPanel(props: {
   // Reports the union of the bound channels' models (and how many channels
   // are bound) whenever it changes, so the parent can flag unserved
   // offerable models outside this panel.
-  onCoverageChange?: (covered: string[], boundCount: number) => void
+  // `providers` labels each served model with the bound channels serving it,
+  // so the parent's picker never names a channel that is not bound.
+  onCoverageChange?: (
+    covered: string[],
+    boundCount: number,
+    providers: Map<string, string[]>
+  ) => void
   // Embedded in the org editor: no own save button; the parent saves the
   // routing through the handle registered with onSaveHandle.
   embedded?: boolean
@@ -169,12 +176,19 @@ export function RoutingPanel(props: {
   // Live coverage: the union of the bound channels' models, and how the
   // offerable list splits against it. Case-insensitive; the server's own check
   // on save stays authoritative.
-  const covered = useMemo(() => {
+  const { covered, boundProviders } = useMemo(() => {
     const set = new Set<string>()
+    const providers = new Map<string, string[]>()
     for (const id of channelIds) {
-      for (const m of channelById.get(id)?.models ?? []) set.add(m)
+      const ch = channelById.get(id)
+      if (!ch) continue
+      const label = `${ch.name} · ${getChannelTypeConfig(ch.type).name}`
+      for (const m of ch.models) {
+        set.add(m)
+        providers.set(m, [...(providers.get(m) ?? []), label])
+      }
     }
-    return [...set].sort()
+    return { covered: [...set].sort(), boundProviders: providers }
   }, [channelIds, channelById])
   const coveredKey = covered.join('\n')
   // Report only once the channel catalog is in: before that the union is
@@ -183,7 +197,7 @@ export function RoutingPanel(props: {
   const channelsLoaded = channelsQuery.data !== undefined
   useEffect(() => {
     if (!channelsLoaded) return
-    props.onCoverageChange?.(covered, channelIds.length)
+    props.onCoverageChange?.(covered, channelIds.length, boundProviders)
     // Depend on the joined key so an identical set does not re-fire.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coveredKey, channelIds.length, channelsLoaded])

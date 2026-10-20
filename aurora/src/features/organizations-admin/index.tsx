@@ -548,6 +548,9 @@ function EditOrgDialog(props: {
   // flag entries no bound channel serves — and the save can refuse them.
   const [covered, setCovered] = useState<string[]>([])
   const [boundCount, setBoundCount] = useState(0)
+  const [boundProviders, setBoundProviders] = useState<Map<string, string[]>>(
+    () => new Map()
+  )
   // The routing panel's save, registered by the panel; the dialog's Save
   // persists org fields and routing together.
   const routingSaveRef = useRef<(() => Promise<void>) | null>(null)
@@ -566,6 +569,7 @@ function EditOrgDialog(props: {
     setTab('basics')
     setCovered([])
     setBoundCount(0)
+    setBoundProviders(new Map())
     routingSaveRef.current = null
   }
 
@@ -701,7 +705,7 @@ function EditOrgDialog(props: {
           value={offerableList}
           onChange={(next) => setAllowedModels(next.join('\n'))}
           catalog={boundCount > 0 ? covered : modelCatalog.list}
-          providers={modelCatalog.providers}
+          providers={boundCount > 0 ? boundProviders : modelCatalog.providers}
           loading={summariesQuery.isLoading}
           allowCustom
         />
@@ -800,9 +804,10 @@ function EditOrgDialog(props: {
                     <RoutingPanel
                       org={org}
                       offerableModels={offerableList}
-                      onCoverageChange={(c, n) => {
+                      onCoverageChange={(c, n, p) => {
                         setCovered(c)
                         setBoundCount(n)
+                        setBoundProviders(p)
                         // Unbinding a channel drops the offerable models (and
                         // their wholesale ratios) it alone served, instead of
                         // leaving entries the save would refuse. With no
