@@ -25,8 +25,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  formatQuotaWithCurrency,
+  quotaFromUSD,
+  usdFromQuota,
+} from '@/lib/currency'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,17 +40,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select'
-import { formatQuotaWithCurrency } from '@/lib/currency'
-
-import {
-  listOrgAccounts,
-  removeOrgAccount,
-  updateOrgAccount,
-} from './api'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { listOrgAccounts, removeOrgAccount, updateOrgAccount } from './api'
 import { Field, MONEY_OPTS, Td, Th } from './shared'
 import type { AccountStatus, OrgAccount, OrgType } from './types'
 
@@ -108,9 +103,7 @@ export function AccountsTab({ orgType }: { orgType: OrgType }) {
             <tbody className='divide-border/60 divide-y'>
               {accounts.map((a) => (
                 <tr key={a.user_id} className='hover:bg-muted/30'>
-                  <Td className='font-medium'>
-                    {a.email || `#${a.user_id}`}
-                  </Td>
+                  <Td className='font-medium'>{a.email || `#${a.user_id}`}</Td>
                   <Td className='text-muted-foreground'>{a.role || '-'}</Td>
                   <Td className='text-right tabular-nums'>
                     {budgetLabel(a.monthly_budget, t('Unlimited'))}
@@ -120,7 +113,9 @@ export function AccountsTab({ orgType }: { orgType: OrgType }) {
                   </Td>
                   <Td>
                     <Badge
-                      variant={a.status === 'active' ? 'outline' : 'destructive'}
+                      variant={
+                        a.status === 'active' ? 'outline' : 'destructive'
+                      }
                     >
                       {a.status === 'active' ? t('Active') : t('Suspended')}
                     </Badge>
@@ -185,7 +180,9 @@ function EditAccountDialog(props: {
 
   if (acct && acct.user_id !== loadedId) {
     setLoadedId(acct.user_id)
-    setBudget(String(acct.monthly_budget))
+    setBudget(
+      acct.monthly_budget > 0 ? String(usdFromQuota(acct.monthly_budget)) : ''
+    )
     setStatus(acct.status)
     setRole(acct.role || 'member')
   }
@@ -193,7 +190,7 @@ function EditAccountDialog(props: {
   const mutation = useMutation({
     mutationFn: () =>
       updateOrgAccount(acct!.user_id, {
-        monthly_budget: Number(budget) || 0,
+        monthly_budget: quotaFromUSD(Number(budget) || 0),
         status,
         role,
       }),
@@ -215,7 +212,7 @@ function EditAccountDialog(props: {
           </DialogTitle>
         </DialogHeader>
         <div className='flex flex-col gap-3'>
-          <Field label={t('Monthly Budget (raw units, 0 = unlimited)')}>
+          <Field label={t('Monthly Budget (USD, 0 = unlimited)')}>
             <Input
               type='number'
               value={budget}
