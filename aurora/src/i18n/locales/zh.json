@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Monthly Budget (USD, 0 = unlimited)": "月度预算（美元，0 = 不限）",
     "Removed models no bound channel serves, with their wholesale ratios: {{models}}": "已移除没有绑定渠道提供的模型及其批发折扣：{{models}}",
     "Allow users to export logs": "允许用户导出日志",
     "Another log export is running. Try again after it finishes.": "已有一个日志导出正在进行，请等它完成后再试。",

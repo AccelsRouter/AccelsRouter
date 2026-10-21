@@ -25,8 +25,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
-import { ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  formatQuotaWithCurrency,
+  quotaFromUSD,
+  usdFromQuota,
+} from '@/lib/currency'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -38,8 +41,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { formatQuotaWithCurrency } from '@/lib/currency'
-
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   bindWorkspaceToken,
   createOrgWorkspace,
@@ -219,16 +221,20 @@ function WorkspaceFormDialog(props: {
   if (props.open && activeId !== loadedId) {
     setLoadedId(activeId)
     setName(ws?.name ?? '')
-    setBudget(ws ? String(ws.monthly_budget) : '')
+    setBudget(
+      ws && ws.monthly_budget > 0 ? String(usdFromQuota(ws.monthly_budget)) : ''
+    )
   }
 
   const mutation = useMutation({
     mutationFn: () => {
       const payload = {
         name: name.trim(),
-        monthly_budget: Number(budget) || 0,
+        monthly_budget: quotaFromUSD(Number(budget) || 0),
       }
-      return ws ? updateOrgWorkspace(ws.id, payload) : createOrgWorkspace(payload)
+      return ws
+        ? updateOrgWorkspace(ws.id, payload)
+        : createOrgWorkspace(payload)
     },
     onSuccess: () => {
       toast.success(ws ? t('Workspace updated') : t('Workspace created'))
@@ -259,7 +265,7 @@ function WorkspaceFormDialog(props: {
           <Field label={t('Name')}>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
-          <Field label={t('Monthly Budget (raw units, 0 = unlimited)')}>
+          <Field label={t('Monthly Budget (USD, 0 = unlimited)')}>
             <Input
               type='number'
               value={budget}
@@ -446,7 +452,9 @@ function CreateKeyDialog(props: {
                           {k.key_masked}
                         </code>
                       </div>
-                      <Badge variant={k.status === 1 ? 'outline' : 'destructive'}>
+                      <Badge
+                        variant={k.status === 1 ? 'outline' : 'destructive'}
+                      >
                         {k.status === 1 ? t('Enabled') : t('Disabled')}
                       </Badge>
                     </div>

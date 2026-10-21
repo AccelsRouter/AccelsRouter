@@ -27,7 +27,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, Loader2, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatQuotaWithCurrency } from '@/lib/currency'
+import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -280,7 +280,7 @@ function NewInvitationDialog(props: {
       createInvitation({
         relation,
         role,
-        monthly_budget: Number(budget) || 0,
+        monthly_budget: quotaFromUSD(Number(budget) || 0),
         invited_email: email.trim(),
       }),
     onSuccess: (res) => {
@@ -331,7 +331,7 @@ function NewInvitationDialog(props: {
               </NativeSelectOption>
             </NativeSelect>
           </Field>
-          <Field label={t('Monthly Budget (raw units, 0 = unlimited)')}>
+          <Field label={t('Monthly Budget (USD, 0 = unlimited)')}>
             <Input
               type='number'
               value={budget}
