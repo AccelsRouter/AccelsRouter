@@ -530,6 +530,13 @@ function EditOrgDialog(props: {
     Record<string, number>
   >({})
   const [wholesaleValid, setWholesaleValid] = useState(true)
+  // What the wholesale-ratio rows are (re)seeded from: the org's saved map,
+  // or the pruned map after a channel change dropped unserved models. The
+  // version remounts the rows so the dropped rows actually disappear.
+  const [ratioSeed, setRatioSeed] = useState<{
+    map: Record<string, number>
+    version: number
+  }>({ map: {}, version: 0 })
   const [allowedModels, setAllowedModels] = useState('')
   const [loadedId, setLoadedId] = useState<number | null>(null)
   const isReseller = org?.type === 'reseller'
@@ -541,6 +548,9 @@ function EditOrgDialog(props: {
   // flag entries no bound channel serves — and the save can refuse them.
   const [covered, setCovered] = useState<string[]>([])
   const [boundCount, setBoundCount] = useState(0)
+  const [boundProviders, setBoundProviders] = useState<Map<string, string[]>>(
+    () => new Map()
+  )
   // The routing panel's save, registered by the panel; the dialog's Save
   // persists org fields and routing together.
   const routingSaveRef = useRef<(() => Promise<void>) | null>(null)
@@ -553,11 +563,13 @@ function EditOrgDialog(props: {
     setStatus(org.status)
     setRemark(org.remark)
     setWholesaleRatios(org.wholesale_ratios ?? {})
+    setRatioSeed({ map: org.wholesale_ratios ?? {}, version: 0 })
     setWholesaleValid(true)
     setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
     setTab('basics')
     setCovered([])
     setBoundCount(0)
+    setBoundProviders(new Map())
     routingSaveRef.current = null
   }
 
@@ -693,7 +705,7 @@ function EditOrgDialog(props: {
           value={offerableList}
           onChange={(next) => setAllowedModels(next.join('\n'))}
           catalog={boundCount > 0 ? covered : modelCatalog.list}
-          providers={modelCatalog.providers}
+          providers={boundCount > 0 ? boundProviders : modelCatalog.providers}
           loading={summariesQuery.isLoading}
           allowCustom
         />
@@ -728,8 +740,8 @@ function EditOrgDialog(props: {
       </Field>
       <Field label={t('3. Per-model wholesale ratios (blank = no discount)')}>
         <ModelRatioRows
-          key={org?.id}
-          initial={org?.wholesale_ratios ?? {}}
+          key={`${org?.id}:${ratioSeed.version}`}
+          initial={ratioSeed.map}
           tokens={offerableList}
           onChange={(map, valid) => {
             setWholesaleRatios(map)
@@ -792,9 +804,53 @@ function EditOrgDialog(props: {
                     <RoutingPanel
                       org={org}
                       offerableModels={offerableList}
-                      onCoverageChange={(c, n) => {
+                      onCoverageChange={(c, n, p) => {
                         setCovered(c)
                         setBoundCount(n)
+                        setBoundProviders(p)
+                        // Unbinding a channel drops the offerable models (and
+                        // their wholesale ratios) it alone served, instead of
+                        // leaving entries the save would refuse. With no
+                        // channel bound the list is kept and the save stays
+                        // blocked, since blank would mean every model.
+                        if (n === 0) return
+                        const served = (token: string) =>
+                          c.some((m) => modelMatchesToken(token, m))
+                        const droppedModels = offerableList.filter(
+                          (e) => !served(e)
+                        )
+                        const droppedRatios = Object.keys(
+                          wholesaleRatios
+                        ).filter((k) => !served(k))
+                        if (!droppedModels.length && !droppedRatios.length)
+                          return
+                        if (droppedModels.length) {
+                          setAllowedModels(
+                            offerableList.filter(served).join('\n')
+                          )
+                        }
+                        if (droppedRatios.length) {
+                          const next = Object.fromEntries(
+                            Object.entries(wholesaleRatios).filter(([k]) =>
+                              served(k)
+                            )
+                          )
+                          setWholesaleRatios(next)
+                          setRatioSeed((seed) => ({
+                            map: next,
+                            version: seed.version + 1,
+                          }))
+                        }
+                        toast.info(
+                          t(
+                            'Removed models no bound channel serves, with their wholesale ratios: {{models}}',
+                            {
+                              models: Array.from(
+                                new Set([...droppedModels, ...droppedRatios])
+                              ).join(', '),
+                            }
+                          )
+                        )
                       }}
                       embedded
                       onSaveHandle={(fn) => {

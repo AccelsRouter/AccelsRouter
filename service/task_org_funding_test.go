@@ -85,4 +85,19 @@ func TestTaskAdjustFundingSettlesOrgWallets(t *testing.T) {
 	assert.Equal(t, int64(100-1000), row.StandardQuota)
 	assert.Equal(t, int64(50-500), row.ChargedQuota)
 	assert.Equal(t, int64(80-800), row.CostQuota)
+
+	// A reseller's OWN task carries no reseller id in its snapshot (single
+	// debit at the wholesale ratio), but its rollup row is reseller traffic
+	// whose cost is what it paid, exactly as the submission recorded it.
+	require.NoError(t, db.Where("1 = 1").Delete(&model.OrgUsageDaily{}).Error)
+	own := &model.Task{UserId: 7, Quota: 1000, SubmitTime: 1_700_000_000}
+	own.Properties.OriginModelName = "seedance-2-5"
+	own.PrivateData.BillingSource = BillingSourceOrgWallet
+	own.PrivateData.OrgFunding = &model.TaskOrgFunding{OrgId: 2, UserId: 7, DiscountRatio: 0.8, Consumed: 800}
+	require.NoError(t, taskAdjustFunding(own, -1000))
+	row = rollup()
+	assert.Equal(t, 2, row.ResellerOrgId, "own traffic is tagged with the reseller itself")
+	assert.Equal(t, int64(-1000), row.StandardQuota)
+	assert.Equal(t, int64(-800), row.ChargedQuota)
+	assert.Equal(t, int64(-800), row.CostQuota, "cost follows the refund like the submission's cost did")
 }
