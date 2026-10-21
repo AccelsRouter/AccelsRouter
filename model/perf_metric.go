@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -113,6 +114,34 @@ func GetPerfMetricsSummaryBucketsAll(startTs int64, endTs int64, groups []string
 		Order("bucket_ts ASC").
 		Find(&summaries).Error
 	return summaries, err
+}
+
+// Fork: the private routing groups (reseller-<id>, user-<id>, org-<id>) carry
+// real customer traffic but are never listed in the group ratio map, which is
+// what the performance summaries use as their group filter. This lists the
+// private groups that recorded metrics since startTs so a summary can include
+// them alongside the public groups.
+var perfMetricPrivateGroupPrefixes = []string{resellerRoutingGroupPrefix, "user-", "org-"}
+
+func GetPerfMetricPrivateGroups(startTs int64) ([]string, error) {
+	var groups []string
+	err := DB.Model(&PerfMetric{}).
+		Distinct(commonGroupCol).
+		Where("bucket_ts >= ?", startTs).
+		Pluck(commonGroupCol, &groups).Error
+	if err != nil {
+		return nil, err
+	}
+	private := groups[:0]
+	for _, group := range groups {
+		for _, prefix := range perfMetricPrivateGroupPrefixes {
+			if strings.HasPrefix(group, prefix) {
+				private = append(private, group)
+				break
+			}
+		}
+	}
+	return private, nil
 }
 
 // GetRecentPerfMetricSuccessBuckets reads the latest nonempty hours within
