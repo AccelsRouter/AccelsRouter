@@ -49,6 +49,8 @@ const STATUS_RELATED_KEYS = new Set([
   'passkey.legacy_rp_ids',
   'passkey.origins',
   'PersonalByokEnabled',
+  'QuotaRemindEnabled',
+  'QuotaRemindThreshold',
 ])
 
 export function useUpdateOption() {
