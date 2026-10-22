@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Payment method (optional)": "Payment method (optional)",
+    "WonderGate transactionMethod. Set it to send payers straight to that method instead of the cashier page, with a matching billing country (e.g. AlipayHK with HK). Blank shows the cashier.": "WonderGate transactionMethod. Set it to send payers straight to that method instead of the cashier page, with a matching billing country (e.g. AlipayHK with HK). Blank shows the cashier.",
+    "Monthly Budget (USD, 0 = unlimited)": "Monthly Budget (USD, 0 = unlimited)",
+    "Removed models no bound channel serves, with their wholesale ratios: {{models}}": "Removed models no bound channel serves, with their wholesale ratios: {{models}}",
     "Allow users to export logs": "Allow users to export logs",
     "Another log export is running. Try again after it finishes.": "Another log export is running. Try again after it finishes.",
     "Choose a time range of up to {{days}} days. The other filters on this page also apply.": "Choose a time range of up to {{days}} days. The other filters on this page also apply.",

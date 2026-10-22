@@ -43,6 +43,7 @@ export interface WonderGateSettingsValues {
   WonderGateMinTopUp: number
   WonderGateBillingCountry: string
   WonderGateCurrency: string
+  WonderGateTransactionMethod: string
 }
 
 interface Props {
@@ -83,6 +84,10 @@ export function WonderGateSettingsSection(props: Props) {
         {
           key: 'WonderGateCurrency',
           value: (values.WonderGateCurrency || 'USD').toUpperCase().trim(),
+        },
+        {
+          key: 'WonderGateTransactionMethod',
+          value: values.WonderGateTransactionMethod.trim(),
         },
       ]
       // Credentials: only push non-empty values so an untouched password field
@@ -232,6 +237,19 @@ export function WonderGateSettingsSection(props: Props) {
           <p className='text-muted-foreground text-xs'>
             {t(
               'ISO currency your WonderGate merchant accepts (e.g. CNY). Must match the merchant config, and pair with a matching unit price.'
+            )}
+          </p>
+        </div>
+        <div className='grid gap-1.5'>
+          <Label>{t('Payment method (optional)')}</Label>
+          <Input
+            placeholder='AlipayHK'
+            maxLength={32}
+            {...form.register('WonderGateTransactionMethod')}
+          />
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'WonderGate transactionMethod. Set it to send payers straight to that method instead of the cashier page, with a matching billing country (e.g. AlipayHK with HK). Blank shows the cashier.'
             )}
           </p>
         </div>

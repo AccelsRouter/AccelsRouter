@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Payment method (optional)": "支付方式（可选）",
+    "WonderGate transactionMethod. Set it to send payers straight to that method instead of the cashier page, with a matching billing country (e.g. AlipayHK with HK). Blank shows the cashier.": "WonderGate 的 transactionMethod。填写后付款人直接进入该支付方式，不再经过收银台，需配合对应的账单国家（例如 AlipayHK 配 HK）。留空则显示收银台。",
     "Monthly Budget (USD, 0 = unlimited)": "月度预算（美元，0 = 不限）",
     "Removed models no bound channel serves, with their wholesale ratios: {{models}}": "已移除没有绑定渠道提供的模型及其批发折扣：{{models}}",
     "Allow users to export logs": "允许用户导出日志",
