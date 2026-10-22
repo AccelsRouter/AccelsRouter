@@ -38,6 +38,7 @@ import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
 import { Route as SetupIndexRouteImport } from './routes/setup/index'
 import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
+import { Route as AuthenticatedBdIndexRouteImport } from './routes/_authenticated/bd/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
@@ -231,6 +232,11 @@ const authUserResetRoute = authUserResetRouteImport.update({
   id: '/user/reset',
   path: '/user/reset',
   getParentRoute: () => authRouteRoute,
+} as any)
+const AuthenticatedBdIndexRoute = AuthenticatedBdIndexRouteImport.update({
+  id: '/bd/',
+  path: '/bd/',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedChannelsIndexRoute =
   AuthenticatedChannelsIndexRouteImport.update({
@@ -558,6 +564,7 @@ export interface FileRoutesByFullPath {
   '/organization/join': typeof AuthenticatedOrganizationJoinRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
+  '/bd/': typeof AuthenticatedBdIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/inflight/': typeof AuthenticatedInflightIndexRoute
@@ -635,6 +642,7 @@ export interface FileRoutesByTo {
   '/organization/join': typeof AuthenticatedOrganizationJoinRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
+  '/bd': typeof AuthenticatedBdIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/inflight': typeof AuthenticatedInflightIndexRoute
@@ -716,6 +724,7 @@ export interface FileRoutesById {
   '/_authenticated/organization/join': typeof AuthenticatedOrganizationJoinRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
+  '/_authenticated/bd/': typeof AuthenticatedBdIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/inflight/': typeof AuthenticatedInflightIndexRoute
@@ -796,6 +805,7 @@ export interface FileRouteTypes {
     | '/organization/join'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
+    | '/bd/'
     | '/channels/'
     | '/dashboard/'
     | '/inflight/'
@@ -873,6 +883,7 @@ export interface FileRouteTypes {
     | '/organization/join'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
+    | '/bd'
     | '/channels'
     | '/dashboard'
     | '/inflight'
@@ -953,6 +964,7 @@ export interface FileRouteTypes {
     | '/_authenticated/organization/join'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/usage-logs/audit'
+    | '/_authenticated/bd/'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/inflight/'
@@ -1223,6 +1235,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/user/reset'
       preLoaderRoute: typeof authUserResetRouteImport
       parentRoute: typeof authRouteRoute
+    }
+    '/_authenticated/bd/': {
+      id: '/_authenticated/bd/'
+      path: '/bd'
+      fullPath: '/bd/'
+      preLoaderRoute: typeof AuthenticatedBdIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/channels/': {
       id: '/_authenticated/channels/'
@@ -1680,6 +1699,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOrganizationJoinRoute: typeof AuthenticatedOrganizationJoinRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedUsageLogsAuditRoute: typeof AuthenticatedUsageLogsAuditRoute
+  AuthenticatedBdIndexRoute: typeof AuthenticatedBdIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedInflightIndexRoute: typeof AuthenticatedInflightIndexRoute
@@ -1714,6 +1734,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOrganizationJoinRoute: AuthenticatedOrganizationJoinRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedUsageLogsAuditRoute: AuthenticatedUsageLogsAuditRoute,
+  AuthenticatedBdIndexRoute: AuthenticatedBdIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedInflightIndexRoute: AuthenticatedInflightIndexRoute,

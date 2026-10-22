@@ -60,6 +60,9 @@ type WonderGateCheckoutRequest struct {
 	NotificationURL string                   `json:"notificationUrl"`
 	ProductInfos    []map[string]interface{} `json:"productInfos"`
 	BillingAddress  map[string]interface{}   `json:"billingAddress"`
+	// TransactionMethod pre-selects the payment method (e.g. "AlipayHK") and
+	// skips the cashier page; omitted, WonderGate shows the cashier.
+	TransactionMethod string `json:"transactionMethod,omitempty"`
 }
 
 // WonderGateCheckoutResult is the parsed create-checkout response.

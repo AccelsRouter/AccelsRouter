@@ -3,8 +3,10 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
@@ -25,8 +27,7 @@ func GetPerfMetricsSummary(c *gin.Context) {
 		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
 		return
 	}
-	activeGroups := append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto")
-	result, err := perfmetrics.QuerySummaryAll(hours, activeGroups, recentModels...)
+	result, err := perfmetrics.QuerySummaryAll(hours, perfMetricsActiveGroups(), recentModels...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -62,7 +63,7 @@ func GetPerfMetrics(c *gin.Context) {
 		Model:         modelName,
 		Group:         c.Query("group"),
 		Hours:         hours,
-		AllowedGroups: append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto"),
+		AllowedGroups: perfMetricsActiveGroups(),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -76,4 +77,19 @@ func GetPerfMetrics(c *gin.Context) {
 		"success": true,
 		"data":    result,
 	})
+}
+
+// perfMetricsActiveGroups is the group filter of the performance views: every
+// group in the ratio map plus "auto", and (fork) the private routing groups
+// that recorded metrics within the longest query window, since reseller and
+// BYOK traffic would otherwise be invisible on the dashboard and model square.
+func perfMetricsActiveGroups() []string {
+	groups := append(lo.Keys(ratio_setting.GetGroupRatioCopy()), "auto")
+	since := time.Now().Add(-30 * 24 * time.Hour).Unix()
+	private, err := model.GetPerfMetricPrivateGroups(since)
+	if err != nil {
+		common.SysError("perf metrics: list private groups: " + err.Error())
+		return groups
+	}
+	return append(groups, private...)
 }

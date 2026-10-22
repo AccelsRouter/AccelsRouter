@@ -203,6 +203,7 @@ func InitOptionMap() {
 	common.OptionMap["WonderGateMinTopUp"] = strconv.Itoa(setting.WonderGateMinTopUp)
 	common.OptionMap["WonderGateBillingCountry"] = setting.WonderGateBillingCountry
 	common.OptionMap["WonderGateCurrency"] = setting.WonderGateCurrency
+	common.OptionMap["WonderGateTransactionMethod"] = setting.WonderGateTransactionMethod
 	// Upstream probe per-channel / per-model tuning (fork). See setting/upstream_probe.go.
 	common.OptionMap["UpstreamProbeConfig"] = setting.UpstreamProbeConfigJSON()
 	common.OptionMap["CheckSensitiveOnPromptEnabled"] = strconv.FormatBool(setting.CheckSensitiveOnPromptEnabled)
@@ -555,6 +556,8 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.WonderGateBillingCountry = value
 	case "WonderGateCurrency":
 		setting.WonderGateCurrency = value
+	case "WonderGateTransactionMethod":
+		setting.WonderGateTransactionMethod = strings.TrimSpace(value)
 	case "UpstreamProbeConfig":
 		err = setting.UpdateUpstreamProbeConfig(value)
 	case "SMTPFrom":

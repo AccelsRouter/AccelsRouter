@@ -398,6 +398,10 @@ func migrateDB() error {
 		&UserChannelBinding{},
 		&ChannelModel{},
 		&UserAccessToken{},
+		&BdCompany{},
+		&BdLead{},
+		&BdLeadModel{},
+		&BdAllocation{},
 	)
 	if err != nil {
 		return err

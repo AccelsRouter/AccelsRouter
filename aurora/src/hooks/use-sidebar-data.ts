@@ -26,6 +26,7 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  Handshake,
   Gauge,
   Key,
   KeyRound,
@@ -45,6 +46,11 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
 import { ROLE } from '@/lib/roles'
 import { useStatus } from '@/hooks/use-status'
 import { type NavItem, type SidebarData } from '@/components/layout/types'
@@ -100,6 +106,16 @@ export function useSidebarData(): SidebarData {
   // no reseller/admin surfaces.
   const userId = useAuthStore((s) => s.auth.user?.id)
   const userRole = useAuthStore((s) => s.auth.user?.role)
+  // Business summary is opt-in per admin (bd.read in the permission editor).
+  const canSeeBd = useAuthStore(
+    (s) =>
+      (s.auth.user?.role ?? ROLE.GUEST) >= ROLE.ADMIN &&
+      hasPermission(
+        s.auth.user,
+        ADMIN_PERMISSION_RESOURCES.BD,
+        ADMIN_PERMISSION_ACTIONS.READ
+      )
+  )
   const { data: orgContext } = useQuery({
     queryKey: ['org-context'],
     queryFn: getOrgContext,
@@ -292,6 +308,15 @@ export function useSidebarData(): SidebarData {
             url: '/reconciliation',
             icon: Scale,
           },
+          ...(canSeeBd
+            ? [
+                {
+                  title: t('Business Summary'),
+                  url: '/bd',
+                  icon: Handshake,
+                } as NavItem,
+              ]
+            : []),
           {
             title: t('Channels'),
             url: '/channels',

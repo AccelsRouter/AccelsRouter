@@ -116,6 +116,7 @@ const defaultBillingSettings: BillingSettings = {
   WonderGateMinTopUp: 1,
   WonderGateBillingCountry: 'US',
   WonderGateCurrency: 'USD',
+  WonderGateTransactionMethod: '',
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,

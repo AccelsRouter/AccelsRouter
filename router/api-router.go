@@ -226,6 +226,19 @@ func SetApiRouter(router *gin.Engine) {
 			upstreamRoute.POST("/price-source/test", controller.AdminTestUpstreamPriceSource)
 		}
 
+		// Business development summary (业务信息汇总): leads and deals. Opt-in
+		// per admin through the bd.* permissions in the permission editor.
+		bdRoute := apiRouter.Group("/admin/bd", middleware.AdminAuth())
+		handlePermissionRoute(bdRoute, http.MethodGet, "/meta", authz.BdRead, controller.BdGetMeta)
+		handlePermissionRoute(bdRoute, http.MethodGet, "/leads", authz.BdRead, controller.BdListLeads)
+		handlePermissionRoute(bdRoute, http.MethodPost, "/leads", authz.BdWrite, controller.BdCreateLead)
+		handlePermissionRoute(bdRoute, http.MethodPut, "/leads/:id", authz.BdWrite, controller.BdUpdateLead)
+		handlePermissionRoute(bdRoute, http.MethodDelete, "/leads/:id", authz.BdWrite, controller.BdDeleteLead)
+		handlePermissionRoute(bdRoute, http.MethodGet, "/allocations", authz.BdRead, controller.BdListAllocations)
+		handlePermissionRoute(bdRoute, http.MethodPost, "/allocations", authz.BdWrite, controller.BdCreateAllocation)
+		handlePermissionRoute(bdRoute, http.MethodPut, "/allocations/:id", authz.BdWrite, controller.BdUpdateAllocation)
+		handlePermissionRoute(bdRoute, http.MethodDelete, "/allocations/:id", authz.BdWrite, controller.BdDeleteAllocation)
+
 		orgAdminRoute := apiRouter.Group("/admin/organizations")
 		orgAdminRoute.Use(middleware.AdminAuth())
 		{

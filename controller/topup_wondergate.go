@@ -179,6 +179,7 @@ func RequestWonderGatePay(c *gin.Context) {
 			"zipCode":   "00000",
 			"phone":     "0000000000",
 		},
+		TransactionMethod: setting.WonderGateTransactionMethod,
 	}
 
 	result, err := service.CreateWonderGateCheckout(c.Request.Context(), createReq)
