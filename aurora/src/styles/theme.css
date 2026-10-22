@@ -172,6 +172,9 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .dark {
+  /* Native controls follow the theme; Dark Reader also reads this to detect
+     the built-in dark theme. */
+  color-scheme: dark;
   /* Crypto Indigo dark mode: deep navy chrome, electric indigo/violet primary. */
   --background: oklch(0.16 0.03 265);
   --foreground: oklch(0.96 0.01 265);
