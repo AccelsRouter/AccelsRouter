@@ -56,6 +56,56 @@ func TestDoubaoResponsesProtocol(t *testing.T) {
 	})
 }
 
+// A BytePlus ID is served like its mainland counterpart: same capability
+// profile, usage facts and video-input rate, while the upstream request keeps
+// the ID the client sent.
+func TestDoubaoOverseasModelsShareMainlandProfiles(t *testing.T) {
+	testVideoResponsesProtocol(t, videoResponsesTestCase{
+		pluginKey: "doubao",
+		model:     "dreamina-seedance-2-5-260628",
+		requestBody: map[string]any{
+			"model": "dreamina-seedance-2-5-260628",
+			"input": []any{map[string]any{"role": "user", "content": []any{
+				map[string]any{"type": "input_text", "text": "a running fox"},
+			}}},
+			"seconds": 6,
+			"size":    "1920x1080",
+		},
+		wantAction: "text_to_video",
+		wantRequest: map[string]any{
+			"model":   "dreamina-seedance-2-5-260628",
+			"prompt":  "a running fox",
+			"seconds": float64(6),
+			"metadata": map[string]any{
+				"resolution": "1080p",
+			},
+		},
+		wantUsageKeys:  []string{"resolution", "tokens", "video_input"},
+		wantVendorName: "doubao",
+	})
+
+	_, plugin := newDoubaoPlugin(t)
+	overseasSchema, _ := plugin.Meta.UsageForModel("dola-seedream-5-0-pro-260628")
+	mainlandSchema, _ := plugin.Meta.UsageForModel("doubao-seedream-5-0-pro-260628")
+	assert.Equal(t, slices.Sorted(maps.Keys(mainlandSchema)), slices.Sorted(maps.Keys(overseasSchema)))
+	body, _, url := submitDoubaoImage(t, plugin, "text_to_image", map[string]any{
+		"model": "dola-seedream-5-0-pro-260628", "prompt": "a lighthouse", "size": "2K",
+	})
+	assert.Equal(t, "dola-seedream-5-0-pro-260628", body["model"])
+	assert.Equal(t, doubaoBaseURL+"/api/v3/images/generations", url)
+
+	// Video-to-video legacy ratio rows are keyed by the mainland ID.
+	ctx := map[string]any{
+		"upstreamModel": "dreamina-seedance-2-5-260628", "model": "dreamina-seedance-2-5-260628", "action": "video_to_video",
+		"requestBody": map[string]any{"model": "dreamina-seedance-2-5-260628", "prompt": "a fox", "seconds": 5,
+			"metadata": map[string]any{"resolution": "720p", "content": []any{map[string]any{"type": "video_url", "video_url": "https://cdn.example/in.mp4"}}}},
+		"usagePurpose": "billing_ratios",
+	}
+	value, err := plugin.Engine.Call(t.Context(), "extractUsage", ctx)
+	require.NoError(t, err)
+	assert.InDelta(t, 42.0/70, alibabaObject(t, value)["video_input_ratio"], 1e-9)
+}
+
 func newDoubaoPlugin(t *testing.T) (*jsplugin.Registry, *jsplugin.LoadedPlugin) {
 	t.Helper()
 	source, err := builtinplugins.Source("doubao")
@@ -291,11 +341,12 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 		resolutions []string
 		fields      []string
 	}{
-		{[]string{pro10, "doubao-seedance-1-0-lite-t2v", "doubao-seedance-1-0-lite-i2v"}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens"}},
-		{[]string{pro15}, []string{"480p", "720p", "1080p"}, []string{"generate_audio", "resolution", "tokens"}},
-		{[]string{v20}, []string{"480p", "720p", "1080p", "4k"}, []string{"resolution", "tokens", "video_input"}},
-		{[]string{fast20, mini20}, []string{"480p", "720p"}, []string{"resolution", "tokens", "video_input"}},
-		{[]string{v25}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens", "video_input"}},
+		// BytePlus IDs share the profile of their mainland counterpart.
+		{[]string{pro10, "doubao-seedance-1-0-lite-t2v", "doubao-seedance-1-0-lite-i2v", "seedance-1-0-pro-250528"}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens"}},
+		{[]string{pro15, "seedance-1-5-pro-251215"}, []string{"480p", "720p", "1080p"}, []string{"generate_audio", "resolution", "tokens"}},
+		{[]string{v20, "dreamina-seedance-2-0-260128"}, []string{"480p", "720p", "1080p", "4k"}, []string{"resolution", "tokens", "video_input"}},
+		{[]string{fast20, mini20, "dreamina-seedance-2-0-fast-260128", "dreamina-seedance-2-0-mini-260615"}, []string{"480p", "720p"}, []string{"resolution", "tokens", "video_input"}},
+		{[]string{v25, "dreamina-seedance-2-5-260628"}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens", "video_input"}},
 	}
 	profiled := make([]string, 0, len(plugin.Meta.Models))
 	for _, family := range families {

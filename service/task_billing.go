@@ -129,16 +129,23 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 		}
 		// Keep the usage rollup in step with the wallets: the delta lands in the
 		// submission's bucket at the ratios that applied then.
-		var cost int64
-		if snapshot.ResellerOrgId > 0 {
+		charged := int64(funding.charge(delta))
+		resellerOrgId, cost := snapshot.ResellerOrgId, int64(0)
+		if resellerOrgId > 0 {
 			cost = int64(funding.wholesaleCharge(delta))
+		} else if org, err := model.GetOrganizationById(snapshot.OrgId); err == nil && org != nil && org.Type == model.OrgTypeReseller {
+			// A reseller's own task is funded by a single debit (no reseller id
+			// in the snapshot), but the submission tagged its rollup row as
+			// reseller traffic with cost = what it paid; the delta must land
+			// the same way or refunds leave the cost inflated.
+			resellerOrgId, cost = snapshot.OrgId, charged
 		}
 		bucketAt := task.SubmitTime
 		if bucketAt <= 0 {
 			bucketAt = task.CreatedAt
 		}
-		if err := model.AdjustOrgUsageDaily(bucketAt, snapshot.OrgId, snapshot.WorkspaceId, snapshot.ResellerOrgId, snapshot.UserId,
-			taskModelName(task), int64(delta), int64(funding.charge(delta)), cost); err != nil {
+		if err := model.AdjustOrgUsageDaily(bucketAt, snapshot.OrgId, snapshot.WorkspaceId, resellerOrgId, snapshot.UserId,
+			taskModelName(task), int64(delta), charged, cost); err != nil {
 			common.SysError("adjust org usage daily failed: " + err.Error())
 		}
 		return nil

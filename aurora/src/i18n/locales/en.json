@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Monthly Budget (USD, 0 = unlimited)": "Monthly Budget (USD, 0 = unlimited)",
+    "Removed models no bound channel serves, with their wholesale ratios: {{models}}": "Removed models no bound channel serves, with their wholesale ratios: {{models}}",
     "Allow users to export logs": "Allow users to export logs",
     "Another log export is running. Try again after it finishes.": "Another log export is running. Try again after it finishes.",
     "Choose a time range of up to {{days}} days. The other filters on this page also apply.": "Choose a time range of up to {{days}} days. The other filters on this page also apply.",

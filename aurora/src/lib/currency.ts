@@ -548,6 +548,16 @@ export function quotaFromUSD(usd: number): number {
 }
 
 /**
+ * Convert raw quota units to a USD amount — the inverse of quotaFromUSD, for
+ * seeding a dollar input from a stored quota (e.g. a monthly budget).
+ */
+export function usdFromQuota(quota: number): number {
+  if (!Number.isFinite(quota) || quota <= 0) return 0
+  const { config } = getCurrencyDisplay()
+  return quota / config.quotaPerUnit
+}
+
+/**
  * Get the current currency label for UI display.
  *
  * Returns a simple string label representing the current display currency.

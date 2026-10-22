@@ -183,6 +183,26 @@ func InitOptionMap() {
 	common.OptionMap["ResellerRoutingEnabled"] = strconv.FormatBool(setting.ResellerRoutingEnabled)
 	// Auto virtual models (fork). See setting/auto_model.go.
 	common.OptionMap["AutoModelConfigs"] = setting.AutoModelConfigsJSON()
+	// Organization onboarding (fork). See model/org_onboarding.go.
+	common.OptionMap["OrgEnterpriseAutoApprove"] = strconv.FormatBool(OrgEnterpriseAutoApprove)
+	common.OptionMap["OrgResellerAutoApprove"] = strconv.FormatBool(OrgResellerAutoApprove)
+	common.OptionMap["OrgDefaultPriceGroup"] = OrgDefaultPriceGroup
+	// Personal BYOK (fork). See setting/byok.go.
+	common.OptionMap["PersonalByokEnabled"] = strconv.FormatBool(setting.PersonalByokEnabled)
+	common.OptionMap["ByokFeeRatio"] = strconv.FormatFloat(setting.ByokFeeRatio, 'f', -1, 64)
+	// WonderGate (card / local payment) options. See setting/payment_wondergate.go.
+	common.OptionMap["WonderGateEnabled"] = strconv.FormatBool(setting.WonderGateEnabled)
+	common.OptionMap["WonderGateSandbox"] = strconv.FormatBool(setting.WonderGateSandbox)
+	common.OptionMap["WonderGateMerchantId"] = setting.WonderGateMerchantId
+	common.OptionMap["WonderGateSecretKey"] = setting.WonderGateSecretKey
+	common.OptionMap["WonderGateAppId"] = setting.WonderGateAppId
+	common.OptionMap["WonderGateSandboxMerchantId"] = setting.WonderGateSandboxMerchantId
+	common.OptionMap["WonderGateSandboxSecretKey"] = setting.WonderGateSandboxSecretKey
+	common.OptionMap["WonderGateSandboxAppId"] = setting.WonderGateSandboxAppId
+	common.OptionMap["WonderGateUnitPrice"] = strconv.FormatFloat(setting.WonderGateUnitPrice, 'f', -1, 64)
+	common.OptionMap["WonderGateMinTopUp"] = strconv.Itoa(setting.WonderGateMinTopUp)
+	common.OptionMap["WonderGateBillingCountry"] = setting.WonderGateBillingCountry
+	common.OptionMap["WonderGateCurrency"] = setting.WonderGateCurrency
 	// Upstream probe per-channel / per-model tuning (fork). See setting/upstream_probe.go.
 	common.OptionMap["UpstreamProbeConfig"] = setting.UpstreamProbeConfigJSON()
 	common.OptionMap["CheckSensitiveOnPromptEnabled"] = strconv.FormatBool(setting.CheckSensitiveOnPromptEnabled)
@@ -225,6 +245,9 @@ func loadOptionsFromDatabase() {
 		}
 	}
 	applyPasskeyDomainOptions(passkeyOptions)
+	// Apply the persisted frontend theme to the runtime after the DB load so
+	// the correct embedded assets (aurora vs default) are served.
+	system_setting.UpdateAndSyncTheme()
 }
 
 func SyncOptions(frequency int) {
@@ -498,6 +521,40 @@ func updateOptionMap(key string, value string) (err error) {
 		common.SMTPAccount = value
 	case "AutoModelConfigs":
 		err = setting.UpdateAutoModelConfigs(value)
+	case "OrgEnterpriseAutoApprove":
+		OrgEnterpriseAutoApprove = value == "true"
+	case "OrgResellerAutoApprove":
+		OrgResellerAutoApprove = value == "true"
+	case "OrgDefaultPriceGroup":
+		OrgDefaultPriceGroup = value
+	case "PersonalByokEnabled":
+		setting.PersonalByokEnabled = value == "true"
+	case "ByokFeeRatio":
+		setting.ByokFeeRatio, _ = strconv.ParseFloat(value, 64)
+	case "WonderGateEnabled":
+		setting.WonderGateEnabled = value == "true"
+	case "WonderGateSandbox":
+		setting.WonderGateSandbox = value == "true"
+	case "WonderGateMerchantId":
+		setting.WonderGateMerchantId = value
+	case "WonderGateSecretKey":
+		setting.WonderGateSecretKey = value
+	case "WonderGateAppId":
+		setting.WonderGateAppId = value
+	case "WonderGateSandboxMerchantId":
+		setting.WonderGateSandboxMerchantId = value
+	case "WonderGateSandboxSecretKey":
+		setting.WonderGateSandboxSecretKey = value
+	case "WonderGateSandboxAppId":
+		setting.WonderGateSandboxAppId = value
+	case "WonderGateUnitPrice":
+		setting.WonderGateUnitPrice, _ = strconv.ParseFloat(value, 64)
+	case "WonderGateMinTopUp":
+		setting.WonderGateMinTopUp, _ = strconv.Atoi(value)
+	case "WonderGateBillingCountry":
+		setting.WonderGateBillingCountry = value
+	case "WonderGateCurrency":
+		setting.WonderGateCurrency = value
 	case "UpstreamProbeConfig":
 		err = setting.UpdateUpstreamProbeConfig(value)
 	case "SMTPFrom":
