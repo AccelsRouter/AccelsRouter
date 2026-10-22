@@ -949,9 +949,9 @@ export const STATIC_I18N_KEYS = [
   'Net 60',
   'Business Summary',
   'View business summary',
-  'Edit leads and deals',
+  'Edit leads and allocations',
   'Manage business summary',
-  'View supplier and customer leads, purchase and sale records, and export them as CSV.',
-  'Add and edit leads, record purchases and sales, and delete leads you created.',
-  'Delete any lead or deal, and set the supplier and supply price of sale records.',
+  'View supplier and customer leads and model allocation records, and export them as CSV.',
+  'Add and edit leads, allocate supplier models to customers, and delete leads and records you created.',
+  'Delete any lead or allocation record.',
 ] as const

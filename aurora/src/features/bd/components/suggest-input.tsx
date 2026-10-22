@@ -65,3 +65,25 @@ export function Field(props: {
 
 export const numOrNull = (v: string): number | null =>
   v.trim() === '' || isNaN(+v) ? null : +v
+
+/** Number input for a "% of the official list price" value, with a % suffix. */
+export function PercentInput(
+  props: Omit<ComponentProps<typeof Input>, 'type'>
+) {
+  const { className, ...rest } = props
+  return (
+    <div className={'relative ' + (className ?? '')}>
+      <Input
+        type='number'
+        min={0}
+        max={200}
+        step={0.5}
+        className='pr-7'
+        {...rest}
+      />
+      <span className='text-muted-foreground pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-sm'>
+        %
+      </span>
+    </div>
+  )
+}

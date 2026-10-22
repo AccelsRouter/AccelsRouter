@@ -3,7 +3,6 @@ package controller
 import (
 	"errors"
 	"strconv"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -13,9 +12,9 @@ import (
 )
 
 // Business development summary (业务信息汇总) — /api/admin/bd/*.
-// Routes are guarded by AdminAuth plus bd.read / bd.write / bd.manage; the
-// handlers below add the row-level rules (lead deletion by its creator, the
-// supplier fields of sale records reserved for bd.manage).
+// Routes are guarded by AdminAuth plus bd.read / bd.write; the handlers add
+// the row-level rule that a lead or an allocation record can be deleted by
+// its creator or by a bd.manage holder.
 
 func bdCanManage(c *gin.Context) bool {
 	return authz.Can(c.GetInt("id"), c.GetInt("role"), authz.BdManage)
@@ -52,14 +51,11 @@ func bdError(c *gin.Context, err error) {
 }
 
 type bdMeta struct {
-	Owners     []model.BdOwner   `json:"owners"`
-	Models     []string          `json:"models"`
-	Companies  []model.BdCompany `json:"companies"`
-	Channels   []model.BdPick    `json:"channels"`    // supplier binding options
-	Orgs       []model.BdPick    `json:"orgs"`        // customer binding options
-	BoundUsers []model.BdPick    `json:"bound_users"` // names of users already bound
-	CanWrite   bool              `json:"can_write"`
-	CanManage  bool              `json:"can_manage"`
+	Owners    []model.BdOwner   `json:"owners"`
+	Models    []string          `json:"models"`
+	Companies []model.BdCompany `json:"companies"`
+	CanWrite  bool              `json:"can_write"`
+	CanManage bool              `json:"can_manage"`
 }
 
 // BdGetMeta — GET /api/admin/bd/meta: owner candidates (admins who can read
@@ -82,64 +78,16 @@ func BdGetMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	channels, err := model.ListBdChannelPicks()
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	orgs, err := model.ListBdOrgPicks()
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	var userIds []int
-	for _, co := range companies {
-		userIds = append(userIds, co.UserIds...)
-	}
-	boundUsers, err := model.BdUserPicksByIds(userIds)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
 	common.ApiSuccess(c, bdMeta{
-		Owners:     owners,
-		Models:     model.ListBdModelNames(),
-		Companies:  companies,
-		Channels:   channels,
-		Orgs:       orgs,
-		BoundUsers: boundUsers,
-		CanWrite:   authz.Can(c.GetInt("id"), c.GetInt("role"), authz.BdWrite),
-		CanManage:  bdCanManage(c),
+		Owners:    owners,
+		Models:    model.ListBdModelNames(),
+		Companies: companies,
+		CanWrite:  authz.Can(c.GetInt("id"), c.GetInt("role"), authz.BdWrite),
+		CanManage: bdCanManage(c),
 	})
 }
 
-// BdGetUsage — GET /api/admin/bd/usage?tz_offset=480: this calendar month's
-// platform consumption (USD, list price) per bound supplier / customer, in
-// the admin's time zone.
-func BdGetUsage(c *gin.Context) {
-	loc := reconLocation(c)
-	now := time.Now().In(loc)
-	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
-	usage, err := model.GetBdUsage(start.Unix(), start.AddDate(0, 1, 0).Unix())
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	common.ApiSuccess(c, usage)
-}
-
-// BdSearchUsers — GET /api/admin/bd/users?q=: platform users for binding a
-// customer.
-func BdSearchUsers(c *gin.Context) {
-	picks, err := model.SearchBdUserPicks(c.Query("q"), 20)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	common.ApiSuccess(c, picks)
-}
-
-// BdListLeads — GET /api/admin/bd/leads
+// BdListLeads — GET /api/admin/bd/leads (each with its models)
 func BdListLeads(c *gin.Context) {
 	rows, err := model.ListBdLeads()
 	if err != nil {
@@ -183,7 +131,8 @@ func BdUpdateLead(c *gin.Context) {
 }
 
 // BdDeleteLead — DELETE /api/admin/bd/leads/:id. Allowed for bd.manage
-// holders and for the user who created the lead.
+// holders and for the user who created the lead, once no allocation record
+// refers to it.
 func BdDeleteLead(c *gin.Context) {
 	id, ok := bdParamId(c)
 	if !ok {
@@ -205,9 +154,9 @@ func BdDeleteLead(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
-// BdListDeals — GET /api/admin/bd/deals
-func BdListDeals(c *gin.Context) {
-	rows, err := model.ListBdDeals()
+// BdListAllocations — GET /api/admin/bd/allocations
+func BdListAllocations(c *gin.Context) {
+	rows, err := model.ListBdAllocations()
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -215,47 +164,48 @@ func BdListDeals(c *gin.Context) {
 	common.ApiSuccess(c, rows)
 }
 
-func bdSaveDeal(c *gin.Context, id int) {
-	var deal model.BdDeal
-	if err := common.UnmarshalBodyReusable(c, &deal); err != nil {
+func bdSaveAllocation(c *gin.Context, id int) {
+	var a model.BdAllocation
+	if err := common.UnmarshalBodyReusable(c, &a); err != nil {
 		common.ApiErrorMsg(c, "invalid request body")
 		return
 	}
-	deal.Id = id
-	if id > 0 {
-		old, err := model.GetBdDeal(id)
-		if err != nil {
-			bdError(c, err)
-			return
-		}
-		deal.Kind = old.Kind
-	}
-	deal.OwnerId, deal.OwnerName = bdResolveOwner(deal.OwnerId)
-	if err := model.SaveBdDeal(&deal, c.GetInt("id"), bdCanManage(c)); err != nil {
+	a.Id = id
+	a.OwnerId, a.OwnerName = bdResolveOwner(a.OwnerId)
+	if err := model.SaveBdAllocation(&a, c.GetInt("id")); err != nil {
 		bdError(c, err)
 		return
 	}
-	common.ApiSuccess(c, deal)
+	common.ApiSuccess(c, a)
 }
 
-// BdCreateDeal — POST /api/admin/bd/deals
-func BdCreateDeal(c *gin.Context) { bdSaveDeal(c, 0) }
+// BdCreateAllocation — POST /api/admin/bd/allocations
+func BdCreateAllocation(c *gin.Context) { bdSaveAllocation(c, 0) }
 
-// BdUpdateDeal — PUT /api/admin/bd/deals/:id
-func BdUpdateDeal(c *gin.Context) {
+// BdUpdateAllocation — PUT /api/admin/bd/allocations/:id
+func BdUpdateAllocation(c *gin.Context) {
 	if id, ok := bdParamId(c); ok {
-		bdSaveDeal(c, id)
+		bdSaveAllocation(c, id)
 	}
 }
 
-// BdDeleteDeal — DELETE /api/admin/bd/deals/:id (bd.manage, enforced by the
-// route).
-func BdDeleteDeal(c *gin.Context) {
+// BdDeleteAllocation — DELETE /api/admin/bd/allocations/:id. Allowed for
+// bd.manage holders and for the user who created the record.
+func BdDeleteAllocation(c *gin.Context) {
 	id, ok := bdParamId(c)
 	if !ok {
 		return
 	}
-	if err := model.DeleteBdDeal(id); err != nil {
+	a, err := model.GetBdAllocation(id)
+	if err != nil {
+		bdError(c, err)
+		return
+	}
+	if !bdCanManage(c) && a.CreatedBy != c.GetInt("id") {
+		common.ApiErrorMsg(c, "only the creator of this record or a business summary manager can delete it")
+		return
+	}
+	if err := model.DeleteBdAllocation(id); err != nil {
 		bdError(c, err)
 		return
 	}

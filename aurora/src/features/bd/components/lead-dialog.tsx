@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -38,64 +38,64 @@ import { cn } from '@/lib/utils'
 import {
   deleteBdLead,
   saveBdLead,
-  searchBdUsers,
-  type BdBinding,
   type BdLead,
+  type BdLeadModel,
   type BdMeta,
   type BdSide,
 } from '../api'
 import {
   CURRENCIES,
-  isPrepaid,
   makeCodeOf,
   MODEL_CLASS_KEYS,
-  norm,
-  normModel,
-  PRIORITIES,
   STAGES,
   TERM_KEYS,
   uniq,
 } from '../lib'
-import { MultiPicker } from './multi-picker'
-import { Field, numOrNull, SuggestInput } from './suggest-input'
+import { Field, numOrNull, PercentInput, SuggestInput } from './suggest-input'
+
+// Prices are edited as text so partial input like "70." survives typing.
+type FormModel = {
+  model: string
+  model_class: string
+  price: string
+}
 
 type Form = {
   company: string
-  model: string
-  model_class: string
-  model_note: string
-  volume: string
-  monthly_amount: string
-  price_rate: string
+  models: FormModel[]
   currency: string[]
   contact: string
   contact_way: string
   region: string
   terms: string
   stage: string
-  priority: string
   owner_id: string
   note: string
 }
+
+const emptyModel = (): FormModel => ({
+  model: '',
+  model_class: '',
+  price: '',
+})
+
+const toFormModel = (m: BdLeadModel): FormModel => ({
+  model: m.model,
+  model_class: m.model_class,
+  price: m.price_rate != null ? String(m.price_rate) : '',
+})
 
 function toForm(lead: BdLead | null, myId: number, meta: BdMeta): Form {
   const meIsOwner = meta.owners.some((o) => o.id === myId)
   return {
     company: lead?.company ?? '',
-    model: lead?.model ?? '',
-    model_class: lead?.model_class ?? '',
-    model_note: lead?.model_note ?? '',
-    volume: lead?.volume != null ? String(lead.volume) : '',
-    monthly_amount:
-      lead?.monthly_amount != null ? String(lead.monthly_amount) : '',
-    price_rate: lead?.price_rate != null ? String(lead.price_rate) : '',
+    models: lead?.models.length ? lead.models.map(toFormModel) : [emptyModel()],
     currency: lead?.currency ?? [],
     contact: lead?.contact ?? '',
     contact_way: lead?.contact_way ?? '',
     region: lead?.region ?? '',
     terms: lead?.terms ?? '',
     stage: lead?.stage ?? 'contact',
-    priority: lead?.priority ?? 'P1',
     owner_id: String(lead ? lead.owner_id : meIsOwner ? myId : 0),
     note: lead?.note ?? '',
   }
@@ -117,21 +117,23 @@ export function LeadDialog(props: {
   const [f, setF] = useState<Form>(() => toForm(lead, props.myId, meta))
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
-  // null = untouched: the company's stored binding is kept as is.
-  const [bindEdit, setBindEdit] = useState<BdBinding | null>(null)
 
   useEffect(() => {
     if (props.open) {
       setF(toForm(lead, props.myId, meta))
       setError('')
       setConfirmDelete(false)
-      setBindEdit(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.open, lead?.id])
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) =>
     setF((s) => ({ ...s, [k]: v }))
+  const setModel = (i: number, patch: Partial<FormModel>) =>
+    setF((s) => ({
+      ...s,
+      models: s.models.map((m, j) => (j === i ? { ...m, ...patch } : m)),
+    }))
 
   const codeOf = makeCodeOf(meta.companies)
   const code = f.company.trim() ? codeOf(side, f.company) : ''
@@ -140,23 +142,14 @@ export function LeadDialog(props: {
   )
   const modelOptions = uniq([
     ...meta.models,
-    ...props.leads.map((l) => l.model),
+    ...props.leads.flatMap((l) => l.models.map((m) => m.model)),
+  ])
+  const classOptions = uniq([
+    ...MODEL_CLASS_KEYS.map((k) => t(k)),
+    ...props.leads.flatMap((l) => l.models.map((m) => m.model_class)),
   ])
   const canDelete =
     !!lead && (meta.can_manage || lead.created_by === props.myId)
-
-  // Usage binding belongs to the company, shared by all its leads.
-  const companyRec = meta.companies.find(
-    (c) => c.side === side && norm(c.name) === norm(f.company)
-  )
-  const bind: BdBinding = bindEdit ?? {
-    channel_ids: companyRec?.channel_ids ?? [],
-    user_ids: companyRec?.user_ids ?? [],
-    org_ids: companyRec?.org_ids ?? [],
-  }
-  const setBind = (patch: Partial<BdBinding>) =>
-    setBindEdit({ ...bind, ...patch })
-  const prepaid = isPrepaid(f.terms)
 
   const done = () => {
     qc.invalidateQueries({ queryKey: ['bd'] })
@@ -168,20 +161,21 @@ export function LeadDialog(props: {
       saveBdLead(lead?.id ?? null, {
         side,
         company: f.company.trim(),
-        model: normModel(f.model),
-        model_class: f.model_class.trim(),
-        model_note: isBuy ? f.model_note.trim() : '',
-        volume: isBuy ? null : numOrNull(f.volume),
-        monthly_amount: isBuy ? numOrNull(f.monthly_amount) : null,
-        bind: bindEdit ?? undefined,
-        price_rate: numOrNull(f.price_rate),
+        models: isBuy
+          ? f.models
+              .map((m) => ({
+                model: m.model.trim(),
+                model_class: m.model_class.trim(),
+                price_rate: numOrNull(m.price),
+              }))
+              .filter((m) => m.model)
+          : [],
         currency: f.currency,
         contact: f.contact.trim(),
         contact_way: f.contact_way.trim(),
         region: f.region.trim(),
         terms: f.terms.trim(),
         stage: f.stage,
-        priority: f.priority,
         owner_id: Number(f.owner_id) || 0,
         note: f.note.trim(),
       }),
@@ -214,8 +208,8 @@ export function LeadDialog(props: {
       )
       return
     }
-    if (!normModel(f.model)) {
-      setError(t('Please enter the model'))
+    if (isBuy && !f.models.some((m) => m.model.trim())) {
+      setError(t('Please add at least one model'))
       return
     }
     setError('')
@@ -236,7 +230,7 @@ export function LeadDialog(props: {
                     : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
                 )}
               >
-                {isBuy ? t('Purchase lead') : t('Sales lead')}
+                {isBuy ? t('Supplier') : t('Customer')}
               </span>
               {lead ? t('Edit') : t('New')}
               <span className='text-muted-foreground font-mono text-xs font-normal'>
@@ -253,6 +247,7 @@ export function LeadDialog(props: {
             <Field
               label={isBuy ? t('Supplier name') : t('Customer name')}
               required
+              wide
             >
               <SuggestInput
                 value={f.company}
@@ -266,53 +261,73 @@ export function LeadDialog(props: {
                 autoFocus
               />
             </Field>
-            <Field
-              label={t('Model')}
-              required
-              hint={t('Separate words with spaces, not "-" or "."')}
-            >
-              <SuggestInput
-                value={f.model}
-                onChange={(e) => set('model', e.target.value)}
-                onBlur={(e) => set('model', normModel(e.target.value))}
-                options={modelOptions}
-                placeholder='claude sonnet 4.6'
-              />
-            </Field>
-            <Field label={t('Model class')}>
-              <SuggestInput
-                value={f.model_class}
-                onChange={(e) => set('model_class', e.target.value)}
-                options={uniq([
-                  ...MODEL_CLASS_KEYS.map((k) => t(k)),
-                  ...props.leads.map((l) => l.model_class),
-                ])}
-                placeholder='@AWS / @Azure'
-              />
-            </Field>
-            {isBuy ? (
-              <Field label={t('Model notes')}>
-                <Input
-                  value={f.model_note}
-                  onChange={(e) => set('model_note', e.target.value)}
-                  placeholder={t(
-                    'e.g. supported variants, rate limits, context length'
-                  )}
-                />
-              </Field>
-            ) : (
-              <Field
-                label={t('Monthly volume (USD/month)')}
-                hint={t("Customer's expected monthly spend")}
-              >
-                <Input
-                  type='number'
-                  min={0}
-                  step={1000}
-                  value={f.volume}
-                  onChange={(e) => set('volume', e.target.value)}
-                />
-              </Field>
+
+            {isBuy && (
+              <div className='flex flex-col gap-2 sm:col-span-2'>
+                <div className='flex items-center justify-between'>
+                  <span className='text-muted-foreground text-xs font-medium'>
+                    {t('Models offered')}
+                    <span className='text-destructive'> *</span>
+                  </span>
+                  <Button
+                    type='button'
+                    size='sm'
+                    variant='outline'
+                    className='h-7 text-xs'
+                    onClick={() => set('models', [...f.models, emptyModel()])}
+                  >
+                    <Plus className='size-3.5' />
+                    {t('Add model')}
+                  </Button>
+                </div>
+                {f.models.map((m, i) => (
+                  <div
+                    key={i}
+                    className='grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[2fr_1fr_1fr_auto]'
+                  >
+                    <SuggestInput
+                      aria-label={t('Model')}
+                      value={m.model}
+                      onChange={(e) => setModel(i, { model: e.target.value })}
+                      options={modelOptions}
+                      placeholder='claude sonnet 4.6'
+                    />
+                    <SuggestInput
+                      aria-label={t('Model class')}
+                      className='order-3 sm:order-none'
+                      value={m.model_class}
+                      onChange={(e) =>
+                        setModel(i, { model_class: e.target.value })
+                      }
+                      options={classOptions}
+                      placeholder={t('Model class')}
+                    />
+                    <PercentInput
+                      aria-label={t('Supply price (% of list price)')}
+                      className='order-4 sm:order-none'
+                      value={m.price}
+                      onChange={(e) => setModel(i, { price: e.target.value })}
+                      placeholder={t('Supply price, e.g. 70')}
+                    />
+                    <Button
+                      type='button'
+                      size='icon'
+                      variant='ghost'
+                      className='order-2 size-9 sm:order-none'
+                      aria-label={t('Remove')}
+                      disabled={f.models.length === 1}
+                      onClick={() =>
+                        set(
+                          'models',
+                          f.models.filter((_, j) => j !== i)
+                        )
+                      }
+                    >
+                      <X className='size-4' />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             )}
             <Field label={t('Contact person')}>
               <Input
@@ -325,27 +340,6 @@ export function LeadDialog(props: {
                 value={f.contact_way}
                 onChange={(e) => set('contact_way', e.target.value)}
                 placeholder={t('Telegram / WeChat / email')}
-              />
-            </Field>
-            <Field
-              label={
-                isBuy
-                  ? t('Supply price (% of list price)')
-                  : t('Acceptable price (% of list price)')
-              }
-              hint={
-                isBuy
-                  ? t('30% off the official price → enter 70')
-                  : t('Customer wants 15% off → enter 85')
-              }
-            >
-              <Input
-                type='number'
-                min={0}
-                max={200}
-                step={0.5}
-                value={f.price_rate}
-                onChange={(e) => set('price_rate', e.target.value)}
               />
             </Field>
             <Field label={t('Settlement currency')}>
@@ -396,24 +390,6 @@ export function LeadDialog(props: {
                 placeholder={t('e.g. Prepaid, Net 30')}
               />
             </Field>
-            {isBuy && (
-              <Field
-                label={
-                  prepaid
-                    ? t('Monthly prepaid amount (USD)')
-                    : t('Monthly postpaid credit (USD)')
-                }
-                hint={t('Follows the payment terms: prepaid or postpaid')}
-              >
-                <Input
-                  type='number'
-                  min={0}
-                  step={1000}
-                  value={f.monthly_amount}
-                  onChange={(e) => set('monthly_amount', e.target.value)}
-                />
-              </Field>
-            )}
             <Field label={t('Stage')}>
               <NativeSelect
                 value={f.stage}
@@ -422,18 +398,6 @@ export function LeadDialog(props: {
                 {STAGES.map((s) => (
                   <NativeSelectOption key={s.value} value={s.value}>
                     {t(s.label)}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </Field>
-            <Field label={t('Priority')}>
-              <NativeSelect
-                value={f.priority}
-                onChange={(e) => set('priority', e.target.value)}
-              >
-                {PRIORITIES.map((p) => (
-                  <NativeSelectOption key={p} value={p}>
-                    {p}
                   </NativeSelectOption>
                 ))}
               </NativeSelect>
@@ -448,54 +412,6 @@ export function LeadDialog(props: {
                 }
               />
             </Field>
-            <div className='border-primary/40 grid grid-cols-1 gap-3 rounded-md border border-dashed p-3 sm:col-span-2'>
-              <div>
-                <h4 className='text-xs font-semibold'>
-                  {isBuy
-                    ? t('Platform channels of this supplier')
-                    : t('Platform accounts of this customer')}
-                </h4>
-                <p className='text-muted-foreground text-[11px]'>
-                  {isBuy
-                    ? t(
-                        "This month's purchase amount sums the list-price consumption of these channels. Shared by all leads of this supplier."
-                      )
-                    : t(
-                        "This month's consumption sums the list-price usage of these users and every account of these organizations. Shared by all leads of this customer."
-                      )}
-                </p>
-              </div>
-              {isBuy ? (
-                <Field label={t('Channels')}>
-                  <MultiPicker
-                    value={bind.channel_ids}
-                    onChange={(ids) => setBind({ channel_ids: ids })}
-                    options={meta.channels}
-                    placeholder={t('Search channel name or ID')}
-                  />
-                </Field>
-              ) : (
-                <>
-                  <Field label={t('Users')}>
-                    <MultiPicker
-                      value={bind.user_ids}
-                      onChange={(ids) => setBind({ user_ids: ids })}
-                      known={meta.bound_users}
-                      search={{ key: 'users', fn: searchBdUsers }}
-                      placeholder={t('Search username or user ID')}
-                    />
-                  </Field>
-                  <Field label={t('Organizations')}>
-                    <MultiPicker
-                      value={bind.org_ids}
-                      onChange={(ids) => setBind({ org_ids: ids })}
-                      options={meta.orgs}
-                      placeholder={t('Search organization name or ID')}
-                    />
-                  </Field>
-                </>
-              )}
-            </div>
             <Field label={t('Notes')} wide>
               <Textarea
                 rows={3}

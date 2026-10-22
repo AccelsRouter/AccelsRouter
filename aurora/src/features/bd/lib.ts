@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { BdDeal, BdLead, BdSide } from './api'
+import type { BdAllocation, BdLead, BdSide } from './api'
 
 // Stage codes are stored; labels are translation keys.
 export const STAGES = [
@@ -29,7 +29,6 @@ export const STAGES = [
   { value: 'hold', label: 'On hold' },
 ] as const
 
-export const PRIORITIES = ['P0', 'P1', 'P2'] as const
 export const CURRENCIES = ['USD', 'USDT/USDC', 'CNY', 'HKD', 'SGD'] as const
 // Free-text suggestions; the stored value is whatever the user picks or types.
 export const MODEL_CLASS_KEYS = [
@@ -50,52 +49,45 @@ export const norm = (s: unknown) =>
     .trim()
     .toLowerCase()
 
-/** "Claude-Sonnet-4.6" / "claude.sonnet 4.6" → "claude sonnet 4.6"; a dot is
- * kept only between two digits. Mirrors model.NormalizeBdModel. */
-export function normModel(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[-_]+/g, ' ')
-    .replace(/\.(?!\d)|(?<!\d)\./g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+/** Model names are stored as typed; matching ignores case, spaces and
+ * punctuation, so "claude-sonnet-4.6" matches "Claude Sonnet 4.6". Mirrors
+ * model.BdModelKey. */
+export function modelKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9\u0080-\uffff]/g, '')
 }
 
-export function isPrepaid(terms: string): boolean {
-  const t = terms.toLowerCase()
-  return t.includes('预付') || t.includes('預付') || t.includes('prepa')
-}
+export const modelNames = (l: BdLead) => l.models.map((m) => m.model)
 
-/** Same model on the other side and not on hold → spread (sell% − buy%). */
-export function matchLeads(
-  a: BdLead,
-  b: BdLead
-): { spread: number | null } | null {
-  if (!a.model || norm(a.model) !== norm(b.model)) return null
-  if (b.stage === 'hold') return null
-  const buy = a.side === 'buy' ? a : b
-  const sell = a.side === 'sell' ? a : b
-  return { spread: spreadOf(sell.price_rate, buy.price_rate) }
+/** For each counterparty lead linked to `lead` through allocations, the
+ * keys of the models allocated between them. */
+export function allocatedWith(
+  lead: BdLead,
+  allocations: BdAllocation[]
+): Map<number, Set<string>> {
+  const out = new Map<number, Set<string>>()
+  for (const a of allocations) {
+    const other =
+      lead.side === 'buy'
+        ? a.supplier_lead_id === lead.id && a.customer_lead_id
+        : a.customer_lead_id === lead.id && a.supplier_lead_id
+    if (!other) continue
+    if (!out.has(other)) out.set(other, new Set())
+    out.get(other)!.add(modelKey(a.model))
+  }
+  return out
 }
 
 export function spreadOf(
-  sellRate: number | null,
-  buyRate: number | null
+  saleRate: number | null,
+  supplyRate: number | null
 ): number | null {
-  if (sellRate == null || buyRate == null) return null
-  return +(sellRate - buyRate).toFixed(1)
+  if (saleRate == null || supplyRate == null) return null
+  return +(saleRate - supplyRate).toFixed(1)
 }
 
-const PRIO: Record<string, number> = { P0: 0, P1: 1, P2: 2 }
-export function byPriority(a: BdLead, b: BdLead): number {
-  return (
-    (PRIO[a.priority] ?? 3) - (PRIO[b.priority] ?? 3) ||
-    (b.updated_at || 0) - (a.updated_at || 0)
-  )
-}
-
-export function money(v: number | null | undefined): string {
-  return v == null ? '—' : '$' + Math.round(v).toLocaleString('en-US')
+/** Most recently updated first. */
+export function byRecent(a: BdLead, b: BdLead): number {
+  return (b.updated_at || 0) - (a.updated_at || 0) || b.id - a.id
 }
 
 export function pct(v: number | null | undefined): string {
@@ -108,12 +100,6 @@ export function today(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-export const inThisMonth = (d: BdDeal) =>
-  (d.deal_date || '').slice(0, 7) === today().slice(0, 7)
-
-export const sumAmount = (deals: BdDeal[]) =>
-  deals.reduce((s, d) => s + (d.amount ?? 0), 0)
-
 export function uniq(values: (string | null | undefined)[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -125,6 +111,22 @@ export function uniq(values: (string | null | undefined)[]): string[] {
     }
   }
   return out
+}
+
+/** How many distinct counterparties a lead has been matched with through
+ * allocations: customers for a supplier, suppliers for a customer. */
+export function matchedCount(
+  lead: BdLead,
+  allocations: BdAllocation[]
+): number {
+  const other = new Set<number>()
+  for (const a of allocations) {
+    if (lead.side === 'buy' && a.supplier_lead_id === lead.id)
+      other.add(a.customer_lead_id)
+    if (lead.side === 'sell' && a.customer_lead_id === lead.id)
+      other.add(a.supplier_lead_id)
+  }
+  return other.size
 }
 
 /** Company code lookup (B-001 / S-001) by side + name. */

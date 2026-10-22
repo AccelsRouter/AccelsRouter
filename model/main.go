@@ -400,7 +400,8 @@ func migrateDB() error {
 		&UserAccessToken{},
 		&BdCompany{},
 		&BdLead{},
-		&BdDeal{},
+		&BdLeadModel{},
+		&BdAllocation{},
 	)
 	if err != nil {
 		return err

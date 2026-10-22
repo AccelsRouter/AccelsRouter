@@ -18,30 +18,34 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-// Business development summary (业务信息汇总): supplier / customer leads and
-// purchase / sale records. Backed by /api/admin/bd/* (bd.* permissions).
+// Business development summary (业务信息汇总): supplier and customer leads,
+// each with the models they offer / need, and the records of supplier models
+// allocated to customers. Backed by /api/admin/bd/* (bd.* permissions).
 
 export type BdSide = 'buy' | 'sell'
 
+export type BdLeadModel = {
+  id?: number
+  model: string
+  model_class: string
+  /** Listed supply price, % of the official list price. */
+  price_rate: number | null
+}
+
+/** A supplier (side "buy", with the models it offers) or a customer (side
+ * "sell", no model list). */
 export type BdLead = {
   id: number
   side: BdSide
   code: string
   company: string
-  model: string
-  model_class: string
-  model_note: string
-  volume: number | null
-  /** Supplier: monthly prepaid amount (prepaid) or postpaid credit limit. */
-  monthly_amount: number | null
-  price_rate: number | null
+  models: BdLeadModel[]
   currency: string[]
   contact: string
   contact_way: string
   region: string
   terms: string
   stage: string
-  priority: string
   owner_id: number
   owner_name: string
   note: string
@@ -51,58 +55,34 @@ export type BdLead = {
   updated_at: number
 }
 
-export type BdDeal = {
+/** A supplier model allocated to a customer, with the agreed prices (% of
+ * the official list price). */
+export type BdAllocation = {
   id: number
-  kind: BdSide
-  lead_id: number
-  company: string
+  customer_lead_id: number
+  supplier_lead_id: number
   model: string
   model_class: string
-  rate: number | null
-  terms: string
-  amount: number | null
-  deal_date: string
-  owner_id: number
-  owner_name: string
+  customer: string
   supplier: string
   supply_rate: number | null
+  sale_rate: number | null
+  alloc_date: string
+  owner_id: number
+  owner_name: string
   note: string
   created_by: number
   created_at: number
   updated_at: number
 }
 
-export type BdCompany = {
-  id: number
-  side: BdSide
-  name: string
-  code: string
-  channel_ids: number[]
-  user_ids: number[]
-  org_ids: number[]
-}
-export type BdPick = { id: number; name: string; detail?: string }
-export type BdBinding = {
-  channel_ids: number[]
-  user_ids: number[]
-  org_ids: number[]
-}
-export type BdUsage = {
-  from: number
-  to: number
-  companies: Record<string, number> // company id → USD this month
-  buy_total: number
-  sell_total: number
-}
+export type BdCompany = { id: number; side: BdSide; name: string; code: string }
 export type BdOwner = { id: number; name: string }
 
 export type BdMeta = {
   owners: BdOwner[]
   models: string[]
   companies: BdCompany[]
-  channels: BdPick[]
-  orgs: BdPick[]
-  bound_users: BdPick[]
   can_write: boolean
   can_manage: boolean
 }
@@ -116,10 +96,17 @@ export type BdLeadInput = Omit<
   | 'updated_by'
   | 'created_at'
   | 'updated_at'
-> & { bind?: BdBinding }
-export type BdDealInput = Omit<
-  BdDeal,
-  'id' | 'owner_name' | 'created_by' | 'created_at' | 'updated_at'
+>
+export type BdAllocationInput = Pick<
+  BdAllocation,
+  | 'customer_lead_id'
+  | 'supplier_lead_id'
+  | 'model'
+  | 'supply_rate'
+  | 'sale_rate'
+  | 'alloc_date'
+  | 'owner_id'
+  | 'note'
 >
 
 type ApiResp<T> = { success: boolean; message?: string; data?: T }
@@ -147,10 +134,10 @@ export async function getBdLeads(): Promise<BdLead[]> {
   )
 }
 
-export async function getBdDeals(): Promise<BdDeal[]> {
+export async function getBdAllocations(): Promise<BdAllocation[]> {
   return (
     unwrap(
-      await api.get<ApiResp<BdDeal[]>>(`${BASE}/deals`),
+      await api.get<ApiResp<BdAllocation[]>>(`${BASE}/allocations`),
       'Failed to load'
     ) ?? []
   )
@@ -173,38 +160,19 @@ export async function deleteBdLead(id: number): Promise<void> {
   )
 }
 
-export async function saveBdDeal(
+export async function saveBdAllocation(
   id: number | null,
-  body: BdDealInput
-): Promise<BdDeal> {
+  body: BdAllocationInput
+): Promise<BdAllocation> {
   const res = id
-    ? await api.put<ApiResp<BdDeal>>(`${BASE}/deals/${id}`, body)
-    : await api.post<ApiResp<BdDeal>>(`${BASE}/deals`, body)
+    ? await api.put<ApiResp<BdAllocation>>(`${BASE}/allocations/${id}`, body)
+    : await api.post<ApiResp<BdAllocation>>(`${BASE}/allocations`, body)
   return unwrap(res, 'Failed to save')
 }
 
-export async function deleteBdDeal(id: number): Promise<void> {
+export async function deleteBdAllocation(id: number): Promise<void> {
   unwrap(
-    await api.delete<ApiResp<null>>(`${BASE}/deals/${id}`),
+    await api.delete<ApiResp<null>>(`${BASE}/allocations/${id}`),
     'Failed to delete'
-  )
-}
-
-export async function getBdUsage(): Promise<BdUsage> {
-  const tz = -new Date().getTimezoneOffset()
-  return unwrap(
-    await api.get<ApiResp<BdUsage>>(`${BASE}/usage?tz_offset=${tz}`),
-    'Failed to load'
-  )
-}
-
-export async function searchBdUsers(q: string): Promise<BdPick[]> {
-  return (
-    unwrap(
-      await api.get<ApiResp<BdPick[]>>(
-        `${BASE}/users?q=${encodeURIComponent(q)}`
-      ),
-      'Failed to load'
-    ) ?? []
   )
 }
