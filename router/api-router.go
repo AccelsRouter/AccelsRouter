@@ -226,6 +226,21 @@ func SetApiRouter(router *gin.Engine) {
 			upstreamRoute.POST("/price-source/test", controller.AdminTestUpstreamPriceSource)
 		}
 
+		// Business development summary (业务信息汇总): leads and deals. Opt-in
+		// per admin through the bd.* permissions in the permission editor.
+		bdRoute := apiRouter.Group("/admin/bd", middleware.AdminAuth())
+		handlePermissionRoute(bdRoute, http.MethodGet, "/meta", authz.BdRead, controller.BdGetMeta)
+		handlePermissionRoute(bdRoute, http.MethodGet, "/usage", authz.BdRead, controller.BdGetUsage)
+		handlePermissionRoute(bdRoute, http.MethodGet, "/users", authz.BdWrite, controller.BdSearchUsers)
+		handlePermissionRoute(bdRoute, http.MethodGet, "/leads", authz.BdRead, controller.BdListLeads)
+		handlePermissionRoute(bdRoute, http.MethodPost, "/leads", authz.BdWrite, controller.BdCreateLead)
+		handlePermissionRoute(bdRoute, http.MethodPut, "/leads/:id", authz.BdWrite, controller.BdUpdateLead)
+		handlePermissionRoute(bdRoute, http.MethodDelete, "/leads/:id", authz.BdWrite, controller.BdDeleteLead)
+		handlePermissionRoute(bdRoute, http.MethodGet, "/deals", authz.BdRead, controller.BdListDeals)
+		handlePermissionRoute(bdRoute, http.MethodPost, "/deals", authz.BdWrite, controller.BdCreateDeal)
+		handlePermissionRoute(bdRoute, http.MethodPut, "/deals/:id", authz.BdWrite, controller.BdUpdateDeal)
+		handlePermissionRoute(bdRoute, http.MethodDelete, "/deals/:id", authz.BdManage, controller.BdDeleteDeal)
+
 		orgAdminRoute := apiRouter.Group("/admin/organizations")
 		orgAdminRoute.Use(middleware.AdminAuth())
 		{
