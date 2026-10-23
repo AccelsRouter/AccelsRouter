@@ -8394,7 +8394,6 @@
     "Unnamed": "Unnamed",
     "{{count}} matching models": "{{count}} matching models",
     "Models offered": "Models offered",
-    "Payment terms": "Payment terms",
     "Unassigned": "Unassigned",
     "Stage": "Stage",
     "Matched {{count}} customers": "Matched {{count}} customers",
@@ -8429,7 +8428,6 @@
     "Settlement currency": "Settlement currency",
     "Region / entity": "Region / entity",
     "e.g. Singapore entity, Hong Kong, mainland China": "e.g. Singapore entity, Hong Kong, mainland China",
-    "e.g. Prepaid, Net 30": "e.g. Prepaid, Net 30",
     "Choose a stage": "Choose a stage",
     "Customer code": "Customer code",
     "Acceptable price %": "Acceptable price %",
@@ -8460,15 +8458,17 @@
     "Account pool": "Account pool",
     "Prepaid": "Prepaid",
     "Postpaid": "Postpaid",
-    "Net 15": "Net 15",
-    "Net 30": "Net 30",
-    "Net 60": "Net 60",
     "View business summary": "View business summary",
     "Edit leads and allocations": "Edit leads and allocations",
     "Manage business summary": "Manage business summary",
     "Edit leads and deals": "Edit leads and deals",
     "View supplier and customer leads and deal records, and export them as CSV.": "View supplier and customer leads and deal records, and export them as CSV.",
     "Add and edit leads, allocate supplier models to customers, and delete leads and deal records you created.": "Add and edit leads, allocate supplier models to customers, and delete leads and deal records you created.",
-    "Delete any lead or deal record.": "Delete any lead or deal record."
+    "Delete any lead or deal record.": "Delete any lead or deal record.",
+    "Payment method": "Payment method",
+    "Credit period": "Credit period",
+    "e.g. 30": "e.g. 30",
+    "Credit period {{days}} days": "Credit period {{days}} days",
+    "Please enter the credit period in days": "Please enter the credit period in days"
   }
 }

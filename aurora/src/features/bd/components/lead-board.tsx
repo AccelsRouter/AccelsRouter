@@ -17,15 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
-
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-
+import { Button } from '@/components/ui/button'
 import type { BdAllocation, BdLead, BdSide } from '../api'
 import {
   byRecent,
   matchedCount,
   modelKey,
+  paymentText,
   pct,
   sharedModels,
   stageLabelKey,
@@ -142,9 +141,9 @@ function LeadCard(props: {
       <dl className='grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-x-3 gap-y-1 text-sm'>
         <div className='min-w-0'>
           <dt className='text-muted-foreground text-[11px]'>
-            {t('Payment terms')}
+            {t('Payment method')}
           </dt>
-          <dd className='break-words'>{l.terms || '—'}</dd>
+          <dd className='break-words'>{paymentText(t, l) || '—'}</dd>
         </div>
         <div className='min-w-0'>
           <dt className='text-muted-foreground text-[11px]'>

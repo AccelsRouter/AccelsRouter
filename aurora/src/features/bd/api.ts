@@ -45,7 +45,10 @@ export type BdLead = {
   contact: string
   contact_way: string
   region: string
-  terms: string
+  /** "prepaid" | "postpaid" | "" — older rows may still hold free text. */
+  payment_method: string
+  /** Postpaid credit period (账期) in days. */
+  credit_days: number | null
   stage: string
   owner_id: number
   owner_name: string

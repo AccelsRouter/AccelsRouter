@@ -39,7 +39,37 @@ export const MODEL_CLASS_KEYS = [
   'Domestic',
   'Account pool',
 ]
-export const TERM_KEYS = ['Prepaid', 'Postpaid', 'Net 15', 'Net 30', 'Net 60']
+export const PAYMENT_METHODS = [
+  { value: 'prepaid', label: 'Prepaid' },
+  { value: 'postpaid', label: 'Postpaid' },
+] as const
+
+/** Maps a payment method saved as free text before it became a choice
+ * ("预付费", "月结 30 天", "Net 15"…) to prepaid / postpaid and its days. */
+export function parseLegacyPayment(text: string): {
+  method: string
+  days: string
+} {
+  const s = text.toLowerCase()
+  const days = s.match(/\d+/)?.[0] ?? ''
+  if (s.includes('预付') || s.includes('預付') || s.includes('prepa'))
+    return { method: 'prepaid', days: '' }
+  if (/后付|後付|月结|月結|账期|帳期|postpa|net/.test(s))
+    return { method: 'postpaid', days }
+  return { method: '', days: '' }
+}
+
+/** Display text of a lead's payment method, e.g. "后付费 · 账期 30 天". */
+export function paymentText(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  l: { payment_method: string; credit_days: number | null }
+): string {
+  const known = PAYMENT_METHODS.find((p) => p.value === l.payment_method)
+  if (!known) return l.payment_method // legacy free text, or empty
+  if (l.payment_method === 'postpaid' && l.credit_days != null)
+    return `${t(known.label)} · ${t('Credit period {{days}} days', { days: l.credit_days })}`
+  return t(known.label)
+}
 
 export function stageLabelKey(stage: string): string {
   return STAGES.find((s) => s.value === stage)?.label ?? stage

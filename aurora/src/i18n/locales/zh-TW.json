@@ -8475,7 +8475,6 @@
     "Unnamed": "未命名",
     "{{count}} matching models": "{{count}} 個模型匹配",
     "Models offered": "供應模型",
-    "Payment terms": "賬期 / 付款方式",
     "Unassigned": "未分配",
     "Stage": "階段",
     "Matched {{count}} customers": "已匹配 {{count}} 個客戶",
@@ -8510,7 +8509,6 @@
     "Settlement currency": "結算幣種",
     "Region / entity": "地區 / 主體",
     "e.g. Singapore entity, Hong Kong, mainland China": "如 新加坡主體、香港、國內",
-    "e.g. Prepaid, Net 30": "如 預付費、月結 30 天",
     "Choose a stage": "請選擇階段",
     "Customer code": "客戶編號",
     "Acceptable price %": "可接受價%",
@@ -8541,15 +8539,17 @@
     "Account pool": "號池",
     "Prepaid": "預付費",
     "Postpaid": "後付費",
-    "Net 15": "月結 15 天",
-    "Net 30": "月結 30 天",
-    "Net 60": "月結 60 天",
     "View business summary": "檢視業務資訊彙總",
     "Edit leads and allocations": "錄入線索與模型分配",
     "Manage business summary": "管理業務資訊彙總",
     "Edit leads and deals": "錄入線索與成交",
     "View supplier and customer leads and deal records, and export them as CSV.": "檢視供應商、客戶線索和成交記錄，並匯出 CSV。",
     "Add and edit leads, allocate supplier models to customers, and delete leads and deal records you created.": "新增和編輯線索、給客戶分配供應商模型，並可刪除自己錄入的線索和成交記錄。",
-    "Delete any lead or deal record.": "刪除任意線索和成交記錄。"
+    "Delete any lead or deal record.": "刪除任意線索和成交記錄。",
+    "Payment method": "付款方式",
+    "Credit period": "賬期",
+    "e.g. 30": "如 30",
+    "Credit period {{days}} days": "賬期 {{days}} 天",
+    "Please enter the credit period in days": "請填寫賬期天數（1–3650）"
   }
 }

@@ -29,6 +29,11 @@ var BdStages = []string{"contact", "confirm", "quote", "poc", "signing", "signed
 
 var bdCurrencies = []string{"USD", "USDT/USDC", "CNY", "HKD", "SGD"}
 
+const (
+	BdPaymentPrepaid  = "prepaid"
+	BdPaymentPostpaid = "postpaid"
+)
+
 var (
 	ErrBdNotFound     = errors.New("record not found")
 	ErrBdInvalidInput = errors.New("invalid input")
@@ -80,15 +85,20 @@ type BdLead struct {
 	Contact    string        `json:"contact" gorm:"size:128"`
 	ContactWay string        `json:"contact_way" gorm:"size:255"`
 	Region     string        `json:"region" gorm:"size:128"`
-	Terms      string        `json:"terms" gorm:"size:64"`
-	Stage      string        `json:"stage" gorm:"size:16;index"`
-	OwnerId    int           `json:"owner_id" gorm:"index"`
-	OwnerName  string        `json:"owner_name" gorm:"size:64"`
-	Note       string        `json:"note" gorm:"type:text"`
-	CreatedBy  int           `json:"created_by" gorm:"index"`
-	UpdatedBy  int           `json:"updated_by"`
-	CreatedAt  int64         `json:"created_at"`
-	UpdatedAt  int64         `json:"updated_at"`
+	// PaymentMethod is "prepaid" or "postpaid" (empty when unknown). The
+	// column keeps its original name; rows saved before the field became a
+	// choice may still hold free text, which is shown as is.
+	PaymentMethod string `json:"payment_method" gorm:"column:terms;size:64"`
+	// CreditDays is the postpaid credit period (账期) in days.
+	CreditDays *int   `json:"credit_days"`
+	Stage      string `json:"stage" gorm:"size:16;index"`
+	OwnerId    int    `json:"owner_id" gorm:"index"`
+	OwnerName  string `json:"owner_name" gorm:"size:64"`
+	Note       string `json:"note" gorm:"type:text"`
+	CreatedBy  int    `json:"created_by" gorm:"index"`
+	UpdatedBy  int    `json:"updated_by"`
+	CreatedAt  int64  `json:"created_at"`
+	UpdatedAt  int64  `json:"updated_at"`
 }
 
 func (BdLead) TableName() string { return "bd_leads" }
@@ -296,7 +306,16 @@ func normalizeBdLead(l *BdLead) error {
 	l.Contact = bdClip(l.Contact, 128)
 	l.ContactWay = bdClip(l.ContactWay, 255)
 	l.Region = bdClip(l.Region, 128)
-	l.Terms = bdClip(l.Terms, 64)
+	switch l.PaymentMethod {
+	case "", BdPaymentPrepaid:
+		l.CreditDays = nil
+	case BdPaymentPostpaid:
+		if l.CreditDays == nil || *l.CreditDays < 1 || *l.CreditDays > 3650 {
+			return bdInvalid("postpaid needs a credit period of 1 to 3650 days")
+		}
+	default:
+		return bdInvalid("payment method must be prepaid or postpaid")
+	}
 	l.Note = bdClip(l.Note, 4000)
 	return nil
 }

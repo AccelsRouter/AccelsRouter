@@ -21,7 +21,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -37,8 +37,6 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
-
 import {
   deleteBdAllocation,
   saveBdAllocation,

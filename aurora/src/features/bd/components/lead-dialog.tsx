@@ -21,7 +21,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -33,8 +33,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
-
 import {
   deleteBdLead,
   saveBdLead,
@@ -48,7 +46,8 @@ import {
   makeCodeOf,
   MODEL_CLASS_KEYS,
   STAGES,
-  TERM_KEYS,
+  PAYMENT_METHODS,
+  parseLegacyPayment,
   uniq,
 } from '../lib'
 import { Field, numOrNull, PercentInput, SuggestInput } from './suggest-input'
@@ -67,7 +66,8 @@ type Form = {
   contact: string
   contact_way: string
   region: string
-  terms: string
+  payment_method: string
+  credit_days: string
   stage: string
   owner_id: string
   note: string
@@ -87,6 +87,8 @@ const toFormModel = (m: BdLeadModel): FormModel => ({
 
 function toForm(lead: BdLead | null, myId: number, meta: BdMeta): Form {
   const meIsOwner = meta.owners.some((o) => o.id === myId)
+  const known = PAYMENT_METHODS.some((p) => p.value === lead?.payment_method)
+  const legacy = parseLegacyPayment(lead?.payment_method ?? '')
   return {
     company: lead?.company ?? '',
     models: lead?.models.length ? lead.models.map(toFormModel) : [emptyModel()],
@@ -94,7 +96,9 @@ function toForm(lead: BdLead | null, myId: number, meta: BdMeta): Form {
     contact: lead?.contact ?? '',
     contact_way: lead?.contact_way ?? '',
     region: lead?.region ?? '',
-    terms: lead?.terms ?? '',
+    payment_method: known ? lead!.payment_method : legacy.method,
+    credit_days:
+      lead?.credit_days != null ? String(lead.credit_days) : legacy.days,
     stage: lead?.stage ?? '', // required; no default
     owner_id: String(lead ? lead.owner_id : meIsOwner ? myId : 0),
     note: lead?.note ?? '',
@@ -172,7 +176,9 @@ export function LeadDialog(props: {
         contact: f.contact.trim(),
         contact_way: f.contact_way.trim(),
         region: f.region.trim(),
-        terms: f.terms.trim(),
+        payment_method: f.payment_method,
+        credit_days:
+          f.payment_method === 'postpaid' ? numOrNull(f.credit_days) : null,
         stage: f.stage,
         owner_id: Number(f.owner_id) || 0,
         note: f.note.trim(),
@@ -209,6 +215,13 @@ export function LeadDialog(props: {
     if (!f.models.some((m) => m.model.trim())) {
       setError(t('Please add at least one model'))
       return
+    }
+    if (f.payment_method === 'postpaid') {
+      const days = Number(f.credit_days)
+      if (!Number.isInteger(days) || days < 1 || days > 3650) {
+        setError(t('Please enter the credit period in days'))
+        return
+      }
     }
     if (!f.stage) {
       setError(t('Please choose a stage'))
@@ -396,17 +409,38 @@ export function LeadDialog(props: {
                 )}
               />
             </Field>
-            <Field label={t('Payment terms')}>
-              <SuggestInput
-                value={f.terms}
-                onChange={(e) => set('terms', e.target.value)}
-                options={uniq([
-                  ...TERM_KEYS.map((k) => t(k)),
-                  ...props.leads.map((l) => l.terms),
-                ])}
-                placeholder={t('e.g. Prepaid, Net 30')}
-              />
+            <Field label={t('Payment method')}>
+              <NativeSelect
+                value={f.payment_method}
+                onChange={(e) => set('payment_method', e.target.value)}
+              >
+                <NativeSelectOption value=''>{t('Not set')}</NativeSelectOption>
+                {PAYMENT_METHODS.map((p) => (
+                  <NativeSelectOption key={p.value} value={p.value}>
+                    {t(p.label)}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
             </Field>
+            {f.payment_method === 'postpaid' && (
+              <Field label={t('Credit period')} required>
+                <div className='relative'>
+                  <Input
+                    type='number'
+                    min={1}
+                    max={3650}
+                    step={1}
+                    className='pr-9'
+                    value={f.credit_days}
+                    onChange={(e) => set('credit_days', e.target.value)}
+                    placeholder={t('e.g. 30')}
+                  />
+                  <span className='text-muted-foreground pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-sm'>
+                    {t('days')}
+                  </span>
+                </div>
+              </Field>
+            )}
             <Field label={t('Stage')} required>
               <NativeSelect
                 value={f.stage}

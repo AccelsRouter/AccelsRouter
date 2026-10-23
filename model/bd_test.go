@@ -19,6 +19,8 @@ func setupBdTables(t *testing.T) {
 
 func bdF(v float64) *float64 { return &v }
 
+func bdI(v int) *int { return &v }
+
 func bdModels(names ...string) []BdLeadModel {
 	out := make([]BdLeadModel, len(names))
 	for i, n := range names {
@@ -83,6 +85,9 @@ func TestBdLeadModels(t *testing.T) {
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: []BdLeadModel{{Model: "m", PriceRate: bdF(300)}}}), "price range")
 	invalid(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m")}, "stage is required")
 	invalid(&BdLead{Side: BdSideBuy, Company: "A", Stage: "nope", Models: bdModels("m")}, "unknown stage")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: "月结"}), "unknown payment method")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: BdPaymentPostpaid}), "postpaid needs credit days")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: BdPaymentPostpaid, CreditDays: bdI(0)}), "credit days must be positive")
 
 	l := &BdLead{Side: BdSideBuy, Company: "A", Stage: "signed", Currencies: []string{"USD", "BTC", "USD", "CNY"},
 		Models: []BdLeadModel{{Model: "Claude-Sonnet-4.6", ModelClass: "@AWS", PriceRate: bdF(70)}, {Model: "claude sonnet 4.6", ModelClass: "@Azure"}, {Model: "gemini 2.5 pro"}}}
@@ -97,6 +102,20 @@ func TestBdLeadModels(t *testing.T) {
 	assert.Equal(t, "gemini 2.5 pro", got.Models[2].Model, "order is kept")
 	assert.Equal(t, []string{"USD", "CNY"}, got.Currencies)
 	assert.Equal(t, "signed", got.Stage)
+
+	// Credit days are kept for postpaid and dropped otherwise.
+	l.PaymentMethod, l.CreditDays = BdPaymentPostpaid, bdI(30)
+	require.NoError(t, SaveBdLead(l, 1))
+	got, err = GetBdLead(l.Id)
+	require.NoError(t, err)
+	assert.Equal(t, BdPaymentPostpaid, got.PaymentMethod)
+	require.NotNil(t, got.CreditDays)
+	assert.Equal(t, 30, *got.CreditDays)
+	l.PaymentMethod = BdPaymentPrepaid
+	require.NoError(t, SaveBdLead(l, 1))
+	got, err = GetBdLead(l.Id)
+	require.NoError(t, err)
+	assert.Nil(t, got.CreditDays)
 
 	// Customers list the models they need, with an optional expected price.
 	c := ok(&BdLead{Side: BdSideSell, Company: "C", Models: []BdLeadModel{{Model: "m", ModelClass: "@AWS", PriceRate: bdF(80)}, {Model: "n"}}})
