@@ -25,6 +25,7 @@ export const STAGES = [
   { value: 'quote', label: 'Quote / negotiation' },
   { value: 'poc', label: 'Testing / POC' },
   { value: 'signing', label: 'Contracting' },
+  { value: 'signed', label: 'Signed' },
   { value: 'won', label: 'Closed won' },
   { value: 'hold', label: 'On hold' },
 ] as const
@@ -58,21 +59,26 @@ export function modelKey(s: string): string {
 
 export const modelNames = (l: BdLead) => l.models.map((m) => m.model)
 
-/** For each counterparty lead linked to `lead` through allocations, the
- * keys of the models allocated between them. */
-export function allocatedWith(
-  lead: BdLead,
-  allocations: BdAllocation[]
-): Map<number, Set<string>> {
-  const out = new Map<number, Set<string>>()
-  for (const a of allocations) {
-    const other =
-      lead.side === 'buy'
-        ? a.supplier_lead_id === lead.id && a.customer_lead_id
-        : a.customer_lead_id === lead.id && a.supplier_lead_id
-    if (!other) continue
-    if (!out.has(other)) out.set(other, new Set())
-    out.get(other)!.add(modelKey(a.model))
+/** Models two leads have in common (by modelKey), each with the spread
+ * (customer's expected price − supplier's supply price) when both prices are
+ * known. Leads on hold match nothing. */
+export function sharedModels(a: BdLead, b: BdLead): Map<string, number | null> {
+  const out = new Map<string, number | null>()
+  if (a.stage === 'hold' || b.stage === 'hold') return out
+  const priceOf = (l: BdLead) => {
+    const m = new Map<string, number | null>()
+    for (const x of l.models) {
+      const k = modelKey(x.model)
+      if (!m.has(k) || m.get(k) == null) m.set(k, x.price_rate)
+    }
+    return m
+  }
+  const pa = priceOf(a)
+  const pb = priceOf(b)
+  const [supply, expected] = a.side === 'buy' ? [pa, pb] : [pb, pa]
+  for (const k of pa.keys()) {
+    if (pb.has(k))
+      out.set(k, spreadOf(expected.get(k) ?? null, supply.get(k) ?? null))
   }
   return out
 }

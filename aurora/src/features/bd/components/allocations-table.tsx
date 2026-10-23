@@ -70,7 +70,7 @@ export function AllocationsTable(props: {
                 {props.hasAny
                   ? t('No records match the query')
                   : t(
-                      'No allocation records yet. Click "Allocate supplier model" on a customer card.'
+                      'No deal records yet. Click "Allocate supplier model" on a customer card.'
                     )}
               </td>
             </tr>

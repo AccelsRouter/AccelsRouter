@@ -25,7 +25,7 @@ const (
 
 // Lead stages, in pipeline order. "hold" (搁置) is excluded from matching
 // and from new allocations.
-var BdStages = []string{"contact", "confirm", "quote", "poc", "signing", "won", "hold"}
+var BdStages = []string{"contact", "confirm", "quote", "poc", "signing", "signed", "won", "hold"}
 
 var bdCurrencies = []string{"USD", "USDT/USDC", "CNY", "HKD", "SGD"}
 
@@ -54,14 +54,15 @@ type BdCompany struct {
 
 func (BdCompany) TableName() string { return "bd_companies" }
 
-// BdLeadModel is one model a supplier offers, with its listed supply price.
+// BdLeadModel is one model a supplier offers (with its supply price) or a
+// customer needs (with its expected price).
 type BdLeadModel struct {
 	Id         int    `json:"id" gorm:"primaryKey"`
 	LeadId     int    `json:"lead_id" gorm:"index;not null"`
 	Model      string `json:"model" gorm:"size:128;not null;index"`
 	ModelClass string `json:"model_class" gorm:"size:64"`
-	// Supply price, % of the official list price (optional; the agreed price
-	// is recorded per allocation).
+	// % of the official list price, optional: the supplier's supply price or
+	// the customer's expected price. The agreed prices are recorded per deal.
 	PriceRate *float64 `json:"price_rate"`
 	Sort      int      `json:"sort"`
 }
@@ -253,9 +254,6 @@ func normalizeBdLead(l *BdLead) error {
 	if l.Company == "" {
 		return bdInvalid("company is required")
 	}
-	if l.Side == BdSideSell {
-		l.Models = nil // customers carry no model list
-	}
 	models := make([]BdLeadModel, 0, len(l.Models))
 	seen := map[string]bool{}
 	for _, m := range l.Models {
@@ -274,7 +272,7 @@ func normalizeBdLead(l *BdLead) error {
 		seen[key] = true
 		models = append(models, m)
 	}
-	if l.Side == BdSideBuy && len(models) == 0 {
+	if len(models) == 0 {
 		return bdInvalid("at least one model is required")
 	}
 	if len(models) > 100 {
@@ -282,7 +280,7 @@ func normalizeBdLead(l *BdLead) error {
 	}
 	l.Models = models
 	if l.Stage == "" {
-		l.Stage = "contact"
+		return bdInvalid("stage is required")
 	}
 	if !bdContains(BdStages, l.Stage) {
 		return bdInvalid("unknown stage %q", l.Stage)

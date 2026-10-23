@@ -194,7 +194,7 @@ export function BusinessSummary() {
     const date = today()
     if (tab === 'allocations') {
       downloadCsv(
-        `Accels_allocations_${date}.csv`,
+        `Accels_deals_${date}.csv`,
         [
           ['alloc_date', t('Allocation date')],
           ['customer_code', t('Customer code')],
@@ -226,7 +226,7 @@ export function BusinessSummary() {
         ['company', t('Company')],
         ['model', t('Model')],
         ['model_class', t('Model class')],
-        ['price_rate', t('Supply price %')],
+        ['price_rate', t('Price % (supply / expected)')],
         ['currency', t('Settlement currency')],
         ['contact', t('Contact person')],
         ['contact_way', t('Contact info')],
@@ -277,7 +277,7 @@ export function BusinessSummary() {
           <div className='flex flex-wrap gap-5'>
             <Stat label={t('Suppliers')} value={nSuppliers} tone='buy' />
             <Stat label={t('Customers')} value={nCustomers} tone='sell' />
-            <Stat label={t('Model allocations')} value={allocations.length} />
+            <Stat label={t('Deal records')} value={allocations.length} />
           </div>
 
           {loadError && (
@@ -293,7 +293,7 @@ export function BusinessSummary() {
               <TabsList>
                 <TabsTrigger value='board'>{t('Lead board')}</TabsTrigger>
                 <TabsTrigger value='allocations'>
-                  {t('Model allocation records')}
+                  {t('Deal records')}
                 </TabsTrigger>
               </TabsList>
               {tab === 'board' && (

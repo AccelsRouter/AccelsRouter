@@ -95,7 +95,7 @@ function toForm(lead: BdLead | null, myId: number, meta: BdMeta): Form {
     contact_way: lead?.contact_way ?? '',
     region: lead?.region ?? '',
     terms: lead?.terms ?? '',
-    stage: lead?.stage ?? 'contact',
+    stage: lead?.stage ?? '', // required; no default
     owner_id: String(lead ? lead.owner_id : meIsOwner ? myId : 0),
     note: lead?.note ?? '',
   }
@@ -161,15 +161,13 @@ export function LeadDialog(props: {
       saveBdLead(lead?.id ?? null, {
         side,
         company: f.company.trim(),
-        models: isBuy
-          ? f.models
-              .map((m) => ({
-                model: m.model.trim(),
-                model_class: m.model_class.trim(),
-                price_rate: numOrNull(m.price),
-              }))
-              .filter((m) => m.model)
-          : [],
+        models: f.models
+          .map((m) => ({
+            model: m.model.trim(),
+            model_class: m.model_class.trim(),
+            price_rate: numOrNull(m.price),
+          }))
+          .filter((m) => m.model),
         currency: f.currency,
         contact: f.contact.trim(),
         contact_way: f.contact_way.trim(),
@@ -208,8 +206,12 @@ export function LeadDialog(props: {
       )
       return
     }
-    if (isBuy && !f.models.some((m) => m.model.trim())) {
+    if (!f.models.some((m) => m.model.trim())) {
       setError(t('Please add at least one model'))
+      return
+    }
+    if (!f.stage) {
+      setError(t('Please choose a stage'))
       return
     }
     setError('')
@@ -262,73 +264,88 @@ export function LeadDialog(props: {
               />
             </Field>
 
-            {isBuy && (
-              <div className='flex flex-col gap-2 sm:col-span-2'>
-                <div className='flex items-center justify-between'>
-                  <span className='text-muted-foreground text-xs font-medium'>
-                    {t('Models offered')}
-                    <span className='text-destructive'> *</span>
+            <div className='flex flex-col gap-2 sm:col-span-2'>
+              <div className='flex items-center justify-between'>
+                <span className='text-muted-foreground text-xs font-medium'>
+                  {isBuy ? t('Models offered') : t('Models needed')}
+                  <span className='text-destructive'> *</span>
+                  <span className='ml-2 font-normal'>
+                    {isBuy
+                      ? t(
+                          'Model is required; class and supply price are optional'
+                        )
+                      : t(
+                          'Model is required; class and expected price are optional'
+                        )}
                   </span>
+                </span>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant='outline'
+                  className='h-7 text-xs'
+                  onClick={() => set('models', [...f.models, emptyModel()])}
+                >
+                  <Plus className='size-3.5' />
+                  {t('Add model')}
+                </Button>
+              </div>
+              {f.models.map((m, i) => (
+                <div
+                  key={i}
+                  className='grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[2fr_1fr_1fr_auto]'
+                >
+                  <SuggestInput
+                    aria-label={t('Model')}
+                    value={m.model}
+                    onChange={(e) => setModel(i, { model: e.target.value })}
+                    options={modelOptions}
+                    placeholder='claude sonnet 4.6'
+                  />
+                  <SuggestInput
+                    aria-label={t('Model class')}
+                    className='order-3 sm:order-none'
+                    value={m.model_class}
+                    onChange={(e) =>
+                      setModel(i, { model_class: e.target.value })
+                    }
+                    options={classOptions}
+                    placeholder={t('Model class')}
+                  />
+                  <PercentInput
+                    aria-label={
+                      isBuy
+                        ? t('Supply price (% of list price)')
+                        : t('Expected price (% of list price)')
+                    }
+                    className='order-4 sm:order-none'
+                    value={m.price}
+                    onChange={(e) => setModel(i, { price: e.target.value })}
+                    placeholder={
+                      isBuy
+                        ? t('Supply price, e.g. 70')
+                        : t('Expected price, e.g. 85')
+                    }
+                  />
                   <Button
                     type='button'
-                    size='sm'
-                    variant='outline'
-                    className='h-7 text-xs'
-                    onClick={() => set('models', [...f.models, emptyModel()])}
+                    size='icon'
+                    variant='ghost'
+                    className='order-2 size-9 sm:order-none'
+                    aria-label={t('Remove')}
+                    disabled={f.models.length === 1}
+                    onClick={() =>
+                      set(
+                        'models',
+                        f.models.filter((_, j) => j !== i)
+                      )
+                    }
                   >
-                    <Plus className='size-3.5' />
-                    {t('Add model')}
+                    <X className='size-4' />
                   </Button>
                 </div>
-                {f.models.map((m, i) => (
-                  <div
-                    key={i}
-                    className='grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[2fr_1fr_1fr_auto]'
-                  >
-                    <SuggestInput
-                      aria-label={t('Model')}
-                      value={m.model}
-                      onChange={(e) => setModel(i, { model: e.target.value })}
-                      options={modelOptions}
-                      placeholder='claude sonnet 4.6'
-                    />
-                    <SuggestInput
-                      aria-label={t('Model class')}
-                      className='order-3 sm:order-none'
-                      value={m.model_class}
-                      onChange={(e) =>
-                        setModel(i, { model_class: e.target.value })
-                      }
-                      options={classOptions}
-                      placeholder={t('Model class')}
-                    />
-                    <PercentInput
-                      aria-label={t('Supply price (% of list price)')}
-                      className='order-4 sm:order-none'
-                      value={m.price}
-                      onChange={(e) => setModel(i, { price: e.target.value })}
-                      placeholder={t('Supply price, e.g. 70')}
-                    />
-                    <Button
-                      type='button'
-                      size='icon'
-                      variant='ghost'
-                      className='order-2 size-9 sm:order-none'
-                      aria-label={t('Remove')}
-                      disabled={f.models.length === 1}
-                      onClick={() =>
-                        set(
-                          'models',
-                          f.models.filter((_, j) => j !== i)
-                        )
-                      }
-                    >
-                      <X className='size-4' />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
+              ))}
+            </div>
             <Field label={t('Contact person')}>
               <Input
                 value={f.contact}
@@ -390,11 +407,15 @@ export function LeadDialog(props: {
                 placeholder={t('e.g. Prepaid, Net 30')}
               />
             </Field>
-            <Field label={t('Stage')}>
+            <Field label={t('Stage')} required>
               <NativeSelect
                 value={f.stage}
                 onChange={(e) => set('stage', e.target.value)}
+                aria-invalid={!!error && !f.stage}
               >
+                <NativeSelectOption value='' disabled>
+                  {t('Choose a stage')}
+                </NativeSelectOption>
                 {STAGES.map((s) => (
                   <NativeSelectOption key={s.value} value={s.value}>
                     {t(s.label)}

@@ -56,6 +56,7 @@ type Option = {
   model: string
   modelClass: string
   price: number | null // the supplier's listed supply price
+  needed: boolean // the customer lists this model
   taken: boolean // already allocated to this customer
 }
 
@@ -117,6 +118,7 @@ export function AllocationDialog(props: {
         )
         .map((a) => keyOf(a.supplier_lead_id, a.model))
     )
+    const needed = new Set(customer.models.map((m) => modelKey(m.model)))
     const groups: { supplier: BdLead; options: Option[] }[] = []
     const byKey = new Map<string, Option>()
     const suppliers = props.leads
@@ -135,12 +137,21 @@ export function AllocationDialog(props: {
           modelClass: m.model_class,
           price: m.price_rate,
           taken: taken.has(keyOf(s.id, m.model)),
+          needed: needed.has(modelKey(m.model)),
         }
         byKey.set(o.key, o)
         return o
       })
+      // The customer's models first within a supplier.
+      options.sort((a, b) => Number(b.needed) - Number(a.needed))
       if (options.length) groups.push({ supplier: s, options })
     }
+    // Suppliers offering a model the customer needs come first.
+    groups.sort(
+      (a, b) =>
+        Number(b.options.some((o) => o.needed)) -
+        Number(a.options.some((o) => o.needed))
+    )
     return { groups, byKey }
   }, [props.leads, props.allocations, customer, allocation])
 
@@ -164,7 +175,14 @@ export function AllocationDialog(props: {
       const suggested = o.price ?? last?.supply_rate
       if (suggested != null) supply = String(suggested)
     }
-    setF({ ...f, pick: key, supply })
+    // ...and the customer's expected price for that model.
+    let sale = f.sale
+    const expected = o
+      ? customer.models.find((m) => modelKey(m.model) === modelKey(o.model))
+          ?.price_rate
+      : null
+    if (expected != null) sale = String(expected)
+    setF({ ...f, pick: key, supply, sale })
   }
 
   const done = () => {
@@ -223,9 +241,11 @@ export function AllocationDialog(props: {
 
   const option = (o: Option) => (
     <NativeSelectOption key={o.key} value={o.key} disabled={o.taken}>
-      {`${o.model}${o.modelClass ? ` ${o.modelClass}` : ''}${
-        o.price != null ? ` · ${o.price}%` : ''
-      }${o.taken ? ` (${t('already allocated')})` : ''}`}
+      {`${o.needed ? '✓ ' : ''}${o.model}${
+        o.modelClass ? ` ${o.modelClass}` : ''
+      }${o.price != null ? ` · ${o.price}%` : ''}${
+        o.taken ? ` (${t('already allocated')})` : ''
+      }`}
     </NativeSelectOption>
   )
 
@@ -247,6 +267,19 @@ export function AllocationDialog(props: {
               {customer.code}
             </span>
             <b>{customer.company}</b>
+            {customer.models.length > 0 && (
+              <div className='text-muted-foreground mt-1 text-xs'>
+                {t('Models needed')}:{' '}
+                {customer.models
+                  .map(
+                    (m) =>
+                      m.model +
+                      (m.model_class ? ` ${m.model_class}` : '') +
+                      (m.price_rate != null ? ` · ${m.price_rate}%` : '')
+                  )
+                  .join(', ')}
+              </div>
+            )}
           </div>
 
           <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
@@ -267,6 +300,11 @@ export function AllocationDialog(props: {
                   </NativeSelectOptGroup>
                 ))}
               </NativeSelect>
+              {groups.some((g) => g.options.some((o) => o.needed)) && (
+                <span className='text-muted-foreground text-[11px]'>
+                  {t('✓ marks models the customer needs')}
+                </span>
+              )}
               {!groups.length && (
                 <span className='text-muted-foreground text-[11px]'>
                   {t('No supplier models yet. Add a supplier first.')}

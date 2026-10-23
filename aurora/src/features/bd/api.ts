@@ -28,12 +28,13 @@ export type BdLeadModel = {
   id?: number
   model: string
   model_class: string
-  /** Listed supply price, % of the official list price. */
+  /** % of the official list price: a supplier's supply price or a
+   * customer's expected price (optional). */
   price_rate: number | null
 }
 
 /** A supplier (side "buy", with the models it offers) or a customer (side
- * "sell", no model list). */
+ * "sell", with the models it needs). */
 export type BdLead = {
   id: number
   side: BdSide
