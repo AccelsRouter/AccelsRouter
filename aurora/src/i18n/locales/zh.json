@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Username must be at least {{min}} characters": "用户名至少需要 {{min}} 个字符",
+    "Username must be at least 3 characters": "用户名至少需要 3 个字符",
     "{{count}} outside this view": "其中 {{count}} 个不在当前视图",
     "Allow querying user quota": "允许查询用户额度",
     "Ascending": "升序",

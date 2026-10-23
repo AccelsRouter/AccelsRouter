@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Username must be at least {{min}} characters": "Username must be at least {{min}} characters",
+    "Username must be at least 3 characters": "Username must be at least 3 characters",
     "{{count}} outside this view": "{{count}} outside this view",
     "Allow querying user quota": "Allow querying user quota",
     "Ascending": "Ascending",
