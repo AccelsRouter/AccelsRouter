@@ -17,6 +17,10 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 		codeStr = string(code[0])
 	}
 	userId := c.GetInt("id")
+	// The server log keeps the full message; the client gets it without
+	// vendor and routing identifiers.
+	fullMessage := message
+	message = common.ClientFacingMessage(message)
 	_, preparedPluginRoute := c.Get(pluginruntime.ContextKeyRouteRequest)
 	if !preparedPluginRoute || !RespondTaskPluginError(c, &dto.TaskError{
 		Code:       codeStr,
@@ -32,7 +36,7 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 		})
 	}
 	c.Abort()
-	logger.LogError(c.Request.Context(), common.LogText("user %d | %s", userId, message))
+	logger.LogError(c.Request.Context(), common.LogText("user %d | %s", userId, fullMessage))
 }
 
 // invalidRequestStatus is the status of a request whose body could not be

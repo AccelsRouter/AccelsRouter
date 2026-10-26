@@ -28,8 +28,36 @@ func CloseResponseBodyGracefully(httpResponse *http.Response) {
 // (managed separately) and X-Oneapi-Request-Id (to preserve the local instance
 // ID). When the upstream header is X-Oneapi-Request-Id, the value is captured
 // into the Gin context for later logging.
+// upstreamIdentityHeaders are response headers that name the upstream vendor
+// or its infrastructure; they are logged nowhere and never forwarded to the
+// client (fork). Prefixes end with "-".
+var upstreamIdentityHeaders = []string{
+	"server", "via", "alt-svc", "set-cookie", "report-to", "nel", "x-powered-by",
+	"request-id", "x-request-id", "cf-ray", "cf-cache-status",
+	"openai-organization", "openai-project", "openai-version", "openai-processing-ms",
+	"anthropic-organization-id", "x-envoy-upstream-service-time",
+	"x-new-api-", "x-oneapi-", "x-amz-", "x-amzn-", "x-goog-", "x-ms-", "x-azure-", "x-vercel-",
+}
+
+func isUpstreamIdentityHeader(name string) bool {
+	lower := strings.ToLower(name)
+	for _, candidate := range upstreamIdentityHeaders {
+		if strings.HasSuffix(candidate, "-") {
+			if strings.HasPrefix(lower, candidate) {
+				return true
+			}
+		} else if lower == candidate {
+			return true
+		}
+	}
+	return false
+}
+
 func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
 	if strings.EqualFold(k, "Content-Length") {
+		return false
+	}
+	if isUpstreamIdentityHeader(k) {
 		return false
 	}
 	if strings.EqualFold(k, common.RequestIdKey) {

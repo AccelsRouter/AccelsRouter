@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useId, type ComponentProps, type ReactNode } from 'react'
-
 import { Input } from '@/components/ui/input'
 
 /** Free-text input with native datalist suggestions (custom values allowed). */

@@ -278,3 +278,25 @@ func TestRequestPolicyEventsReachLogAdminInfo(t *testing.T) {
 	AppendRelayLogAdminInfo(untouched, nil, other)
 	assert.NotContains(t, other.Snapshot()["admin_info"], "request_policy", "requests without decisions do not carry an empty record")
 }
+
+// Upstream response headers that name the vendor or its edge never reach the
+// client; content headers and rate-limit hints still do.
+func TestShouldCopyUpstreamHeaderDropsVendorIdentity(t *testing.T) {
+	for name, want := range map[string]bool{
+		"Content-Type":              true,
+		"Content-Encoding":          true,
+		"Cache-Control":             true,
+		"X-RateLimit-Remaining":     true,
+		"Content-Length":            false,
+		"Server":                    false,
+		"CF-Ray":                    false,
+		"OpenAI-Organization":       false,
+		"openai-processing-ms":      false,
+		"X-Request-Id":              false,
+		"X-New-Api-Version":         false,
+		"x-amzn-requestid":          false,
+		"Anthropic-Organization-Id": false,
+	} {
+		assert.Equal(t, want, ShouldCopyUpstreamHeader(nil, name, []string{"v"}), name)
+	}
+}

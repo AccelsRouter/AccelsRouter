@@ -19,6 +19,8 @@ func setupBdTables(t *testing.T) {
 
 func bdF(v float64) *float64 { return &v }
 
+func bdI(v int) *int { return &v }
+
 func bdModels(names ...string) []BdLeadModel {
 	out := make([]BdLeadModel, len(names))
 	for i, n := range names {
@@ -29,7 +31,7 @@ func bdModels(names ...string) []BdLeadModel {
 
 func mkBdLead(t *testing.T, side, company string, models ...string) *BdLead {
 	t.Helper()
-	l := &BdLead{Side: side, Company: company, Models: bdModels(models...)}
+	l := &BdLead{Side: side, Company: company, Stage: "contact", Models: bdModels(models...)}
 	require.NoError(t, SaveBdLead(l, 1))
 	return l
 }
@@ -65,15 +67,29 @@ func TestBdLeadCodesPerCompany(t *testing.T) {
 
 func TestBdLeadModels(t *testing.T) {
 	setupBdTables(t)
-	assert.True(t, errors.Is(SaveBdLead(&BdLead{Side: "x", Company: "A", Models: bdModels("m")}, 1), ErrBdInvalidInput))
-	assert.True(t, errors.Is(SaveBdLead(&BdLead{Side: BdSideBuy, Company: " ", Models: bdModels("m")}, 1), ErrBdInvalidInput))
-	assert.True(t, errors.Is(SaveBdLead(&BdLead{Side: BdSideBuy, Company: "A"}, 1), ErrBdInvalidInput), "at least one model")
-	assert.True(t, errors.Is(SaveBdLead(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels(" ", "")}, 1), ErrBdInvalidInput))
-	assert.True(t, errors.Is(SaveBdLead(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("Claude-Sonnet-4.6", "claude sonnet 4.6")}, 1), ErrBdInvalidInput), "duplicate after normalization")
+	ok := func(l *BdLead) *BdLead {
+		if l.Stage == "" {
+			l.Stage = "contact"
+		}
+		return l
+	}
+	invalid := func(l *BdLead, msg string) {
+		assert.True(t, errors.Is(SaveBdLead(l, 1), ErrBdInvalidInput), msg)
+	}
+	invalid(ok(&BdLead{Side: "x", Company: "A", Models: bdModels("m")}), "side")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: " ", Models: bdModels("m")}), "company")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A"}), "supplier needs a model")
+	invalid(ok(&BdLead{Side: BdSideSell, Company: "A"}), "customer needs a model")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels(" ", "")}), "blank models")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("Claude-Sonnet-4.6", "claude sonnet 4.6")}), "duplicate across spellings")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: []BdLeadModel{{Model: "m", PriceRate: bdF(300)}}}), "price range")
+	invalid(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m")}, "stage is required")
+	invalid(&BdLead{Side: BdSideBuy, Company: "A", Stage: "nope", Models: bdModels("m")}, "unknown stage")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: "月结"}), "unknown payment method")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: BdPaymentPostpaid}), "postpaid needs credit days")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: BdPaymentPostpaid, CreditDays: bdI(0)}), "credit days must be positive")
 
-	assert.True(t, errors.Is(SaveBdLead(&BdLead{Side: BdSideBuy, Company: "A", Models: []BdLeadModel{{Model: "m", PriceRate: bdF(300)}}}, 1), ErrBdInvalidInput))
-
-	l := &BdLead{Side: BdSideBuy, Company: "A", Currencies: []string{"USD", "BTC", "USD", "CNY"},
+	l := &BdLead{Side: BdSideBuy, Company: "A", Stage: "signed", Currencies: []string{"USD", "BTC", "USD", "CNY"},
 		Models: []BdLeadModel{{Model: "Claude-Sonnet-4.6", ModelClass: "@AWS", PriceRate: bdF(70)}, {Model: "claude sonnet 4.6", ModelClass: "@Azure"}, {Model: "gemini 2.5 pro"}}}
 	require.NoError(t, SaveBdLead(l, 1))
 	got, err := GetBdLead(l.Id)
@@ -83,16 +99,32 @@ func TestBdLeadModels(t *testing.T) {
 	assert.Equal(t, "@AWS", got.Models[0].ModelClass)
 	assert.Equal(t, 70.0, *got.Models[0].PriceRate)
 	assert.Nil(t, got.Models[1].PriceRate)
+	assert.Equal(t, "gemini 2.5 pro", got.Models[2].Model, "order is kept")
+	assert.Equal(t, []string{"USD", "CNY"}, got.Currencies)
+	assert.Equal(t, "signed", got.Stage)
 
-	c := &BdLead{Side: BdSideSell, Company: "C", Models: []BdLeadModel{{Model: "m", PriceRate: bdF(80)}}}
+	// Credit days are kept for postpaid and dropped otherwise.
+	l.PaymentMethod, l.CreditDays = BdPaymentPostpaid, bdI(30)
+	require.NoError(t, SaveBdLead(l, 1))
+	got, err = GetBdLead(l.Id)
+	require.NoError(t, err)
+	assert.Equal(t, BdPaymentPostpaid, got.PaymentMethod)
+	require.NotNil(t, got.CreditDays)
+	assert.Equal(t, 30, *got.CreditDays)
+	l.PaymentMethod = BdPaymentPrepaid
+	require.NoError(t, SaveBdLead(l, 1))
+	got, err = GetBdLead(l.Id)
+	require.NoError(t, err)
+	assert.Nil(t, got.CreditDays)
+
+	// Customers list the models they need, with an optional expected price.
+	c := ok(&BdLead{Side: BdSideSell, Company: "C", Models: []BdLeadModel{{Model: "m", ModelClass: "@AWS", PriceRate: bdF(80)}, {Model: "n"}}})
 	require.NoError(t, SaveBdLead(c, 1))
 	gotC, err := GetBdLead(c.Id)
 	require.NoError(t, err)
-	assert.Empty(t, gotC.Models, "customers carry no models")
-	require.NoError(t, SaveBdLead(&BdLead{Side: BdSideSell, Company: "D"}, 1), "a customer needs no model")
-	assert.Equal(t, "gemini 2.5 pro", got.Models[2].Model, "order is kept")
-	assert.Equal(t, []string{"USD", "CNY"}, got.Currencies)
-	assert.Equal(t, "contact", got.Stage)
+	require.Len(t, gotC.Models, 2)
+	assert.Equal(t, 80.0, *gotC.Models[0].PriceRate)
+	assert.Nil(t, gotC.Models[1].PriceRate)
 
 	// Editing replaces the model list.
 	l.Models = bdModels("qwen3 max")
@@ -103,7 +135,7 @@ func TestBdLeadModels(t *testing.T) {
 	assert.Equal(t, "qwen3 max", got.Models[0].Model)
 	leads, err := ListBdLeads()
 	require.NoError(t, err)
-	assert.Len(t, leads, 3)
+	assert.Len(t, leads, 2)
 }
 
 func TestBdAllocations(t *testing.T) {

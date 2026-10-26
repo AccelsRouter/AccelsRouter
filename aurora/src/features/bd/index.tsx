@@ -27,15 +27,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-
-import { SectionPageLayout } from '@/components/layout'
+import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useAuthStore } from '@/stores/auth-store'
-
+import { SectionPageLayout } from '@/components/layout'
 import {
   getBdAllocations,
   getBdLeads,
@@ -52,6 +50,7 @@ import { SuggestInput } from './components/suggest-input'
 import {
   downloadCsv,
   makeCodeOf,
+  paymentText,
   norm,
   spreadOf,
   STAGES,
@@ -160,7 +159,7 @@ export function BusinessSummary() {
         l.contact,
         l.contact_way,
         l.region,
-        l.terms,
+        paymentText(t, l),
         l.note,
         l.owner_name,
       ]
@@ -194,7 +193,7 @@ export function BusinessSummary() {
     const date = today()
     if (tab === 'allocations') {
       downloadCsv(
-        `Accels_allocations_${date}.csv`,
+        `Accels_deals_${date}.csv`,
         [
           ['alloc_date', t('Allocation date')],
           ['customer_code', t('Customer code')],
@@ -226,12 +225,12 @@ export function BusinessSummary() {
         ['company', t('Company')],
         ['model', t('Model')],
         ['model_class', t('Model class')],
-        ['price_rate', t('Supply price %')],
+        ['price_rate', t('Price % (supply / expected)')],
         ['currency', t('Settlement currency')],
         ['contact', t('Contact person')],
         ['contact_way', t('Contact info')],
         ['region', t('Region / entity')],
-        ['terms', t('Payment terms')],
+        ['payment', t('Payment method')],
         ['stage', t('Stage')],
         ['owner_name', t('Person in charge')],
         ['note', t('Notes')],
@@ -241,6 +240,7 @@ export function BusinessSummary() {
           ...l,
           side: l.side === 'buy' ? t('Supplier') : t('Customer'),
           stage: t(stageLabelKey(l.stage)),
+          payment: paymentText(t, l),
         }
         // Suppliers: one row per model; customers: one row.
         return l.models.length
@@ -277,7 +277,7 @@ export function BusinessSummary() {
           <div className='flex flex-wrap gap-5'>
             <Stat label={t('Suppliers')} value={nSuppliers} tone='buy' />
             <Stat label={t('Customers')} value={nCustomers} tone='sell' />
-            <Stat label={t('Model allocations')} value={allocations.length} />
+            <Stat label={t('Deal records')} value={allocations.length} />
           </div>
 
           {loadError && (
@@ -293,7 +293,7 @@ export function BusinessSummary() {
               <TabsList>
                 <TabsTrigger value='board'>{t('Lead board')}</TabsTrigger>
                 <TabsTrigger value='allocations'>
-                  {t('Model allocation records')}
+                  {t('Deal records')}
                 </TabsTrigger>
               </TabsList>
               {tab === 'board' && (

@@ -17,23 +17,42 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
-
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-
+import { Button } from '@/components/ui/button'
 import type { BdAllocation, BdLead, BdSide } from '../api'
 import {
-  allocatedWith,
   byRecent,
   matchedCount,
   modelKey,
+  paymentText,
   pct,
+  sharedModels,
   stageLabelKey,
 } from '../lib'
 
-// undefined = nothing selected on the other side; null = selected lead has
-// no allocation with this one (dimmed); otherwise the allocated model keys.
-type Link = Set<string> | null | undefined
+// undefined = nothing selected on the other side; null = no model in common
+// with the selected lead (dimmed); otherwise the shared model keys, each with
+// its spread when both prices are known.
+type Link = Map<string, number | null> | null | undefined
+
+function SpreadTag(props: { spread: number | null | undefined }) {
+  const { t } = useTranslation()
+  if (props.spread == null) return null
+  const sp = props.spread
+  return (
+    <span
+      className={cn(
+        'ml-1 rounded px-1 font-mono text-[11px]',
+        sp > 0
+          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+          : 'bg-destructive/10 text-destructive'
+      )}
+      title={sp > 0 ? t('Spread') : t('Price inversion')}
+    >
+      {sp > 0 ? `+${sp}` : sp}
+    </span>
+  )
+}
 
 function LeadCard(props: {
   lead: BdLead
@@ -75,50 +94,56 @@ function LeadCard(props: {
         </h3>
         {link && (
           <span className='shrink-0 rounded bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300'>
-            {t('{{count}} models allocated', { count: link.size })}
+            {t('{{count}} matching models', { count: link.size })}
           </span>
         )}
       </div>
 
-      {isBuy && (
-        <div>
-          <div className='text-muted-foreground mb-1 text-[11px]'>
-            {t('Models offered')}
-          </div>
-          <div className='flex flex-wrap gap-1.5'>
-            {l.models.map((m) => (
-              <span
-                key={`${m.model}|${m.model_class}`}
-                className={cn(
-                  'rounded border px-1.5 py-0.5 text-xs',
-                  link?.has(modelKey(m.model))
-                    ? 'border-emerald-500/60 bg-emerald-500/10'
-                    : 'border-border'
-                )}
-              >
-                {m.model}
-                {m.model_class && (
-                  <span className='text-muted-foreground ml-1 text-[11px]'>
-                    {m.model_class}
-                  </span>
-                )}
-                {m.price_rate != null && (
-                  <span className='ml-1 font-mono text-[11px] text-sky-700 dark:text-sky-300'>
-                    {pct(m.price_rate)}
-                  </span>
-                )}
-              </span>
-            ))}
-          </div>
+      <div>
+        <div className='text-muted-foreground mb-1 text-[11px]'>
+          {isBuy ? t('Models offered') : t('Models needed')}
         </div>
-      )}
+        <div className='flex flex-wrap gap-1.5'>
+          {l.models.map((m) => (
+            <span
+              key={`${m.model}|${m.model_class}`}
+              className={cn(
+                'rounded border px-1.5 py-0.5 text-xs',
+                link?.has(modelKey(m.model))
+                  ? 'border-emerald-500/60 bg-emerald-500/10'
+                  : 'border-border'
+              )}
+            >
+              {m.model}
+              {m.model_class && (
+                <span className='text-muted-foreground ml-1 text-[11px]'>
+                  {m.model_class}
+                </span>
+              )}
+              {m.price_rate != null && (
+                <span
+                  className={cn(
+                    'ml-1 font-mono text-[11px]',
+                    isBuy
+                      ? 'text-sky-700 dark:text-sky-300'
+                      : 'text-amber-700 dark:text-amber-300'
+                  )}
+                >
+                  {pct(m.price_rate)}
+                </span>
+              )}
+              <SpreadTag spread={link?.get(modelKey(m.model))} />
+            </span>
+          ))}
+        </div>
+      </div>
 
       <dl className='grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-x-3 gap-y-1 text-sm'>
         <div className='min-w-0'>
           <dt className='text-muted-foreground text-[11px]'>
-            {t('Payment terms')}
+            {t('Payment method')}
           </dt>
-          <dd className='break-words'>{l.terms || '—'}</dd>
+          <dd className='break-words'>{paymentText(t, l) || '—'}</dd>
         </div>
         <div className='min-w-0'>
           <dt className='text-muted-foreground text-[11px]'>
@@ -184,7 +209,6 @@ export function LeadBoard(props: {
 }) {
   const { t } = useTranslation()
   const sel = props.leads.find((l) => l.id === props.selectedId) ?? null
-  const links = sel ? allocatedWith(sel, props.allocations) : null
 
   const column = (side: BdSide) => {
     let items: { lead: BdLead; link: Link }[]
@@ -192,11 +216,11 @@ export function LeadBoard(props: {
     const rows = props.leads
       .filter((l) => l.side === side && props.visible(l))
       .sort(byRecent)
-    if (sel && links && sel.side !== side) {
-      const scored = rows.map((l) => ({
-        lead: l,
-        link: links.get(l.id) ?? null,
-      }))
+    if (sel && sel.side !== side) {
+      const scored = rows.map((l) => {
+        const shared = sharedModels(sel, l)
+        return { lead: l, link: shared.size ? shared : null }
+      })
       const hit = scored.filter((x) => x.link)
       items = [...hit, ...scored.filter((x) => !x.link)]
     } else {
