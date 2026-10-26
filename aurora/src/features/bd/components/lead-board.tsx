@@ -247,11 +247,6 @@ export function LeadBoard(props: {
             />
             {side === 'buy' ? t('Suppliers') : t('Customers')}
           </h2>
-          <p className='text-muted-foreground text-xs'>
-            {side === 'buy'
-              ? t('Who can supply us')
-              : t('Who wants to buy from us')}
-          </p>
         </div>
         <div className='flex flex-col gap-2'>
           {emptyHint && (
