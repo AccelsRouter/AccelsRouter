@@ -262,8 +262,11 @@ func TestDistributeHidesTaskPluginDetailsButLogsDiagnostics(t *testing.T) {
 				require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 				requestID := recorder.Header().Get(common.RequestIdKey)
 				require.NotEmpty(t, requestID)
+				// Fork: the client message carries the reason without the routing
+				// group or the stage marker (common.ClientFacingMessage).
 				assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":"new_api_error","code":"model_not_found"}}`,
-					locale.message+" (request id: "+requestID+")"), recorder.Body.String())
+					common.ClientFacingMessage(locale.message)+" (request id: "+requestID+")"), recorder.Body.String())
+				assert.NotContains(t, recorder.Body.String(), group)
 				assert.NotContains(t, recorder.Body.String(), "disable or override")
 				for _, key := range keys {
 					assert.NotContains(t, recorder.Body.String(), key)
