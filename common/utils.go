@@ -265,8 +265,11 @@ func Max(a int, b int) int {
 	}
 }
 
+// MessageWithRequestId is the shape of every error message an API client
+// receives: the reason, stripped of vendor and routing identifiers
+// (ClientFacingMessage), followed by this gateway's request id.
 func MessageWithRequestId(message string, id string) string {
-	return fmt.Sprintf("%s (request id: %s)", message, id)
+	return fmt.Sprintf("%s (request id: %s)", ClientFacingMessage(message), id)
 }
 
 func RandomSleep() {

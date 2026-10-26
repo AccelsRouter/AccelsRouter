@@ -237,6 +237,26 @@ func TestCreateUserRejectsNonStandardRole(t *testing.T) {
 	}
 }
 
+// Chosen usernames must be at least UserNameMinLength characters; the check
+// runs before the generic struct validation so the message names the rule.
+func TestCreateUserRejectsShortUsername(t *testing.T) {
+	_, identity, _ := setupAdminUserTest(t)
+	for _, username := range []string{"ab", "  x  ", "中文"} {
+		body := fmt.Sprintf(`{"username":%q,"password":"member-password-1","role":%d}`, username, common.RoleCommonUser)
+		response := adminUserRequest(http.MethodPost, "/api/user/", body, "", identity, common.RoleAdminUser, nil, CreateUser)
+		var result securityEnrollmentResponse
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+		assert.Equal(t, http.StatusOK, response.Code)
+		assert.False(t, result.Success, username)
+		assert.Contains(t, result.Message, "Username must be at least", username)
+	}
+	body := fmt.Sprintf(`{"username":"abc","password":"member-password-1","role":%d}`, common.RoleCommonUser)
+	response := adminUserRequest(http.MethodPost, "/api/user/", body, "", identity, common.RoleAdminUser, nil, CreateUser)
+	var result securityEnrollmentResponse
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+	assert.True(t, result.Success, result.Message)
+}
+
 func TestAdminUserProofIsBoundToTargetAndActionAndConsumedOnce(t *testing.T) {
 	_, identity, target := setupAdminUserTest(t)
 	other := &model.User{Username: "other-user", Password: target.Password, Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "other-aff"}

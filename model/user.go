@@ -19,6 +19,10 @@ import (
 
 const UserNameMaxLength = 20
 
+// UserNameMinLength applies to usernames people choose (registration and
+// admin creation); generated names and existing accounts are not re-checked.
+const UserNameMinLength = 3
+
 var userSortColumns = map[string]string{
 	"id":            "id",
 	"username":      "username",

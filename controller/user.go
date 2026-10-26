@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -234,6 +235,10 @@ func Register(c *gin.Context) {
 	user.Email = model.NormalizeEmail(user.Email)
 	if user.Username == "" {
 		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if utf8.RuneCountInString(user.Username) < model.UserNameMinLength {
+		common.ApiErrorT(c, "Username must be at least {{min}} characters", map[string]any{"min": model.UserNameMinLength})
 		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {
@@ -1079,6 +1084,10 @@ func CreateUser(c *gin.Context) {
 	user.Username = strings.TrimSpace(user.Username)
 	if err != nil || user.Username == "" || user.Password == "" {
 		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if utf8.RuneCountInString(user.Username) < model.UserNameMinLength {
+		common.ApiErrorT(c, "Username must be at least {{min}} characters", map[string]any{"min": model.UserNameMinLength})
 		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {
