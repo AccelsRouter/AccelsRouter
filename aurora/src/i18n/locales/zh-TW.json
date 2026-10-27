@@ -8578,6 +8578,9 @@
     "Added {{name}} to the model list": "已將 {{name}} 新增到模型列表",
     "Add these models to the model list first: {{names}}": "請先將這些模型新增到模型列表：{{names}}",
     "Search the model list": "搜尋模型列表",
-    "No matching model in the model list": "模型列表中沒有匹配的模型"
+    "No matching model in the model list": "模型列表中沒有匹配的模型",
+    "Names ending in -all (e.g. gpt-all, lowercase letters, digits, - and . only) can be entered directly": "以 -all 結尾的名稱（如 gpt-all，僅限小寫字母、數字、- 和 .）可直接填寫",
+    "Names ending in -all may only contain lowercase letters, digits, - and .": "以 -all 結尾的名稱只能包含小寫字母、數字、- 和 .",
+    "Names ending in -all may only contain lowercase letters, digits, - and .: {{names}}": "以 -all 結尾的名稱只能包含小寫字母、數字、- 和 .：{{names}}"
   }
 }

@@ -46,6 +46,8 @@ import {
 import {
   CURRENCIES,
   fuzzyModels,
+  isBadModelFamily,
+  isModelFamily,
   makeCodeOf,
   MODEL_CLASS_KEYS,
   STAGES,
@@ -155,7 +157,9 @@ export function LeadDialog(props: {
   )
   const [addedModels, setAddedModels] = useState<string[]>([])
   const isSystemModel = (name: string) =>
-    meta.models.includes(name) || addedModels.includes(name)
+    isModelFamily(name) ||
+    meta.models.includes(name) ||
+    addedModels.includes(name)
   const unknownModels = uniq(
     f.models.map((m) => m.model.trim()).filter((n) => n && !isSystemModel(n))
   )
@@ -247,6 +251,18 @@ export function LeadDialog(props: {
       setError(t('Please add at least one model'))
       return
     }
+    const badFamilies = f.models
+      .map((m) => m.model.trim())
+      .filter(isBadModelFamily)
+    if (badFamilies.length) {
+      setError(
+        t(
+          'Names ending in -all may only contain lowercase letters, digits, - and .: {{names}}',
+          { names: badFamilies.join(', ') }
+        )
+      )
+      return
+    }
     if (unknownModels.length) {
       setError(
         t('Add these models to the model list first: {{names}}', {
@@ -321,15 +337,6 @@ export function LeadDialog(props: {
                 <span className='text-muted-foreground text-xs font-medium'>
                   {isBuy ? t('Models offered') : t('Models needed')}
                   <span className='text-destructive'> *</span>
-                  <span className='ml-2 font-normal'>
-                    {isBuy
-                      ? t(
-                          'Model is required; class and supply price are optional'
-                        )
-                      : t(
-                          'Model is required; class and expected price are optional'
-                        )}
-                  </span>
                 </span>
                 <Button
                   type='button'
@@ -342,6 +349,22 @@ export function LeadDialog(props: {
                   {t('Add model')}
                 </Button>
               </div>
+              <ul className='text-muted-foreground list-disc space-y-0.5 pl-4 text-[11px]'>
+                <li>
+                  {isBuy
+                    ? t(
+                        'Model is required; class and supply price are optional'
+                      )
+                    : t(
+                        'Model is required; class and expected price are optional'
+                      )}
+                </li>
+                <li>
+                  {t(
+                    'Names ending in -all (e.g. gpt-all, lowercase letters, digits, - and . only) can be entered directly'
+                  )}
+                </li>
+              </ul>
               {f.models.map((m, i) => (
                 <div
                   key={i}
@@ -401,28 +424,37 @@ export function LeadDialog(props: {
                   >
                     <X className='size-4' />
                   </Button>
-                  {!!m.model.trim() && !isSystemModel(m.model.trim()) && (
-                    <div className='order-5 col-span-full flex flex-wrap items-center gap-2 text-xs sm:order-none'>
-                      <span className='text-destructive'>
-                        {t('"{{name}}" is not in the model list', {
-                          name: m.model.trim(),
-                        })}
-                      </span>
-                      <Button
-                        type='button'
-                        size='sm'
-                        variant='outline'
-                        className='h-6 text-xs'
-                        disabled={addModel.isPending}
-                        onClick={() => addModel.mutate(m.model.trim())}
-                      >
-                        {addModel.isPending && (
-                          <Loader2 className='size-3 animate-spin' />
-                        )}
-                        {t('Add to model list')}
-                      </Button>
+                  {isBadModelFamily(m.model) && (
+                    <div className='text-destructive order-5 col-span-full text-xs sm:order-none'>
+                      {t(
+                        'Names ending in -all may only contain lowercase letters, digits, - and .'
+                      )}
                     </div>
                   )}
+                  {!!m.model.trim() &&
+                    !isSystemModel(m.model.trim()) &&
+                    !isBadModelFamily(m.model) && (
+                      <div className='order-5 col-span-full flex flex-wrap items-center gap-2 text-xs sm:order-none'>
+                        <span className='text-destructive'>
+                          {t('"{{name}}" is not in the model list', {
+                            name: m.model.trim(),
+                          })}
+                        </span>
+                        <Button
+                          type='button'
+                          size='sm'
+                          variant='outline'
+                          className='h-6 text-xs'
+                          disabled={addModel.isPending}
+                          onClick={() => addModel.mutate(m.model.trim())}
+                        >
+                          {addModel.isPending && (
+                            <Loader2 className='size-3 animate-spin' />
+                          )}
+                          {t('Add to model list')}
+                        </Button>
+                      </div>
+                    )}
                 </div>
               ))}
             </div>

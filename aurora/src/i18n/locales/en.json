@@ -8497,6 +8497,9 @@
     "Added {{name}} to the model list": "Added {{name}} to the model list",
     "Add these models to the model list first: {{names}}": "Add these models to the model list first: {{names}}",
     "Search the model list": "Search the model list",
-    "No matching model in the model list": "No matching model in the model list"
+    "No matching model in the model list": "No matching model in the model list",
+    "Names ending in -all (e.g. gpt-all, lowercase letters, digits, - and . only) can be entered directly": "Names ending in -all (e.g. gpt-all, lowercase letters, digits, - and . only) can be entered directly",
+    "Names ending in -all may only contain lowercase letters, digits, - and .": "Names ending in -all may only contain lowercase letters, digits, - and .",
+    "Names ending in -all may only contain lowercase letters, digits, - and .: {{names}}": "Names ending in -all may only contain lowercase letters, digits, - and .: {{names}}"
   }
 }

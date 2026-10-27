@@ -139,6 +139,11 @@ func (BdAllocation) TableName() string { return "bd_allocations" }
 
 var bdSpaces = regexp.MustCompile(`\s+`)
 
+// bdModelFamilyPattern matches "<family>-all" names such as gpt-all,
+// gpt-4o-all or gemini-2.5-all: lowercase letters and digits joined by "-",
+// with "." allowed between letters or digits (version numbers).
+var bdModelFamilyPattern = regexp.MustCompile(`^[a-z0-9]+(?:\.[a-z0-9]+)*(?:-[a-z0-9]+(?:\.[a-z0-9]+)*)*-all$`)
+
 // cleanBdModel keeps a model name exactly as typed or picked, only trimming
 // surrounding whitespace, so it still equals the system model name.
 func cleanBdModel(s string) string {
@@ -379,14 +384,24 @@ func SaveBdLead(l *BdLead, operatorId int) error {
 	if err := normalizeBdLead(l); err != nil {
 		return err
 	}
-	// Lead models must come from the system model list (模型菜单). Read it
-	// before the transaction: on SQLite a read on the global handle while a
-	// write transaction is open would wait on that transaction.
+	// Lead models must come from the system model list (模型菜单), except
+	// "<family>-all" names. Read the list before the transaction: on SQLite a
+	// read on the global handle while a write transaction is open would wait
+	// on that transaction.
 	known, err := ListBdModelNames()
 	if err != nil {
 		return err
 	}
 	for _, m := range l.Models {
+		// "<family>-all" (e.g. gpt-all) names a whole model family and is
+		// not a concrete model, so it needs no entry in the model list. Such
+		// names are limited to lowercase letters, digits, "-" and ".".
+		if strings.HasSuffix(m.Model, "-all") {
+			if !bdModelFamilyPattern.MatchString(m.Model) {
+				return bdInvalid("model %q: names ending in -all may only contain lowercase letters, digits, - and .", m.Model)
+			}
+			continue
+		}
 		if _, ok := slices.BinarySearch(known, m.Model); !ok {
 			return bdInvalid("model %q is not in the system model list; add it first", m.Model)
 		}
