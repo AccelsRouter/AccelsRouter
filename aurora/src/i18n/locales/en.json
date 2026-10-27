@@ -1,5 +1,27 @@
 {
   "translation": {
+    "A valid site exchange rate is required.": "A valid site exchange rate is required.",
+    "Cache create (12h) price": "Cache create (12h) price",
+    "Cache Creation (12h)": "Cache Creation (12h)",
+    "Cache Creation (30m)": "Cache Creation (30m)",
+    "Cache Write (12h)": "Cache Write (12h)",
+    "Cache Write (30m)": "Cache Write (30m)",
+    "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.": "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.",
+    "Configure ordinary OpenAI pricing": "Configure ordinary OpenAI pricing",
+    "Divide by exchange rate (÷ {{rate}})": "Divide by exchange rate (÷ {{rate}})",
+    "Exchange rate adjustments: {{count}}": "Exchange rate adjustments: {{count}}",
+    "Final saved price": "Final saved price",
+    "Keep source price": "Keep source price",
+    "Multiply by exchange rate (× {{rate}})": "Multiply by exchange rate (× {{rate}})",
+    "Ordinary OpenAI": "Ordinary OpenAI",
+    "Plugin expressions are independent from ordinary OpenAI pricing.": "Plugin expressions are independent from ordinary OpenAI pricing.",
+    "Price adjustment for {{model}}": "Price adjustment for {{model}}",
+    "Price adjustment for {{model}} from {{source}}": "Price adjustment for {{model}} from {{source}}",
+    "Set ordinary OpenAI prices without changing plugin prices. Changes take effect when you save.": "Set ordinary OpenAI prices without changing plugin prices. Changes take effect when you save.",
+    "Set selected prices": "Set selected prices",
+    "Show models with matching prices": "Show models with matching prices",
+    "The adjusted price is outside the supported range.": "The adjusted price is outside the supported range.",
+    "This expression cannot be adjusted automatically. Keep the source price or edit it manually.": "This expression cannot be adjusted automatically. Keep the source price or edit it manually.",
     "Username must be at least {{min}} characters": "Username must be at least {{min}} characters",
     "Username must be at least 3 characters": "Username must be at least 3 characters",
     "{{count}} outside this view": "{{count}} outside this view",
@@ -8469,6 +8491,11 @@
     "Credit period": "Credit period",
     "e.g. 30": "e.g. 30",
     "Credit period {{days}} days": "Credit period {{days}} days",
-    "Please enter the credit period in days": "Please enter the credit period in days"
+    "Please enter the credit period in days": "Please enter the credit period in days",
+    "Pick from the model list": "Pick from the model list",
+    "\"{{name}}\" is not in the model list": "\"{{name}}\" is not in the model list",
+    "Add to model list": "Add to model list",
+    "Added {{name}} to the model list": "Added {{name}} to the model list",
+    "Add these models to the model list first: {{names}}": "Add these models to the model list first: {{names}}"
   }
 }

@@ -1,5 +1,27 @@
 {
   "translation": {
+    "A valid site exchange rate is required.": "請先設定有效的網站貨幣匯率。",
+    "Cache create (12h) price": "12 小時緩存寫入價格",
+    "Cache Creation (12h)": "緩存建立 (12h)",
+    "Cache Creation (30m)": "緩存建立 (30m)",
+    "Cache Write (12h)": "緩存寫入 (12h)",
+    "Cache Write (30m)": "緩存寫入 (30m)",
+    "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.": "通道級請求主體透傳會套用至所有路由。需要格式轉換的路由將無法處理請求。如需僅對部分路由啟用透傳，請改用路由級開關。",
+    "Configure ordinary OpenAI pricing": "設定一般 OpenAI 價格",
+    "Divide by exchange rate (÷ {{rate}})": "除以匯率（÷ {{rate}}）",
+    "Exchange rate adjustments: {{count}}": "按匯率調整：{{count}} 個模型",
+    "Final saved price": "最終儲存價格",
+    "Keep source price": "保留來源價格",
+    "Multiply by exchange rate (× {{rate}})": "乘以匯率（× {{rate}}）",
+    "Ordinary OpenAI": "一般 OpenAI",
+    "Plugin expressions are independent from ordinary OpenAI pricing.": "插件計費表達式獨立於一般 OpenAI 定價。",
+    "Price adjustment for {{model}}": "{{model}} 的價格處理",
+    "Price adjustment for {{model}} from {{source}}": "調整 {{source}} 的 {{model}} 價格",
+    "Set ordinary OpenAI prices without changing plugin prices. Changes take effect when you save.": "單獨設定一般 OpenAI 價格，保留插件現有價格。儲存後生效。",
+    "Set selected prices": "批次設定已選價格",
+    "Show models with matching prices": "顯示價格相同的模型",
+    "The adjusted price is outside the supported range.": "換算後的價格超出支援範圍。",
+    "This expression cannot be adjusted automatically. Keep the source price or edit it manually.": "此運算式無法自動換算，請保留來源價格或手動編輯。",
     "Username must be at least {{min}} characters": "使用者名稱至少需要 {{min}} 個字元",
     "Username must be at least 3 characters": "使用者名稱至少需要 3 個字元",
     "{{count}} outside this view": "其中 {{count}} 個不在目前檢視",
@@ -8550,6 +8572,11 @@
     "Credit period": "賬期",
     "e.g. 30": "如 30",
     "Credit period {{days}} days": "賬期 {{days}} 天",
-    "Please enter the credit period in days": "請填寫賬期天數（1–3650）"
+    "Please enter the credit period in days": "請填寫賬期天數（1–3650）",
+    "Pick from the model list": "從模型列表中選擇",
+    "\"{{name}}\" is not in the model list": "「{{name}}」不在模型列表中",
+    "Add to model list": "新增到模型列表",
+    "Added {{name}} to the model list": "已將 {{name}} 新增到模型列表",
+    "Add these models to the model list first: {{names}}": "請先將這些模型新增到模型列表：{{names}}"
   }
 }

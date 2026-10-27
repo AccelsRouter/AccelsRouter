@@ -295,24 +295,33 @@ func Distribute() func(c *gin.Context) {
 		if channel == nil && (pinned || shouldSelectChannel) {
 			usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 			var selectErr *service.ChannelSelectError
-			// Fork: an auto model whose chosen model cannot be served right now
-			// (no channel, or every channel over its budget) moves on to its next
-			// candidate instead of failing the request. For any other request
-			// WithAutoFailover just runs the selection once.
-			var finalModel string
-			channel, finalModel = service.WithAutoFailover(c, usingGroup, c.Request.URL.Path, modelRequest.Model,
-				func(candidate string) (*model.Channel, bool, bool) {
-					ch, _, err := service.SelectChannelForRequest(c, candidate, &service.RetryParam{
-						Ctx:         c,
-						ModelName:   candidate,
-						TokenGroup:  usingGroup,
-						RequestPath: c.Request.URL.Path,
-						Retry:       common.GetPointer(0),
+			if value, exists := c.Get(contextKeyTaskPluginEndpointSelection); exists && !pinned {
+				if selected, ok := value.(taskPluginEndpointSelection); ok && selected.Model == modelRequest.Model && selected.Group == usingGroup && selected.Channel != nil && selected.Channel.Status == common.ChannelStatusEnabled {
+					if matches, _ := model.ChannelSatisfiesFilters(selected.Channel, modelRequest.Model, constraints.Filters); matches {
+						channel = selected.Channel
+					}
+				}
+			}
+			if channel == nil {
+				// Fork: an auto model whose chosen model cannot be served right now
+				// (no channel, or every channel over its budget) moves on to its next
+				// candidate instead of failing the request. For any other request
+				// WithAutoFailover just runs the selection once.
+				var finalModel string
+				channel, finalModel = service.WithAutoFailover(c, usingGroup, c.Request.URL.Path, modelRequest.Model,
+					func(candidate string) (*model.Channel, bool, bool) {
+						ch, _, err := service.SelectChannelForRequest(c, candidate, &service.RetryParam{
+							Ctx:         c,
+							ModelName:   candidate,
+							TokenGroup:  usingGroup,
+							RequestPath: c.Request.URL.Path,
+							Retry:       common.GetPointer(0),
+						})
+						selectErr = err
+						return ch, err == nil, err.CanTryNextModel()
 					})
-					selectErr = err
-					return ch, err == nil, err.CanTryNextModel()
-				})
-			modelRequest.Model = finalModel
+				modelRequest.Model = finalModel
+			}
 			if selectErr != nil {
 				if selectErr.FilterKind == taskdto.FilterTaskPluginIdentity {
 					logTaskPluginChannelDecision(c, selectErr.Channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
