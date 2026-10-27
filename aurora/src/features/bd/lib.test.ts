@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { fuzzyModels } from './lib'
+import { fuzzyModels, isBadModelFamily, isModelFamily } from './lib'
 
 const names = [
   'claude-sonnet-4-6',
@@ -51,5 +51,33 @@ describe('fuzzyModels', () => {
 
   test('returns the list head when nothing is typed', () => {
     assert.equal(fuzzyModels(names, '', 2).length, 2)
+  })
+})
+
+describe('model family names', () => {
+  test('accepts lowercase letters, digits, - and . before -all', () => {
+    for (const name of [
+      'gpt-all',
+      'gpt-4o-all',
+      'claude3-all',
+      'gemini-2.5-all',
+    ])
+      assert.ok(isModelFamily(name), name)
+  })
+
+  test('rejects other characters or a missing family', () => {
+    for (const name of [
+      '-all',
+      'GPT-all',
+      'gpt_4-all',
+      'gpt--all',
+      'gpt..4-all',
+      '.gpt-all',
+      'gpt.-all',
+    ]) {
+      assert.ok(!isModelFamily(name), name)
+      assert.ok(isBadModelFamily(name), name)
+    }
+    assert.ok(!isBadModelFamily('gpt-4o'), 'not a family name at all')
   })
 })
