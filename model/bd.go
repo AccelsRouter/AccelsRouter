@@ -379,24 +379,20 @@ func SaveBdLead(l *BdLead, operatorId int) error {
 	if err := normalizeBdLead(l); err != nil {
 		return err
 	}
+	// Lead models must come from the system model list (模型菜单). Read it
+	// before the transaction: on SQLite a read on the global handle while a
+	// write transaction is open would wait on that transaction.
+	known, err := ListBdModelNames()
+	if err != nil {
+		return err
+	}
+	for _, m := range l.Models {
+		if _, ok := slices.BinarySearch(known, m.Model); !ok {
+			return bdInvalid("model %q is not in the system model list; add it first", m.Model)
+		}
+	}
 	now := common.GetTimestamp()
 	return DB.Transaction(func(tx *gorm.DB) error {
-		// Lead models must come from the system model list (模型菜单).
-		names := make([]string, len(l.Models))
-		for i, m := range l.Models {
-			names[i] = m.Model
-		}
-		var known []string
-		if err := tx.Model(&Model{}).Where("model_name IN ?", names).Pluck("model_name", &known).Error; err != nil {
-			return err
-		}
-		for _, name := range names {
-			// IN may match case-insensitively on MySQL; require the exact name.
-			if !slices.Contains(known, name) {
-				return bdInvalid("model %q is not in the system model list; add it first", name)
-			}
-		}
-
 		company, err := EnsureBdCompany(tx, l.Side, l.Company)
 		if err != nil {
 			return err
@@ -615,11 +611,19 @@ func BdUserName(u *User) string {
 }
 
 // ListBdModelNames returns the system model list (模型菜单) that lead models
-// are picked from.
-func ListBdModelNames() []string {
-	var names []string
-	if DB.Model(&Model{}).Order("model_name").Pluck("model_name", &names).Error != nil {
-		return nil
+// are picked from: models with metadata plus models configured on channels
+// without metadata, the same set the model menu shows.
+func ListBdModelNames() ([]string, error) {
+	records, _, err := SearchModelsWithChannels("", "", "", "", 0, -1)
+	if err != nil {
+		return nil, err
 	}
-	return slices.DeleteFunc(names, func(n string) bool { return n == "" })
+	names := make([]string, 0, len(records))
+	for _, r := range records {
+		if r.ModelName != "" {
+			names = append(names, r.ModelName)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names), nil
 }

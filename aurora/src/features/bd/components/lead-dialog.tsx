@@ -16,13 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { ComboboxInput } from '@/components/ui/combobox-input'
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ import {
 } from '../api'
 import {
   CURRENCIES,
+  fuzzyModels,
   makeCodeOf,
   MODEL_CLASS_KEYS,
   STAGES,
@@ -147,7 +149,10 @@ export function LeadDialog(props: {
   )
   // Lead models are picked from the system model list (模型菜单); a name
   // that is not there yet can be added to it from here.
-  const modelOptions = meta.models
+  const modelOptions = useMemo(
+    () => meta.models.map((name) => ({ value: name, label: name })),
+    [meta.models]
+  )
   const [addedModels, setAddedModels] = useState<string[]>([])
   const isSystemModel = (name: string) =>
     meta.models.includes(name) || addedModels.includes(name)
@@ -342,12 +347,15 @@ export function LeadDialog(props: {
                   key={i}
                   className='grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[2fr_1fr_1fr_auto]'
                 >
-                  <SuggestInput
+                  <ComboboxInput
                     aria-label={t('Model')}
                     value={m.model}
-                    onChange={(e) => setModel(i, { model: e.target.value })}
+                    onValueChange={(v) => setModel(i, { model: v })}
                     options={modelOptions}
-                    placeholder={t('Pick from the model list')}
+                    filterOptions={fuzzyModels}
+                    allowCustomValue
+                    placeholder={t('Search the model list')}
+                    emptyText='No matching model in the model list'
                     aria-invalid={
                       !!m.model.trim() && !isSystemModel(m.model.trim())
                     }

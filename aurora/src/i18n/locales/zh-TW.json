@@ -8573,10 +8573,11 @@
     "e.g. 30": "如 30",
     "Credit period {{days}} days": "賬期 {{days}} 天",
     "Please enter the credit period in days": "請填寫賬期天數（1–3650）",
-    "Pick from the model list": "從模型列表中選擇",
     "\"{{name}}\" is not in the model list": "「{{name}}」不在模型列表中",
     "Add to model list": "新增到模型列表",
     "Added {{name}} to the model list": "已將 {{name}} 新增到模型列表",
-    "Add these models to the model list first: {{names}}": "請先將這些模型新增到模型列表：{{names}}"
+    "Add these models to the model list first: {{names}}": "請先將這些模型新增到模型列表：{{names}}",
+    "Search the model list": "搜尋模型列表",
+    "No matching model in the model list": "模型列表中沒有匹配的模型"
   }
 }

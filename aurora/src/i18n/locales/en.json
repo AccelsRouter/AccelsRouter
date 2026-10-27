@@ -8492,10 +8492,11 @@
     "e.g. 30": "e.g. 30",
     "Credit period {{days}} days": "Credit period {{days}} days",
     "Please enter the credit period in days": "Please enter the credit period in days",
-    "Pick from the model list": "Pick from the model list",
     "\"{{name}}\" is not in the model list": "\"{{name}}\" is not in the model list",
     "Add to model list": "Add to model list",
     "Added {{name}} to the model list": "Added {{name}} to the model list",
-    "Add these models to the model list first: {{names}}": "Add these models to the model list first: {{names}}"
+    "Add these models to the model list first: {{names}}": "Add these models to the model list first: {{names}}",
+    "Search the model list": "Search the model list",
+    "No matching model in the model list": "No matching model in the model list"
   }
 }
