@@ -154,15 +154,15 @@ function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
 const SOCIAL_LINKS = [
   {
     label: 'X (Twitter)',
-    href: 'https://x.com/WRouter_Offical',
+    href: 'https://x.com/Accels_Offical',
     Icon: FaXTwitter,
   },
   {
     label: 'LinkedIn',
-    href: 'https://www.linkedin.com/company/wrouter/',
+    href: 'https://www.linkedin.com/company/accels-official/',
     Icon: FaLinkedin,
   },
-  { label: 'Medium', href: 'https://medium.com/@WRouter', Icon: FaMedium },
+  { label: 'Medium', href: 'https://medium.com/@Accels_Official', Icon: FaMedium },
 ]
 
 function SocialLinks() {
