@@ -35,6 +35,11 @@ const contextKeyTaskPluginEndpointModel = "task_plugin_endpoint_model_request"
 
 const contextKeyTaskPluginEndpointSelection = "task_plugin_endpoint_channel_selection"
 
+// Fork: the decoder rejections of shared-endpoint candidates that were dropped
+// while another candidate stayed eligible, so a later "no available channel"
+// can name the plugin that would have served the request and why it refused.
+const contextKeyTaskPluginRejectedCandidates = "task_plugin_rejected_candidates"
+
 type taskPluginEndpointSelection struct {
 	Generation *pluginruntime.RoutingGeneration
 	Channel    *model.Channel
@@ -767,14 +772,17 @@ func PrepareTaskPluginEndpoint() gin.HandlerFunc {
 				protocolContext = candidateContext
 			}
 		}
-		if len(accepted) == 0 {
-			if len(candidates) > 1 {
-				for index, detail := range failures {
-					failures[index] = strings.Join(rejectedPlugins[detail], ", ") + ": " + detail
-				}
+		if len(candidates) > 1 {
+			for index, detail := range failures {
+				failures[index] = strings.Join(rejectedPlugins[detail], ", ") + ": " + detail
 			}
+		}
+		if len(accepted) == 0 {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, strings.Join(failures, "; "))
 			return
+		}
+		if len(failures) > 0 {
+			c.Set(contextKeyTaskPluginRejectedCandidates, failures)
 		}
 		pinned.Candidates = accepted
 		pinned.Plugin = accepted[0].Plugin

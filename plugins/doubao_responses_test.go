@@ -505,6 +505,44 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 		require.ErrorContains(t, err, "seconds must be -1 or between 1 and 3600")
 	})
 
+	// The OpenAI first-frame reference arrives as a JSON URL or as a multipart
+	// upload; both must reach Ark's content list (Ark accepts Base64 data URLs).
+	t.Run("video input_reference reaches Ark content", func(t *testing.T) {
+		submit := func(body map[string]any) map[string]any {
+			t.Helper()
+			resolved, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "decodeRequest"}, map[string]any{"model": v20, "body": body})
+			require.NoError(t, err)
+			decoded := alibabaObject(t, resolved)
+			assert.Equal(t, "image_to_video", decoded["action"])
+			driver := map[string]any{"upstreamModel": v20, "model": v20, "action": decoded["action"], "requestBody": decoded["requestBody"], "baseUrl": doubaoBaseURL, "apiKey": "k", "usagePurpose": "facts"}
+			value, err := plugin.Engine.Call(t.Context(), "buildSubmitRequest", driver)
+			require.NoError(t, err)
+			return alibabaObject(t, value)
+		}
+		request := submit(map[string]any{"kind": "json", "value": map[string]any{"model": v20, "prompt": "a cat", "input_reference": "https://cdn.example/first.png", "seconds": "5"}})
+		assert.Equal(t, "image_to_video", request["action"])
+		assert.Equal(t, []any{
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://cdn.example/first.png"}},
+			map[string]any{"type": "text", "text": "a cat"},
+		}, request["body"].(map[string]any)["content"])
+
+		placeholder := map[string]any{"__fileRef": "request_file:input_reference", "encoding": "dataUrl", "mimeType": "image/jpeg", "maxBytes": float64(31457280)}
+		request = submit(map[string]any{"kind": "multipart",
+			"fields": map[string][]string{"model": {v20}, "prompt": {"a cat"}, "seconds": {"5"}},
+			"files":  []any{map[string]any{"ref": "request_file:input_reference", "field": "input_reference", "filename": "first.jpg", "mimeType": "IMAGE/JPEG", "size": 10}},
+		})
+		assert.Equal(t, []any{
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": placeholder}},
+			map[string]any{"type": "text", "text": "a cat"},
+		}, request["body"].(map[string]any)["content"], "the placeholder reaches the upstream body for the host to inline")
+
+		_, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "decodeRequest"}, map[string]any{"model": v20, "body": map[string]any{"kind": "multipart",
+			"fields": map[string][]string{"model": {v20}, "prompt": {"a cat"}},
+			"files":  []any{map[string]any{"ref": "request_file:mask", "field": "mask", "filename": "m.png", "mimeType": "image/png", "size": 10}},
+		}})
+		require.ErrorContains(t, err, "only input_reference may be uploaded")
+	})
+
 	t.Run("completion overlays only resolutions the model offers", func(t *testing.T) {
 		for _, tc := range []struct {
 			model      string

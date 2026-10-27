@@ -391,7 +391,16 @@ func noAvailableChannelMessage(c *gin.Context, group, modelName string) string {
 			}
 		}
 		logger.LogWarn(c, common.LogText("task_plugin subsystem=distribution event=no_available_channel group=%q model=%q plugins=%q reason=no_eligible_channel", group, modelName, strings.Join(keys, ",")))
-		return i18n.T(c, i18n.MsgDistributorNoAvailableChannelTaskPlugin, map[string]any{"Group": group, "Model": modelName})
+		message := i18n.T(c, i18n.MsgDistributorNoAvailableChannelTaskPlugin, map[string]any{"Group": group, "Model": modelName})
+		// Fork: a candidate that does have a channel may have refused the
+		// request body; without its reason the caller only sees a routing
+		// error for what is really a validation error.
+		if rejected, ok := c.Get(contextKeyTaskPluginRejectedCandidates); ok {
+			if failures, ok := rejected.([]string); ok && len(failures) > 0 {
+				message += "; rejected by " + strings.Join(failures, "; ")
+			}
+		}
+		return message
 	}
 	return i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": group, "Model": modelName})
 }

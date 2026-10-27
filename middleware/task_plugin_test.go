@@ -2123,6 +2123,7 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 						originPin, retry         bool
 						legacy, mapped, shared   bool
 						switched, reseller       bool
+						alternateDisabled        bool
 						wantStatus               int
 					}{
 						{name: "ordinary images bypass plugin decoder", decoderRejects: true},
@@ -2163,6 +2164,9 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 						// reseller's private group, so the relay-or-plugin decision must
 						// be made there, not against the ordinary channel of the public group.
 						{name: "reseller routing decides against the reseller group", ordinaryPriority: 20, reseller: true, wantPlugin: true},
+						// Fork: when the only candidate left has no channel, the caller
+						// learns why the candidate that has one refused the request.
+						{name: "rejected candidate reason survives a no-channel failure", pluginOnly: true, shared: true, decoderRejects: true, pluginPriority: 20, alternateDisabled: true, wantStatus: http.StatusServiceUnavailable},
 					} {
 						t.Run(tc.name, func(t *testing.T) {
 							for _, table := range []any{&model.Ability{}, &model.Channel{}, &model.Task{}, &model.Organization{}, &model.OrgAccount{}, &model.ResellerAdmin{}, &model.ResellerRouting{}} {
@@ -2233,6 +2237,9 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 								alternate := &model.Channel{Type: ordinary.Type, Status: common.ChannelStatusEnabled, Name: "alternate", Key: "alternate-key", Group: "route-test", Models: modelName}
 								if tc.switched {
 									alternate.Group = "route-private"
+								}
+								if tc.alternateDisabled {
+									alternate.Status = common.ChannelStatusManuallyDisabled
 								}
 								if tc.wantPlugin {
 									alternate.Type = plugin.Type
@@ -2351,8 +2358,11 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 							}
 							assert.Equal(t, status, recorder.Code, recorder.Body.String())
 							assert.Equal(t, status == http.StatusNoContent, reached)
-							if tc.decoderRejects && status == http.StatusBadRequest {
+							if tc.decoderRejects && status != http.StatusNoContent {
 								assert.Contains(t, recorder.Body.String(), "plugin rejected this request")
+							}
+							if tc.alternateDisabled {
+								assert.Contains(t, recorder.Body.String(), "rejected by "+key+": plugin rejected this request")
 							}
 						})
 					}
