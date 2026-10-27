@@ -15,6 +15,12 @@ func setupBdTables(t *testing.T) {
 	DB.Exec("DELETE FROM bd_leads")
 	DB.Exec("DELETE FROM bd_lead_models")
 	DB.Exec("DELETE FROM bd_allocations")
+	// Lead models must exist in the system model list.
+	require.NoError(t, DB.AutoMigrate(&Model{}))
+	DB.Exec("DELETE FROM models")
+	for _, name := range []string{"m", "n", "claude sonnet 4.6", "Claude-Sonnet-4.6", "gemini 2.5 pro", "qwen3 max"} {
+		require.NoError(t, DB.Create(&Model{ModelName: name}).Error)
+	}
 }
 
 func bdF(v float64) *float64 { return &v }
@@ -85,6 +91,8 @@ func TestBdLeadModels(t *testing.T) {
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: []BdLeadModel{{Model: "m", PriceRate: bdF(300)}}}), "price range")
 	invalid(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m")}, "stage is required")
 	invalid(&BdLead{Side: BdSideBuy, Company: "A", Stage: "nope", Models: bdModels("m")}, "unknown stage")
+	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("not-in-catalog")}), "model must be in the system list")
+	invalid(ok(&BdLead{Side: BdSideSell, Company: "A", Models: bdModels("M")}), "system model names match exactly")
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: "月结"}), "unknown payment method")
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: BdPaymentPostpaid}), "postpaid needs credit days")
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: BdPaymentPostpaid, CreditDays: bdI(0)}), "credit days must be positive")

@@ -33,6 +33,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { createModel } from '@/features/models/api'
 import {
   deleteBdLead,
   saveBdLead,
@@ -144,16 +145,41 @@ export function LeadDialog(props: {
   const companyOptions = uniq(
     meta.companies.filter((c) => c.side === side).map((c) => c.name)
   )
-  const modelOptions = uniq([
-    ...meta.models,
-    ...props.leads.flatMap((l) => l.models.map((m) => m.model)),
-  ])
+  // Lead models are picked from the system model list (模型菜单); a name
+  // that is not there yet can be added to it from here.
+  const modelOptions = meta.models
+  const [addedModels, setAddedModels] = useState<string[]>([])
+  const isSystemModel = (name: string) =>
+    meta.models.includes(name) || addedModels.includes(name)
+  const unknownModels = uniq(
+    f.models.map((m) => m.model.trim()).filter((n) => n && !isSystemModel(n))
+  )
   const classOptions = uniq([
     ...MODEL_CLASS_KEYS.map((k) => t(k)),
     ...props.leads.flatMap((l) => l.models.map((m) => m.model_class)),
   ])
   const canDelete =
     !!lead && (meta.can_manage || lead.created_by === props.myId)
+
+  const addModel = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await createModel({
+        model_name: name,
+        status: 1,
+        sync_official: 1,
+        name_rule: 0,
+      })
+      if (!res.success) throw new Error(res.message || t('Operation failed'))
+      return name
+    },
+    onSuccess: (name) => {
+      setAddedModels((list) => [...list, name])
+      qc.invalidateQueries({ queryKey: ['bd', 'meta'] })
+      toast.success(t('Added {{name}} to the model list', { name }))
+      setError('')
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  })
 
   const done = () => {
     qc.invalidateQueries({ queryKey: ['bd'] })
@@ -214,6 +240,14 @@ export function LeadDialog(props: {
     }
     if (!f.models.some((m) => m.model.trim())) {
       setError(t('Please add at least one model'))
+      return
+    }
+    if (unknownModels.length) {
+      setError(
+        t('Add these models to the model list first: {{names}}', {
+          names: unknownModels.join(', '),
+        })
+      )
       return
     }
     if (f.payment_method === 'postpaid') {
@@ -313,7 +347,10 @@ export function LeadDialog(props: {
                     value={m.model}
                     onChange={(e) => setModel(i, { model: e.target.value })}
                     options={modelOptions}
-                    placeholder='claude sonnet 4.6'
+                    placeholder={t('Pick from the model list')}
+                    aria-invalid={
+                      !!m.model.trim() && !isSystemModel(m.model.trim())
+                    }
                   />
                   <SuggestInput
                     aria-label={t('Model class')}
@@ -356,6 +393,28 @@ export function LeadDialog(props: {
                   >
                     <X className='size-4' />
                   </Button>
+                  {!!m.model.trim() && !isSystemModel(m.model.trim()) && (
+                    <div className='order-5 col-span-full flex flex-wrap items-center gap-2 text-xs sm:order-none'>
+                      <span className='text-destructive'>
+                        {t('"{{name}}" is not in the model list', {
+                          name: m.model.trim(),
+                        })}
+                      </span>
+                      <Button
+                        type='button'
+                        size='sm'
+                        variant='outline'
+                        className='h-6 text-xs'
+                        disabled={addModel.isPending}
+                        onClick={() => addModel.mutate(m.model.trim())}
+                      >
+                        {addModel.isPending && (
+                          <Loader2 className='size-3 animate-spin' />
+                        )}
+                        {t('Add to model list')}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

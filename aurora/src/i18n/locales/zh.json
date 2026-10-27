@@ -8506,6 +8506,11 @@
     "Credit period": "账期",
     "e.g. 30": "如 30",
     "Credit period {{days}} days": "账期 {{days}} 天",
-    "Please enter the credit period in days": "请填写账期天数（1–3650）"
+    "Please enter the credit period in days": "请填写账期天数（1–3650）",
+    "Pick from the model list": "从模型列表中选择",
+    "\"{{name}}\" is not in the model list": "「{{name}}」不在模型列表中",
+    "Add to model list": "新增到模型列表",
+    "Added {{name}} to the model list": "已将 {{name}} 新增到模型列表",
+    "Add these models to the model list first: {{names}}": "请先将这些模型新增到模型列表：{{names}}"
   }
 }
