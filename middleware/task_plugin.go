@@ -370,7 +370,10 @@ func RouteTaskPluginEndpoint() gin.HandlerFunc {
 		filterIndex := len(constraints.Filters)
 		constraints.AddFilter(filter)
 		constraints.AddFilter(dto.ChannelFilter{Kind: dto.FilterRequestPath, RequestPath: c.Request.URL.Path})
-		group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		// Fork: a reseller customer is served from its reseller's private group,
+		// so the relay-or-plugin decision below must look at that group, not at
+		// the public group Distribute would otherwise switch away from later.
+		group := applyResellerRoutingGroup(c, request.Model)
 		channel, _, selectErr := service.SelectChannelForRequest(c, request.Model, &service.RetryParam{
 			Ctx: c, ModelName: request.Model, TokenGroup: group,
 			RequestPath: c.Request.URL.Path, Retry: common.GetPointer(0),
