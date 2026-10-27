@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -138,10 +139,10 @@ func (BdAllocation) TableName() string { return "bd_allocations" }
 
 var bdSpaces = regexp.MustCompile(`\s+`)
 
-// cleanBdModel keeps a model name as typed, only trimming and collapsing
-// whitespace.
+// cleanBdModel keeps a model name exactly as typed or picked, only trimming
+// surrounding whitespace, so it still equals the system model name.
 func cleanBdModel(s string) string {
-	return strings.TrimSpace(bdSpaces.ReplaceAllString(s, " "))
+	return strings.TrimSpace(s)
 }
 
 // BdModelKey compares model names across spellings: "claude-sonnet-4.6",
@@ -380,6 +381,22 @@ func SaveBdLead(l *BdLead, operatorId int) error {
 	}
 	now := common.GetTimestamp()
 	return DB.Transaction(func(tx *gorm.DB) error {
+		// Lead models must come from the system model list (模型菜单).
+		names := make([]string, len(l.Models))
+		for i, m := range l.Models {
+			names[i] = m.Model
+		}
+		var known []string
+		if err := tx.Model(&Model{}).Where("model_name IN ?", names).Pluck("model_name", &known).Error; err != nil {
+			return err
+		}
+		for _, name := range names {
+			// IN may match case-insensitively on MySQL; require the exact name.
+			if !slices.Contains(known, name) {
+				return bdInvalid("model %q is not in the system model list; add it first", name)
+			}
+		}
+
 		company, err := EnsureBdCompany(tx, l.Side, l.Company)
 		if err != nil {
 			return err
@@ -597,19 +614,12 @@ func BdUserName(u *User) string {
 	return u.Username
 }
 
-// ListBdModelNames returns the platform's model names for input suggestions.
+// ListBdModelNames returns the system model list (模型菜单) that lead models
+// are picked from.
 func ListBdModelNames() []string {
 	var names []string
-	if DB.Model(&Model{}).Pluck("model_name", &names).Error != nil {
+	if DB.Model(&Model{}).Order("model_name").Pluck("model_name", &names).Error != nil {
 		return nil
 	}
-	seen := map[string]bool{}
-	out := make([]string, 0, len(names))
-	for _, n := range names {
-		if v := cleanBdModel(n); v != "" && !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	return out
+	return slices.DeleteFunc(names, func(n string) bool { return n == "" })
 }

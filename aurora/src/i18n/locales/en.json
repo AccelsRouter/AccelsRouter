@@ -8426,8 +8426,6 @@
     "No suppliers yet. Anyone who can supply us goes here.": "No suppliers yet. Anyone who can supply us goes here.",
     "No customers yet. Anyone who wants to buy goes here.": "No customers yet. Anyone who wants to buy goes here.",
     "Suppliers": "Suppliers",
-    "Who can supply us": "Who can supply us",
-    "Who wants to buy from us": "Who wants to buy from us",
     "Lead added": "Lead added",
     "Please enter the supplier name": "Please enter the supplier name",
     "Please enter the customer name": "Please enter the customer name",
@@ -8493,6 +8491,11 @@
     "Credit period": "Credit period",
     "e.g. 30": "e.g. 30",
     "Credit period {{days}} days": "Credit period {{days}} days",
-    "Please enter the credit period in days": "Please enter the credit period in days"
+    "Please enter the credit period in days": "Please enter the credit period in days",
+    "Pick from the model list": "Pick from the model list",
+    "\"{{name}}\" is not in the model list": "\"{{name}}\" is not in the model list",
+    "Add to model list": "Add to model list",
+    "Added {{name}} to the model list": "Added {{name}} to the model list",
+    "Add these models to the model list first: {{names}}": "Add these models to the model list first: {{names}}"
   }
 }
