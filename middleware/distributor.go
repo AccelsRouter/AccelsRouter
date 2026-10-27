@@ -296,7 +296,7 @@ func Distribute() func(c *gin.Context) {
 			usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 			var selectErr *service.ChannelSelectError
 			if value, exists := c.Get(contextKeyTaskPluginEndpointSelection); exists && !pinned {
-				if selected, ok := value.(taskPluginEndpointSelection); ok && selected.Model == modelRequest.Model && selected.Channel != nil && selected.Channel.Status == common.ChannelStatusEnabled {
+				if selected, ok := value.(taskPluginEndpointSelection); ok && selected.Model == modelRequest.Model && selected.Group == usingGroup && selected.Channel != nil && selected.Channel.Status == common.ChannelStatusEnabled {
 					if matches, _ := model.ChannelSatisfiesFilters(selected.Channel, modelRequest.Model, constraints.Filters); matches {
 						channel = selected.Channel
 					}

@@ -39,6 +39,10 @@ type taskPluginEndpointSelection struct {
 	Generation *pluginruntime.RoutingGeneration
 	Channel    *model.Channel
 	Model      string
+	// Fork: the group the channel was selected under. Distribute() ignores the
+	// selection once transparent BYOK or reseller routing has switched the
+	// request to a private group, so those rules stay authoritative.
+	Group string
 }
 
 var errTaskPluginUnsupportedMediaType = errors.New("unsupported task plugin media type")
@@ -372,7 +376,7 @@ func RouteTaskPluginEndpoint() gin.HandlerFunc {
 			RequestPath: c.Request.URL.Path, Retry: common.GetPointer(0),
 		})
 		c.Set(contextKeyTaskPluginEndpointSelection, taskPluginEndpointSelection{
-			Generation: generation, Channel: channel, Model: request.Model,
+			Generation: generation, Channel: channel, Model: request.Model, Group: group,
 		})
 		if selectErr != nil {
 			// Keep the existing plugin diagnostics and canonical-model lookup

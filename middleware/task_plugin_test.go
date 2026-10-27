@@ -2121,6 +2121,7 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 						decoderRejects, syncOnly bool
 						originPin, retry         bool
 						legacy, mapped, shared   bool
+						switched                 bool
 						wantStatus               int
 					}{
 						{name: "ordinary images bypass plugin decoder", decoderRejects: true},
@@ -2153,6 +2154,10 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 						{name: "ordinary retries stay on ordinary channels", ordinaryPriority: 20, pluginPriority: 10, retry: true},
 						{name: "plugin retries stay on plugin channels", pluginPriority: 20, retry: true, wantPlugin: true},
 						{name: "rejected shared candidate still allows another plugin", pluginOnly: true, shared: true, decoderRejects: true, pluginPriority: 20, wantPlugin: true},
+						// Fork: BYOK and reseller routing move the request to a private
+						// group inside Distribute; the channel RouteTaskPluginEndpoint
+						// chose under the public group must not be reused there.
+						{name: "private group switch ignores pre-selection", ordinaryPriority: 20, switched: true},
 					} {
 						t.Run(tc.name, func(t *testing.T) {
 							for _, table := range []any{&model.Ability{}, &model.Channel{}, &model.Task{}} {
@@ -2210,8 +2215,11 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 							if !tc.pluginOnly {
 								channels = append(channels, ordinary)
 							}
-							if tc.originPin || tc.retry || tc.shared {
+							if tc.originPin || tc.retry || tc.shared || tc.switched {
 								alternate := &model.Channel{Type: ordinary.Type, Status: common.ChannelStatusEnabled, Name: "alternate", Key: "alternate-key", Group: "route-test", Models: modelName}
+								if tc.switched {
+									alternate.Group = "route-private"
+								}
 								if tc.wantPlugin {
 									alternate.Type = plugin.Type
 									alternate.SetSetting(plugin.GetSetting())
@@ -2259,7 +2267,12 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 									}
 									service.GetChannelConstraints(c).AddPin(dto.ChannelPin{ChannelId: id, Source: dto.PinSourceToken, Rank: dto.PinRankToken})
 								}
-							}, RouteTaskPluginEndpoint(), PrepareTaskPluginEndpoint(), Distribute(), func(c *gin.Context) {
+							}, RouteTaskPluginEndpoint(), PrepareTaskPluginEndpoint(), func(c *gin.Context) {
+								if tc.switched {
+									common.SetContextKey(c, constant.ContextKeyUsingGroup, "route-private")
+									common.SetContextKey(c, constant.ContextKeyTokenGroup, "route-private")
+								}
+							}, Distribute(), func(c *gin.Context) {
 								reached = true
 								_, pinned := c.Get(jsplugin.ContextKeyPinnedEndpoint)
 								assert.Equal(t, tc.wantPlugin, pinned)
@@ -2292,6 +2305,9 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 									got, err := storage.Bytes()
 									require.NoError(t, err)
 									assert.Equal(t, body, got, "ordinary relay must receive the original body")
+									if tc.switched {
+										expected = channels[len(channels)-1]
+									}
 								}
 								assert.Equal(t, expected.Id, common.GetContextKeyInt(c, constant.ContextKeyChannelId))
 								assert.Equal(t, expected.Key, common.GetContextKeyString(c, constant.ContextKeyChannelKey))
