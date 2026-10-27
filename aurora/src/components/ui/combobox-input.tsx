@@ -16,13 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, ChevronsUpDown } from 'lucide-react'
 import * as React from 'react'
+import { Check, ChevronsUpDown } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { Input } from '@/components/ui/input'
 
 export type ComboboxInputOption = {
   value: string
@@ -48,6 +47,15 @@ interface ComboboxInputProps {
   'aria-label'?: string
   'aria-labelledby'?: string
   'aria-invalid'?: React.AriaAttributes['aria-invalid']
+  /**
+   * Custom matching (e.g. fuzzy search). Receives the typed text, empty
+   * before the user types, and returns the options to show in order.
+   * Defaults to a case-insensitive substring match on label and value.
+   */
+  filterOptions?: (
+    options: readonly ComboboxInputOption[],
+    search: string
+  ) => readonly ComboboxInputOption[]
 }
 
 export function ComboboxInput({
@@ -66,6 +74,7 @@ export function ComboboxInput({
   'aria-label': ariaLabel,
   'aria-labelledby': ariaLabelledBy,
   'aria-invalid': ariaInvalid,
+  filterOptions,
 }: ComboboxInputProps) {
   const { t } = useTranslation()
   const listId = React.useId()
@@ -85,6 +94,8 @@ export function ComboboxInput({
     top: number
     left: number
     width: number
+    placeAbove: boolean
+    maxHeight: number
   } | null>(null)
   const pointerFocusRef = React.useRef(false)
   const selectedOption = React.useMemo(
@@ -94,14 +105,16 @@ export function ComboboxInput({
   const displayValue = open ? searchValue : (selectedOption?.label ?? value)
 
   const filteredOptions = React.useMemo(() => {
-    if (!searchChanged || !searchValue.trim()) return options
-    const search = searchValue.toLowerCase().trim()
+    const typed = searchChanged ? searchValue.trim() : ''
+    if (filterOptions) return filterOptions(options, typed)
+    if (!typed) return options
+    const search = typed.toLowerCase()
     return options.filter(
       (option) =>
         option.label.toLowerCase().includes(search) ||
         option.value.toLowerCase().includes(search)
     )
-  }, [options, searchValue, searchChanged])
+  }, [options, searchValue, searchChanged, filterOptions])
 
   // Reset highlight when filtered options change
   React.useEffect(() => {
@@ -128,7 +141,8 @@ export function ComboboxInput({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open])
 
-  // Position the portaled dropdown under the input and follow scroll/resize.
+  // Position the portaled dropdown under the input (or above it when there
+  // is more room there) and follow scroll, resize and opening animations.
   React.useEffect(() => {
     if (!open) {
       setDropdown(null)
@@ -138,21 +152,54 @@ export function ComboboxInput({
     if (!input) return
     const container =
       input.closest<HTMLElement>('[role="dialog"]') ?? document.body
+    // A transformed ancestor (the dialog popup is centred with translate)
+    // becomes the containing block of position: fixed descendants, so
+    // viewport coordinates would land off target. Measure where a fixed box
+    // at 0,0 actually sits inside the container and offset by that.
+    const probe = document.createElement('div')
+    probe.style.cssText =
+      'position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none'
+    container.appendChild(probe)
+    let frame = 0
     const measure = () => {
       const rect = input.getBoundingClientRect()
-      setDropdown({
+      const origin = probe.getBoundingClientRect()
+      // The dropdown is clipped to the container's visible box (a dialog
+      // scrolls its own content), so size and flip it within that box.
+      const bounds =
+        container === document.body
+          ? { top: 0, bottom: window.innerHeight }
+          : container.getBoundingClientRect()
+      const below = Math.min(bounds.bottom, window.innerHeight) - rect.bottom
+      const above = rect.top - Math.max(bounds.top, 0)
+      const placeAbove = below < 160 && above > below
+      const next = {
         container,
-        top: rect.bottom + 4,
-        left: rect.left,
+        top: (placeAbove ? rect.top - 4 : rect.bottom + 4) - origin.top,
+        left: rect.left - origin.left,
         width: rect.width,
-      })
+        placeAbove,
+        maxHeight: Math.max(
+          80,
+          Math.min(200, (placeAbove ? above : below) - 16)
+        ),
+      }
+      setDropdown((prev) =>
+        prev &&
+        prev.top === next.top &&
+        prev.left === next.left &&
+        prev.width === next.width &&
+        prev.placeAbove === next.placeAbove &&
+        prev.maxHeight === next.maxHeight
+          ? prev
+          : next
+      )
+      frame = requestAnimationFrame(measure)
     }
     measure()
-    window.addEventListener('scroll', measure, true)
-    window.addEventListener('resize', measure)
     return () => {
-      window.removeEventListener('scroll', measure, true)
-      window.removeEventListener('resize', measure)
+      cancelAnimationFrame(frame)
+      probe.remove()
     }
   }, [open])
 
@@ -294,6 +341,7 @@ export function ComboboxInput({
               top: dropdown.top,
               left: dropdown.left,
               width: dropdown.width,
+              transform: dropdown.placeAbove ? 'translateY(-100%)' : undefined,
             }}
             className={cn(
               'bg-popover text-popover-foreground z-100 rounded-md border shadow-md',
@@ -305,7 +353,8 @@ export function ComboboxInput({
                 ref={listRef}
                 id={listId}
                 role='listbox'
-                className='max-h-[200px] overflow-y-auto p-1'
+                style={{ maxHeight: dropdown.maxHeight }}
+                className='overflow-y-auto p-1'
               >
                 {filteredOptions.map((option, index) => (
                   <li

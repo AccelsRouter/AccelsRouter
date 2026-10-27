@@ -93,6 +93,20 @@ func TestBdLeadModels(t *testing.T) {
 	invalid(&BdLead{Side: BdSideBuy, Company: "A", Stage: "nope", Models: bdModels("m")}, "unknown stage")
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("not-in-catalog")}), "model must be in the system list")
 	invalid(ok(&BdLead{Side: BdSideSell, Company: "A", Models: bdModels("M")}), "system model names match exactly")
+	// "<family>-all" needs no entry in the model list, but only lowercase
+	// letters, digits, "-" and "." (between letters or digits) are allowed.
+	for _, name := range []string{"-all", "GPT-all", "gpt_4-all", "gpt--all", "gpt 4-all", "gpt..4-all", ".gpt-all", "gpt.-all"} {
+		invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels(name)}), name)
+	}
+	require.NoError(t, SaveBdLead(ok(&BdLead{Side: BdSideBuy, Company: "All", Models: bdModels("gpt-all", "gpt-4o-all", "gemini-2.5-all", "gpt.4-all")}), 1))
+
+	// Models configured on a channel without metadata are in the model list
+	// too, as the model menu shows them.
+	require.NoError(t, DB.AutoMigrate(&Channel{}))
+	channel := &Channel{Name: "bd-test", Key: "k", Models: "channel-only-model"}
+	require.NoError(t, DB.Create(channel).Error)
+	t.Cleanup(func() { DB.Delete(&Channel{}, channel.Id) })
+	require.NoError(t, SaveBdLead(ok(&BdLead{Side: BdSideBuy, Company: "Z", Models: bdModels("channel-only-model")}), 1))
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: "月结"}), "unknown payment method")
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: BdPaymentPostpaid}), "postpaid needs credit days")
 	invalid(ok(&BdLead{Side: BdSideBuy, Company: "A", Models: bdModels("m"), PaymentMethod: BdPaymentPostpaid, CreditDays: bdI(0)}), "credit days must be positive")
@@ -143,7 +157,7 @@ func TestBdLeadModels(t *testing.T) {
 	assert.Equal(t, "qwen3 max", got.Models[0].Model)
 	leads, err := ListBdLeads()
 	require.NoError(t, err)
-	assert.Len(t, leads, 2)
+	assert.Len(t, leads, 4)
 }
 
 func TestBdAllocations(t *testing.T) {

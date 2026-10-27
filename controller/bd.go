@@ -78,9 +78,14 @@ func BdGetMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	models, err := model.ListBdModelNames()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	common.ApiSuccess(c, bdMeta{
 		Owners:    owners,
-		Models:    model.ListBdModelNames(),
+		Models:    models,
 		Companies: companies,
 		CanWrite:  authz.Can(c.GetInt("id"), c.GetInt("role"), authz.BdWrite),
 		CanManage: bdCanManage(c),

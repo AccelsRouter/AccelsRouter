@@ -89,6 +89,61 @@ export function modelKey(s: string): string {
 
 export const modelNames = (l: BdLead) => l.models.map((m) => m.model)
 
+/** "<family>-all" (e.g. gpt-all) names a whole model family rather than a
+ * concrete model, so it may be entered without being in the model list. Only
+ * lowercase letters, digits, "-" and "." (between letters or digits, as in
+ * gemini-2.5-all) are allowed. Mirrors the server check in model.SaveBdLead. */
+export const MODEL_FAMILY_PATTERN =
+  /^[a-z0-9]+(?:\.[a-z0-9]+)*(?:-[a-z0-9]+(?:\.[a-z0-9]+)*)*-all$/
+
+export function isModelFamily(name: string): boolean {
+  return MODEL_FAMILY_PATTERN.test(name.trim())
+}
+
+/** Ends in -all but breaks the allowed characters. */
+export function isBadModelFamily(name: string): boolean {
+  const s = name.trim()
+  return s.endsWith('-all') && !MODEL_FAMILY_PATTERN.test(s)
+}
+
+/**
+ * Fuzzy search over model names, best matches first: "sonnet46",
+ * "claude 4.6" and "cs46" all find "claude-sonnet-4-6". Ranks an exact or
+ * substring match on the normalized name above all typed words appearing,
+ * above the typed characters appearing in order. Returns at most `limit`.
+ */
+export function fuzzyModels<T extends { value: string }>(
+  options: readonly T[],
+  search: string,
+  limit = 50
+): T[] {
+  const key = modelKey(search)
+  if (!key) return options.slice(0, limit)
+  const words = search
+    .toLowerCase()
+    .split(/[^a-z0-9\u0080-\uffff]+/)
+    .filter(Boolean)
+  const scored: { option: T; score: number }[] = []
+  for (const option of options) {
+    const name = modelKey(option.value)
+    let score = 0
+    if (name === key) score = 4
+    else if (name.startsWith(key)) score = 3
+    else if (name.includes(key)) score = 2
+    else if (words.every((w) => name.includes(w))) score = 1
+    else {
+      let i = 0
+      for (const ch of name) if (ch === key[i]) i++
+      if (i === key.length) score = 0.5
+    }
+    if (score) scored.push({ option, score })
+  }
+  scored.sort(
+    (a, b) => b.score - a.score || a.option.value.length - b.option.value.length
+  )
+  return scored.slice(0, limit).map((x) => x.option)
+}
+
 /** Models two leads have in common (by modelKey), each with the spread
  * (customer's expected price − supplier's supply price) when both prices are
  * known. Leads on hold match nothing. */

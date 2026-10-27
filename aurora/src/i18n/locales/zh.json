@@ -8529,10 +8529,14 @@
     "e.g. 30": "如 30",
     "Credit period {{days}} days": "账期 {{days}} 天",
     "Please enter the credit period in days": "请填写账期天数（1–3650）",
-    "Pick from the model list": "从模型列表中选择",
     "\"{{name}}\" is not in the model list": "「{{name}}」不在模型列表中",
     "Add to model list": "新增到模型列表",
     "Added {{name}} to the model list": "已将 {{name}} 新增到模型列表",
-    "Add these models to the model list first: {{names}}": "请先将这些模型新增到模型列表：{{names}}"
+    "Add these models to the model list first: {{names}}": "请先将这些模型新增到模型列表：{{names}}",
+    "Search the model list": "搜索模型列表",
+    "No matching model in the model list": "模型列表中没有匹配的模型",
+    "Names ending in -all (e.g. gpt-all, lowercase letters, digits, - and . only) can be entered directly": "以 -all 结尾的名称（如 gpt-all，仅限小写字母、数字、- 和 .）可直接填写",
+    "Names ending in -all may only contain lowercase letters, digits, - and .": "以 -all 结尾的名称只能包含小写字母、数字、- 和 .",
+    "Names ending in -all may only contain lowercase letters, digits, - and .: {{names}}": "以 -all 结尾的名称只能包含小写字母、数字、- 和 .：{{names}}"
   }
 }
