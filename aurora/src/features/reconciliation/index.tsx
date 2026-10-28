@@ -70,9 +70,10 @@ function StatCard(props: { label: string; value: string; hint?: string }) {
 }
 
 /*
-Usage in the unit the model is billed in. A task model billed by seconds,
-images or clips shows that amount with the task count beside it; a token
-model shows its tokens; a model billed per task shows the task count.
+Usage in the unit the model is billed in. A token model shows its tokens with
+the input / output (and cached input) split vendors bill by; a task model
+billed by seconds, images or clips shows that amount with the task count
+beside it; a model billed per task shows the task count.
 */
 const USAGE_UNIT_LABELS: Record<string, string> = {
   token: 'tokens',
@@ -85,6 +86,9 @@ type UsageRow = {
   quota: number
   requests: number
   tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
   usage_unit: string
   usage_amount: number
 }
@@ -102,16 +106,28 @@ function UsageCell(props: { row: UsageRow }) {
       </span>
     )
   }
+  const split =
+    unit === 'token' && row.prompt_tokens + row.completion_tokens > 0
   return (
-    <span className='tabular-nums'>
-      {formatNumber(amount)}{' '}
-      <span className='text-muted-foreground text-xs'>
-        {t(USAGE_UNIT_LABELS[unit] ?? 'tokens')}
-      </span>
-      {unit !== 'token' && (
+    <span className='inline-flex flex-col items-end tabular-nums'>
+      <span>
+        {formatNumber(amount)}{' '}
         <span className='text-muted-foreground text-xs'>
-          {' '}
-          · {formatNumber(row.requests)} {t('tasks')}
+          {t(USAGE_UNIT_LABELS[unit] ?? 'tokens')}
+        </span>
+        {unit !== 'token' && (
+          <span className='text-muted-foreground text-xs'>
+            {' '}
+            · {formatNumber(row.requests)} {t('tasks')}
+          </span>
+        )}
+      </span>
+      {split && (
+        <span className='text-muted-foreground text-[11px]'>
+          {t('Input')} {formatNumber(row.prompt_tokens)} · {t('Output')}{' '}
+          {formatNumber(row.completion_tokens)}
+          {row.cache_read_tokens > 0 &&
+            ` · ${t('Cache read')} ${formatNumber(row.cache_read_tokens)}`}
         </span>
       )}
     </span>

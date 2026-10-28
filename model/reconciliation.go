@@ -28,25 +28,34 @@ import (
 // that is not tokens (QuotaData.UsageUnit); a bucket that mixes units keeps
 // the unit of its largest consumption.
 type ReconRow struct {
-	Key         string `json:"key" gorm:"column:dim"`
-	Quota       int64  `json:"quota"`
-	Requests    int64  `json:"requests"`
-	Tokens      int64  `json:"tokens"`
-	UsageUnit   string `json:"usage_unit"`
-	UsageAmount int64  `json:"usage_amount"`
+	Key              string `json:"key" gorm:"column:dim"`
+	Quota            int64  `json:"quota"`
+	Requests         int64  `json:"requests"`
+	Tokens           int64  `json:"tokens"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	UsageUnit        string `json:"usage_unit"`
+	UsageAmount      int64  `json:"usage_amount"`
 }
 
 // reconUnitScan is one (dimension, usage unit) aggregate as the database
 // returns it; reconMergeUnits folds the units of a dimension into one row.
 type reconUnitScan struct {
-	Dim         string
-	ChannelId   int64
-	UsageUnit   string
-	UsageAmount int64
-	Quota       int64
-	Requests    int64
-	Tokens      int64
+	Dim              string
+	ChannelId        int64
+	UsageUnit        string
+	UsageAmount      int64
+	Quota            int64
+	Requests         int64
+	Tokens           int64
+	PromptTokens     int64
+	CompletionTokens int64
+	CacheReadTokens  int64
 }
+
+// reconAggregates is the aggregate column list shared by the rollup queries.
+const reconAggregates = "COALESCE(SUM(usage_amount),0) as usage_amount, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens, COALESCE(SUM(prompt_tokens),0) as prompt_tokens, COALESCE(SUM(completion_tokens),0) as completion_tokens, COALESCE(SUM(cache_read_tokens),0) as cache_read_tokens"
 
 // reconMergeUnits folds the per-unit aggregates of each dimension key into one
 // row: totals are summed, and the usage unit/amount are those of the unit
@@ -68,6 +77,9 @@ func reconMergeUnits(scans []reconUnitScan) []ReconRow {
 		m.row.Quota += s.Quota
 		m.row.Requests += s.Requests
 		m.row.Tokens += s.Tokens
+		m.row.PromptTokens += s.PromptTokens
+		m.row.CompletionTokens += s.CompletionTokens
+		m.row.CacheReadTokens += s.CacheReadTokens
 		if s.UsageUnit != "" && s.Quota > m.unitQuota {
 			m.row.UsageUnit, m.row.UsageAmount, m.unitQuota = s.UsageUnit, s.UsageAmount, s.Quota
 		}
@@ -86,14 +98,17 @@ func reconMergeUnits(scans []reconUnitScan) []ReconRow {
 // ReconMatrixRow is one model on one channel: which upstream served how much
 // of a model, so a vendor bill can be checked model by model.
 type ReconMatrixRow struct {
-	Model       string `json:"model"`
-	ChannelId   int    `json:"channel_id"`
-	Channel     string `json:"channel"`
-	Quota       int64  `json:"quota"`
-	Requests    int64  `json:"requests"`
-	Tokens      int64  `json:"tokens"`
-	UsageUnit   string `json:"usage_unit"`
-	UsageAmount int64  `json:"usage_amount"`
+	Model            string `json:"model"`
+	ChannelId        int    `json:"channel_id"`
+	Channel          string `json:"channel"`
+	Quota            int64  `json:"quota"`
+	Requests         int64  `json:"requests"`
+	Tokens           int64  `json:"tokens"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	UsageUnit        string `json:"usage_unit"`
+	UsageAmount      int64  `json:"usage_amount"`
 }
 
 // ReconResellerRow is one reseller's reconciliation, aggregated over all of
@@ -170,7 +185,7 @@ func reconTotals(from, to int64) (quota, requests, tokens, channels int64, err e
 func reconByColumn(from, to int64, keyCol string) ([]ReconRow, error) {
 	var scans []reconUnitScan
 	err := DB.Table("quota_data").
-		Select(keyCol+" as dim, usage_unit, COALESCE(SUM(usage_amount),0) as usage_amount, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
+		Select(keyCol+" as dim, usage_unit, "+reconAggregates).
 		Where("created_at >= ? and created_at <= ?", from, to).
 		Group(keyCol + ", usage_unit").
 		Order("quota desc").
@@ -185,7 +200,7 @@ func reconByColumn(from, to int64, keyCol string) ([]ReconRow, error) {
 func reconChannelRows(from, to int64) ([]ReconRow, error) {
 	var scans []reconUnitScan
 	if err := DB.Table("quota_data").
-		Select("channel_id, usage_unit, COALESCE(SUM(usage_amount),0) as usage_amount, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
+		Select("channel_id, usage_unit, "+reconAggregates).
 		Where("created_at >= ? and created_at <= ?", from, to).
 		Group("channel_id, usage_unit").
 		Order("quota desc").
@@ -237,7 +252,7 @@ func reconChannelNames(ids []int) map[int]string {
 func reconMatrixRows(from, to int64) ([]ReconMatrixRow, error) {
 	var scans []reconUnitScan
 	if err := DB.Table("quota_data").
-		Select("model_name as dim, channel_id, usage_unit, COALESCE(SUM(usage_amount),0) as usage_amount, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
+		Select("model_name as dim, channel_id, usage_unit, "+reconAggregates).
 		Where("created_at >= ? and created_at <= ?", from, to).
 		Group("model_name, channel_id, usage_unit").
 		Order("quota desc, model_name asc, channel_id asc").
@@ -265,6 +280,9 @@ func reconMatrixRows(from, to int64) ([]ReconMatrixRow, error) {
 		m.row.Quota += s.Quota
 		m.row.Requests += s.Requests
 		m.row.Tokens += s.Tokens
+		m.row.PromptTokens += s.PromptTokens
+		m.row.CompletionTokens += s.CompletionTokens
+		m.row.CacheReadTokens += s.CacheReadTokens
 		if s.UsageUnit != "" && s.Quota > m.unitQuota {
 			m.row.UsageUnit, m.row.UsageAmount, m.unitQuota = s.UsageUnit, s.UsageAmount, s.Quota
 		}

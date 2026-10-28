@@ -354,8 +354,9 @@ func TestQuotaDataUsageColumnsDatabaseMatrix(t *testing.T) {
 			for range 2 {
 				require.NoError(t, db.AutoMigrate(&QuotaData{}))
 			}
-			require.True(t, db.Migrator().HasColumn(&QuotaData{}, "usage_unit"))
-			require.True(t, db.Migrator().HasColumn(&QuotaData{}, "usage_amount"))
+			for _, column := range []string{"usage_unit", "usage_amount", "prompt_tokens", "completion_tokens"} {
+				require.True(t, db.Migrator().HasColumn(&QuotaData{}, column), column)
+			}
 			var legacy QuotaData
 			require.NoError(t, db.Where("model_name = ?", "gpt").First(&legacy).Error)
 			require.Equal(t, "", legacy.UsageUnit)
@@ -373,6 +374,9 @@ func TestQuotaDataUsageColumnsDatabaseMatrix(t *testing.T) {
 			}{{UsageUnitSecond, 10, 100}, {"", 0, 20}} {
 				params := base
 				params.UsageUnit, params.UsageAmount, params.Quota = p.unit, p.amount, p.quota
+				if p.unit == "" {
+					params.TokenUsed, params.PromptTokens, params.CompletionTokens = 7, 5, 2
+				}
 				LogQuotaData(params)
 			}
 			SaveQuotaDataCache()
@@ -391,13 +395,13 @@ func TestQuotaDataUsageColumnsDatabaseMatrix(t *testing.T) {
 			matrix, err := reconMatrixRows(0, 7200)
 			require.NoError(t, err)
 			require.Equal(t, []ReconMatrixRow{
-				{Model: "seedance", ChannelId: 7, Channel: "#7", Quota: 170, Requests: 3, Tokens: 0, UsageUnit: UsageUnitSecond, UsageAmount: 15},
+				{Model: "seedance", ChannelId: 7, Channel: "#7", Quota: 170, Requests: 3, Tokens: 7, PromptTokens: 5, CompletionTokens: 2, UsageUnit: UsageUnitSecond, UsageAmount: 15},
 				{Model: "gpt", ChannelId: 7, Channel: "#7", Quota: 10, Requests: 1, Tokens: 5},
 			}, matrix)
 			byModel, err := reconByColumn(0, 7200, "model_name")
 			require.NoError(t, err)
 			require.Equal(t, []ReconRow{
-				{Key: "seedance", Quota: 170, Requests: 3, Tokens: 0, UsageUnit: UsageUnitSecond, UsageAmount: 15},
+				{Key: "seedance", Quota: 170, Requests: 3, Tokens: 7, PromptTokens: 5, CompletionTokens: 2, UsageUnit: UsageUnitSecond, UsageAmount: 15},
 				{Key: "gpt", Quota: 10, Requests: 1, Tokens: 5},
 			}, byModel)
 		})

@@ -30,6 +30,9 @@ type QuotaData struct {
 	// row keyed by unit never mixes units. Empty means token_used applies.
 	UsageUnit   string `json:"usage_unit" gorm:"size:16;default:''"`
 	UsageAmount int64  `json:"usage_amount" gorm:"default:0"`
+	// Fork: the input/output split of token_used, the way vendors bill it.
+	PromptTokens     int64 `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens int64 `json:"completion_tokens" gorm:"default:0"`
 }
 
 // Usage units a quota_data row may carry besides tokens.
@@ -55,6 +58,8 @@ type QuotaDataLogParams struct {
 	NodeName            string
 	UsageUnit           string
 	UsageAmount         int64
+	PromptTokens        int64
+	CompletionTokens    int64
 }
 
 func UpdateQuotaData() {
@@ -93,6 +98,8 @@ func logQuotaDataCache(quotaData *QuotaData) {
 		cachedQuotaData.CacheReadTokens += quotaData.CacheReadTokens
 		cachedQuotaData.CacheCreationTokens += quotaData.CacheCreationTokens
 		cachedQuotaData.UsageAmount += quotaData.UsageAmount
+		cachedQuotaData.PromptTokens += quotaData.PromptTokens
+		cachedQuotaData.CompletionTokens += quotaData.CompletionTokens
 		quotaData = cachedQuotaData
 	}
 	CacheQuotaData[key] = quotaData
@@ -117,6 +124,8 @@ func LogQuotaData(params QuotaDataLogParams) {
 		CacheCreationTokens: max(0, params.CacheCreationTokens),
 		UsageUnit:           params.UsageUnit,
 		UsageAmount:         max(0, params.UsageAmount),
+		PromptTokens:        max(0, params.PromptTokens),
+		CompletionTokens:    max(0, params.CompletionTokens),
 	}
 
 	CacheQuotaDataLock.Lock()
@@ -157,6 +166,8 @@ func increaseQuotaData(quotaData *QuotaData) {
 			quotaData.UserID, quotaData.Username, quotaData.ModelName, quotaData.CreatedAt, quotaData.UseGroup, quotaData.TokenID, quotaData.ChannelID, quotaData.NodeName, quotaData.UsageUnit).
 		Updates(map[string]any{
 			"usage_amount":          gorm.Expr("usage_amount + ?", quotaData.UsageAmount),
+			"prompt_tokens":         gorm.Expr("prompt_tokens + ?", quotaData.PromptTokens),
+			"completion_tokens":     gorm.Expr("completion_tokens + ?", quotaData.CompletionTokens),
 			"count":                 gorm.Expr("count + ?", quotaData.Count),
 			"quota":                 gorm.Expr("quota + ?", quotaData.Quota),
 			"token_used":            gorm.Expr("token_used + ?", quotaData.TokenUsed),

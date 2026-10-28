@@ -81,9 +81,9 @@ func AdminExportReconciliation(c *gin.Context) {
 	_ = w.Write(nil)
 
 	writeDim := func(title string, rows []model.ReconRow) {
-		_ = w.Write([]string{title, "Standard (USD)", "Requests", "Tokens", "Usage unit", "Usage amount"})
+		_ = w.Write([]string{title, "Standard (USD)", "Requests", "Tokens", "Input tokens", "Output tokens", "Cache read tokens", "Usage unit", "Usage amount"})
 		for _, r := range rows {
-			_ = w.Write([]string{csvSafe(r.Key), usd(r.Quota), strconv.FormatInt(r.Requests, 10), strconv.FormatInt(r.Tokens, 10), r.UsageUnit, strconv.FormatInt(r.UsageAmount, 10)})
+			_ = w.Write([]string{csvSafe(r.Key), usd(r.Quota), strconv.FormatInt(r.Requests, 10), strconv.FormatInt(r.Tokens, 10), strconv.FormatInt(r.PromptTokens, 10), strconv.FormatInt(r.CompletionTokens, 10), strconv.FormatInt(r.CacheReadTokens, 10), r.UsageUnit, strconv.FormatInt(r.UsageAmount, 10)})
 		}
 		_ = w.Write(nil)
 	}
@@ -92,9 +92,9 @@ func AdminExportReconciliation(c *gin.Context) {
 	writeDim("By group", report.ByGroup)
 	writeDim("By user", report.ByUser)
 
-	_ = w.Write([]string{"By model x channel", "Channel", "Standard (USD)", "Requests", "Tokens", "Usage unit", "Usage amount"})
+	_ = w.Write([]string{"By model x channel", "Channel", "Standard (USD)", "Requests", "Tokens", "Input tokens", "Output tokens", "Cache read tokens", "Usage unit", "Usage amount"})
 	for _, r := range report.ByModelChannel {
-		_ = w.Write([]string{csvSafe(r.Model), csvSafe(r.Channel), usd(r.Quota), strconv.FormatInt(r.Requests, 10), strconv.FormatInt(r.Tokens, 10), r.UsageUnit, strconv.FormatInt(r.UsageAmount, 10)})
+		_ = w.Write([]string{csvSafe(r.Model), csvSafe(r.Channel), usd(r.Quota), strconv.FormatInt(r.Requests, 10), strconv.FormatInt(r.Tokens, 10), strconv.FormatInt(r.PromptTokens, 10), strconv.FormatInt(r.CompletionTokens, 10), strconv.FormatInt(r.CacheReadTokens, 10), r.UsageUnit, strconv.FormatInt(r.UsageAmount, 10)})
 	}
 	_ = w.Write(nil)
 

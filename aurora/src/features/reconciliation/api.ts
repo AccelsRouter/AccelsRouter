@@ -26,6 +26,9 @@ export type ReconRow = {
   quota: number
   requests: number
   tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
   usage_unit: string
   usage_amount: number
 }
@@ -38,6 +41,9 @@ export type ReconMatrixRow = {
   quota: number
   requests: number
   tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
   usage_unit: string
   usage_amount: number
 }
