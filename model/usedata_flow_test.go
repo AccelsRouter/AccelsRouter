@@ -191,3 +191,41 @@ func TestLogQuotaDataSplitsRowsByUseGroupTokenChannelAndNode(t *testing.T) {
 	require.Equal(t, "default", rows[1].UseGroup)
 	require.Equal(t, 25, rows[1].Quota)
 }
+
+// A dev-only mock task (upstream id "cgt-mock-…") is logged for the tester but
+// never enters the quota_data rollup that reconciliation and the dashboard
+// read, because nothing was consumed upstream.
+func TestMockTaskBillingLogSkipsQuotaData(t *testing.T) {
+	truncateTables(t)
+	t.Cleanup(func() {
+		DB.Exec("DELETE FROM logs")
+		DB.Exec("DELETE FROM quota_data")
+	})
+	CacheQuotaDataLock.Lock()
+	CacheQuotaData = make(map[string]*QuotaData)
+	CacheQuotaDataLock.Unlock()
+	previousExport, previousConsume := common.DataExportEnabled, common.LogConsumeEnabled
+	common.DataExportEnabled, common.LogConsumeEnabled = true, true
+	t.Cleanup(func() { common.DataExportEnabled, common.LogConsumeEnabled = previousExport, previousConsume })
+
+	task := &Task{TaskID: "pub-1"}
+	task.PrivateData.UpstreamTaskID = MockTaskIDPrefix + "1791956920-26"
+	require.True(t, task.IsMock())
+	require.False(t, (&Task{TaskID: "cgt-20261028-1"}).IsMock())
+
+	for _, mock := range []bool{true, false} {
+		RecordTaskBillingLog(RecordTaskBillingLogParams{
+			UserId: 1, LogType: LogTypeConsume, ChannelId: 1, ModelName: "seedance", Quota: 100,
+			Other: NewLogOther(), SkipQuotaData: mock,
+		})
+	}
+	SaveQuotaDataCache()
+
+	var logCount int64
+	require.NoError(t, DB.Model(&Log{}).Where("model_name = ?", "seedance").Count(&logCount).Error)
+	require.Equal(t, int64(2), logCount, "both tasks are logged")
+	var rows []QuotaData
+	require.NoError(t, DB.Where("model_name = ?", "seedance").Find(&rows).Error)
+	require.Len(t, rows, 1, "only the real task reaches quota_data")
+	require.Equal(t, 100, rows[0].Quota)
+}

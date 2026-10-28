@@ -78,6 +78,13 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 	}
 	appendTaskLogInfo(task, other)
 	attachQuotaSaturation(c, info, other)
+	// Fork: a dev-only mock task consumed nothing upstream. It is still billed
+	// and logged (flagged), but stays out of channel usage, the quota_data
+	// rollup and the org usage rollup so reconciliation only sees real calls.
+	mock := task.IsMock()
+	if mock {
+		other.SetPublic("mock", true)
+	}
 	// Fork: a task billed by vendor tokens (Seedance reports completion
 	// tokens) records them as output tokens, so the usage rollup and the
 	// reconciliation can be checked against the vendor bill in tokens.
@@ -98,12 +105,16 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 		TokenName:        tokenName,
 		CompletionTokens: completionTokens,
 		Quota:            info.PriceData.Quota,
+		SkipQuotaData:    mock,
 		Content:          logContent,
 		TokenId:          info.TokenId,
 		Group:            info.UsingGroup,
 		Other:            other,
 	})
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
+	if mock {
+		return
+	}
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)
 	// Fork: org-billed tasks count in the org/reseller usage rollup like any
 	// other request; settlement adjusts the same bucket (taskAdjustFunding).
@@ -158,6 +169,9 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 		bucketAt := task.SubmitTime
 		if bucketAt <= 0 {
 			bucketAt = task.CreatedAt
+		}
+		if task.IsMock() {
+			return nil
 		}
 		if err := model.AdjustOrgUsageDaily(bucketAt, snapshot.OrgId, snapshot.WorkspaceId, resellerOrgId, snapshot.UserId,
 			taskModelName(task), int64(delta), charged, cost); err != nil {
@@ -328,7 +342,9 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 
 	// 3. 回减预扣时累计的用户和渠道用量，请求次数保持不变
 	model.UpdateUserUsedQuota(task.UserId, -quota)
-	model.UpdateChannelUsedQuota(task.ChannelId, -quota)
+	if !task.IsMock() {
+		model.UpdateChannelUsedQuota(task.ChannelId, -quota)
+	}
 
 	// 4. 记录日志
 	other := taskBillingOther(task)
@@ -343,6 +359,8 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 		TokenId:   task.PrivateData.TokenId,
 		Group:     task.Group,
 		Other:     other,
+		// Fork: mock tasks stay out of the quota_data rollup (LogTaskConsumption).
+		SkipQuotaData: task.IsMock(),
 	})
 
 	// 5. 资金退款完成后再清除持久化标记。
@@ -395,7 +413,9 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 
 	// 提交阶段已经累计过一次请求；结算阶段只调整最终用量。
 	model.UpdateUserUsedQuota(task.UserId, quotaDelta)
-	model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
+	if !task.IsMock() {
+		model.UpdateChannelUsedQuota(task.ChannelId, quotaDelta)
+	}
 
 	var logType int
 	var logQuota int
@@ -424,6 +444,8 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		Group:     task.Group,
 		Other:     other,
 		NodeName:  task.PrivateData.NodeName,
+		// Fork: mock tasks stay out of the quota_data rollup (LogTaskConsumption).
+		SkipQuotaData: task.IsMock(),
 	})
 }
 

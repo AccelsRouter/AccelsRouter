@@ -355,6 +355,8 @@ type RecordConsumeLogParams struct {
 	IsStream         bool              `json:"is_stream"`
 	Group            string            `json:"group"`
 	Other            *LogOther         `json:"other"`
+	// Fork: see RecordTaskBillingLogParams.SkipQuotaData.
+	SkipQuotaData bool
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -408,7 +410,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if err != nil {
 		logger.LogError(c, common.LogText("failed to record log: %s", err.Error()))
 	}
-	if common.DataExportEnabled {
+	if common.DataExportEnabled && !params.SkipQuotaData {
 		var cacheReadTokens, cacheCreationTokens int
 		if other != nil {
 			cacheReadTokens, _ = other.public["cache_tokens"].(int)
@@ -444,6 +446,9 @@ type RecordTaskBillingLogParams struct {
 	Group     string
 	Other     *LogOther
 	NodeName  string // 任务发起节点；为空时回退当前节点
+	// Fork: a mock task consumed nothing upstream; log it, but keep it out of
+	// the quota_data rollup that reconciliation and the dashboard read.
+	SkipQuotaData bool
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -477,7 +482,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	if err != nil {
 		common.SysLog(common.LogText("failed to record task billing log: %s", err.Error()))
 	}
-	if params.LogType == LogTypeConsume && common.DataExportEnabled {
+	if params.LogType == LogTypeConsume && common.DataExportEnabled && !params.SkipQuotaData {
 		nodeName := params.NodeName
 		if nodeName == "" {
 			nodeName = common.NodeName

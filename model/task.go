@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -194,6 +195,17 @@ type TaskOrgFunding struct {
 // protocol retrieve endpoints, artifact projection) may serve this task.
 func (t *Task) ResultRetrievable() bool {
 	return !t.PrivateData.ResultDiscarded
+}
+
+// MockTaskIDPrefix marks a task whose upstream call was faked by the dev-only
+// mock in the task plugin adaptor: nothing was consumed upstream.
+const MockTaskIDPrefix = "cgt-mock-"
+
+// IsMock reports whether the task never reached a real upstream (see
+// MockTaskIDPrefix). Such tasks are billed and logged, but kept out of the
+// consumption rollups that reconciliation and the dashboard read.
+func (t *Task) IsMock() bool {
+	return strings.HasPrefix(t.GetUpstreamTaskID(), MockTaskIDPrefix)
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）

@@ -491,7 +491,7 @@ func encodeFilePlaceholder(placeholder map[string]any, form *multipart.Form, lim
 const (
 	mockUserID   = 11
 	mockVideoURL = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
-	mockIDPrefix = "cgt-mock-"
+	mockIDPrefix = model.MockTaskIDPrefix
 )
 
 var mockTaskSeq int64
