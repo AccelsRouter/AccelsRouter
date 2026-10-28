@@ -92,6 +92,12 @@ func AdminExportReconciliation(c *gin.Context) {
 	writeDim("By group", report.ByGroup)
 	writeDim("By user", report.ByUser)
 
+	_ = w.Write([]string{"By model x channel", "Channel", "Standard (USD)", "Requests", "Tokens"})
+	for _, r := range report.ByModelChannel {
+		_ = w.Write([]string{csvSafe(r.Model), csvSafe(r.Channel), usd(r.Quota), strconv.FormatInt(r.Requests, 10), strconv.FormatInt(r.Tokens, 10)})
+	}
+	_ = w.Write(nil)
+
 	_ = w.Write([]string{"Resellers", "Standard (USD)", "Wholesale discount (USD)", "Received (USD)", "Customers paid reseller (USD)", "Requests"})
 	for _, r := range report.ByReseller {
 		_ = w.Write([]string{csvSafe(r.Name), usd(r.StandardQuota), usd(r.DiscountQuota), usd(r.ReceivedQuota), usd(r.ChargedQuota), strconv.FormatInt(r.Requests, 10)})

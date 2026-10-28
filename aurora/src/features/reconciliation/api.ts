@@ -25,6 +25,16 @@ export type ReconRow = {
   tokens: number
 }
 
+// One model on one channel: which upstream served how much of a model.
+export type ReconMatrixRow = {
+  model: string
+  channel_id: number
+  channel: string
+  quota: number
+  requests: number
+  tokens: number
+}
+
 export type ReconResellerRow = {
   org_id: number
   name: string
@@ -57,6 +67,7 @@ export type ReconReport = {
   summary: ReconSummary
   by_model: ReconRow[]
   by_channel: ReconRow[]
+  by_model_channel: ReconMatrixRow[]
   by_group: ReconRow[]
   by_user: ReconRow[]
   by_reseller: ReconResellerRow[]

@@ -78,15 +78,30 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 	}
 	appendTaskLogInfo(task, other)
 	attachQuotaSaturation(c, info, other)
+	// Fork: a task billed by vendor tokens (Seedance reports completion
+	// tokens) records them as output tokens, so the usage rollup and the
+	// reconciliation can be checked against the vendor bill in tokens.
+	completionTokens := 0
+	if snap := info.TieredBillingSnapshot; snap != nil {
+		switch tokens := snap.UsageFacts["tokens"].(type) {
+		case int64:
+			completionTokens = int(min(tokens, int64(math.MaxInt32)))
+		case float64:
+			completionTokens = int(min(math.Max(tokens, 0), float64(math.MaxInt32)))
+		case int:
+			completionTokens = tokens
+		}
+	}
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
-		ChannelId: info.ChannelId,
-		ModelName: info.OriginModelName,
-		TokenName: tokenName,
-		Quota:     info.PriceData.Quota,
-		Content:   logContent,
-		TokenId:   info.TokenId,
-		Group:     info.UsingGroup,
-		Other:     other,
+		ChannelId:        info.ChannelId,
+		ModelName:        info.OriginModelName,
+		TokenName:        tokenName,
+		CompletionTokens: completionTokens,
+		Quota:            info.PriceData.Quota,
+		Content:          logContent,
+		TokenId:          info.TokenId,
+		Group:            info.UsingGroup,
+		Other:            other,
 	})
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)

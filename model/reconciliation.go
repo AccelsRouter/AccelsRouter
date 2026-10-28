@@ -31,6 +31,17 @@ type ReconRow struct {
 	Tokens   int64  `json:"tokens"`
 }
 
+// ReconMatrixRow is one model on one channel: which upstream served how much
+// of a model, so a vendor bill can be checked model by model.
+type ReconMatrixRow struct {
+	Model     string `json:"model"`
+	ChannelId int    `json:"channel_id"`
+	Channel   string `json:"channel"`
+	Quota     int64  `json:"quota"`
+	Requests  int64  `json:"requests"`
+	Tokens    int64  `json:"tokens"`
+}
+
 // ReconResellerRow is one reseller's reconciliation, aggregated over all of
 // that reseller's traffic (its customers plus its own keys).
 type ReconResellerRow struct {
@@ -63,18 +74,24 @@ type ReconSummary struct {
 
 // ReconReport is the full reconciliation payload.
 type ReconReport struct {
-	From       int64              `json:"from"`
-	To         int64              `json:"to"`
-	Summary    ReconSummary       `json:"summary"`
-	ByModel    []ReconRow         `json:"by_model"`
-	ByChannel  []ReconRow         `json:"by_channel"`
-	ByGroup    []ReconRow         `json:"by_group"`
-	ByUser     []ReconRow         `json:"by_user"`
-	ByReseller []ReconResellerRow `json:"by_reseller"`
-	Series     []ReconSeriesPoint `json:"series"`
+	From      int64        `json:"from"`
+	To        int64        `json:"to"`
+	Summary   ReconSummary `json:"summary"`
+	ByModel   []ReconRow   `json:"by_model"`
+	ByChannel []ReconRow   `json:"by_channel"`
+	// Every (model, channel) pair of the window, largest first.
+	ByModelChannel []ReconMatrixRow   `json:"by_model_channel"`
+	ByGroup        []ReconRow         `json:"by_group"`
+	ByUser         []ReconRow         `json:"by_user"`
+	ByReseller     []ReconResellerRow `json:"by_reseller"`
+	Series         []ReconSeriesPoint `json:"series"`
 }
 
 const reconDimLimit = 200
+
+// reconMatrixLimit caps the model × channel pairs; a window rarely has more
+// than a few hundred, and the summary stays exact regardless.
+const reconMatrixLimit = 2000
 
 // reconTotals returns the full-window totals (no grouping/limit) so the summary
 // is exact even when a dimension breakdown is capped at reconDimLimit rows.
@@ -128,30 +145,73 @@ func reconChannelRows(from, to int64) ([]ReconRow, error) {
 	}
 	ids := make([]int, 0, len(scans))
 	for _, s := range scans {
-		if s.ChannelId > 0 {
-			ids = append(ids, int(s.ChannelId))
+		ids = append(ids, int(s.ChannelId))
+	}
+	names := reconChannelNames(ids)
+	rows := make([]ReconRow, 0, len(scans))
+	for _, s := range scans {
+		rows = append(rows, ReconRow{Key: names[int(s.ChannelId)], Quota: s.Quota, Requests: s.Requests, Tokens: s.Tokens})
+	}
+	return rows, nil
+}
+
+// reconChannelNames resolves channel display names; a deleted channel (or the
+// 0 of rows written before channel_id existed) shows as "#<id>".
+func reconChannelNames(ids []int) map[int]string {
+	names := map[int]string{}
+	lookup := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			lookup = append(lookup, id)
 		}
 	}
-	names := map[int]string{}
-	if len(ids) > 0 {
+	if len(lookup) > 0 {
 		type nameRow struct {
 			Id   int
 			Name string
 		}
 		var nrs []nameRow
-		if err := DB.Table("channels").Select("id, name").Where("id IN ?", ids).Scan(&nrs).Error; err == nil {
+		if err := DB.Table("channels").Select("id, name").Where("id IN ?", lookup).Scan(&nrs).Error; err == nil {
 			for _, n := range nrs {
 				names[n.Id] = n.Name
 			}
 		}
 	}
-	rows := make([]ReconRow, 0, len(scans))
-	for _, s := range scans {
-		name := names[int(s.ChannelId)]
-		if name == "" {
-			name = "#" + strconv.Itoa(int(s.ChannelId))
+	for _, id := range ids {
+		if names[id] == "" {
+			names[id] = "#" + strconv.Itoa(id)
 		}
-		rows = append(rows, ReconRow{Key: name, Quota: s.Quota, Requests: s.Requests, Tokens: s.Tokens})
+	}
+	return names
+}
+
+// reconMatrixRows aggregates quota_data by (model, channel) over [from,to].
+func reconMatrixRows(from, to int64) ([]ReconMatrixRow, error) {
+	type scan struct {
+		ModelName string
+		ChannelId int64
+		Quota     int64
+		Requests  int64
+		Tokens    int64
+	}
+	var scans []scan
+	if err := DB.Table("quota_data").
+		Select("model_name, channel_id, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
+		Where("created_at >= ? and created_at <= ?", from, to).
+		Group("model_name, channel_id").
+		Order("quota desc, model_name asc, channel_id asc").
+		Limit(reconMatrixLimit).
+		Scan(&scans).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]int, 0, len(scans))
+	for _, s := range scans {
+		ids = append(ids, int(s.ChannelId))
+	}
+	names := reconChannelNames(ids)
+	rows := make([]ReconMatrixRow, 0, len(scans))
+	for _, s := range scans {
+		rows = append(rows, ReconMatrixRow{Model: s.ModelName, ChannelId: int(s.ChannelId), Channel: names[int(s.ChannelId)], Quota: s.Quota, Requests: s.Requests, Tokens: s.Tokens})
 	}
 	return rows, nil
 }
@@ -292,6 +352,12 @@ func GetReconciliation(from, to int64, granularity string, loc *time.Location) (
 		return nil, err
 	}
 	report.ByChannel = byChannel
+
+	matrix, err := reconMatrixRows(from, to)
+	if err != nil {
+		return nil, err
+	}
+	report.ByModelChannel = matrix
 
 	series, err := reconSeries(from, to, granularity, loc)
 	if err != nil {

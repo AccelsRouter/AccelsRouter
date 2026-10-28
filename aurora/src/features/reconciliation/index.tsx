@@ -23,9 +23,9 @@ discount given to resellers and what the platform actually received
 group / user / reseller, over a date range and a day/week/month time series,
 with CSV export.
 */
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
-import { Download, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -54,6 +54,7 @@ import {
   exportReconciliation,
   getReconciliation,
   type Granularity,
+  type ReconMatrixRow,
   type ReconRow,
 } from './api'
 
@@ -73,42 +74,197 @@ function StatCard(props: { label: string; value: string; hint?: string }) {
   )
 }
 
-function DimTable(props: { keyLabel: string; rows: ReconRow[] }) {
+/*
+Usage in the unit the model is billed in: tokens when the rows carry any,
+otherwise the request count, which for task models (video, image) is the
+number of tasks.
+*/
+function UsageCell(props: { tokens: number; requests: number }) {
   const { t } = useTranslation()
-  if (props.rows.length === 0) {
+  if (props.tokens > 0) {
     return (
-      <p className='text-muted-foreground py-8 text-center text-sm'>
-        {t('No data.')}
-      </p>
+      <span className='tabular-nums'>
+        {formatNumber(props.tokens)}{' '}
+        <span className='text-muted-foreground text-xs'>{t('tokens')}</span>
+      </span>
     )
   }
+  return (
+    <span className='tabular-nums'>
+      {formatNumber(props.requests)}{' '}
+      <span className='text-muted-foreground text-xs'>{t('tasks')}</span>
+    </span>
+  )
+}
+
+function NumberCells(props: {
+  quota: number
+  requests: number
+  tokens: number
+}) {
+  return (
+    <>
+      <td className='px-3 py-2 text-right tabular-nums'>
+        {formatQuotaWithCurrency(props.quota, {
+          digitsLarge: 4,
+          digitsSmall: 6,
+        })}
+      </td>
+      <td className='px-3 py-2 text-right tabular-nums'>
+        {formatNumber(props.requests)}
+      </td>
+      <td className='px-3 py-2 text-right'>
+        <UsageCell tokens={props.tokens} requests={props.requests} />
+      </td>
+    </>
+  )
+}
+
+function EmptyRows() {
+  const { t } = useTranslation()
+  return (
+    <p className='text-muted-foreground py-8 text-center text-sm'>
+      {t('No data.')}
+    </p>
+  )
+}
+
+/*
+A dimension table whose rows expand to their (model, channel) breakdown when
+`details` is given: a model row lists the channels that served it, a channel
+row lists the models it served.
+*/
+function DimTable(props: {
+  keyLabel: string
+  rows: ReconRow[]
+  details?: { label: string; of: (row: ReconRow) => ReconMatrixRow[] }
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  if (props.rows.length === 0) return <EmptyRows />
+  const details = props.details
   return (
     <div className='border-border/60 max-h-[420px] overflow-auto rounded-md border'>
       <table className='w-full text-sm'>
         <thead className='bg-muted/40 text-muted-foreground sticky top-0 text-xs'>
           <tr>
-            <th className='px-3 py-2 text-left font-medium'>{props.keyLabel}</th>
-            <th className='px-3 py-2 text-right font-medium'>{t('Standard')}</th>
-            <th className='px-3 py-2 text-right font-medium'>{t('Requests')}</th>
-            <th className='px-3 py-2 text-right font-medium'>{t('Tokens')}</th>
+            <th className='px-3 py-2 text-left font-medium'>
+              {props.keyLabel}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Standard')}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Requests')}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>{t('Usage')}</th>
+          </tr>
+        </thead>
+        <tbody className='divide-border/60 divide-y'>
+          {props.rows.map((r) => {
+            const children = details ? details.of(r) : []
+            const expandable = children.length > 0
+            const expanded = expandable && open[r.key] === true
+            return (
+              <Fragment key={r.key}>
+                <tr
+                  className={
+                    expandable
+                      ? 'hover:bg-muted/30 cursor-pointer'
+                      : 'hover:bg-muted/30'
+                  }
+                  onClick={() => {
+                    if (expandable)
+                      setOpen((s) => ({ ...s, [r.key]: !s[r.key] }))
+                  }}
+                  aria-expanded={expandable ? expanded : undefined}
+                >
+                  <td className='px-3 py-2 font-medium'>
+                    <span className='inline-flex items-center gap-1'>
+                      {expandable &&
+                        (expanded ? (
+                          <ChevronDown
+                            className='text-muted-foreground h-3.5 w-3.5'
+                            aria-hidden='true'
+                          />
+                        ) : (
+                          <ChevronRight
+                            className='text-muted-foreground h-3.5 w-3.5'
+                            aria-hidden='true'
+                          />
+                        ))}
+                      {r.key || '-'}
+                    </span>
+                  </td>
+                  <NumberCells
+                    quota={r.quota}
+                    requests={r.requests}
+                    tokens={r.tokens}
+                  />
+                </tr>
+                {expanded &&
+                  children.map((d) => (
+                    <tr
+                      key={`${d.model}#${d.channel_id}`}
+                      className='bg-muted/20'
+                    >
+                      <td className='text-muted-foreground py-1.5 pr-3 pl-9 text-xs'>
+                        <span className='mr-1'>{details?.label}</span>
+                        <span className='text-foreground'>
+                          {details?.label === t('Channel')
+                            ? d.channel
+                            : d.model}
+                        </span>
+                      </td>
+                      <NumberCells
+                        quota={d.quota}
+                        requests={d.requests}
+                        tokens={d.tokens}
+                      />
+                    </tr>
+                  ))}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* Every (model, channel) pair of the window, one row each, largest first. */
+function MatrixTable(props: { rows: ReconMatrixRow[] }) {
+  const { t } = useTranslation()
+  if (props.rows.length === 0) return <EmptyRows />
+  return (
+    <div className='border-border/60 max-h-[420px] overflow-auto rounded-md border'>
+      <table className='w-full text-sm'>
+        <thead className='bg-muted/40 text-muted-foreground sticky top-0 text-xs'>
+          <tr>
+            <th className='px-3 py-2 text-left font-medium'>{t('Model')}</th>
+            <th className='px-3 py-2 text-left font-medium'>{t('Channel')}</th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Standard')}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Requests')}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>{t('Usage')}</th>
           </tr>
         </thead>
         <tbody className='divide-border/60 divide-y'>
           {props.rows.map((r) => (
-            <tr key={r.key} className='hover:bg-muted/30'>
-              <td className='px-3 py-2 font-medium'>{r.key || '-'}</td>
-              <td className='px-3 py-2 text-right tabular-nums'>
-                {formatQuotaWithCurrency(r.quota, {
-                  digitsLarge: 4,
-                  digitsSmall: 6,
-                })}
-              </td>
-              <td className='px-3 py-2 text-right tabular-nums'>
-                {formatNumber(r.requests)}
-              </td>
-              <td className='px-3 py-2 text-right tabular-nums'>
-                {formatNumber(r.tokens)}
-              </td>
+            <tr
+              key={`${r.model}#${r.channel_id}`}
+              className='hover:bg-muted/30'
+            >
+              <td className='px-3 py-2 font-medium'>{r.model || '-'}</td>
+              <td className='px-3 py-2'>{r.channel}</td>
+              <NumberCells
+                quota={r.quota}
+                requests={r.requests}
+                tokens={r.tokens}
+              />
             </tr>
           ))}
         </tbody>
@@ -141,6 +297,11 @@ export function Reconciliation() {
 
   const q = (v: number) =>
     formatQuotaWithCurrency(v, { digitsLarge: 4, digitsSmall: 6 })
+
+  const matrix = useMemo(
+    () => data?.by_model_channel ?? [],
+    [data?.by_model_channel]
+  )
 
   const chartData = useMemo(
     () =>
@@ -294,17 +455,35 @@ export function Reconciliation() {
                   <TabsTrigger value='channel'>
                     {t('By Channel (upstream)')}
                   </TabsTrigger>
+                  <TabsTrigger value='matrix'>
+                    {t('Model x Channel')}
+                  </TabsTrigger>
                   <TabsTrigger value='group'>{t('By Group')}</TabsTrigger>
                   <TabsTrigger value='user'>{t('By Member')}</TabsTrigger>
-                  <TabsTrigger value='reseller'>
-                    {t('Resellers')}
-                  </TabsTrigger>
+                  <TabsTrigger value='reseller'>{t('Resellers')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value='model' className='pt-3'>
-                  <DimTable keyLabel={t('Model')} rows={data.by_model} />
+                  <DimTable
+                    keyLabel={t('Model')}
+                    rows={data.by_model}
+                    details={{
+                      label: t('Channel'),
+                      of: (row) => matrix.filter((m) => m.model === row.key),
+                    }}
+                  />
                 </TabsContent>
                 <TabsContent value='channel' className='pt-3'>
-                  <DimTable keyLabel={t('Channel')} rows={data.by_channel} />
+                  <DimTable
+                    keyLabel={t('Channel')}
+                    rows={data.by_channel}
+                    details={{
+                      label: t('Model'),
+                      of: (row) => matrix.filter((m) => m.channel === row.key),
+                    }}
+                  />
+                </TabsContent>
+                <TabsContent value='matrix' className='pt-3'>
+                  <MatrixTable rows={matrix} />
                 </TabsContent>
                 <TabsContent value='group' className='pt-3'>
                   <DimTable keyLabel={t('Group')} rows={data.by_group} />

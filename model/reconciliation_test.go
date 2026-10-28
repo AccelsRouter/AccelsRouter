@@ -25,6 +25,8 @@ func TestGetReconciliationReceivedAndDayBuckets(t *testing.T) {
 	require.NoError(t, DB.Create(&[]QuotaData{
 		{UserID: 1, Username: "a", ModelName: "m", CreatedAt: h1, ChannelID: 7, Count: 2, Quota: 1000, TokenUsed: 10},
 		{UserID: 2, Username: "b", ModelName: "m", CreatedAt: h2, ChannelID: 0, Count: 1, Quota: 500, TokenUsed: 5},
+		// A task-billed model on the same channel: counted in requests, no tokens.
+		{UserID: 1, Username: "a", ModelName: "video", CreatedAt: h2, ChannelID: 7, Count: 3, Quota: 200, TokenUsed: 0},
 	}).Error)
 	// Reseller traffic: standard 600, customers paid retail 540, platform got wholesale 480.
 	require.NoError(t, DB.Create(&OrgUsageDaily{
@@ -35,12 +37,21 @@ func TestGetReconciliationReceivedAndDayBuckets(t *testing.T) {
 	rep, err := GetReconciliation(h1-1, h2+1, "day", cst)
 	require.NoError(t, err)
 
-	assert.Equal(t, int64(1500), rep.Summary.StandardQuota)
+	assert.Equal(t, int64(1700), rep.Summary.StandardQuota)
 	assert.Equal(t, int64(120), rep.Summary.DiscountQuota, "wholesale discount = standard - cost")
-	assert.Equal(t, int64(1380), rep.Summary.ReceivedQuota)
+	assert.Equal(t, int64(1580), rep.Summary.ReceivedQuota)
 	assert.Equal(t, rep.Summary.StandardQuota, rep.Summary.DiscountQuota+rep.Summary.ReceivedQuota)
-	assert.Equal(t, int64(3), rep.Summary.Requests)
+	assert.Equal(t, int64(6), rep.Summary.Requests)
 	assert.Equal(t, int64(1), rep.Summary.Channels, "channel_id 0 is not a channel")
+
+	// Every (model, channel) pair, largest first; an unknown channel is "#<id>".
+	assert.Equal(t, []ReconMatrixRow{
+		{Model: "m", ChannelId: 7, Channel: "#7", Quota: 1000, Requests: 2, Tokens: 10},
+		{Model: "m", ChannelId: 0, Channel: "#0", Quota: 500, Requests: 1, Tokens: 5},
+		{Model: "video", ChannelId: 7, Channel: "#7", Quota: 200, Requests: 3, Tokens: 0},
+	}, rep.ByModelChannel)
+	require.Len(t, rep.ByChannel, 2)
+	assert.Equal(t, ReconRow{Key: "#7", Quota: 1200, Requests: 5, Tokens: 10}, rep.ByChannel[0])
 
 	require.Len(t, rep.ByReseller, 1)
 	assert.Equal(t, ReconResellerRow{OrgId: 10, Name: "#10", StandardQuota: 600, DiscountQuota: 120, ReceivedQuota: 480, ChargedQuota: 540, Requests: 2}, rep.ByReseller[0])
@@ -49,10 +60,10 @@ func TestGetReconciliationReceivedAndDayBuckets(t *testing.T) {
 	assert.Equal(t, time.Date(2026, 9, 30, 0, 0, 0, 0, cst).Unix(), rep.Series[0].Period)
 	assert.Equal(t, int64(1000), rep.Series[0].Quota)
 	assert.Equal(t, time.Date(2026, 10, 1, 0, 0, 0, 0, cst).Unix(), rep.Series[1].Period)
-	assert.Equal(t, int64(500), rep.Series[1].Quota)
+	assert.Equal(t, int64(700), rep.Series[1].Quota)
 
 	utc, err := GetReconciliation(h1-1, h2+1, "day", time.UTC)
 	require.NoError(t, err)
 	require.Len(t, utc.Series, 1, "both hours fall on the same UTC day")
-	assert.Equal(t, int64(1500), utc.Series[0].Quota)
+	assert.Equal(t, int64(1700), utc.Series[0].Quota)
 }

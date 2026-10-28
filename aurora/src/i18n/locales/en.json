@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Model x Channel": "Model x Channel",
+    "tasks": "tasks",
     "A valid site exchange rate is required.": "A valid site exchange rate is required.",
     "Cache create (12h) price": "Cache create (12h) price",
     "Cache Creation (12h)": "Cache Creation (12h)",

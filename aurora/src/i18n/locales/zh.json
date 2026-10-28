@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Model x Channel": "模型 × 渠道",
+    "tasks": "任务",
     "A valid site exchange rate is required.": "请先设置有效的站点货币汇率。",
     "Cache create (12h) price": "12 小时缓存写入价格",
     "Cache Creation (12h)": "缓存创建 (12h)",
