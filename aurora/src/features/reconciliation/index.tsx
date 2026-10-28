@@ -454,7 +454,7 @@ export function Reconciliation() {
                 </div>
               </div>
 
-              <Tabs defaultValue='model'>
+              <Tabs defaultValue='channel'>
                 <TabsList className='max-w-full flex-wrap justify-start'>
                   <TabsTrigger value='model'>{t('By Model')}</TabsTrigger>
                   <TabsTrigger value='channel'>
