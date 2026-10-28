@@ -357,6 +357,9 @@ type RecordConsumeLogParams struct {
 	Other            *LogOther         `json:"other"`
 	// Fork: see RecordTaskBillingLogParams.SkipQuotaData.
 	SkipQuotaData bool
+	// Fork: usage in the model's billing unit for quota_data (see QuotaData).
+	UsageUnit   string
+	UsageAmount int64
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -431,6 +434,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			TokenID:             params.TokenId,
 			ChannelID:           params.ChannelId,
 			NodeName:            common.NodeName,
+			UsageUnit:           params.UsageUnit,
+			UsageAmount:         params.UsageAmount,
 		})
 	}
 }
@@ -449,6 +454,9 @@ type RecordTaskBillingLogParams struct {
 	// Fork: a mock task consumed nothing upstream; log it, but keep it out of
 	// the quota_data rollup that reconciliation and the dashboard read.
 	SkipQuotaData bool
+	// Fork: usage in the model's billing unit for quota_data (see QuotaData).
+	UsageUnit   string
+	UsageAmount int64
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -488,15 +496,17 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 			nodeName = common.NodeName
 		}
 		LogQuotaData(QuotaDataLogParams{
-			UserID:    params.UserId,
-			Username:  username,
-			ModelName: params.ModelName,
-			Quota:     params.Quota,
-			CreatedAt: createdAt,
-			UseGroup:  params.Group,
-			TokenID:   params.TokenId,
-			ChannelID: params.ChannelId,
-			NodeName:  nodeName,
+			UserID:      params.UserId,
+			Username:    username,
+			ModelName:   params.ModelName,
+			Quota:       params.Quota,
+			CreatedAt:   createdAt,
+			UseGroup:    params.Group,
+			TokenID:     params.TokenId,
+			ChannelID:   params.ChannelId,
+			NodeName:    nodeName,
+			UsageUnit:   params.UsageUnit,
+			UsageAmount: params.UsageAmount,
 		})
 	}
 }

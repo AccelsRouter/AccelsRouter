@@ -174,6 +174,10 @@ type TaskBillingContext struct {
 	OriginModelName string                       `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
 	PerCallBilling  bool                         `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
 	TieredSnapshot  *billingexpr.BillingSnapshot `json:"tiered_snapshot,omitempty"`
+	// Fork: the usage the submission reserved, in the model's billing unit
+	// (QuotaData.UsageUnit), so settlement can record only the difference.
+	UsageUnit   string `json:"usage_unit,omitempty"`
+	UsageAmount int64  `json:"usage_amount,omitempty"`
 }
 
 // TaskOrgFunding is the fork's serialisable snapshot of an org-wallet funded

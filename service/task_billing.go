@@ -21,6 +21,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// TaskUsageAmount picks the usage fact a task is billed by, in precedence
+// order (vendor tokens, seconds, images, clips), as a quota_data usage unit and
+// amount. A task without such a fact (per-call pricing) reports no unit, and
+// reconciliation then counts it by tasks.
+func TaskUsageAmount(facts map[string]any) (string, int64) {
+	for _, candidate := range []struct{ fact, unit string }{
+		{"tokens", model.UsageUnitToken}, {"seconds", model.UsageUnitSecond},
+		{"image_count", model.UsageUnitImage}, {"clips", model.UsageUnitClip},
+	} {
+		var amount int64
+		switch value := facts[candidate.fact].(type) {
+		case int64:
+			amount = value
+		case int:
+			amount = int64(value)
+		case float64:
+			amount = int64(math.Min(math.Max(value, 0), math.MaxInt32))
+		default:
+			continue
+		}
+		return candidate.unit, max(0, min(amount, math.MaxInt32))
+	}
+	return "", 0
+}
+
 // LogTaskConsumption 记录任务消费日志和统计信息（仅记录，不涉及实际扣费）。
 // 实际扣费已由 BillingSession（PreConsumeBilling + SettleBilling）完成。
 func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model.Task) {
@@ -88,15 +113,15 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 	// Fork: a task billed by vendor tokens (Seedance reports completion
 	// tokens) records them as output tokens, so the usage rollup and the
 	// reconciliation can be checked against the vendor bill in tokens.
+	// The reservation's usage in the model's billing unit (recorded on the
+	// billing context at submit) is the submit row's usage; settlement adds the
+	// difference to the final amount.
 	completionTokens := 0
+	usageUnit, usageAmount := "", int64(0)
 	if snap := info.TieredBillingSnapshot; snap != nil {
-		switch tokens := snap.UsageFacts["tokens"].(type) {
-		case int64:
-			completionTokens = int(min(tokens, int64(math.MaxInt32)))
-		case float64:
-			completionTokens = int(min(math.Max(tokens, 0), float64(math.MaxInt32)))
-		case int:
-			completionTokens = tokens
+		usageUnit, usageAmount = TaskUsageAmount(snap.UsageFacts)
+		if usageUnit == model.UsageUnitToken {
+			completionTokens = int(usageAmount)
 		}
 	}
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
@@ -106,6 +131,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 		CompletionTokens: completionTokens,
 		Quota:            info.PriceData.Quota,
 		SkipQuotaData:    mock,
+		UsageUnit:        usageUnit,
+		UsageAmount:      usageAmount,
 		Content:          logContent,
 		TokenId:          info.TokenId,
 		Group:            info.UsingGroup,
@@ -426,6 +453,17 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		logType = model.LogTypeRefund
 		logQuota = -quotaDelta
 	}
+	// Fork: the settled usage (the snapshot's facts now carry the vendor's
+	// completion values) minus what the submission reserved goes into the
+	// same quota_data rollup as the quota difference; a refund row is not
+	// written there, matching how quota itself is recorded.
+	usageUnit, usageDelta := "", int64(0)
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.TieredSnapshot != nil {
+		unit, final := TaskUsageAmount(bc.TieredSnapshot.UsageFacts)
+		if unit != "" && unit == bc.UsageUnit {
+			usageUnit, usageDelta = unit, final-bc.UsageAmount
+		}
+	}
 	other := taskBillingOther(task)
 	other.SetPublic("task_id", task.TaskID)
 	other.SetPublic("pre_consumed_quota", preConsumedQuota)
@@ -446,6 +484,8 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 		NodeName:  task.PrivateData.NodeName,
 		// Fork: mock tasks stay out of the quota_data rollup (LogTaskConsumption).
 		SkipQuotaData: task.IsMock(),
+		UsageUnit:     usageUnit,
+		UsageAmount:   usageDelta,
 	})
 }
 

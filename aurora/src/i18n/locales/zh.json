@@ -1,5 +1,7 @@
 {
   "translation": {
+    "images": "张",
+    "clips": "首",
     "Model x Channel": "模型 × 渠道",
     "tasks": "任务",
     "A valid site exchange rate is required.": "请先设置有效的站点货币汇率。",

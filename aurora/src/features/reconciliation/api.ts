@@ -18,11 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+// usage_unit names the unit the model is billed in when that is not tokens
+// (second / image / clip); usage_amount is the total in that unit. Empty
+// unit: tokens apply, or the model is billed per task.
 export type ReconRow = {
   key: string
   quota: number
   requests: number
   tokens: number
+  usage_unit: string
+  usage_amount: number
 }
 
 // One model on one channel: which upstream served how much of a model.
@@ -33,6 +38,8 @@ export type ReconMatrixRow = {
   quota: number
   requests: number
   tokens: number
+  usage_unit: string
+  usage_amount: number
 }
 
 export type ReconResellerRow = {

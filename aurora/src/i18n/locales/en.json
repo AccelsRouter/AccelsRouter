@@ -1,5 +1,7 @@
 {
   "translation": {
+    "images": "images",
+    "clips": "clips",
     "Model x Channel": "Model x Channel",
     "tasks": "tasks",
     "A valid site exchange rate is required.": "A valid site exchange rate is required.",

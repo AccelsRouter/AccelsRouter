@@ -1,10 +1,16 @@
 package model
 
 import (
+	"os"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 func seedFlowQuotaData(t *testing.T, quotaData QuotaData) {
@@ -228,4 +234,172 @@ func TestMockTaskBillingLogSkipsQuotaData(t *testing.T) {
 	require.NoError(t, DB.Where("model_name = ?", "seedance").Find(&rows).Error)
 	require.Len(t, rows, 1, "only the real task reaches quota_data")
 	require.Equal(t, 100, rows[0].Quota)
+}
+
+// Rows of different usage units never merge, so a model's seconds and its
+// tokens stay separately summable.
+func TestLogQuotaDataKeepsUsageUnitsApart(t *testing.T) {
+	truncateTables(t)
+	t.Cleanup(func() { DB.Exec("DELETE FROM quota_data") })
+	CacheQuotaDataLock.Lock()
+	CacheQuotaData = make(map[string]*QuotaData)
+	CacheQuotaDataLock.Unlock()
+	base := QuotaDataLogParams{UserID: 1, Username: "alice", ModelName: "seedance", CreatedAt: 7200, UseGroup: "default", ChannelID: 1, NodeName: "n"}
+	for _, p := range []struct {
+		unit   string
+		amount int64
+		quota  int
+	}{{UsageUnitSecond, 10, 100}, {UsageUnitSecond, 5, 50}, {"", 0, 20}, {UsageUnitImage, 2, 30}} {
+		params := base
+		params.UsageUnit, params.UsageAmount, params.Quota = p.unit, p.amount, p.quota
+		LogQuotaData(params)
+	}
+	SaveQuotaDataCache()
+	// A second flush increments the persisted rows instead of duplicating them.
+	params := base
+	params.UsageUnit, params.UsageAmount, params.Quota = UsageUnitSecond, 1, 10
+	LogQuotaData(params)
+	SaveQuotaDataCache()
+
+	var rows []QuotaData
+	require.NoError(t, DB.Where("model_name = ?", "seedance").Order("usage_unit asc").Find(&rows).Error)
+	require.Len(t, rows, 3)
+	require.Equal(t, "", rows[0].UsageUnit)
+	require.Equal(t, 20, rows[0].Quota)
+	require.Equal(t, UsageUnitImage, rows[1].UsageUnit)
+	require.Equal(t, int64(2), rows[1].UsageAmount)
+	require.Equal(t, UsageUnitSecond, rows[2].UsageUnit)
+	require.Equal(t, int64(16), rows[2].UsageAmount)
+	require.Equal(t, 160, rows[2].Quota)
+	require.Equal(t, 3, rows[2].Count)
+}
+
+// quotaDataLegacy is the quota_data shape of the last release, without the
+// usage columns, so the upgrade path (ADD COLUMN) is exercised on each engine.
+type quotaDataLegacy struct {
+	Id                  int    `json:"id"`
+	UserID              int    `json:"user_id" gorm:"index"`
+	Username            string `json:"username" gorm:"size:64;default:''"`
+	ModelName           string `json:"model_name" gorm:"size:64;default:''"`
+	CreatedAt           int64  `json:"created_at" gorm:"bigint"`
+	UseGroup            string `json:"use_group" gorm:"size:64;default:''"`
+	TokenID             int    `json:"token_id" gorm:"default:0"`
+	ChannelID           int    `json:"channel_id" gorm:"default:0"`
+	NodeName            string `json:"node_name" gorm:"size:64;default:''"`
+	TokenUsed           int    `json:"token_used" gorm:"default:0"`
+	Count               int    `json:"count" gorm:"default:0"`
+	Quota               int    `json:"quota" gorm:"default:0"`
+	CacheReadTokens     int64  `json:"cache_read_tokens" gorm:"default:0"`
+	CacheCreationTokens int64  `json:"cache_creation_tokens" gorm:"default:0"`
+}
+
+func (quotaDataLegacy) TableName() string { return "quota_data" }
+
+// The usage columns migrate onto an existing quota_data table on every engine
+// (idempotently), legacy rows read as "no unit", and the upsert and the
+// reconciliation aggregates work with the unit in their keys.
+func TestQuotaDataUsageColumnsDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			var driver gorm.Dialector
+			switch dialect {
+			case "sqlite":
+				driver = sqlite.Open(":memory:")
+			case "mysql":
+				dsn := os.Getenv("TEST_MYSQL_DSN")
+				if dsn == "" {
+					t.Skip("TEST_MYSQL_DSN not configured")
+				}
+				driver = mysql.Open(dsn)
+			case "postgres":
+				dsn := os.Getenv("TEST_POSTGRES_DSN")
+				if dsn == "" {
+					t.Skip("TEST_POSTGRES_DSN not configured")
+				}
+				driver = postgres.Open(dsn)
+			}
+			// The rollup code addresses quota_data by its bare name, so the
+			// table cannot be prefixed; refuse to touch a database that already
+			// holds one rather than drop someone's data.
+			db, err := gorm.Open(driver, &gorm.Config{NamingStrategy: schema.NamingStrategy{}})
+			require.NoError(t, err)
+			sqlDB, err := db.DB()
+			require.NoError(t, err)
+			sqlDB.SetMaxOpenConns(1)
+			if db.Migrator().HasTable("quota_data") {
+				require.NoError(t, sqlDB.Close())
+				t.Skip("quota_data already exists in the test database; point TEST_*_DSN at an empty database")
+			}
+			previousDB, previousType := DB, common.MainDatabaseType()
+			DB = db
+			common.SetMainDatabaseType(common.DatabaseType(dialect))
+			t.Cleanup(func() {
+				require.NoError(t, db.Migrator().DropTable(&QuotaData{}))
+				DB = previousDB
+				common.SetMainDatabaseType(previousType)
+				require.NoError(t, sqlDB.Close())
+			})
+			var version string
+			query := "SELECT version()"
+			if dialect == "sqlite" {
+				query = "SELECT sqlite_version()"
+			}
+			require.NoError(t, db.Raw(query).Scan(&version).Error)
+			t.Logf("database version: %s", version)
+
+			// Upgrade path: a last-release table with a row, migrated twice.
+			require.NoError(t, db.AutoMigrate(&quotaDataLegacy{}))
+			require.NoError(t, db.Create(&quotaDataLegacy{UserID: 1, Username: "a", ModelName: "gpt", CreatedAt: 3600, ChannelID: 7, Count: 1, Quota: 10, TokenUsed: 5}).Error)
+			require.False(t, db.Migrator().HasColumn(&QuotaData{}, "usage_unit"))
+			for range 2 {
+				require.NoError(t, db.AutoMigrate(&QuotaData{}))
+			}
+			require.True(t, db.Migrator().HasColumn(&QuotaData{}, "usage_unit"))
+			require.True(t, db.Migrator().HasColumn(&QuotaData{}, "usage_amount"))
+			var legacy QuotaData
+			require.NoError(t, db.Where("model_name = ?", "gpt").First(&legacy).Error)
+			require.Equal(t, "", legacy.UsageUnit)
+			require.Equal(t, int64(0), legacy.UsageAmount)
+
+			// Upsert keyed by unit, flushed twice.
+			CacheQuotaDataLock.Lock()
+			CacheQuotaData = make(map[string]*QuotaData)
+			CacheQuotaDataLock.Unlock()
+			base := QuotaDataLogParams{UserID: 1, Username: "a", ModelName: "seedance", CreatedAt: 3600, UseGroup: "default", ChannelID: 7, NodeName: "n"}
+			for _, p := range []struct {
+				unit   string
+				amount int64
+				quota  int
+			}{{UsageUnitSecond, 10, 100}, {"", 0, 20}} {
+				params := base
+				params.UsageUnit, params.UsageAmount, params.Quota = p.unit, p.amount, p.quota
+				LogQuotaData(params)
+			}
+			SaveQuotaDataCache()
+			params := base
+			params.UsageUnit, params.UsageAmount, params.Quota = UsageUnitSecond, 5, 50
+			LogQuotaData(params)
+			SaveQuotaDataCache()
+			var rows []QuotaData
+			require.NoError(t, db.Where("model_name = ?", "seedance").Order("usage_unit asc").Find(&rows).Error)
+			require.Len(t, rows, 2)
+			require.Equal(t, UsageUnitSecond, rows[1].UsageUnit)
+			require.Equal(t, int64(15), rows[1].UsageAmount)
+			require.Equal(t, 150, rows[1].Quota)
+
+			// Reconciliation aggregates group by unit on this engine.
+			matrix, err := reconMatrixRows(0, 7200)
+			require.NoError(t, err)
+			require.Equal(t, []ReconMatrixRow{
+				{Model: "seedance", ChannelId: 7, Channel: "#7", Quota: 170, Requests: 3, Tokens: 0, UsageUnit: UsageUnitSecond, UsageAmount: 15},
+				{Model: "gpt", ChannelId: 7, Channel: "#7", Quota: 10, Requests: 1, Tokens: 5},
+			}, matrix)
+			byModel, err := reconByColumn(0, 7200, "model_name")
+			require.NoError(t, err)
+			require.Equal(t, []ReconRow{
+				{Key: "seedance", Quota: 170, Requests: 3, Tokens: 0, UsageUnit: UsageUnitSecond, UsageAmount: 15},
+				{Key: "gpt", Quota: 10, Requests: 1, Tokens: 5},
+			}, byModel)
+		})
+	}
 }

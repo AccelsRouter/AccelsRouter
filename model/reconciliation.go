@@ -24,22 +24,76 @@ import (
 )
 
 // ReconRow is one dimension bucket (model / channel / group / user).
+// UsageUnit / UsageAmount carry the usage in the model's billing unit when
+// that is not tokens (QuotaData.UsageUnit); a bucket that mixes units keeps
+// the unit of its largest consumption.
 type ReconRow struct {
-	Key      string `json:"key" gorm:"column:dim"`
-	Quota    int64  `json:"quota"`
-	Requests int64  `json:"requests"`
-	Tokens   int64  `json:"tokens"`
+	Key         string `json:"key" gorm:"column:dim"`
+	Quota       int64  `json:"quota"`
+	Requests    int64  `json:"requests"`
+	Tokens      int64  `json:"tokens"`
+	UsageUnit   string `json:"usage_unit"`
+	UsageAmount int64  `json:"usage_amount"`
+}
+
+// reconUnitScan is one (dimension, usage unit) aggregate as the database
+// returns it; reconMergeUnits folds the units of a dimension into one row.
+type reconUnitScan struct {
+	Dim         string
+	ChannelId   int64
+	UsageUnit   string
+	UsageAmount int64
+	Quota       int64
+	Requests    int64
+	Tokens      int64
+}
+
+// reconMergeUnits folds the per-unit aggregates of each dimension key into one
+// row: totals are summed, and the usage unit/amount are those of the unit
+// with the largest consumption. Rows keep the input order of first appearance.
+func reconMergeUnits(scans []reconUnitScan) []ReconRow {
+	type merged struct {
+		row       ReconRow
+		unitQuota int64
+	}
+	byKey := map[string]*merged{}
+	order := make([]string, 0)
+	for _, s := range scans {
+		m := byKey[s.Dim]
+		if m == nil {
+			m = &merged{row: ReconRow{Key: s.Dim}, unitQuota: -1}
+			byKey[s.Dim] = m
+			order = append(order, s.Dim)
+		}
+		m.row.Quota += s.Quota
+		m.row.Requests += s.Requests
+		m.row.Tokens += s.Tokens
+		if s.UsageUnit != "" && s.Quota > m.unitQuota {
+			m.row.UsageUnit, m.row.UsageAmount, m.unitQuota = s.UsageUnit, s.UsageAmount, s.Quota
+		}
+	}
+	rows := make([]ReconRow, 0, len(order))
+	for _, key := range order {
+		rows = append(rows, byKey[key].row)
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Quota > rows[j].Quota })
+	if len(rows) > reconDimLimit {
+		rows = rows[:reconDimLimit]
+	}
+	return rows
 }
 
 // ReconMatrixRow is one model on one channel: which upstream served how much
 // of a model, so a vendor bill can be checked model by model.
 type ReconMatrixRow struct {
-	Model     string `json:"model"`
-	ChannelId int    `json:"channel_id"`
-	Channel   string `json:"channel"`
-	Quota     int64  `json:"quota"`
-	Requests  int64  `json:"requests"`
-	Tokens    int64  `json:"tokens"`
+	Model       string `json:"model"`
+	ChannelId   int    `json:"channel_id"`
+	Channel     string `json:"channel"`
+	Quota       int64  `json:"quota"`
+	Requests    int64  `json:"requests"`
+	Tokens      int64  `json:"tokens"`
+	UsageUnit   string `json:"usage_unit"`
+	UsageAmount int64  `json:"usage_amount"`
 }
 
 // ReconResellerRow is one reseller's reconciliation, aggregated over all of
@@ -114,32 +168,27 @@ func reconTotals(from, to int64) (quota, requests, tokens, channels int64, err e
 // reconByColumn aggregates quota_data over [from,to] grouped by keyCol, top rows
 // by quota. keyCol must be a trusted column name (never user input).
 func reconByColumn(from, to int64, keyCol string) ([]ReconRow, error) {
-	rows := make([]ReconRow, 0)
+	var scans []reconUnitScan
 	err := DB.Table("quota_data").
-		Select(keyCol+" as dim, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
+		Select(keyCol+" as dim, usage_unit, COALESCE(SUM(usage_amount),0) as usage_amount, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
 		Where("created_at >= ? and created_at <= ?", from, to).
-		Group(keyCol).
+		Group(keyCol + ", usage_unit").
 		Order("quota desc").
-		Limit(reconDimLimit).
-		Scan(&rows).Error
-	return rows, err
+		Scan(&scans).Error
+	if err != nil {
+		return nil, err
+	}
+	return reconMergeUnits(scans), nil
 }
 
 // reconChannelRows aggregates by channel_id then resolves channel display names.
 func reconChannelRows(from, to int64) ([]ReconRow, error) {
-	type chanScan struct {
-		ChannelId int64
-		Quota     int64
-		Requests  int64
-		Tokens    int64
-	}
-	var scans []chanScan
+	var scans []reconUnitScan
 	if err := DB.Table("quota_data").
-		Select("channel_id, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
+		Select("channel_id, usage_unit, COALESCE(SUM(usage_amount),0) as usage_amount, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
 		Where("created_at >= ? and created_at <= ?", from, to).
-		Group("channel_id").
+		Group("channel_id, usage_unit").
 		Order("quota desc").
-		Limit(reconDimLimit).
 		Scan(&scans).Error; err != nil {
 		return nil, err
 	}
@@ -148,11 +197,10 @@ func reconChannelRows(from, to int64) ([]ReconRow, error) {
 		ids = append(ids, int(s.ChannelId))
 	}
 	names := reconChannelNames(ids)
-	rows := make([]ReconRow, 0, len(scans))
-	for _, s := range scans {
-		rows = append(rows, ReconRow{Key: names[int(s.ChannelId)], Quota: s.Quota, Requests: s.Requests, Tokens: s.Tokens})
+	for i := range scans {
+		scans[i].Dim = names[int(scans[i].ChannelId)]
 	}
-	return rows, nil
+	return reconMergeUnits(scans), nil
 }
 
 // reconChannelNames resolves channel display names; a deleted channel (or the
@@ -187,31 +235,58 @@ func reconChannelNames(ids []int) map[int]string {
 
 // reconMatrixRows aggregates quota_data by (model, channel) over [from,to].
 func reconMatrixRows(from, to int64) ([]ReconMatrixRow, error) {
-	type scan struct {
-		ModelName string
-		ChannelId int64
-		Quota     int64
-		Requests  int64
-		Tokens    int64
-	}
-	var scans []scan
+	var scans []reconUnitScan
 	if err := DB.Table("quota_data").
-		Select("model_name, channel_id, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
+		Select("model_name as dim, channel_id, usage_unit, COALESCE(SUM(usage_amount),0) as usage_amount, COALESCE(SUM(quota),0) as quota, COALESCE(SUM(count),0) as requests, COALESCE(SUM(token_used),0) as tokens").
 		Where("created_at >= ? and created_at <= ?", from, to).
-		Group("model_name, channel_id").
+		Group("model_name, channel_id, usage_unit").
 		Order("quota desc, model_name asc, channel_id asc").
-		Limit(reconMatrixLimit).
 		Scan(&scans).Error; err != nil {
 		return nil, err
 	}
+	// Fold the units of each (model, channel) the way reconMergeUnits does
+	// for a single dimension, keyed by both.
+	type merged struct {
+		row       ReconMatrixRow
+		unitQuota int64
+	}
+	byKey := map[string]*merged{}
+	order := make([]string, 0)
 	ids := make([]int, 0, len(scans))
 	for _, s := range scans {
-		ids = append(ids, int(s.ChannelId))
+		key := s.Dim + "\x00" + strconv.FormatInt(s.ChannelId, 10)
+		m := byKey[key]
+		if m == nil {
+			m = &merged{row: ReconMatrixRow{Model: s.Dim, ChannelId: int(s.ChannelId)}, unitQuota: -1}
+			byKey[key] = m
+			order = append(order, key)
+			ids = append(ids, int(s.ChannelId))
+		}
+		m.row.Quota += s.Quota
+		m.row.Requests += s.Requests
+		m.row.Tokens += s.Tokens
+		if s.UsageUnit != "" && s.Quota > m.unitQuota {
+			m.row.UsageUnit, m.row.UsageAmount, m.unitQuota = s.UsageUnit, s.UsageAmount, s.Quota
+		}
 	}
 	names := reconChannelNames(ids)
-	rows := make([]ReconMatrixRow, 0, len(scans))
-	for _, s := range scans {
-		rows = append(rows, ReconMatrixRow{Model: s.ModelName, ChannelId: int(s.ChannelId), Channel: names[int(s.ChannelId)], Quota: s.Quota, Requests: s.Requests, Tokens: s.Tokens})
+	rows := make([]ReconMatrixRow, 0, len(order))
+	for _, key := range order {
+		row := byKey[key].row
+		row.Channel = names[row.ChannelId]
+		rows = append(rows, row)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Quota != rows[j].Quota {
+			return rows[i].Quota > rows[j].Quota
+		}
+		if rows[i].Model != rows[j].Model {
+			return rows[i].Model < rows[j].Model
+		}
+		return rows[i].ChannelId < rows[j].ChannelId
+	})
+	if len(rows) > reconMatrixLimit {
+		rows = rows[:reconMatrixLimit]
 	}
 	return rows, nil
 }

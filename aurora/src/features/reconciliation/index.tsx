@@ -27,7 +27,6 @@ import { Fragment, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import {
   Area,
   AreaChart,
@@ -37,19 +36,15 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-
-import { SectionPageLayout } from '@/components/layout'
-import { Button } from '@/components/ui/button'
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
+import { toast } from 'sonner'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 import { formatNumber } from '@/lib/format'
-
+import { Button } from '@/components/ui/button'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SectionPageLayout } from '@/components/layout'
+import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import {
   exportReconciliation,
   getReconciliation,
@@ -75,46 +70,78 @@ function StatCard(props: { label: string; value: string; hint?: string }) {
 }
 
 /*
-Usage in the unit the model is billed in: tokens when the rows carry any,
-otherwise the request count, which for task models (video, image) is the
-number of tasks.
+Usage in the unit the model is billed in. A task model billed by seconds,
+images or clips shows that amount with the task count beside it; a token
+model shows its tokens; a model billed per task shows the task count. The
+unit price (standard consumption over usage) is what a vendor price list can
+be checked against.
 */
-function UsageCell(props: { tokens: number; requests: number }) {
+const USAGE_UNIT_LABELS: Record<string, string> = {
+  token: 'tokens',
+  second: 'seconds',
+  image: 'images',
+  clip: 'clips',
+}
+
+type UsageRow = {
+  quota: number
+  requests: number
+  tokens: number
+  usage_unit: string
+  usage_amount: number
+}
+
+function UsageCell(props: { row: UsageRow }) {
   const { t } = useTranslation()
-  if (props.tokens > 0) {
+  const row = props.row
+  const unit = row.usage_unit || 'token'
+  const amount = row.usage_unit ? row.usage_amount : row.tokens
+  if (amount <= 0) {
     return (
       <span className='tabular-nums'>
-        {formatNumber(props.tokens)}{' '}
-        <span className='text-muted-foreground text-xs'>{t('tokens')}</span>
+        {formatNumber(row.requests)}{' '}
+        <span className='text-muted-foreground text-xs'>{t('tasks')}</span>
       </span>
     )
   }
+  const label = t(USAGE_UNIT_LABELS[unit] ?? 'tokens')
+  const perUnit = formatQuotaWithCurrency(row.quota / amount, {
+    digitsLarge: 4,
+    digitsSmall: 6,
+  })
   return (
-    <span className='tabular-nums'>
-      {formatNumber(props.requests)}{' '}
-      <span className='text-muted-foreground text-xs'>{t('tasks')}</span>
+    <span className='inline-flex flex-col items-end tabular-nums'>
+      <span>
+        {formatNumber(amount)}{' '}
+        <span className='text-muted-foreground text-xs'>{label}</span>
+        {unit !== 'token' && (
+          <span className='text-muted-foreground text-xs'>
+            {' '}
+            · {formatNumber(row.requests)} {t('tasks')}
+          </span>
+        )}
+      </span>
+      <span className='text-muted-foreground text-[11px]'>
+        ≈ {perUnit}/{label}
+      </span>
     </span>
   )
 }
 
-function NumberCells(props: {
-  quota: number
-  requests: number
-  tokens: number
-}) {
+function NumberCells(props: { row: UsageRow }) {
   return (
     <>
       <td className='px-3 py-2 text-right tabular-nums'>
-        {formatQuotaWithCurrency(props.quota, {
+        {formatQuotaWithCurrency(props.row.quota, {
           digitsLarge: 4,
           digitsSmall: 6,
         })}
       </td>
       <td className='px-3 py-2 text-right tabular-nums'>
-        {formatNumber(props.requests)}
+        {formatNumber(props.row.requests)}
       </td>
       <td className='px-3 py-2 text-right'>
-        <UsageCell tokens={props.tokens} requests={props.requests} />
+        <UsageCell row={props.row} />
       </td>
     </>
   )
@@ -196,11 +223,7 @@ function DimTable(props: {
                       {r.key || '-'}
                     </span>
                   </td>
-                  <NumberCells
-                    quota={r.quota}
-                    requests={r.requests}
-                    tokens={r.tokens}
-                  />
+                  <NumberCells row={r} />
                 </tr>
                 {expanded &&
                   children.map((d) => (
@@ -216,11 +239,7 @@ function DimTable(props: {
                             : d.model}
                         </span>
                       </td>
-                      <NumberCells
-                        quota={d.quota}
-                        requests={d.requests}
-                        tokens={d.tokens}
-                      />
+                      <NumberCells row={d} />
                     </tr>
                   ))}
               </Fragment>
@@ -260,11 +279,7 @@ function MatrixTable(props: { rows: ReconMatrixRow[] }) {
             >
               <td className='px-3 py-2 font-medium'>{r.model || '-'}</td>
               <td className='px-3 py-2'>{r.channel}</td>
-              <NumberCells
-                quota={r.quota}
-                requests={r.requests}
-                tokens={r.tokens}
-              />
+              <NumberCells row={r} />
             </tr>
           ))}
         </tbody>
