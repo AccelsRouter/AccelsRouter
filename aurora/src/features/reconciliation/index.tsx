@@ -72,9 +72,7 @@ function StatCard(props: { label: string; value: string; hint?: string }) {
 /*
 Usage in the unit the model is billed in. A task model billed by seconds,
 images or clips shows that amount with the task count beside it; a token
-model shows its tokens; a model billed per task shows the task count. The
-unit price (standard consumption over usage) is what a vendor price list can
-be checked against.
+model shows its tokens; a model billed per task shows the task count.
 */
 const USAGE_UNIT_LABELS: Record<string, string> = {
   token: 'tokens',
@@ -104,26 +102,18 @@ function UsageCell(props: { row: UsageRow }) {
       </span>
     )
   }
-  const label = t(USAGE_UNIT_LABELS[unit] ?? 'tokens')
-  const perUnit = formatQuotaWithCurrency(row.quota / amount, {
-    digitsLarge: 4,
-    digitsSmall: 6,
-  })
   return (
-    <span className='inline-flex flex-col items-end tabular-nums'>
-      <span>
-        {formatNumber(amount)}{' '}
-        <span className='text-muted-foreground text-xs'>{label}</span>
-        {unit !== 'token' && (
-          <span className='text-muted-foreground text-xs'>
-            {' '}
-            · {formatNumber(row.requests)} {t('tasks')}
-          </span>
-        )}
+    <span className='tabular-nums'>
+      {formatNumber(amount)}{' '}
+      <span className='text-muted-foreground text-xs'>
+        {t(USAGE_UNIT_LABELS[unit] ?? 'tokens')}
       </span>
-      <span className='text-muted-foreground text-[11px]'>
-        ≈ {perUnit}/{label}
-      </span>
+      {unit !== 'token' && (
+        <span className='text-muted-foreground text-xs'>
+          {' '}
+          · {formatNumber(row.requests)} {t('tasks')}
+        </span>
+      )}
     </span>
   )
 }
