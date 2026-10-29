@@ -16,6 +16,7 @@
     "(pinned)": "(pinned)",
     "{{matched}} of {{total}} bill requests fell in an hour we recorded": "{{matched}} of {{total}} bill requests fell in an hour we recorded",
     "Each cell shows our figure above the bill's; red where they differ. Task models compare requests and cost only.": "Each cell shows our figure above the bill's; red where they differ. Task models compare requests and cost only.",
+    "Our records for this period carry no input / output split; compare the token totals.": "Our records for this period carry no input / output split; compare the token totals.",
     "Ours": "Ours",
     "Bill": "Bill",
     "Only in bill": "Only in bill",

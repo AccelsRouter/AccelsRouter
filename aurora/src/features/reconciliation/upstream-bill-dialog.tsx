@@ -43,6 +43,7 @@ import {
   compareUpstreamBill,
   type UpstreamBillReport,
   type UpstreamBillRow,
+  type UpstreamBillSide,
 } from './api'
 
 const AUTO_ZONE = 'auto'
@@ -55,20 +56,41 @@ function zoneLabel(offsetMinutes: number): string {
   return h === 0 ? 'UTC' : `UTC${h > 0 ? '+' : ''}${h}`
 }
 
-/* Our figure above the bill's; red when they differ. */
+/* Our figure above the bill's; red when they differ. A null on our side
+means we have no such figure for the period, shown as a dash, not a zero. */
 function Pair(props: {
-  ours: number
+  ours: number | null
   bill: number
   format?: (n: number) => string
 }) {
   const f = props.format ?? formatNumber
-  const differs = props.ours !== props.bill
+  const differs = props.ours !== null && props.ours !== props.bill
   return (
     <span
       className={`inline-flex flex-col items-end tabular-nums ${differs ? 'text-destructive' : ''}`}
     >
-      <span>{f(props.ours)}</span>
+      <span className={props.ours === null ? 'text-muted-foreground' : ''}>
+        {props.ours === null ? '-' : f(props.ours)}
+      </span>
       <span className='text-muted-foreground text-[11px]'>{f(props.bill)}</span>
+    </span>
+  )
+}
+
+/* The bill's amount in USD at the given rate, with the billed figure under
+it; the billed figure alone when no rate was entered. */
+function BillCost(props: {
+  cost: number
+  rate: number
+  money: (n: number) => string
+}) {
+  if (props.rate <= 0) return <>{props.money(props.cost)}</>
+  return (
+    <span className='inline-flex flex-col items-end tabular-nums'>
+      <span>${props.money(props.cost / props.rate)}</span>
+      <span className='text-muted-foreground text-[11px]'>
+        {props.money(props.cost)}
+      </span>
     </span>
   )
 }
@@ -78,6 +100,20 @@ function isTokenRow(r: UpstreamBillRow): boolean {
     (r.ours.usage_unit === '' || r.ours.usage_unit === 'token') &&
     r.ours.tokens + r.bill.tokens > 0
   )
+}
+
+/* Whether our side carries an input / output split. Records written before
+the split was tracked have only a token total; their split is unknown, not
+zero. */
+function hasSplit(s: UpstreamBillSide): boolean {
+  return (
+    s.prompt_tokens + s.completion_tokens + s.cache_read_tokens > 0 ||
+    s.tokens === 0
+  )
+}
+
+function splitOrNull(s: UpstreamBillSide, n: number): number | null {
+  return hasSplit(s) ? n : null
 }
 
 function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
@@ -96,6 +132,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
             <th className='px-3 py-2 text-right font-medium'>
               {t('Requests')}
             </th>
+            <th className='px-3 py-2 text-right font-medium'>{t('Tokens')}</th>
             <th className='px-3 py-2 text-right font-medium'>{t('Input')}</th>
             <th className='px-3 py-2 text-right font-medium'>{t('Output')}</th>
             <th className='px-3 py-2 text-right font-medium'>
@@ -104,7 +141,10 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
             <th className='px-3 py-2 text-right font-medium'>
               {t('Ours')} (USD)
             </th>
-            <th className='px-3 py-2 text-right font-medium'>{t('Bill')}</th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Bill')}
+              {rate > 0 ? ' (USD)' : ''}
+            </th>
             {rate > 0 && (
               <th className='px-3 py-2 text-right font-medium'>
                 {t('Diff')} (USD)
@@ -137,8 +177,15 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                 </td>
                 <td className='px-3 py-2 text-right'>
                   {tokens ? (
+                    <Pair ours={r.ours.tokens} bill={r.bill.tokens} />
+                  ) : (
+                    <span className='text-muted-foreground'>-</span>
+                  )}
+                </td>
+                <td className='px-3 py-2 text-right'>
+                  {tokens ? (
                     <Pair
-                      ours={r.ours.prompt_tokens}
+                      ours={splitOrNull(r.ours, r.ours.prompt_tokens)}
                       bill={r.bill.prompt_tokens}
                     />
                   ) : (
@@ -148,7 +195,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                 <td className='px-3 py-2 text-right'>
                   {tokens ? (
                     <Pair
-                      ours={r.ours.completion_tokens}
+                      ours={splitOrNull(r.ours, r.ours.completion_tokens)}
                       bill={r.bill.completion_tokens}
                     />
                   ) : (
@@ -158,7 +205,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                 <td className='px-3 py-2 text-right'>
                   {tokens ? (
                     <Pair
-                      ours={r.ours.cache_read_tokens}
+                      ours={splitOrNull(r.ours, r.ours.cache_read_tokens)}
                       bill={r.bill.cache_read_tokens}
                     />
                   ) : (
@@ -169,7 +216,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {usd(r.ours.quota)}
                 </td>
                 <td className='px-3 py-2 text-right tabular-nums'>
-                  {money(r.bill.cost)}
+                  <BillCost cost={r.bill.cost} rate={rate} money={money} />
                 </td>
                 {rate > 0 && (
                   <td
@@ -189,20 +236,23 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
               <Pair ours={report.ours.requests} bill={report.bill.requests} />
             </td>
             <td className='px-3 py-2 text-right'>
+              <Pair ours={report.ours.tokens} bill={report.bill.tokens} />
+            </td>
+            <td className='px-3 py-2 text-right'>
               <Pair
-                ours={report.ours.prompt_tokens}
+                ours={splitOrNull(report.ours, report.ours.prompt_tokens)}
                 bill={report.bill.prompt_tokens}
               />
             </td>
             <td className='px-3 py-2 text-right'>
               <Pair
-                ours={report.ours.completion_tokens}
+                ours={splitOrNull(report.ours, report.ours.completion_tokens)}
                 bill={report.bill.completion_tokens}
               />
             </td>
             <td className='px-3 py-2 text-right'>
               <Pair
-                ours={report.ours.cache_read_tokens}
+                ours={splitOrNull(report.ours, report.ours.cache_read_tokens)}
                 bill={report.bill.cache_read_tokens}
               />
             </td>
@@ -210,7 +260,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
               {usd(report.ours.quota)}
             </td>
             <td className='px-3 py-2 text-right tabular-nums'>
-              {money(report.bill.cost)}
+              <BillCost cost={report.bill.cost} rate={rate} money={money} />
             </td>
             {rate > 0 && (
               <td className='px-3 py-2 text-right tabular-nums'>
@@ -226,7 +276,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
   )
 }
 
-function downloadComparison(report: UpstreamBillReport) {
+function downloadComparison(report: UpstreamBillReport, rate: number) {
   const esc = (v: string | number) => {
     const s = String(v)
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
@@ -236,6 +286,8 @@ function downloadComparison(report: UpstreamBillReport) {
       'Model',
       'Our requests',
       'Bill requests',
+      'Our tokens',
+      'Bill tokens',
       'Our input tokens',
       'Bill input tokens',
       'Our output tokens',
@@ -244,20 +296,24 @@ function downloadComparison(report: UpstreamBillReport) {
       'Bill cache read tokens',
       'Ours (USD)',
       'Bill cost',
+      ...(rate > 0 ? ['Bill (USD)'] : []),
     ].join(','),
     ...report.rows.map((r) =>
       [
         r.model,
         r.ours.requests,
         r.bill.requests,
-        r.ours.prompt_tokens,
+        r.ours.tokens,
+        r.bill.tokens,
+        hasSplit(r.ours) ? r.ours.prompt_tokens : '',
         r.bill.prompt_tokens,
-        r.ours.completion_tokens,
+        hasSplit(r.ours) ? r.ours.completion_tokens : '',
         r.bill.completion_tokens,
-        r.ours.cache_read_tokens,
+        hasSplit(r.ours) ? r.ours.cache_read_tokens : '',
         r.bill.cache_read_tokens,
         usdFromQuota(r.ours.quota).toFixed(6),
         r.bill.cost.toFixed(6),
+        ...(rate > 0 ? [(r.bill.cost / rate).toFixed(6)] : []),
       ]
         .map(esc)
         .join(',')
@@ -330,7 +386,7 @@ export function UpstreamBillDialog(props: {
             <Button
               variant='outline'
               className='gap-1.5'
-              onClick={() => downloadComparison(report)}
+              onClick={() => downloadComparison(report, rate)}
             >
               <Download className='h-3.5 w-3.5' />
               {t('Export comparison')}
@@ -435,6 +491,11 @@ export function UpstreamBillDialog(props: {
             {t(
               "Each cell shows our figure above the bill's; red where they differ. Task models compare requests and cost only."
             )}
+            {!hasSplit(report.ours) &&
+              ' ' +
+                t(
+                  'Our records for this period carry no input / output split; compare the token totals.'
+                )}
           </p>
           <ComparisonTable report={report} rate={rate} />
         </div>

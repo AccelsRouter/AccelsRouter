@@ -16,6 +16,7 @@
     "(pinned)": "（指定）",
     "{{matched}} of {{total}} bill requests fell in an hour we recorded": "账单 {{total}} 次调用中有 {{matched}} 次落在我们有记录的小时内",
     "Each cell shows our figure above the bill's; red where they differ. Task models compare requests and cost only.": "每格上行是我们的数据，下行是账单；不一致标红。任务类模型只核对次数和金额。",
+    "Our records for this period carry no input / output split; compare the token totals.": "这段时间我们的记录没有输入/输出拆分，请核对 token 总数。",
     "Ours": "我们",
     "Bill": "账单",
     "Only in bill": "仅账单有",
