@@ -25,7 +25,13 @@ with CSV export.
 */
 import { Fragment, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Loader2,
+  Upload,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   Area,
@@ -52,6 +58,7 @@ import {
   type ReconMatrixRow,
   type ReconRow,
 } from './api'
+import { UpstreamBillDialog } from './upstream-bill-dialog'
 
 function toUnix(d?: Date): number | undefined {
   return d ? Math.floor(d.getTime() / 1000) : undefined
@@ -301,6 +308,7 @@ export function Reconciliation() {
     end: dayjs().endOf('day').toDate(),
   }))
   const [granularity, setGranularity] = useState<Granularity>('day')
+  const [billOpen, setBillOpen] = useState(false)
 
   const from = toUnix(range.start)
   const to = toUnix(range.end)
@@ -361,6 +369,16 @@ export function Reconciliation() {
           )}
           {t('Export CSV')}
         </Button>
+        <Button
+          variant='outline'
+          size='sm'
+          className='gap-1.5'
+          onClick={() => setBillOpen(true)}
+        >
+          <Upload className='h-3.5 w-3.5' />
+          {t('Upstream bill')}
+        </Button>
+        <UpstreamBillDialog open={billOpen} onOpenChange={setBillOpen} />
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-5'>

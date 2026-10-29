@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/csv"
 	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -108,4 +109,54 @@ func AdminExportReconciliation(c *gin.Context) {
 	for _, p := range report.Series {
 		_ = w.Write([]string{time.Unix(p.Period, 0).In(loc).Format("2006-01-02"), usd(p.Quota), strconv.FormatInt(p.Requests, 10), strconv.FormatInt(p.Tokens, 10)})
 	}
+}
+
+// upstreamBillMaxBytes bounds an uploaded bill; a month of per-call rows is a
+// few megabytes.
+const upstreamBillMaxBytes = 32 << 20
+
+// AdminCompareUpstreamBill — POST /api/admin/reconciliation/upstream-bill
+// (multipart). Fields: file (.xlsx or CSV), channel_id, and bill_tz_offset,
+// the bill's zone in minutes east of UTC (empty: detect it against our
+// hourly data). The query tz_offset is the admin's zone, used when nothing
+// in the bill lines up.
+func AdminCompareUpstreamBill(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, upstreamBillMaxBytes)
+	channelId, err := strconv.Atoi(c.PostForm("channel_id"))
+	if err != nil || channelId <= 0 {
+		common.ApiErrorMsg(c, "Select the channel the bill belongs to")
+		return
+	}
+	var pinned *int
+	if s := c.PostForm("bill_tz_offset"); s != "" {
+		off, err := strconv.Atoi(s)
+		if err != nil || off < -14*60 || off > 14*60 {
+			common.ApiErrorMsg(c, "Invalid bill time zone")
+			return
+		}
+		pinned = &off
+	}
+	header, err := c.FormFile("file")
+	if err != nil {
+		common.ApiErrorMsg(c, "Upload the bill file")
+		return
+	}
+	file, err := header.Open()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	defer file.Close()
+	entries, err := model.ParseUpstreamBill(header.Filename, file)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	_, adminOffset := time.Now().In(reconLocation(c)).Zone()
+	report, err := model.CompareUpstreamBill(channelId, entries, pinned, adminOffset/60)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, report)
 }
