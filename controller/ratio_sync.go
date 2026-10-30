@@ -323,6 +323,15 @@ func FetchUpstreamRatios(c *gin.Context) {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(req.Timeout)*time.Second)
 			defer cancel()
 
+			if data, handled, err := fetchCustomPricingSync(ctx, client, chItem); handled {
+				if err != nil {
+					ch <- upstreamResult{Name: uniqueName, Err: err.Error()}
+				} else {
+					ch <- upstreamResult{Name: uniqueName, Data: data}
+				}
+				return
+			}
+
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 			if err != nil {
 				logger.LogWarn(c.Request.Context(), common.LogText("build request failed: %s", err.Error()))

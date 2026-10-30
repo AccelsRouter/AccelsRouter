@@ -1,5 +1,11 @@
 {
   "translation": {
+    "BytePlus pricing sync": "BytePlus pricing sync",
+    "IAM access key used to read BytePlus ModelArk prices when syncing prices from a BytePlus channel. It needs read access to ModelArk.": "IAM access key used to read BytePlus ModelArk prices when syncing prices from a BytePlus channel. It needs read access to ModelArk.",
+    "Access key ID": "Access key ID",
+    "Access key ID is required": "Access key ID is required",
+    "Secret access key": "Secret access key",
+    "Secret access key is required": "Secret access key is required",
     "Upstream bill": "Upstream bill",
     "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model.": "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model.",
     "Export comparison": "Export comparison",

@@ -1,5 +1,11 @@
 {
   "translation": {
+    "BytePlus pricing sync": "BytePlus 價格同步",
+    "IAM access key used to read BytePlus ModelArk prices when syncing prices from a BytePlus channel. It needs read access to ModelArk.": "從 BytePlus 渠道同步價格時，用於讀取 BytePlus ModelArk 價格的 IAM 存取金鑰，需要有 ModelArk 的讀取權限。",
+    "Access key ID": "存取金鑰 ID",
+    "Access key ID is required": "請填寫存取金鑰 ID",
+    "Secret access key": "存取金鑰 Secret",
+    "Secret access key is required": "請填寫存取金鑰 Secret",
     "Upstream bill": "上游帳單",
     "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model.": "上傳上游匯出的帳單（.xlsx 或 CSV，每次呼叫一行），按模型與該渠道的記錄逐項核對。",
     "Export comparison": "匯出核對結果",
