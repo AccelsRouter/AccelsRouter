@@ -371,6 +371,8 @@ func InitResources() error {
 	model.StartUpstreamHealthFlusher()
 	// Upstream monitor: scheduled probe sweep (master only, monitor_setting.upstream_probe_*).
 	controller.StartUpstreamProbeScheduler()
+	// Abnormal usage alerts to the Lark alert group (master only, lark_setting.usage_alert_*).
+	service.StartUsageAlertScheduler()
 
 	// Initialize Redis
 	err = common.InitRedisClient()

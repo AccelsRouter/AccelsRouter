@@ -7358,6 +7358,8 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Unknown notification target": "不明な通知先です",
+    "This bot has no webhook address yet. Save one first.": "このボットにはまだ Webhook アドレスがありません。先に保存してください。"
   }
 }

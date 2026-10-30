@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useStatus } from '@/hooks/use-status'
-
 import { SettingsPage } from '../components/settings-page'
 import type { OperationsSettings } from '../types'
 import {
@@ -63,6 +62,22 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.flush_interval': 5,
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
+  'lark_setting.alert_enabled': false,
+  'lark_setting.alert_window_minutes': 5,
+  'lark_setting.alert_failure_threshold': 3,
+  'lark_setting.alert_mute_minutes': 10,
+  'lark_setting.usage_alert_enabled': false,
+  'lark_setting.usage_alert_multiplier': 3,
+  'lark_setting.usage_alert_baseline_days': 7,
+  'lark_setting.usage_alert_min_spend_usd': 10,
+  'lark_setting.usage_alert_daily_threshold_usd': 0,
+  'lark_setting.usage_alert_monthly_threshold_usd': 0,
+  'lark_setting.usage_alert_check_minutes': 60,
+  'lark_setting.usage_alert_utc_offset_hours': 0,
+  'lark_setting.enterprise_webhook_url_secret': '',
+  'lark_setting.enterprise_sign_secret': '',
+  'lark_setting.alert_webhook_url_secret': '',
+  'lark_setting.alert_sign_secret': '',
 }
 
 export function OperationsSettings() {

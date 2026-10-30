@@ -4,13 +4,10 @@
 package service
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -21,8 +18,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// LARK webhook URL is shared with the enterprise inquiry flow.
-const larkRefundWebhookEnv = "LARK_ENTERPRISE_WEBHOOK_URL"
+// The Lark bot is shared with the enterprise inquiry flow and is set on the
+// admin settings page (see LarkEnterpriseTarget).
 const larkRefundTimeout = 8 * time.Second
 
 // minRefundUSD guards against accidental tiny submissions; users can
@@ -271,14 +268,9 @@ func DisableAllEnabledTokens(userId int) (int64, error) {
 
 // ----- Lark notification helpers ---------------------------------
 
-type larkCard struct {
-	MsgType string         `json:"msg_type"`
-	Card    map[string]any `json:"card"`
-}
-
 func notifyLarkRefundSubmitted(c *gin.Context, r *model.RefundRequest) {
-	webhookURL := strings.TrimSpace(os.Getenv(larkRefundWebhookEnv))
-	if webhookURL == "" {
+	target := LarkEnterpriseTarget()
+	if !target.Configured() {
 		return // silently no-op when not configured
 	}
 
@@ -300,61 +292,40 @@ func notifyLarkRefundSubmitted(c *gin.Context, r *model.RefundRequest) {
 		fmt.Sprintf("**Reason**\n%s", r.Reason),
 	}, "\n\n")
 
-	body, err := common.Marshal(larkCard{
-		MsgType: "interactive",
-		Card: map[string]any{
-			"config": map[string]any{"wide_screen_mode": true},
-			"header": map[string]any{
-				"template": "orange",
-				"title": map[string]any{
-					"tag":     "plain_text",
-					"content": fmt.Sprintf("💸 Refund Request #%d submitted", r.Id),
+	card := map[string]any{
+		"config": map[string]any{"wide_screen_mode": true},
+		"header": map[string]any{
+			"template": "orange",
+			"title": map[string]any{
+				"tag":     "plain_text",
+				"content": fmt.Sprintf("💸 Refund Request #%d submitted", r.Id),
+			},
+		},
+		"elements": []any{
+			map[string]any{
+				"tag": "div",
+				"text": map[string]any{
+					"tag":     "lark_md",
+					"content": fields,
 				},
 			},
-			"elements": []any{
-				map[string]any{
-					"tag": "div",
-					"text": map[string]any{
-						"tag":     "lark_md",
-						"content": fields,
-					},
-				},
-				map[string]any{"tag": "hr"},
-				map[string]any{
-					"tag": "note",
-					"elements": []any{
-						map[string]any{
-							"tag":     "plain_text",
-							"content": fmt.Sprintf("submitted %s · ip %s", time.Now().UTC().Format(time.RFC3339), c.ClientIP()),
-						},
+			map[string]any{"tag": "hr"},
+			map[string]any{
+				"tag": "note",
+				"elements": []any{
+					map[string]any{
+						"tag":     "plain_text",
+						"content": fmt.Sprintf("submitted %s · ip %s", time.Now().UTC().Format(time.RFC3339), c.ClientIP()),
 					},
 				},
 			},
 		},
-	})
-	if err != nil {
-		logger.LogError(c.Request.Context(), "refund lark payload marshal: "+err.Error())
-		return
 	}
 
-	httpReq, err := http.NewRequestWithContext(c.Request.Context(),
-		http.MethodPost, webhookURL, bytes.NewReader(body))
-	if err != nil {
-		logger.LogError(c.Request.Context(), "refund lark request build: "+err.Error())
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: larkRefundTimeout}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		logger.LogError(c.Request.Context(), "refund lark POST failed: "+err.Error())
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		preview, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		logger.LogError(c.Request.Context(),
-			fmt.Sprintf("refund lark returned %d: %s", resp.StatusCode, string(preview)))
+	// The request context ends with the response, and this runs after it.
+	ctx, cancel := context.WithTimeout(context.Background(), larkRefundTimeout)
+	defer cancel()
+	if err := SendLarkRaw(ctx, target, card); err != nil {
+		logger.LogError(ctx, "refund lark notification failed: "+err.Error())
 	}
 }
