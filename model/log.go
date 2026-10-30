@@ -355,6 +355,11 @@ type RecordConsumeLogParams struct {
 	IsStream         bool              `json:"is_stream"`
 	Group            string            `json:"group"`
 	Other            *LogOther         `json:"other"`
+	// Fork: see RecordTaskBillingLogParams.SkipQuotaData.
+	SkipQuotaData bool
+	// Fork: usage in the model's billing unit for quota_data (see QuotaData).
+	UsageUnit   string
+	UsageAmount int64
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -408,7 +413,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if err != nil {
 		logger.LogError(c, common.LogText("failed to record log: %s", err.Error()))
 	}
-	if common.DataExportEnabled {
+	if common.DataExportEnabled && !params.SkipQuotaData {
 		var cacheReadTokens, cacheCreationTokens int
 		if other != nil {
 			cacheReadTokens, _ = other.public["cache_tokens"].(int)
@@ -423,12 +428,16 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			Quota:               params.Quota,
 			CreatedAt:           createdAt,
 			TokenUsed:           params.PromptTokens + params.CompletionTokens,
+			PromptTokens:        int64(params.PromptTokens),
+			CompletionTokens:    int64(params.CompletionTokens),
 			CacheReadTokens:     int64(cacheReadTokens),
 			CacheCreationTokens: int64(cacheCreationTokens),
 			UseGroup:            params.Group,
 			TokenID:             params.TokenId,
 			ChannelID:           params.ChannelId,
 			NodeName:            common.NodeName,
+			UsageUnit:           params.UsageUnit,
+			UsageAmount:         params.UsageAmount,
 		})
 	}
 }
@@ -444,6 +453,12 @@ type RecordTaskBillingLogParams struct {
 	Group     string
 	Other     *LogOther
 	NodeName  string // 任务发起节点；为空时回退当前节点
+	// Fork: a mock task consumed nothing upstream; log it, but keep it out of
+	// the quota_data rollup that reconciliation and the dashboard read.
+	SkipQuotaData bool
+	// Fork: usage in the model's billing unit for quota_data (see QuotaData).
+	UsageUnit   string
+	UsageAmount int64
 }
 
 func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
@@ -477,21 +492,23 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	if err != nil {
 		common.SysLog(common.LogText("failed to record task billing log: %s", err.Error()))
 	}
-	if params.LogType == LogTypeConsume && common.DataExportEnabled {
+	if params.LogType == LogTypeConsume && common.DataExportEnabled && !params.SkipQuotaData {
 		nodeName := params.NodeName
 		if nodeName == "" {
 			nodeName = common.NodeName
 		}
 		LogQuotaData(QuotaDataLogParams{
-			UserID:    params.UserId,
-			Username:  username,
-			ModelName: params.ModelName,
-			Quota:     params.Quota,
-			CreatedAt: createdAt,
-			UseGroup:  params.Group,
-			TokenID:   params.TokenId,
-			ChannelID: params.ChannelId,
-			NodeName:  nodeName,
+			UserID:      params.UserId,
+			Username:    username,
+			ModelName:   params.ModelName,
+			Quota:       params.Quota,
+			CreatedAt:   createdAt,
+			UseGroup:    params.Group,
+			TokenID:     params.TokenId,
+			ChannelID:   params.ChannelId,
+			NodeName:    nodeName,
+			UsageUnit:   params.UsageUnit,
+			UsageAmount: params.UsageAmount,
 		})
 	}
 }

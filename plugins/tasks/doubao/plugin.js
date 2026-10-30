@@ -332,7 +332,7 @@ export const meta = {
     en: "Volcengine Doubao and BytePlus Seedance video generation and Seedream image generation",
     zh: "火山引擎豆包与 BytePlus 的 Seedance 视频生成与 Seedream 图片生成",
   },
-  version: "1.3.1",
+  version: "1.3.2",
   author: { name: "QuantumNous" },
   channelTypes: [54, 45], // VolcEngine-type channels serve Ark video models with the same wire format
   models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS)),
@@ -407,6 +407,15 @@ function rewriteDraftTaskContent(content, originTasks) {
     if (!upstream) throw new Error("origin task is unavailable");
     return Object.assign({}, item, { draft_task: Object.assign({}, draft, { id: upstream }) });
   });
+}
+
+// Reference images named by the client, in order and without repeats.
+function videoReferenceImages(values) {
+  const images = [];
+  for (const image of values) {
+    if (trimmed(image) && !images.includes(trimmed(image))) images.push(trimmed(image));
+  }
+  return images;
 }
 
 function normalizeResolution(value) {
@@ -1195,10 +1204,14 @@ protocols.openai_video = {
       const requestBody = Object.assign({}, req, { model: ctx.model });
       // buildSubmitRequest reads seconds; duration is accepted as its alias.
       if (seconds !== undefined) requestBody.seconds = seconds;
+      // The OpenAI first-frame reference (input_reference, a URL or data URL)
+      // reaches Ark through requestBody.images, like the Responses surface.
+      const images = videoReferenceImages([req.image, req.input_reference].concat(Array.isArray(req.images) ? req.images : []));
+      if (images.length) requestBody.images = images;
       return {
         kind: "submit",
         model: ctx.model,
-        action: req.input_reference || req.image ? "image_to_video" : "text_to_video",
+        action: images.length ? "image_to_video" : "text_to_video",
         requestBody: requestBody,
       };
     }
@@ -1222,7 +1235,23 @@ protocols.openai_video = {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("metadata must be a JSON object string");
       req.metadata = parsed;
     }
-    if ((ctx.body.files || []).length) throw new Error("Doubao requires image and video references to be URLs inside metadata.content");
+    // One uploaded input_reference is the first frame; the host inlines it as
+    // a Base64 data URL, which Ark accepts in place of an image URL. Every
+    // other reference (more images, videos) is a URL inside metadata.content.
+    const images = videoReferenceImages([req.image, req.input_reference]);
+    for (const file of ctx.body.files || []) {
+      if (file.field !== "input_reference") throw new Error("only input_reference may be uploaded; other references must be URLs inside metadata.content");
+      if (images.length) throw new Error("input_reference must be provided once");
+      // Ark reads Base64 references only as data:image/<lowercase format>;base64 URLs.
+      const mimeType = trimmed(file.mimeType).toLowerCase();
+      images.push({
+        __fileRef: file.ref,
+        encoding: "dataUrl",
+        mimeType: /^image\/[a-z0-9.+-]+$/.test(mimeType) ? mimeType : "image/png",
+        maxBytes: MAX_INPUT_IMAGE_BYTES,
+      });
+    }
+    if (images.length) req.images = images;
     if (req.seconds !== undefined) req.seconds = Number(req.seconds);
     else if (req.duration !== undefined) req.seconds = Number(req.duration);
     const seconds = req.seconds === undefined ? req.duration : req.seconds;
@@ -1231,7 +1260,7 @@ protocols.openai_video = {
     return {
       kind: "submit",
       model: ctx.model,
-      action: req.input_reference || req.image ? "image_to_video" : "text_to_video",
+      action: images.length ? "image_to_video" : "text_to_video",
       requestBody: Object.assign({}, req, { model: ctx.model }),
     };
   },

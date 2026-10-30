@@ -25,7 +25,23 @@ type QuotaData struct {
 	Quota               int    `json:"quota" gorm:"default:0"`
 	CacheReadTokens     int64  `json:"cache_read_tokens" gorm:"default:0"`
 	CacheCreationTokens int64  `json:"cache_creation_tokens" gorm:"default:0"`
+	// Fork: usage in the unit the model is billed in when that is not tokens
+	// (a task's seconds, images or clips), so reconciliation can show it; a
+	// row keyed by unit never mixes units. Empty means token_used applies.
+	UsageUnit   string `json:"usage_unit" gorm:"size:16;default:''"`
+	UsageAmount int64  `json:"usage_amount" gorm:"default:0"`
+	// Fork: the input/output split of token_used, the way vendors bill it.
+	PromptTokens     int64 `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens int64 `json:"completion_tokens" gorm:"default:0"`
 }
+
+// Usage units a quota_data row may carry besides tokens.
+const (
+	UsageUnitToken  = "token"
+	UsageUnitSecond = "second"
+	UsageUnitImage  = "image"
+	UsageUnitClip   = "clip"
+)
 
 type QuotaDataLogParams struct {
 	UserID              int
@@ -40,6 +56,10 @@ type QuotaDataLogParams struct {
 	TokenID             int
 	ChannelID           int
 	NodeName            string
+	UsageUnit           string
+	UsageAmount         int64
+	PromptTokens        int64
+	CompletionTokens    int64
 }
 
 func UpdateQuotaData() {
@@ -56,7 +76,7 @@ var CacheQuotaData = make(map[string]*QuotaData)
 var CacheQuotaDataLock = sync.Mutex{}
 
 func logQuotaDataCache(quotaData *QuotaData) {
-	key := fmt.Sprintf("%d\x00%s\x00%s\x00%d\x00%s\x00%d\x00%d\x00%s",
+	key := fmt.Sprintf("%d\x00%s\x00%s\x00%d\x00%s\x00%d\x00%d\x00%s\x00%s",
 		quotaData.UserID,
 		quotaData.Username,
 		quotaData.ModelName,
@@ -65,6 +85,7 @@ func logQuotaDataCache(quotaData *QuotaData) {
 		quotaData.TokenID,
 		quotaData.ChannelID,
 		quotaData.NodeName,
+		quotaData.UsageUnit,
 	)
 	count := quotaData.Count
 	quota := quotaData.Quota
@@ -76,6 +97,9 @@ func logQuotaDataCache(quotaData *QuotaData) {
 		cachedQuotaData.TokenUsed += tokenUsed
 		cachedQuotaData.CacheReadTokens += quotaData.CacheReadTokens
 		cachedQuotaData.CacheCreationTokens += quotaData.CacheCreationTokens
+		cachedQuotaData.UsageAmount += quotaData.UsageAmount
+		cachedQuotaData.PromptTokens += quotaData.PromptTokens
+		cachedQuotaData.CompletionTokens += quotaData.CompletionTokens
 		quotaData = cachedQuotaData
 	}
 	CacheQuotaData[key] = quotaData
@@ -98,6 +122,10 @@ func LogQuotaData(params QuotaDataLogParams) {
 		TokenUsed:           params.TokenUsed,
 		CacheReadTokens:     max(0, params.CacheReadTokens),
 		CacheCreationTokens: max(0, params.CacheCreationTokens),
+		UsageUnit:           params.UsageUnit,
+		UsageAmount:         max(0, params.UsageAmount),
+		PromptTokens:        max(0, params.PromptTokens),
+		CompletionTokens:    max(0, params.CompletionTokens),
 	}
 
 	CacheQuotaDataLock.Lock()
@@ -116,8 +144,8 @@ func SaveQuotaDataCache() {
 	for _, quotaData := range CacheQuotaData {
 		quotaDataDB := &QuotaData{}
 		DB.Table("quota_data").
-			Where("user_id = ? and username = ? and model_name = ? and created_at = ? and use_group = ? and token_id = ? and channel_id = ? and node_name = ?",
-				quotaData.UserID, quotaData.Username, quotaData.ModelName, quotaData.CreatedAt, quotaData.UseGroup, quotaData.TokenID, quotaData.ChannelID, quotaData.NodeName).
+			Where("user_id = ? and username = ? and model_name = ? and created_at = ? and use_group = ? and token_id = ? and channel_id = ? and node_name = ? and usage_unit = ?",
+				quotaData.UserID, quotaData.Username, quotaData.ModelName, quotaData.CreatedAt, quotaData.UseGroup, quotaData.TokenID, quotaData.ChannelID, quotaData.NodeName, quotaData.UsageUnit).
 			First(quotaDataDB)
 		if quotaDataDB.Id > 0 {
 			//quotaDataDB.Count += quotaData.Count
@@ -134,9 +162,12 @@ func SaveQuotaDataCache() {
 
 func increaseQuotaData(quotaData *QuotaData) {
 	err := DB.Table("quota_data").
-		Where("user_id = ? and username = ? and model_name = ? and created_at = ? and use_group = ? and token_id = ? and channel_id = ? and node_name = ?",
-			quotaData.UserID, quotaData.Username, quotaData.ModelName, quotaData.CreatedAt, quotaData.UseGroup, quotaData.TokenID, quotaData.ChannelID, quotaData.NodeName).
+		Where("user_id = ? and username = ? and model_name = ? and created_at = ? and use_group = ? and token_id = ? and channel_id = ? and node_name = ? and usage_unit = ?",
+			quotaData.UserID, quotaData.Username, quotaData.ModelName, quotaData.CreatedAt, quotaData.UseGroup, quotaData.TokenID, quotaData.ChannelID, quotaData.NodeName, quotaData.UsageUnit).
 		Updates(map[string]any{
+			"usage_amount":          gorm.Expr("usage_amount + ?", quotaData.UsageAmount),
+			"prompt_tokens":         gorm.Expr("prompt_tokens + ?", quotaData.PromptTokens),
+			"completion_tokens":     gorm.Expr("completion_tokens + ?", quotaData.CompletionTokens),
 			"count":                 gorm.Expr("count + ?", quotaData.Count),
 			"quota":                 gorm.Expr("quota + ?", quotaData.Quota),
 			"token_used":            gorm.Expr("token_used + ?", quotaData.TokenUsed),

@@ -258,33 +258,11 @@ func Distribute() func(c *gin.Context) {
 						}
 					}
 
-					// Fork: reseller upstream routing. A reseller customer's request is
-					// routed only through the channels the platform admin bound to its
-					// reseller, via the reseller's private group (reseller-<id>), with
-					// per-model priority and sticky affinity. Mirrors transparent BYOK:
-					// switch BOTH UsingGroup (channel selection, and the group the
-					// channel-affinity check below is constrained to) and TokenGroup
-					// (retry/failover stays inside the reseller group). Billing does NOT
-					// follow — the origin group is stashed and relay/helper/price.go
-					// bills with it, so the customer pays exactly what it paid before.
-					// Additive and default-off: fires only for reseller customers whose
-					// reseller has bound channels, only while the global switch is on,
-					// and never for the "auto" group (whose billing group is resolved
-					// later from the auto selection).
-					if channel == nil && setting.ResellerRoutingEnabled && usingGroup != "auto" {
-						if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); perr == nil && payer != nil && payer.ResellerOrgId > 0 {
-							if cfg := model.GetResellerRoutingCached(payer.ResellerOrgId); cfg != nil && len(cfg.ChannelIdList) > 0 {
-								resellerGroup := model.ResellerRoutingGroup(payer.ResellerOrgId)
-								common.SetContextKey(c, constant.ContextKeyResellerOriginGroup, usingGroup)
-								usingGroup = resellerGroup
-								common.SetContextKey(c, constant.ContextKeyUsingGroup, resellerGroup)
-								common.SetContextKey(c, constant.ContextKeyTokenGroup, resellerGroup)
-								if !cfg.AffinityOff {
-									common.SetContextKey(c, constant.ContextKeyResellerAffinityHash,
-										service.ResellerAffinityHash(payer.ResellerOrgId, payer.OrgId, modelRequest.Model))
-								}
-							}
-						}
+					// Fork: reseller upstream routing (see applyResellerRoutingGroup).
+					// Task plugin endpoints already switched in RouteTaskPluginEndpoint;
+					// the helper is idempotent.
+					if channel == nil {
+						usingGroup = applyResellerRoutingGroup(c, modelRequest.Model)
 					}
 
 				}
@@ -356,6 +334,47 @@ func Distribute() func(c *gin.Context) {
 // noAvailableChannelMessage explains a 503 for a task-plugin-claimed model.
 // The response tells the caller the model is plugin-claimed without naming the
 // plugin; the candidate plugin keys go to the server log under the request id.
+// applyResellerRoutingGroup switches a reseller customer's request to the
+// reseller's private group (reseller-<id>) and returns the group now in effect.
+// Fork: the customer is routed only through the channels the platform admin
+// bound to its reseller, with per-model priority and sticky affinity. Mirrors
+// transparent BYOK: BOTH UsingGroup (channel selection, and the group the
+// channel-affinity check is constrained to) and TokenGroup (retry/failover
+// stays inside the reseller group) switch. Billing does NOT follow: the origin
+// group is stashed and relay/helper/price.go bills with it, so the customer
+// pays exactly what it paid before. Additive and default-off: fires only for
+// reseller customers whose reseller has bound channels, only while the global
+// switch is on, and never for the "auto" group (whose billing group is
+// resolved later from the auto selection). Idempotent: a request already
+// switched keeps its origin group, so RouteTaskPluginEndpoint can call it
+// before Distribute does.
+func applyResellerRoutingGroup(c *gin.Context, modelName string) string {
+	usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	if !setting.ResellerRoutingEnabled || usingGroup == "auto" {
+		return usingGroup
+	}
+	if _, switched := common.GetContextKey(c, constant.ContextKeyResellerOriginGroup); switched {
+		return usingGroup
+	}
+	payer, err := model.GetOrgPayerInfo(c.GetInt("id"))
+	if err != nil || payer == nil || payer.ResellerOrgId <= 0 {
+		return usingGroup
+	}
+	cfg := model.GetResellerRoutingCached(payer.ResellerOrgId)
+	if cfg == nil || len(cfg.ChannelIdList) == 0 {
+		return usingGroup
+	}
+	resellerGroup := model.ResellerRoutingGroup(payer.ResellerOrgId)
+	common.SetContextKey(c, constant.ContextKeyResellerOriginGroup, usingGroup)
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, resellerGroup)
+	common.SetContextKey(c, constant.ContextKeyTokenGroup, resellerGroup)
+	if !cfg.AffinityOff {
+		common.SetContextKey(c, constant.ContextKeyResellerAffinityHash,
+			service.ResellerAffinityHash(payer.ResellerOrgId, payer.OrgId, modelName))
+	}
+	return resellerGroup
+}
+
 func noAvailableChannelMessage(c *gin.Context, group, modelName string) string {
 	value, exists := c.Get(jsplugin.ContextKeyPinnedPlugin)
 	pinned, ok := value.(jsplugin.PinnedPlugin)
@@ -372,7 +391,16 @@ func noAvailableChannelMessage(c *gin.Context, group, modelName string) string {
 			}
 		}
 		logger.LogWarn(c, common.LogText("task_plugin subsystem=distribution event=no_available_channel group=%q model=%q plugins=%q reason=no_eligible_channel", group, modelName, strings.Join(keys, ",")))
-		return i18n.T(c, i18n.MsgDistributorNoAvailableChannelTaskPlugin, map[string]any{"Group": group, "Model": modelName})
+		message := i18n.T(c, i18n.MsgDistributorNoAvailableChannelTaskPlugin, map[string]any{"Group": group, "Model": modelName})
+		// Fork: a candidate that does have a channel may have refused the
+		// request body; without its reason the caller only sees a routing
+		// error for what is really a validation error.
+		if rejected, ok := c.Get(contextKeyTaskPluginRejectedCandidates); ok {
+			if failures, ok := rejected.([]string); ok && len(failures) > 0 {
+				message += "; rejected by " + strings.Join(failures, "; ")
+			}
+		}
+		return message
 	}
 	return i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": group, "Model": modelName})
 }

@@ -18,11 +18,34 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
+// usage_unit names the unit the model is billed in when that is not tokens
+// (second / image / clip); usage_amount is the total in that unit. Empty
+// unit: tokens apply, or the model is billed per task.
 export type ReconRow = {
   key: string
   quota: number
   requests: number
   tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
+  usage_unit: string
+  usage_amount: number
+}
+
+// One model on one channel: which upstream served how much of a model.
+export type ReconMatrixRow = {
+  model: string
+  channel_id: number
+  channel: string
+  quota: number
+  requests: number
+  tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
+  usage_unit: string
+  usage_amount: number
 }
 
 export type ReconResellerRow = {
@@ -57,6 +80,7 @@ export type ReconReport = {
   summary: ReconSummary
   by_model: ReconRow[]
   by_channel: ReconRow[]
+  by_model_channel: ReconMatrixRow[]
   by_group: ReconRow[]
   by_user: ReconRow[]
   by_reseller: ReconResellerRow[]
@@ -64,6 +88,39 @@ export type ReconReport = {
 }
 
 export type Granularity = 'day' | 'week' | 'month'
+
+// One side of an upstream bill comparison. Ours carries the standard price
+// and the usage unit; the bill side carries its cost in the bill's currency.
+export type UpstreamBillSide = {
+  requests: number
+  tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
+  quota: number
+  usage_unit: string
+  usage_amount: number
+  cost: number
+}
+
+export type UpstreamBillRow = {
+  model: string
+  ours: UpstreamBillSide
+  bill: UpstreamBillSide
+}
+
+export type UpstreamBillReport = {
+  channel_id: number
+  channel: string
+  from: number
+  to: number
+  offset_minutes: number
+  offset_detected: boolean
+  matched_requests: number
+  rows: UpstreamBillRow[]
+  ours: UpstreamBillSide
+  bill: UpstreamBillSide
+}
 
 type ApiResp<T> = { success: boolean; message?: string; data?: T }
 
@@ -111,4 +168,25 @@ export async function exportReconciliation(
   a.click()
   a.remove()
   window.URL.revokeObjectURL(url)
+}
+
+// Compares an upstream's exported bill with the channel's recorded usage.
+// billTzOffset is the bill's zone in minutes east of UTC; undefined asks the
+// gateway to detect it.
+export async function compareUpstreamBill(
+  channelId: number,
+  file: File,
+  billTzOffset?: number
+): Promise<UpstreamBillReport> {
+  const form = new FormData()
+  form.append('channel_id', String(channelId))
+  form.append('file', file)
+  if (billTzOffset != null) form.append('bill_tz_offset', String(billTzOffset))
+  const res = await api.post<ApiResp<UpstreamBillReport>>(
+    `/api/admin/reconciliation/upstream-bill${rangeQuery()}`,
+    form
+  )
+  if (!res.data?.success || !res.data.data)
+    throw new Error(res.data?.message || 'Failed to compare the bill')
+  return res.data.data
 }

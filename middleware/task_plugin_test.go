@@ -24,6 +24,7 @@ import (
 	builtinplugins "github.com/QuantumNous/new-api/plugins"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -2077,14 +2078,14 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 			// Every table belongs to this run, including when a developer points
 			// a test DSN at a database shared with another test suite.
 			database.Config.NamingStrategy = schema.NamingStrategy{TablePrefix: "endpoint_route_" + common.GetUUID() + "_"}
-			require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Task{}))
+			require.NoError(t, database.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Task{}, &model.Organization{}, &model.OrgAccount{}, &model.ResellerAdmin{}, &model.ResellerRouting{}))
 			t.Cleanup(func() {
-				for _, table := range []any{&model.Ability{}, &model.Channel{}, &model.Task{}} {
+				for _, table := range []any{&model.Ability{}, &model.Channel{}, &model.Task{}, &model.Organization{}, &model.OrgAccount{}, &model.ResellerAdmin{}, &model.ResellerRouting{}} {
 					require.NoError(t, database.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(table).Error)
 				}
 				common.MemoryCacheEnabled = true
 				model.InitChannelCache()
-				require.NoError(t, database.Migrator().DropTable(&model.Ability{}, &model.Channel{}, &model.Task{}))
+				require.NoError(t, database.Migrator().DropTable(&model.Ability{}, &model.Channel{}, &model.Task{}, &model.Organization{}, &model.OrgAccount{}, &model.ResellerAdmin{}, &model.ResellerRouting{}))
 				model.DB = previousDB
 				common.SetDatabaseTypes(previousMain, previousLog)
 				common.SQLitePath, common.IsMasterNode = previousPath, previousMaster
@@ -2121,7 +2122,8 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 						decoderRejects, syncOnly bool
 						originPin, retry         bool
 						legacy, mapped, shared   bool
-						switched                 bool
+						switched, reseller       bool
+						alternateDisabled        bool
 						wantStatus               int
 					}{
 						{name: "ordinary images bypass plugin decoder", decoderRejects: true},
@@ -2158,11 +2160,24 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 						// group inside Distribute; the channel RouteTaskPluginEndpoint
 						// chose under the public group must not be reused there.
 						{name: "private group switch ignores pre-selection", ordinaryPriority: 20, switched: true},
+						// Fork: a reseller customer's request is routed through the
+						// reseller's private group, so the relay-or-plugin decision must
+						// be made there, not against the ordinary channel of the public group.
+						{name: "reseller routing decides against the reseller group", ordinaryPriority: 20, reseller: true, wantPlugin: true},
+						// Fork: when the only candidate left has no channel, the caller
+						// learns why the candidate that has one refused the request.
+						{name: "rejected candidate reason survives a no-channel failure", pluginOnly: true, shared: true, decoderRejects: true, pluginPriority: 20, alternateDisabled: true, wantStatus: http.StatusServiceUnavailable},
 					} {
 						t.Run(tc.name, func(t *testing.T) {
-							for _, table := range []any{&model.Ability{}, &model.Channel{}, &model.Task{}} {
+							for _, table := range []any{&model.Ability{}, &model.Channel{}, &model.Task{}, &model.Organization{}, &model.OrgAccount{}, &model.ResellerAdmin{}, &model.ResellerRouting{}} {
 								require.NoError(t, database.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(table).Error)
 							}
+							const resellerOrgId = 601
+							previousResellerRouting := setting.ResellerRoutingEnabled
+							setting.ResellerRoutingEnabled = tc.reseller
+							t.Cleanup(func() { setting.ResellerRoutingEnabled = previousResellerRouting })
+							model.InvalidateOrgPayerCache(7)
+							model.InvalidateResellerRoutingCache(resellerOrgId)
 							key := "channel-route-test"
 							path := common.GetStringIfEmpty(tc.path, "/v1/images/generations")
 							modelName := common.GetStringIfEmpty(tc.model, "channel-route-model")
@@ -2208,6 +2223,9 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 							if tc.wrongModel {
 								plugin.Models = "another-model"
 							}
+							if tc.reseller {
+								plugin.Group = model.ResellerRoutingGroup(resellerOrgId)
+							}
 							if tc.disabled {
 								plugin.Status = common.ChannelStatusManuallyDisabled
 							}
@@ -2219,6 +2237,9 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 								alternate := &model.Channel{Type: ordinary.Type, Status: common.ChannelStatusEnabled, Name: "alternate", Key: "alternate-key", Group: "route-test", Models: modelName}
 								if tc.switched {
 									alternate.Group = "route-private"
+								}
+								if tc.alternateDisabled {
+									alternate.Status = common.ChannelStatusManuallyDisabled
 								}
 								if tc.wantPlugin {
 									alternate.Type = plugin.Type
@@ -2236,6 +2257,11 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 							}
 							for _, channel := range channels {
 								require.NoError(t, channel.Insert())
+							}
+							if tc.reseller {
+								require.NoError(t, database.Create(&model.Organization{Id: resellerOrgId, Name: "reseller-route", Type: model.OrgTypeReseller, Status: model.OrgStatusActive}).Error)
+								require.NoError(t, database.Create(&model.ResellerAdmin{UserId: 7, ResellerOrgId: resellerOrgId, Status: model.OrgStatusActive}).Error)
+								require.NoError(t, database.Create(&model.ResellerRouting{ResellerOrgId: resellerOrgId, ChannelIds: fmt.Sprintf("[%d]", plugin.Id)}).Error)
 							}
 							if tc.originPin {
 								require.NoError(t, database.Create(&model.Task{TaskID: "task-route-origin", UserId: 7, ChannelId: channels[len(channels)-1].Id, Platform: constant.TaskPlatform(key), Status: model.TaskStatusSuccess}).Error)
@@ -2309,6 +2335,9 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 										expected = channels[len(channels)-1]
 									}
 								}
+								if tc.reseller {
+									assert.Equal(t, model.ResellerRoutingGroup(resellerOrgId), common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
+								}
 								assert.Equal(t, expected.Id, common.GetContextKeyInt(c, constant.ContextKeyChannelId))
 								assert.Equal(t, expected.Key, common.GetContextKeyString(c, constant.ContextKeyChannelKey))
 								if tc.retry {
@@ -2329,8 +2358,11 @@ func TestRouteTaskPluginEndpointUsesSelectedChannel(t *testing.T) {
 							}
 							assert.Equal(t, status, recorder.Code, recorder.Body.String())
 							assert.Equal(t, status == http.StatusNoContent, reached)
-							if tc.decoderRejects && status == http.StatusBadRequest {
+							if tc.decoderRejects && status != http.StatusNoContent {
 								assert.Contains(t, recorder.Body.String(), "plugin rejected this request")
+							}
+							if tc.alternateDisabled {
+								assert.Contains(t, recorder.Body.String(), "rejected by "+key+": plugin rejected this request")
 							}
 						})
 					}

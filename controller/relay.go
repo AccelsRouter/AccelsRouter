@@ -779,6 +779,11 @@ func executeTaskSubmissionWith(
 		PerCallBilling:  common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
 		TieredSnapshot:  relayInfo.TieredBillingSnapshot,
 	}
+	// Fork: remember the usage the reservation covers, in the model's billing
+	// unit, so settlement records only the difference (see RecalculateTaskQuota).
+	if snapshot := relayInfo.TieredBillingSnapshot; snapshot != nil {
+		task.PrivateData.BillingContext.UsageUnit, task.PrivateData.BillingContext.UsageAmount = service.TaskUsageAmount(snapshot.UsageFacts)
+	}
 	task.Quota = result.Quota
 	task.Data = result.TaskData
 	if len(result.PluginState) > 0 {

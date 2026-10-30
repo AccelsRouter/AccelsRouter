@@ -12,6 +12,9 @@ const VIDEO_MODELS = {
   "seedance-2.0-mini": { resolutions: ["480p", "720p"], maxDuration: 15 },
   "seedance-2.5": { resolutions: ["480p", "720p", "1080p"], maxDuration: 30 },
 };
+// Ark's documented per-image ceiling for reference images, applied to uploads.
+const MAX_INPUT_IMAGE_BYTES = 31457280;
+
 function trimmed(value) {
   return String(value || "").trim();
 }
@@ -117,7 +120,7 @@ export const meta = {
     en: "Seedance video generation through the TokenDance gateway",
     zh: "通过词元跳动（TokenDance）网关生成 Seedance 视频",
   },
-  version: "1.2.0",
+  version: "1.2.1",
   author: { name: "AccelsRouter" },
   website: "https://tokendance.space/docs/protocol-seedance-generations",
   baseUrl: "https://tokendance.space/gateway",
@@ -458,16 +461,50 @@ export const protocols = {
   },
   openai_video: {
     decodeRequest: function (ctx) {
-      if (!ctx.body || ctx.body.kind !== "json") throw new Error("JSON body required");
-      const req = ctx.body.value;
-      if (!req || typeof req !== "object" || Array.isArray(req)) throw new Error("JSON object required");
-      if (req.metadata !== undefined && (!req.metadata || typeof req.metadata !== "object" || Array.isArray(req.metadata)))
-        throw new Error("metadata must be an object");
+      if (!ctx.body || (ctx.body.kind !== "json" && ctx.body.kind !== "multipart")) throw new Error("JSON or multipart body required");
+      const images = [];
+      let req;
+      if (ctx.body.kind === "json") {
+        req = ctx.body.value;
+        if (!req || typeof req !== "object" || Array.isArray(req)) throw new Error("JSON object required");
+        if (req.metadata !== undefined && (!req.metadata || typeof req.metadata !== "object" || Array.isArray(req.metadata)))
+          throw new Error("metadata must be an object");
+      } else {
+        // The OpenAI SDK uploads the first frame as the input_reference part.
+        // TokenDance speaks the Ark wire format, which reads a Base64 data URL
+        // in image_url.url, so the host inlines the upload at submit time.
+        req = {};
+        const fields = ctx.body.fields || {};
+        for (const name of Object.keys(fields)) {
+          if (fields[name].length > 1) throw new Error(name + " must be provided once");
+          req[name] = fields[name][0];
+        }
+        if (req.metadata !== undefined) {
+          let parsed;
+          try {
+            parsed = JSON.parse(req.metadata);
+          } catch (e) {
+            throw new Error("metadata must be a JSON object string");
+          }
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("metadata must be a JSON object string");
+          req.metadata = parsed;
+        }
+        for (const file of ctx.body.files || []) {
+          if (file.field !== "input_reference") throw new Error("only input_reference may be uploaded; other references must be URLs inside metadata.content");
+          if (images.length || trimmed(req.input_reference) || trimmed(req.image)) throw new Error("input_reference must be provided once");
+          const mimeType = trimmed(file.mimeType).toLowerCase();
+          images.push({
+            __fileRef: file.ref,
+            encoding: "dataUrl",
+            mimeType: /^image\/[a-z0-9.+-]+$/.test(mimeType) ? mimeType : "image/png",
+            maxBytes: MAX_INPUT_IMAGE_BYTES,
+          });
+        }
+      }
       const seconds = req.seconds === undefined ? req.duration : req.seconds;
       if (seconds !== undefined && Number(seconds) !== -1 && (!Number.isFinite(Number(seconds)) || Number(seconds) <= 0 || Number(seconds) > 3600))
         throw new Error("seconds must be -1 or between 1 and 3600");
       const prompt = trimmed(req.prompt);
-      const images = [];
       for (const image of [req.image, req.input_reference].concat(Array.isArray(req.images) ? req.images : [])) {
         if (trimmed(image) && !images.includes(trimmed(image))) images.push(trimmed(image));
       }
@@ -478,7 +515,7 @@ export const protocols = {
       if (!prompt && !images.length && !Array.isArray(metadata.content)) throw new Error("prompt is required");
       const requestBody = { model: ctx.model, prompt: prompt, metadata: metadata };
       if (images.length) requestBody.images = images;
-      if (seconds !== undefined) requestBody.seconds = seconds;
+      if (seconds !== undefined) requestBody.seconds = Number(seconds);
       if (Object.prototype.hasOwnProperty.call(req, "size")) requestBody.size = req.size;
       const hasReference = images.length > 0 || (Array.isArray(metadata.content) && metadata.content.some((item) => item && item.type !== "text"));
       return { kind: "submit", model: ctx.model, action: hasReference ? "image_to_video" : "text_to_video", requestBody: requestBody };
