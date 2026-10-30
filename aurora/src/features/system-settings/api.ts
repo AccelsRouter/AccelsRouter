@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-
 import type {
   ChannelModelSummary,
   ConfirmPaymentComplianceResponse,
@@ -42,6 +41,13 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function testLarkNotify(target: 'enterprise' | 'alert') {
+  const res = await api.post<UpdateOptionResponse>('/api/option/lark_test', {
+    target,
+  })
   return res.data
 }
 

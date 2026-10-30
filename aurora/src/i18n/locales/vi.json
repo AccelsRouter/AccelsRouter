@@ -7358,6 +7358,8 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Unknown notification target": "Đích thông báo không xác định",
+    "This bot has no webhook address yet. Save one first.": "Bot này chưa có địa chỉ webhook. Hãy lưu một địa chỉ trước."
   }
 }

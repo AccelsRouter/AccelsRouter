@@ -19,8 +19,8 @@ const (
 	MsgAuthTokenGroupDeprecated   = "auth.token_group_deprecated"
 	MsgAuthChannelSelectForbidden = "auth.channel_select_forbidden"
 
-	MsgRateLimitReached      = "rate_limit.reached"
-	MsgRateLimitTotalReached = "rate_limit.total_reached"
+	MsgRateLimitReached           = "rate_limit.reached"
+	MsgRateLimitTotalReached      = "rate_limit.total_reached"
 	MsgRateLimitDailyTokenReached = "rate_limit.daily_token_reached"
 
 	MsgDistributorInvalidRequest               = "distributor.invalid_request"
@@ -115,4 +115,43 @@ const (
 	MsgChannelUpstreamUpdateRemovedModels   = "channel.upstream_update_removed_models"
 	MsgChannelUpstreamUpdateFailedChannels  = "channel.upstream_update_failed_channels"
 	MsgChannelUpstreamUpdateMoreOmitted     = "channel.upstream_update_more_omitted"
+)
+
+// Lark messages: the alert card for an upstream channel that keeps failing, and
+// the test card of the settings page. The same keys are used by pkg/larknotify.
+const (
+	MsgLarkAlertTitle            = "lark.alert_title"
+	MsgLarkAlertFieldChannel     = "lark.alert_field_channel"
+	MsgLarkAlertFieldModel       = "lark.alert_field_model"
+	MsgLarkAlertFieldFailures    = "lark.alert_field_failures"
+	MsgLarkAlertFailuresValue    = "lark.alert_failures_value"
+	MsgLarkAlertFieldStatus      = "lark.alert_field_status"
+	MsgLarkAlertFieldCallers     = "lark.alert_field_callers"
+	MsgLarkAlertCallerToken      = "lark.alert_caller_token"
+	MsgLarkAlertCallerGroup      = "lark.alert_caller_group"
+	MsgLarkAlertUnknownUser      = "lark.alert_unknown_user"
+	MsgLarkAlertMoreCallers      = "lark.alert_more_callers"
+	MsgLarkAlertFieldError       = "lark.alert_field_error"
+	MsgLarkAlertFieldRequest     = "lark.alert_field_request"
+	MsgLarkAlertNote             = "lark.alert_note"
+	MsgLarkTestTitle             = "lark.test_title"
+	MsgLarkTestFieldPurpose      = "lark.test_field_purpose"
+	MsgLarkTestFieldNote         = "lark.test_field_note"
+	MsgLarkTestNoteText          = "lark.test_note_text"
+	MsgLarkTestPurposeEnterprise = "lark.test_purpose_enterprise"
+	MsgLarkTestPurposeAlert      = "lark.test_purpose_alert"
+)
+
+// Lark abnormal usage card. The same keys are used by pkg/larknotify.
+const (
+	MsgLarkUsageTitle        = "lark.usage_title"
+	MsgLarkUsageKindAnomaly  = "lark.usage_kind_anomaly"
+	MsgLarkUsageKindDaily    = "lark.usage_kind_daily"
+	MsgLarkUsageKindMonthly  = "lark.usage_kind_monthly"
+	MsgLarkUsageAnomalyValue = "lark.usage_anomaly_value"
+	MsgLarkUsageNewUserValue = "lark.usage_new_user_value"
+	MsgLarkUsageDailyValue   = "lark.usage_daily_value"
+	MsgLarkUsageMonthlyValue = "lark.usage_monthly_value"
+	MsgLarkUsageMore         = "lark.usage_more"
+	MsgLarkUsageNote         = "lark.usage_note"
 )

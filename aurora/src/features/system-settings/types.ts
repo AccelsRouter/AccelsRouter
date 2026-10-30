@@ -411,6 +411,22 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'lark_setting.alert_enabled': boolean
+  'lark_setting.alert_window_minutes': number
+  'lark_setting.alert_failure_threshold': number
+  'lark_setting.alert_mute_minutes': number
+  'lark_setting.usage_alert_enabled': boolean
+  'lark_setting.usage_alert_multiplier': number
+  'lark_setting.usage_alert_baseline_days': number
+  'lark_setting.usage_alert_min_spend_usd': number
+  'lark_setting.usage_alert_daily_threshold_usd': number
+  'lark_setting.usage_alert_monthly_threshold_usd': number
+  'lark_setting.usage_alert_check_minutes': number
+  'lark_setting.usage_alert_utc_offset_hours': number
+  'lark_setting.enterprise_webhook_url_secret': string
+  'lark_setting.enterprise_sign_secret': string
+  'lark_setting.alert_webhook_url_secret': string
+  'lark_setting.alert_sign_secret': string
 }
 
 export type SecuritySettings = {

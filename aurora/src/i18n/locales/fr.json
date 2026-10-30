@@ -7358,6 +7358,8 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Unknown notification target": "Cible de notification inconnue",
+    "This bot has no webhook address yet. Save one first.": "Ce bot n'a pas encore d'adresse webhook. Enregistrez-en une d'abord."
   }
 }
