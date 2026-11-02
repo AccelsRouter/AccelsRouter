@@ -78,7 +78,7 @@ export function SyncPriceCell(props: {
               </div>
             ))}
             {parsed.requestRuleExpr && (
-              <div className='text-muted-foreground text-xs! break-all'>
+              <div className='text-muted-foreground text-xs! break-all whitespace-normal'>
                 {t('Includes request rules')}: {parsed.requestRuleExpr}
               </div>
             )}

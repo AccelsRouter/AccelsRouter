@@ -199,6 +199,7 @@ git merge --abort
 | 部署 | 禁用上游所有 workflow 自动触发 | `.github/workflows/*.yml` | 改为 `workflow_dispatch` only |
 | 部署 | Helm chart 配置 | （在 wspn-helm-deploy-eks-apps） | 外部仓库管理 |
 | 定价同步 | BytePlus（AK/SK 签名）与阿里百炼海外版的渠道价格同步，生成计费表达式 | `controller/custom_pricing_sync*.go`；`controller/ratio_sync.go`（仅在请求前插入 9 行钩子）；`aurora/.../models/custom-byteplus-pricing-card.tsx` + `section-registry.tsx` 末尾追加一项；i18n 三个 locale 顶部 fork 区追加 6 个 key | 选项 `BytePlusPricingAccessKeyID` / `BytePlusPricingSecretKey`（未改 `model/option.go`） |
+| 价格同步表格 | 当前价格列的「Includes request rules」长表达式不再把表格撑宽（表格单元格默认 nowrap 压过了 break-all） | `aurora/.../models/upstream-price-cells.tsx` 仅为该元素 class 追加 `whitespace-normal`；`web/` 未改 | 从上游移植该文件时若整份采用上游版本，需重新加上这一处 |
 | 支付 | WCheckout 稳定币支付集成 | 见第 4.2 节文件列表 | _待集成_ |
 | UI 主题 | Aurora 第三主题（Crypto Indigo 配色）| `aurora/`；集成点见第 6.1 节 | `aurora/` 位于仓库根，是 `web/default` 的 fork，上游变更不自动同步 |
 
