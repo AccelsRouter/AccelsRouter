@@ -10,7 +10,7 @@ import {
 
 // USD per 1M tokens, before group or recharge adjustments. A null output means
 // the completion ratio is unknown, so only the input side can be compared.
-type UnitPrice = { input: number; output: number | null }
+export type UnitPrice = { input: number; output: number | null }
 
 type PriceRow = PricingSyncModels[string]
 
@@ -41,7 +41,7 @@ function getTierUnitPrices(values?: PricingSyncValues): UnitPrice[] | null {
   }))
 }
 
-type Overage = { cost: UnitPrice; sell: UnitPrice; ratio: number }
+export type Overage = { cost: UnitPrice; sell: UnitPrice; ratio: number }
 
 // Tiers are compared one by one when both sides have the same tiers;
 // otherwise the most expensive tier of each side is compared, which only flags
@@ -84,7 +84,7 @@ function scalar(tiers: UnitPrice[]): number {
   return tier.input + (tier.output ?? 0)
 }
 
-function getLossOverage(row: PriceRow, source: string): Overage | null {
+export function getSourceLoss(row: PriceRow, source: string): Overage | null {
   const sell = getTierUnitPrices(row.current)
   const cost = getTierUnitPrices(row.upstreams[source])
   if (!sell || !cost) return null
@@ -94,7 +94,7 @@ function getLossOverage(row: PriceRow, source: string): Overage | null {
 export type SourceRisk = 'loss' | 'highest' | null
 
 export function getSourceRisk(row: PriceRow, source: string): SourceRisk {
-  if (getLossOverage(row, source)) return 'loss'
+  if (getSourceLoss(row, source)) return 'loss'
   const scalars = Object.entries(row.upstreams).flatMap(([name, values]) => {
     const tiers = getTierUnitPrices(values)
     return tiers ? [[name, scalar(tiers)] as const] : []
@@ -114,7 +114,7 @@ export function getUnitPriceText(values?: PricingSyncValues): string | null {
   return `${formatUnit(tier.input)} / ${formatUnit(tier.output)}`
 }
 
-function formatUnit(value: number | null): string {
+export function formatUnit(value: number | null): string {
   return value === null ? '—' : `$${Number(value.toPrecision(4))}`
 }
 
@@ -157,7 +157,7 @@ export function CustomPriceRiskSummary(props: { prices: PricingSyncModels }) {
   const { t } = useTranslation()
   const risks = Object.entries(props.prices).flatMap(([model, row]) =>
     Object.keys(row.upstreams).flatMap((source) => {
-      const overage = getLossOverage(row, source)
+      const overage = getSourceLoss(row, source)
       return overage ? [{ model, source, ...overage }] : []
     })
   )

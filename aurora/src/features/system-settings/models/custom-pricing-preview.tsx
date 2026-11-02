@@ -20,7 +20,12 @@ import {
   getUpstreamChannels,
 } from '../api'
 import type { DifferencesMap, PricingSyncModels } from '../types'
-import { getSourceRisk, getUnitPriceText } from './custom-price-risk'
+import {
+  formatUnit,
+  getSourceLoss,
+  getUnitPriceText,
+  type UnitPrice,
+} from './custom-price-risk'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
 import { getUpstreamDisplayName } from './upstream-ratio-sync-helpers'
 
@@ -31,7 +36,9 @@ type LossSource = {
   key: string
   channelId: number
   source: string
-  cost: string
+  cost: UnitPrice
+  sell: UnitPrice
+  ratio: number
 }
 
 type PreviewRow = {
@@ -188,17 +195,14 @@ export function CustomPricingPreview() {
           const channelId = parseChannelId(source)
           const key = `${channelId}\n${model}`
           // Only channels that still serve the model can lose money on it.
-          if (serving.has(key) && getSourceRisk(row, source) === 'loss') {
+          const loss = serving.has(key) ? getSourceLoss(row, source) : null
+          if (loss) {
             if (!problems.includes('loss')) problems.push('loss')
-            losses.push({
-              key,
-              channelId,
-              source,
-              cost: getUnitPriceText(row.upstreams[source]) ?? '—',
-            })
+            losses.push({ key, channelId, source, ...loss })
           }
         }
       }
+      losses.sort((a, b) => b.ratio - a.ratio)
       if (problems.length)
         result.push({ model, channels, problems, sell, losses })
     }
@@ -331,71 +335,111 @@ export function CustomPricingPreview() {
           {t('No problems found')}
         </p>
       ) : (
-        <ul className='divide-y rounded-md border'>
-          {visible.map((row) => (
-            <li
-              key={row.model}
-              className='flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm'
-            >
-              <span className='min-w-48 font-medium'>{row.model}</span>
-              <span className='flex gap-1'>
-                {row.problems.map((problem) => (
-                  <StatusBadge
-                    key={problem}
-                    label={
-                      problem === 'unpriced'
-                        ? t('No price')
-                        : problem === 'difference'
-                          ? t('Price difference')
-                          : t('Loss risk')
-                    }
-                    variant={
-                      problem === 'loss'
-                        ? 'danger'
-                        : problem === 'unpriced'
-                          ? 'warning'
-                          : 'info'
-                    }
-                    size='sm'
-                    copyable={false}
-                  />
+        <div className='overflow-x-auto rounded-md border'>
+          <table className='w-full min-w-[56rem] text-sm'>
+            <thead className='bg-muted/40 text-muted-foreground text-xs'>
+              <tr className='[&>th]:px-3 [&>th]:py-2 [&>th]:text-left [&>th]:font-medium'>
+                <th className='w-8' />
+                <th>{t('Model')}</th>
+                <th>{t('Problem')}</th>
+                <th>{t('Channel')}</th>
+                <th className='text-right!'>
+                  {t('Upstream cost')} ({t('Input')} / {t('Output')})
+                </th>
+                <th className='text-right!'>
+                  {t('Current Price')} ({t('Input')} / {t('Output')})
+                </th>
+                <th className='text-right!'>{t('Over price')}</th>
+              </tr>
+            </thead>
+            {visible.map((row) => (
+              <tbody key={row.model} className='border-t'>
+                {(row.losses.length ? row.losses : [null]).map((loss, index) => (
+                  <tr
+                    key={loss?.key ?? row.model}
+                    className='[&>td]:px-3 [&>td]:py-1.5 [&>td]:align-middle'
+                  >
+                    <td>
+                      {loss && (
+                        <Checkbox
+                          checked={selected.has(loss.key)}
+                          onCheckedChange={(checked) =>
+                            toggleLoss(loss.key, Boolean(checked))
+                          }
+                          aria-label={t('Select {{model}} on {{source}}', {
+                            model: row.model,
+                            source: getUpstreamDisplayName(loss.source, t),
+                          })}
+                        />
+                      )}
+                    </td>
+                    <td className='font-medium'>
+                      {index === 0 ? row.model : ''}
+                    </td>
+                    <td>
+                      {index === 0 && (
+                        <span className='flex gap-1'>
+                          {row.problems
+                            .filter(
+                              (problem) =>
+                                !(problem === 'difference' && row.losses.length)
+                            )
+                            .map((problem) => (
+                              <StatusBadge
+                                key={problem}
+                                label={
+                                  problem === 'unpriced'
+                                    ? t('No price')
+                                    : problem === 'difference'
+                                      ? t('Price difference')
+                                      : t('Loss risk')
+                                }
+                                variant={
+                                  problem === 'loss'
+                                    ? 'danger'
+                                    : problem === 'unpriced'
+                                      ? 'warning'
+                                      : 'info'
+                                }
+                                size='sm'
+                                copyable={false}
+                              />
+                            ))}
+                        </span>
+                      )}
+                    </td>
+                    {loss ? (
+                      <>
+                        <td>{getUpstreamDisplayName(loss.source, t)}</td>
+                        <td className='text-right tabular-nums'>
+                          {formatUnit(loss.cost.input)} /{' '}
+                          {formatUnit(loss.cost.output)}
+                        </td>
+                        <td className='text-muted-foreground text-right tabular-nums'>
+                          {formatUnit(loss.sell.input)} /{' '}
+                          {formatUnit(loss.sell.output)}
+                        </td>
+                        <td className='text-destructive text-right font-medium tabular-nums'>
+                          {Number.isFinite(loss.ratio)
+                            ? `+${Math.round((loss.ratio - 1) * 100)}%`
+                            : '—'}
+                        </td>
+                      </>
+                    ) : (
+                      <td
+                        colSpan={4}
+                        className='text-muted-foreground max-w-0 truncate text-xs'
+                        title={row.channels.join(', ')}
+                      >
+                        {row.channels.join(', ')}
+                      </td>
+                    )}
+                  </tr>
                 ))}
-              </span>
-              <span
-                className='text-muted-foreground ml-auto max-w-80 truncate text-xs'
-                title={row.channels.join(', ')}
-              >
-                {row.channels.join(', ')}
-              </span>
-              {row.losses.length > 0 && (
-                <ul className='mt-1 w-full space-y-1 pl-2'>
-                  {row.losses.map((loss) => (
-                    <li
-                      key={loss.key}
-                      className='text-muted-foreground flex items-center gap-2 tabular-nums'
-                    >
-                      <Checkbox
-                        checked={selected.has(loss.key)}
-                        onCheckedChange={(checked) =>
-                          toggleLoss(loss.key, Boolean(checked))
-                        }
-                        aria-label={t('Select {{model}} on {{source}}', {
-                          model: row.model,
-                          source: getUpstreamDisplayName(loss.source, t),
-                        })}
-                      />
-                      <span>
-                        {getUpstreamDisplayName(loss.source, t)}:{' '}
-                        {t('Input')}/{t('Output')} {loss.cost} {t('vs current')}{' '}
-                        {row.sell ?? '—'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
+              </tbody>
+            ))}
+          </table>
+        </div>
       )}
       <ConfirmDialog
         open={confirmOpen}
