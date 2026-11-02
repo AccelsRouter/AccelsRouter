@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -115,4 +117,28 @@ func TestCustomBytePlusRequestSigning(t *testing.T) {
 	signCustomBytePlusRequest(req, []byte(`{}`), "AKTEST", "secret", time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC))
 	assert.Equal(t, "20261029T090000Z", req.Header.Get("X-Date"))
 	assert.Contains(t, req.Header.Get("Authorization"), "HMAC-SHA256 Credential=AKTEST/20261029/ap-southeast-1/ark/request, SignedHeaders=content-type;host;x-content-sha256;x-date, Signature=")
+}
+
+func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
+	const body = `{"success":true,"output":{"models":[
+{"model":"qwen3.8-max","prices":[{"range_name":"Default","prices":[
+{"type":"input_token","price":"2","price_unit":"Per 1M tokens","time_band":"standard"},
+{"type":"output_token","price":"6","price_unit":"Per 1M tokens","time_band":"standard"},
+{"type":"input_token_cache","price":"0.25","price_unit":"Per 1M tokens","time_band":"standard"},
+{"type":"input_token_batch","price":"1","price_unit":"Per 1M tokens","time_band":"standard"},
+{"type":"output_token_batch","price":"3","price_unit":"Per 1M tokens","time_band":"standard"},
+{"type":"input_token_cache_creation_5m","price":"2.5","price_unit":"Per 1M tokens","time_band":"standard"},
+{"type":"input_token_cache_read","price":"0.17","price_unit":"Per 1M tokens","time_band":"standard"}]}]},
+{"model":"peaky","prices":[{"range_name":"Default","prices":[
+{"type":"input_token","price":"1","price_unit":"Per 1M tokens","time_band":"peak"},
+{"type":"output_token","price":"2","price_unit":"Per 1M tokens","time_band":"peak"}]}]},
+{"model":"free-input-only","prices":[{"range_name":"Default","prices":[
+{"type":"input_token","price":"0","price_unit":"Per 1M tokens","time_band":null}]}]}]}}`
+	var page customAlibabaModelsPage
+	require.NoError(t, common.Unmarshal([]byte(body), &page))
+	got := convertCustomAlibabaModelsToBillingExpr(page.Output.Models)
+	exprs := got[billing_setting.BillingExprField].(map[string]string)
+	assert.Equal(t, `tier("base", p * 2 + c * 6 + cr * 0.25 + cc * 2.5)`, exprs["qwen3.8-max"])
+	assert.NotContains(t, exprs, "peaky")
+	assert.NotContains(t, exprs, "free-input-only")
 }

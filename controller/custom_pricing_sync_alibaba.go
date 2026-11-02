@@ -22,7 +22,7 @@ const (
 	customAlibabaPageSize       = 100
 	customAlibabaMaxPages       = 50
 	customAlibabaTokensPerK     = 1024
-	customAlibabaPerMillionUnit = "per million tokens"
+	customAlibabaPerMillionUnit = "per 1m tokens"
 	customAlibabaPerImageUnit   = "per image"
 )
 
@@ -32,6 +32,7 @@ type customAlibabaPriceItem struct {
 	Type      string `json:"type"`
 	Price     any    `json:"price"`
 	PriceUnit string `json:"price_unit"`
+	TimeBand  string `json:"time_band"`
 }
 
 type customAlibabaPriceTier struct {
@@ -163,22 +164,36 @@ func customAlibabaBillingExpr(tiers []customAlibabaPriceTier) (string, bool) {
 	return expr, true
 }
 
-// customAlibabaTierBody renders one tier. It accepts exactly one input_token and one
-// output_token price per million tokens, or exactly one image_number price
-// per image; anything else makes the whole model unsupported.
+// customAlibabaTierBody renders one tier from real-time prices per 1M tokens: input,
+// output, optional implicit cache hit (explicit cache read is the fallback) and
+// optional explicit cache creation, or exactly one image_number price per image.
+// Batch prices are ignored; any other item type, or a time band other than
+// "standard" (e.g. peak/off-peak), makes the whole model unsupported.
 func customAlibabaTierBody(items []customAlibabaPriceItem) (body string, image bool, ok bool) {
-	var input, output, imagePrice string
+	var input, output, imagePrice, cacheImplicit, cacheRead, cacheCreate string
 	for _, item := range items {
+		if band := strings.ToLower(strings.TrimSpace(item.TimeBand)); band != "" && band != "standard" {
+			return "", false, false
+		}
 		price, valid := customAlibabaPriceString(item.Price)
 		if !valid {
 			return "", false, false
 		}
+		unit := strings.ToLower(strings.TrimSpace(item.PriceUnit))
+		perM := unit == customAlibabaPerMillionUnit || unit == "per million tokens"
 		switch {
-		case item.Type == "input_token" && item.PriceUnit == customAlibabaPerMillionUnit && input == "":
+		case item.Type == "input_token" && perM && input == "":
 			input = price
-		case item.Type == "output_token" && item.PriceUnit == customAlibabaPerMillionUnit && output == "":
+		case item.Type == "output_token" && perM && output == "":
 			output = price
-		case item.Type == "image_number" && item.PriceUnit == customAlibabaPerImageUnit && imagePrice == "":
+		case item.Type == "input_token_cache" && perM && cacheImplicit == "":
+			cacheImplicit = price
+		case item.Type == "input_token_cache_read" && perM && cacheRead == "":
+			cacheRead = price
+		case item.Type == "input_token_cache_creation_5m" && perM && cacheCreate == "":
+			cacheCreate = price
+		case (item.Type == "input_token_batch" || item.Type == "output_token_batch") && perM:
+		case item.Type == "image_number" && unit == customAlibabaPerImageUnit && imagePrice == "":
 			imagePrice = price
 		default:
 			return "", false, false
@@ -190,7 +205,18 @@ func customAlibabaTierBody(items []customAlibabaPriceItem) (body string, image b
 	if input == "" || output == "" || imagePrice != "" {
 		return "", false, false
 	}
-	return fmt.Sprintf("p * %s + c * %s", input, output), false, true
+	body = fmt.Sprintf("p * %s + c * %s", input, output)
+	cacheHit := cacheImplicit
+	if cacheHit == "" {
+		cacheHit = cacheRead
+	}
+	if cacheHit != "" {
+		body += " + cr * " + cacheHit
+	}
+	if cacheCreate != "" {
+		body += " + cc * " + cacheCreate
+	}
+	return body, false, true
 }
 
 func customAlibabaPriceString(value any) (string, bool) {
