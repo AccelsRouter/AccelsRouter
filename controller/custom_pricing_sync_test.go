@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -141,4 +142,30 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 	assert.Equal(t, `tier("base", p * 2 + c * 6 + cr * 0.25 + cc * 2.5)`, exprs["qwen3.8-max"])
 	assert.NotContains(t, exprs, "peaky")
 	assert.NotContains(t, exprs, "free-input-only")
+}
+
+func TestCustomRemoveChannelModels(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	channel := &model.Channel{Name: "expensive", Key: "k", Status: common.ChannelStatusEnabled, Models: "a,b,c", Group: "default"}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, channel.AddAbilities(nil))
+
+	var response struct {
+		Success bool
+		Message string
+	}
+	body := map[string]any{"items": []map[string]any{{"channel_id": channel.Id, "models": []string{"b", "missing"}}}}
+	modelManagementRequest(t, CustomRemoveChannelModels, http.MethodPost, "/api/channel/remove_models", body, &response)
+	require.True(t, response.Success, response.Message)
+
+	var stored model.Channel
+	require.NoError(t, db.First(&stored, channel.Id).Error)
+	assert.Equal(t, "a,c", stored.Models)
+	var abilities int64
+	require.NoError(t, db.Model(&model.Ability{}).Where("channel_id = ? AND model = ?", channel.Id, "b").Count(&abilities).Error)
+	assert.Zero(t, abilities)
+
+	body["items"] = []map[string]any{{"channel_id": 0, "models": []string{"a"}}}
+	modelManagementRequest(t, CustomRemoveChannelModels, http.MethodPost, "/api/channel/remove_models", body, &response)
+	assert.False(t, response.Success)
 }

@@ -1,13 +1,16 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { getModelPricing } from '@/features/model-pricing/api'
+import { api } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { createServerError, requireServerSuccess } from '@/lib/server-error-message'
 
@@ -24,19 +27,35 @@ import { getUpstreamDisplayName } from './upstream-ratio-sync-helpers'
 type Problem = 'unpriced' | 'difference' | 'loss'
 type Filter = 'all' | Problem
 
+type LossSource = {
+  key: string
+  channelId: number
+  source: string
+  cost: string
+}
+
 type PreviewRow = {
   model: string
   channels: string[]
   problems: Problem[]
   sell: string | null
-  worst: { source: string; cost: string } | null
+  losses: LossSource[]
 }
 
 const ENABLED_STATUS = 1
 
+// Upstream sources are named "<channel name>(<channel id>)".
+function parseChannelId(source: string): number {
+  const match = source.match(/\((\d+)\)$/)
+  return match ? Number(match[1]) : 0
+}
+
 export function CustomPricingPreview() {
   const { t } = useTranslation()
   const [filter, setFilter] = useState<Filter>('all')
+  const queryClient = useQueryClient()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [upstream, setUpstream] = useState<{
     prices: PricingSyncModels
     differences: DifferencesMap
@@ -92,12 +111,49 @@ export function CustomPricingPreview() {
       handleServerError(error, t('Failed to fetch upstream prices')),
   })
 
+  const removeMutation = useMutation({
+    mutationFn: async () => {
+      const byChannel = new Map<number, string[]>()
+      for (const key of selected) {
+        const [channelId, model] = key.split('\n')
+        byChannel.set(Number(channelId), [
+          ...(byChannel.get(Number(channelId)) ?? []),
+          model,
+        ])
+      }
+      const response = await api.post('/api/channel/remove_models', {
+        items: [...byChannel].map(([channel_id, models]) => ({
+          channel_id,
+          models,
+        })),
+      })
+      if (!response.data?.success) {
+        throw createServerError(
+          response.data,
+          t('Failed to remove models from channels')
+        )
+      }
+    },
+    onSuccess: async () => {
+      toast.success(t('Models removed from channels'))
+      setSelected(new Set())
+      setConfirmOpen(false)
+      await queryClient.invalidateQueries({
+        queryKey: ['custom-pricing-preview', 'channels'],
+      })
+    },
+    onError: (error: Error) =>
+      handleServerError(error, t('Failed to remove models from channels')),
+  })
+
   const rows = useMemo<PreviewRow[]>(() => {
     if (!channelsQuery.data || !pricingQuery.data) return []
     const channelsByModel = new Map<string, string[]>()
+    const serving = new Set<string>()
     for (const channel of channelsQuery.data) {
       if (channel.status !== ENABLED_STATUS) continue
       for (const model of channel.models) {
+        serving.add(`${channel.id}\n${model}`)
         channelsByModel.set(model, [
           ...(channelsByModel.get(model) ?? []),
           channel.name,
@@ -122,23 +178,29 @@ export function CustomPricingPreview() {
     for (const [model, channels] of channelsByModel) {
       const problems: Problem[] = []
       let sell: string | null = null
-      let worst: PreviewRow['worst'] = null
+      const losses: LossSource[] = []
       if (!priced.has(model)) problems.push('unpriced')
       const row = upstream?.prices[model]
       if (row) {
         sell = getUnitPriceText(row.current)
         if (upstream?.differences[model]) problems.push('difference')
         for (const source of Object.keys(row.upstreams)) {
-          if (getSourceRisk(row, source) === 'loss') {
+          const channelId = parseChannelId(source)
+          const key = `${channelId}\n${model}`
+          // Only channels that still serve the model can lose money on it.
+          if (serving.has(key) && getSourceRisk(row, source) === 'loss') {
             if (!problems.includes('loss')) problems.push('loss')
-            worst ??= {
+            losses.push({
+              key,
+              channelId,
               source,
               cost: getUnitPriceText(row.upstreams[source]) ?? '—',
-            }
+            })
           }
         }
       }
-      if (problems.length) result.push({ model, channels, problems, sell, worst })
+      if (problems.length)
+        result.push({ model, channels, problems, sell, losses })
     }
     return result.sort(
       (a, b) =>
@@ -151,6 +213,28 @@ export function CustomPricingPreview() {
 
   const visible =
     filter === 'all' ? rows : rows.filter((r) => r.problems.includes(filter))
+  const visibleLosses = visible.flatMap((row) => row.losses)
+  const toggleLoss = (key: string, checked: boolean) =>
+    setSelected((previous) => {
+      const next = new Set(previous)
+      if (checked) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  const selectedPairs = rows
+    .flatMap((row) => row.losses.map((loss) => ({ row, loss })))
+    .filter(({ loss }) => selected.has(loss.key))
+  const orphaned = [
+    ...new Set(
+      selectedPairs
+        .filter(
+          ({ row }) =>
+            selectedPairs.filter((pair) => pair.row.model === row.model)
+              .length >= row.channels.length
+        )
+        .map(({ row }) => row.model)
+    ),
+  ]
   const count = (problem: Problem) =>
     rows.filter((r) => r.problems.includes(problem)).length
   const filters: Array<[Filter, string, number]> = [
@@ -203,6 +287,38 @@ export function CustomPricingPreview() {
             : t('Check upstream prices')}
         </Button>
       </div>
+      {visibleLosses.length > 0 && (
+        <div className='flex flex-wrap items-center gap-2'>
+          <Button
+            type='button'
+            size='sm'
+            variant='outline'
+            onClick={() =>
+              setSelected(new Set(visibleLosses.map((loss) => loss.key)))
+            }
+          >
+            {t('Select all loss risks')}
+          </Button>
+          <Button
+            type='button'
+            size='sm'
+            variant='outline'
+            disabled={selected.size === 0}
+            onClick={() => setSelected(new Set())}
+          >
+            {t('Clear selection')}
+          </Button>
+          <Button
+            type='button'
+            size='sm'
+            variant='destructive'
+            disabled={selected.size === 0 || removeMutation.isPending}
+            onClick={() => setConfirmOpen(true)}
+          >
+            {t('Remove from high-price channels')} ({selected.size})
+          </Button>
+        </div>
+      )}
       {!upstream && (
         <p className='text-muted-foreground text-sm'>
           {t(
@@ -245,23 +361,74 @@ export function CustomPricingPreview() {
                   />
                 ))}
               </span>
-              {row.worst && (
-                <span className='text-muted-foreground tabular-nums'>
-                  {getUpstreamDisplayName(row.worst.source, t)}:{' '}
-                  {t('Input')}/{t('Output')} {row.worst.cost}{' '}
-                  {t('vs current')} {row.sell ?? '—'}
-                </span>
-              )}
               <span
                 className='text-muted-foreground ml-auto max-w-80 truncate text-xs'
                 title={row.channels.join(', ')}
               >
                 {row.channels.join(', ')}
               </span>
+              {row.losses.length > 0 && (
+                <ul className='mt-1 w-full space-y-1 pl-2'>
+                  {row.losses.map((loss) => (
+                    <li
+                      key={loss.key}
+                      className='text-muted-foreground flex items-center gap-2 tabular-nums'
+                    >
+                      <Checkbox
+                        checked={selected.has(loss.key)}
+                        onCheckedChange={(checked) =>
+                          toggleLoss(loss.key, Boolean(checked))
+                        }
+                        aria-label={t('Select {{model}} on {{source}}', {
+                          model: row.model,
+                          source: getUpstreamDisplayName(loss.source, t),
+                        })}
+                      />
+                      <span>
+                        {getUpstreamDisplayName(loss.source, t)}:{' '}
+                        {t('Input')}/{t('Output')} {loss.cost} {t('vs current')}{' '}
+                        {row.sell ?? '—'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>
       )}
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={t('Remove models from high-price channels?')}
+        desc={
+          <div className='space-y-2'>
+            <p>
+              {t(
+                'These models will no longer be routed to the channels below. Users are not affected as long as another channel serves the model.'
+              )}
+            </p>
+            {orphaned.length > 0 && (
+              <p className='text-destructive font-medium'>
+                {t(
+                  'These models would have no channel left and become unavailable: {{models}}',
+                  { models: orphaned.join(', ') }
+                )}
+              </p>
+            )}
+            <ul className='max-h-48 overflow-y-auto text-sm'>
+              {selectedPairs.map(({ row, loss }) => (
+                <li key={loss.key}>
+                  {row.model} — {getUpstreamDisplayName(loss.source, t)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        }
+        destructive
+        isLoading={removeMutation.isPending}
+        handleConfirm={() => removeMutation.mutate()}
+      />
     </div>
   )
 }
