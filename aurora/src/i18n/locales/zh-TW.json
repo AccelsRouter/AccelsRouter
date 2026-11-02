@@ -14,6 +14,7 @@
     "No problems found": "沒有發現問題",
     "vs current": "目前價格",
     "No enabled channels": "沒有已啟用的渠道",
+    "Upstream pricing config": "上游價格配置",
     "BytePlus pricing sync": "BytePlus 價格同步",
     "IAM access key used to read BytePlus ModelArk prices when syncing prices from a BytePlus channel. It needs read access to ModelArk.": "從 BytePlus 渠道同步價格時，用於讀取 BytePlus ModelArk 價格的 IAM 存取金鑰，需要有 ModelArk 的讀取權限。",
     "Access key ID": "存取金鑰 ID",

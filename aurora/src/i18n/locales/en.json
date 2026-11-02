@@ -14,6 +14,7 @@
     "No problems found": "No problems found",
     "vs current": "vs current",
     "No enabled channels": "No enabled channels",
+    "Upstream pricing config": "Upstream pricing config",
     "BytePlus pricing sync": "BytePlus pricing sync",
     "IAM access key used to read BytePlus ModelArk prices when syncing prices from a BytePlus channel. It needs read access to ModelArk.": "IAM access key used to read BytePlus ModelArk prices when syncing prices from a BytePlus channel. It needs read access to ModelArk.",
     "Access key ID": "Access key ID",

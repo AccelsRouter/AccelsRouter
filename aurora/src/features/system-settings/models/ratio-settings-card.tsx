@@ -47,6 +47,7 @@ import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
 import { UpstreamRatioSync } from './upstream-ratio-sync'
 import { CustomPricingPreview } from './custom-pricing-preview'
+import { CustomUpstreamPricingConfig } from './custom-upstream-pricing-config'
 import {
   formatJsonForTextarea,
   type JsonValidationError,
@@ -157,6 +158,7 @@ type RatioTabId =
   | 'tool-prices'
   | 'upstream-sync'
   | 'pricing-preview'
+  | 'upstream-config'
 
 type RatioSettingsCardProps = {
   modelDefaults: ModelFormValues
@@ -462,6 +464,7 @@ export function RatioSettingsCard({
     'tool-prices': 'Tool prices',
     'upstream-sync': 'Upstream price sync',
     'pricing-preview': 'Pricing preview',
+    'upstream-config': 'Upstream pricing config',
   }
   const tabsGridClass =
     {
@@ -524,6 +527,7 @@ export function RatioSettingsCard({
       return <ToolPriceSettings defaultValue={toolPricesDefault} />
     }
     if (tab === 'pricing-preview') return <CustomPricingPreview />
+    if (tab === 'upstream-config') return <CustomUpstreamPricingConfig />
     return <UpstreamRatioSync />
   }
 

@@ -24,6 +24,7 @@ import { toast } from 'sonner'
 import * as z from 'zod'
 
 import { PasswordInput } from '@/components/password-input'
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -36,8 +37,6 @@ import {
 import { Input } from '@/components/ui/input'
 
 import { SettingsForm } from '../components/settings-form-layout'
-import { SettingsPageFormActions } from '../components/settings-page-context'
-import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { useSystemOptions } from '../hooks/use-system-options'
 
@@ -96,18 +95,19 @@ export function CustomBytePlusPricingCard() {
   }
 
   return (
-    <SettingsSection
-      title={t('BytePlus pricing sync')}
-      description={t(
-        'IAM access key used to read BytePlus ModelArk prices when syncing prices from a BytePlus channel. It needs read access to ModelArk.'
-      )}
-    >
+    <section className='space-y-4'>
+      <div className='space-y-1'>
+        <h3 className='text-base font-semibold'>
+          {t('BytePlus pricing sync')}
+        </h3>
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'IAM access key used to read BytePlus ModelArk prices when syncing prices from a BytePlus channel. It needs read access to ModelArk.'
+          )}
+        </p>
+      </div>
       <Form {...form}>
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
-          <SettingsPageFormActions
-            onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending}
-          />
           <FormField
             control={form.control}
             name='accessKeyId'
@@ -146,8 +146,11 @@ export function CustomBytePlusPricingCard() {
               </FormItem>
             )}
           />
+          <Button type='submit' disabled={updateOption.isPending}>
+            {t('Save')}
+          </Button>
         </SettingsForm>
       </Form>
-    </SettingsSection>
+    </section>
   )
 }

@@ -21,7 +21,6 @@ import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { AutoModelsSection } from './auto-models-section'
 import { ClaudeSettingsCard } from './claude-settings-card'
-import { CustomBytePlusPricingCard } from './custom-byteplus-pricing-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
@@ -158,11 +157,6 @@ const MODELS_SECTIONS = [
         }}
       />
     ),
-  },
-  {
-    id: 'byteplus-pricing',
-    titleKey: 'BytePlus pricing sync',
-    build: () => <CustomBytePlusPricingCard />,
   },
 ] as const
 
