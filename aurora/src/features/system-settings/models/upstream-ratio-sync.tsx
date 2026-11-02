@@ -54,6 +54,7 @@ import type {
   UpstreamConfig,
 } from '../types'
 import { ChannelSelectorDialog } from './channel-selector-dialog'
+import { CustomPriceRiskSummary } from './custom-price-risk'
 import {
   ConflictConfirmDialog,
   type ConflictItem,
@@ -80,7 +81,7 @@ import {
 } from './upstream-ratio-sync-helpers'
 import { UpstreamRatioSyncTable } from './upstream-ratio-sync-table'
 
-function getDefaultEndpointForChannel(channel: UpstreamChannel): string {
+export function getDefaultEndpointForChannel(channel: UpstreamChannel): string {
   if (channel.id === MODELS_DEV_PRESET_ID) return MODELS_DEV_PRESET_ENDPOINT
   if (channel.id === OFFICIAL_CHANNEL_ID) return OFFICIAL_CHANNEL_ENDPOINT
   if (channel.type === OPENROUTER_CHANNEL_TYPE) return OPENROUTER_ENDPOINT
@@ -404,6 +405,7 @@ export function UpstreamRatioSync() {
             : t('A valid site exchange rate is required.')}
         </span>
       </div>
+      {!fetchMutation.isError && <CustomPriceRiskSummary prices={prices} />}
       <div className='min-h-0 flex-1'>
         {fetchMutation.isError ? (
           <ErrorState
