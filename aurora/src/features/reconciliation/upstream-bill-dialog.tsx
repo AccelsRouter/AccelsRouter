@@ -86,19 +86,35 @@ function Pair(props: {
 }
 
 /* The bill's amount in USD at the given rate, with the billed figure under
-it; the billed figure alone when no rate was entered. */
+it; the billed figure alone when no rate was entered. A payable amount (what
+the upstream charges after coupons / credits) goes under both. */
 function BillCost(props: {
   cost: number
+  payable: number | null
   rate: number
   money: (n: number) => string
 }) {
-  if (props.rate <= 0) return <>{props.money(props.cost)}</>
+  const { t } = useTranslation()
+  const payable =
+    props.payable !== null ? (
+      <span className='text-muted-foreground text-[11px]'>
+        {t('payable')} {props.money(props.payable)}
+      </span>
+    ) : null
+  if (props.rate <= 0)
+    return (
+      <span className='inline-flex flex-col items-end tabular-nums'>
+        <span>{props.money(props.cost)}</span>
+        {payable}
+      </span>
+    )
   return (
     <span className='inline-flex flex-col items-end tabular-nums'>
       <span>${props.money(props.cost / props.rate)}</span>
       <span className='text-muted-foreground text-[11px]'>
         {props.money(props.cost)}
       </span>
+      {payable}
     </span>
   )
 }
@@ -111,13 +127,11 @@ function isTokenRow(r: UpstreamBillRow): boolean {
 }
 
 /* Whether our side carries an input / output split. Records written before
-the split was tracked have only a token total; their split is unknown, not
+the split was tracked have only a token total (cache reads were tracked
+earlier, so they alone do not prove a split); their split is unknown, not
 zero. */
 function hasSplit(s: UpstreamBillSide): boolean {
-  return (
-    s.prompt_tokens + s.completion_tokens + s.cache_read_tokens > 0 ||
-    s.tokens === 0
-  )
+  return s.prompt_tokens + s.completion_tokens > 0 || s.tokens === 0
 }
 
 function splitOrNull(s: UpstreamBillSide, n: number): number | null {
@@ -234,7 +248,12 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {usd(r.ours.quota)}
                 </td>
                 <td className='px-3 py-2 text-right tabular-nums'>
-                  <BillCost cost={r.bill.cost} rate={rate} money={money} />
+                  <BillCost
+                    cost={r.bill.cost}
+                    payable={report.bill_payable_known ? r.bill.payable : null}
+                    rate={rate}
+                    money={money}
+                  />
                 </td>
                 {rate > 0 && (
                   <td
@@ -278,7 +297,12 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
               {usd(report.ours.quota)}
             </td>
             <td className='px-3 py-2 text-right tabular-nums'>
-              <BillCost cost={report.bill.cost} rate={rate} money={money} />
+              <BillCost
+                cost={report.bill.cost}
+                payable={report.bill_payable_known ? report.bill.payable : null}
+                rate={rate}
+                money={money}
+              />
             </td>
             {rate > 0 && (
               <td className='px-3 py-2 text-right tabular-nums'>
@@ -315,6 +339,7 @@ function downloadComparison(report: UpstreamBillReport, rate: number) {
       'Ours (USD)',
       'Bill cost',
       ...(rate > 0 ? ['Bill (USD)'] : []),
+      ...(report.bill_payable_known ? ['Bill payable'] : []),
     ].join(','),
     ...report.rows.map((r) =>
       [
@@ -332,6 +357,7 @@ function downloadComparison(report: UpstreamBillReport, rate: number) {
         usdFromQuota(r.ours.quota).toFixed(6),
         r.bill.cost.toFixed(6),
         ...(rate > 0 ? [(r.bill.cost / rate).toFixed(6)] : []),
+        ...(report.bill_payable_known ? [r.bill.payable.toFixed(6)] : []),
       ]
         .map(esc)
         .join(',')
@@ -408,7 +434,7 @@ export function UpstreamBillDialog(props: {
       description={
         source === 'byteplus'
           ? t(
-              "Pull one month of the BytePlus split bill over its billing API (5-minute settlement windows, no per-call counts) and compare it with what this channel recorded, per model."
+              'Pull one month of the BytePlus split bill over its billing API (5-minute settlement windows, no per-call counts) and compare it with what this channel recorded, per model. Model versions (-YYMMDD) are folded into the product the bill names; cached input counts as input on both sides.'
             )
           : t(
               "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model."
@@ -572,6 +598,11 @@ export function UpstreamBillDialog(props: {
               ' ' +
                 t(
                   'Our records for this period carry no input / output split; compare the token totals.'
+                )}
+            {report.bill_payable_known &&
+              ' ' +
+                t(
+                  'The bill column is the amount billed after the contract discount; "payable" is what was charged after coupons and free credit, tax included.'
                 )}
           </p>
           <ComparisonTable report={report} rate={rate} />

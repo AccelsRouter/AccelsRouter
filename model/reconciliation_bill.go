@@ -33,6 +33,9 @@ type UpstreamBillEntry struct {
 	CompletionTokens int64
 	CacheReadTokens  int64
 	Cost             float64 // in the bill's own currency
+	// Payable is what the upstream actually charges for the entry after
+	// coupons / credits, when the bill tells it apart from the cost.
+	Payable float64
 	// Requests is how many billed calls the entry stands for: 1 for an
 	// exported bill's per-call row, 0 for an aggregated settlement row (an
 	// API bill) where the count is unknown.
@@ -219,6 +222,7 @@ type UpstreamBillSide struct {
 	UsageUnit        string  `json:"usage_unit"`
 	UsageAmount      int64   `json:"usage_amount"`
 	Cost             float64 `json:"cost"`
+	Payable          float64 `json:"payable"`
 }
 
 // UpstreamBillRow is one model as the bill names it, with our rows mapped
@@ -243,10 +247,13 @@ type UpstreamBillReport struct {
 	// BillRequestsKnown is false for an aggregated (API) bill, whose rows are
 	// settlement windows rather than calls: the bill's request counts are
 	// then unknown and MatchedRequests counts windows.
-	BillRequestsKnown bool              `json:"bill_requests_known"`
-	Rows              []UpstreamBillRow `json:"rows"`
-	Ours              UpstreamBillSide  `json:"ours"`
-	Bill              UpstreamBillSide  `json:"bill"`
+	BillRequestsKnown bool `json:"bill_requests_known"`
+	// BillPayableKnown is true when the bill tells the payable amount (after
+	// coupons / credits) apart from the billed cost.
+	BillPayableKnown bool              `json:"bill_payable_known"`
+	Rows             []UpstreamBillRow `json:"rows"`
+	Ours             UpstreamBillSide  `json:"ours"`
+	Bill             UpstreamBillSide  `json:"bill"`
 }
 
 const (
@@ -387,6 +394,7 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 		b.CacheReadTokens += e.CacheReadTokens
 		b.Tokens += e.PromptTokens + e.CompletionTokens
 		b.Cost += e.Cost
+		b.Payable += e.Payable
 		if e.UsageUnit != "" {
 			b.UsageUnit = e.UsageUnit
 			b.UsageAmount += e.UsageAmount
@@ -407,6 +415,7 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 		report.Bill.CompletionTokens += r.Bill.CompletionTokens
 		report.Bill.CacheReadTokens += r.Bill.CacheReadTokens
 		report.Bill.Cost += r.Bill.Cost
+		report.Bill.Payable += r.Bill.Payable
 	}
 	sort.Slice(report.Rows, func(i, j int) bool {
 		a, b := report.Rows[i], report.Rows[j]

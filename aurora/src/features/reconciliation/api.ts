@@ -101,6 +101,9 @@ export type UpstreamBillSide = {
   usage_unit: string
   usage_amount: number
   cost: number
+  // What the upstream actually charges after coupons / credits; meaningful
+  // only when the report's bill_payable_known is set.
+  payable: number
 }
 
 export type UpstreamBillRow = {
@@ -120,6 +123,8 @@ export type UpstreamBillReport = {
   // False for an API bill whose rows are settlement windows, not calls: the
   // bill's request counts are unknown and matched_requests counts windows.
   bill_requests_known: boolean
+  // True when the bill tells the payable amount apart from the billed cost.
+  bill_payable_known: boolean
   rows: UpstreamBillRow[]
   ours: UpstreamBillSide
   bill: UpstreamBillSide

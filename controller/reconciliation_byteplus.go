@@ -30,12 +30,18 @@ const (
 )
 
 type bytePlusBillRow struct {
-	ExpenseTime        string `json:"ExpenseTime"` // "2026-10-08 10:15:00-2026-10-08 10:20:00"
-	ConfigName         string `json:"ConfigName"`
-	ChargeItemCode     string `json:"ChargeItemCode"`
-	Count              string `json:"Count"`
-	Unit               string `json:"Unit"`
+	ExpenseTime    string `json:"ExpenseTime"`  // "2026-10-08 10:15:00-2026-10-08 10:20:00"
+	BillCategory   string `json:"BillCategory"` // "Consumption-usage" / "Consumption-purchase" (resource packs)
+	Product        string `json:"Product"`      // "ModelArk", "ModelArk_open_source_llm", "TOS", ...
+	ConfigName     string `json:"ConfigName"`
+	ChargeItemCode string `json:"ChargeItemCode"`
+	Count          string `json:"Count"`
+	Unit           string `json:"Unit"`
+	// OriginalBillAmount is the list price; DiscountBillAmount the amount
+	// after the account's contract discount, before coupons and tax;
+	// PayableAmount what is actually charged after coupons, with tax.
 	OriginalBillAmount string `json:"OriginalBillAmount"`
+	DiscountBillAmount string `json:"DiscountBillAmount"`
 	PayableAmount      string `json:"PayableAmount"`
 }
 
@@ -100,14 +106,21 @@ func fetchBytePlusSplitBill(ctx context.Context, client *http.Client, accessKey,
 	return nil, fmt.Errorf("the bill has more than %d rows", bytePlusBillingMaxPages*bytePlusBillingPageSize)
 }
 
-// bytePlusBillEntries turns settlement rows into bill entries: one entry per
-// row at the window's start, tokens classified by the charge item code
-// (prompt / completion / KV-cache hit), the count scaled by its unit, the
-// cost = what BytePlus actually charges (PayableAmount, USD). Rows with a
-// non-token unit (images, seconds) keep the count as a usage amount.
+// bytePlusBillEntries turns usage settlement rows into bill entries: one
+// entry per row at the window's start, tokens classified by the charge item
+// code (prompt / completion / KV-cache hit), the count scaled by its unit,
+// the cost = the billed amount after contract discount (USD) and the payable
+// = what BytePlus actually charges after coupons. KV-cache-hit tokens are
+// billed apart from the prompt but are part of it, so they count towards
+// the prompt tokens too, as in our records. Rows with a non-token unit
+// (images, seconds) keep the count as a usage amount. Resource-pack
+// purchases and object storage (TOS) are not model usage and are skipped.
 func bytePlusBillEntries(rows []bytePlusBillRow) ([]model.UpstreamBillEntry, error) {
 	entries := make([]model.UpstreamBillEntry, 0, len(rows))
 	for i, r := range rows {
+		if (r.BillCategory != "" && r.BillCategory != "Consumption-usage") || r.Product == "TOS" {
+			continue
+		}
 		// "<start>-<end>", both "2006-01-02 15:04:05": the window start is the
 		// first 19 characters. (Splitting on "-" would break on days 20-29.)
 		const stampLen = len("2006-01-02 15:04:05")
@@ -123,11 +136,19 @@ func bytePlusBillEntries(rows []bytePlusBillRow) ([]model.UpstreamBillEntry, err
 		if err != nil {
 			return nil, fmt.Errorf("row %d: Count %q", i+1, r.Count)
 		}
-		cost, err := strconv.ParseFloat(strings.ReplaceAll(r.PayableAmount, ",", ""), 64)
+		payable, err := bytePlusAmount(r.PayableAmount)
 		if err != nil {
 			return nil, fmt.Errorf("row %d: PayableAmount %q", i+1, r.PayableAmount)
 		}
-		e := model.UpstreamBillEntry{Wall: wall.Unix(), Model: strings.TrimSpace(r.ConfigName), Cost: cost}
+		billed := r.DiscountBillAmount
+		if strings.TrimSpace(billed) == "" {
+			billed = r.OriginalBillAmount
+		}
+		cost, err := bytePlusAmount(billed)
+		if err != nil {
+			return nil, fmt.Errorf("row %d: bill amount %q", i+1, billed)
+		}
+		e := model.UpstreamBillEntry{Wall: wall.Unix(), Model: strings.TrimSpace(r.ConfigName), Cost: cost, Payable: payable}
 		unit := strings.ToLower(strings.TrimSpace(r.Unit))
 		if strings.Contains(unit, "token") {
 			scale := 1.0
@@ -142,6 +163,7 @@ func bytePlusBillEntries(rows []bytePlusBillRow) ([]model.UpstreamBillEntry, err
 			switch {
 			case strings.Contains(code, "cache"):
 				e.CacheReadTokens = tokens
+				e.PromptTokens = tokens
 			case strings.Contains(code, "completion"), strings.Contains(code, "output"):
 				e.CompletionTokens = tokens
 			default:
@@ -159,10 +181,26 @@ func bytePlusBillEntries(rows []bytePlusBillRow) ([]model.UpstreamBillEntry, err
 	return entries, nil
 }
 
+// bytePlusAmount reads a bill amount ("0.2786180000", "1,234.5"); an empty
+// field counts as zero.
+func bytePlusAmount(s string) (float64, error) {
+	s = strings.ReplaceAll(strings.TrimSpace(s), ",", "")
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.ParseFloat(s, 64)
+}
+
+// bytePlusModelVersionRe is the "-YYMMDD" version of an endpoint model id
+// ("deepseek-v4-1-flash-261017"); the bill names the product without it.
+var bytePlusModelVersionRe = regexp.MustCompile(`-\d{6}$`)
+
 // bytePlusModelKey matches BytePlus's model naming ("DeepSeek-V4.1-flash",
-// "GLM_5.2") with ours ("deepseek-v4-1-flash"): lower-case, '.' and '_' as '-'.
+// "GLM_5.2") with ours ("deepseek-v4-1-flash-261017"): lower-case, '.' and
+// '_' as '-', without the "-YYMMDD" version.
 func bytePlusModelKey(name string) string {
-	return strings.NewReplacer(".", "-", "_", "-", " ", "-").Replace(strings.ToLower(strings.TrimSpace(name)))
+	key := strings.NewReplacer(".", "-", "_", "-", " ", "-").Replace(strings.ToLower(strings.TrimSpace(name)))
+	return bytePlusModelVersionRe.ReplaceAllString(key, "")
 }
 
 // AdminCompareBytePlusBill — POST /api/admin/reconciliation/byteplus-bill
@@ -216,5 +254,6 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	report.BillPayableKnown = true
 	common.ApiSuccess(c, report)
 }
