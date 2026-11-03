@@ -108,10 +108,15 @@ func fetchBytePlusSplitBill(ctx context.Context, client *http.Client, accessKey,
 func bytePlusBillEntries(rows []bytePlusBillRow) ([]model.UpstreamBillEntry, error) {
 	entries := make([]model.UpstreamBillEntry, 0, len(rows))
 	for i, r := range rows {
-		start, _, _ := strings.Cut(r.ExpenseTime, "-20") // "<start>-<end>", both "2026-..."
-		start = strings.TrimSpace(start)
-		wall, err := time.ParseInLocation("2006-01-02 15:04:05", start, time.UTC)
-		if err != nil {
+		// "<start>-<end>", both "2006-01-02 15:04:05": the window start is the
+		// first 19 characters. (Splitting on "-" would break on days 20-29.)
+		const stampLen = len("2006-01-02 15:04:05")
+		var wall time.Time
+		var err error
+		if len(r.ExpenseTime) >= stampLen {
+			wall, err = time.ParseInLocation("2006-01-02 15:04:05", r.ExpenseTime[:stampLen], time.UTC)
+		}
+		if err != nil || len(r.ExpenseTime) < stampLen {
 			return nil, fmt.Errorf("row %d: unrecognized ExpenseTime %q", i+1, r.ExpenseTime)
 		}
 		count, err := strconv.ParseFloat(strings.ReplaceAll(r.Count, ",", ""), 64)
