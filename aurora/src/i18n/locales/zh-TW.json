@@ -2428,6 +2428,8 @@
     "Whole BytePlus account": "整個 BytePlus 帳號",
     "bill filtered to {{keys}}": "帳單已過濾到 {{keys}}",
     "whole account bill": "整個帳號的帳單",
+    "API key SID": "API key SID",
+    "apikey-…; optional, skips resolving the channel key (comma-separate several)": "apikey-…；選填，填了就不反查渠道 key（多個用逗號分隔）",
     "Suspended": "已暫停",
     "Bill source": "帳單來源",
     "Exported file (.xlsx / CSV)": "匯出檔案（.xlsx / CSV）",
