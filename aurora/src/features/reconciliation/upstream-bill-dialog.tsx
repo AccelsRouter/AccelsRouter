@@ -40,6 +40,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { getChannels } from '@/features/channels/api'
 import {
+  compareBytePlusBill,
   compareUpstreamBill,
   type UpstreamBillReport,
   type UpstreamBillRow,
@@ -47,6 +48,13 @@ import {
 } from './api'
 
 const AUTO_ZONE = 'auto'
+
+type BillSource = 'file' | 'byteplus'
+
+// The last twelve billing months, newest first, as YYYY-MM.
+const BILL_PERIODS = Array.from({ length: 12 }, (_, i) =>
+  dayjs().subtract(i, 'month').format('YYYY-MM')
+)
 
 // Whole-hour zones a bill may be exported in, UTC-12 to UTC+14.
 const ZONE_OFFSETS = Array.from({ length: 27 }, (_, i) => (i - 12) * 60)
@@ -154,10 +162,13 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
         </thead>
         <tbody className='divide-border/60 divide-y'>
           {report.rows.map((r) => {
+            const billPresent = report.bill_requests_known
+              ? r.bill.requests > 0
+              : r.bill.tokens + r.bill.cost + r.bill.usage_amount > 0
             const only =
               r.ours.requests === 0
                 ? t('Only in bill')
-                : r.bill.requests === 0
+                : !billPresent
                   ? t('Only in ours')
                   : ''
             const tokens = isTokenRow(r)
@@ -173,7 +184,14 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   )}
                 </td>
                 <td className='px-3 py-2 text-right'>
-                  <Pair ours={r.ours.requests} bill={r.bill.requests} />
+                  {report.bill_requests_known ? (
+                    <Pair ours={r.ours.requests} bill={r.bill.requests} />
+                  ) : (
+                    <span className='inline-flex flex-col items-end tabular-nums'>
+                      <span>{formatNumber(r.ours.requests)}</span>
+                      <span className='text-muted-foreground text-[11px]'>-</span>
+                    </span>
+                  )}
                 </td>
                 <td className='px-3 py-2 text-right'>
                   {tokens ? (
@@ -337,6 +355,8 @@ export function UpstreamBillDialog(props: {
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation()
+  const [source, setSource] = useState<BillSource>('file')
+  const [period, setPeriod] = useState(BILL_PERIODS[0])
   const [channelId, setChannelId] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [zone, setZone] = useState(AUTO_ZONE)
@@ -358,17 +378,25 @@ export function UpstreamBillDialog(props: {
 
   const mutation = useMutation({
     mutationFn: () =>
-      compareUpstreamBill(
-        Number(channelId),
-        file as File,
-        zone === AUTO_ZONE ? undefined : Number(zone)
-      ),
+      source === 'byteplus'
+        ? compareBytePlusBill(
+            Number(channelId),
+            period,
+            zone === AUTO_ZONE ? undefined : Number(zone)
+          )
+        : compareUpstreamBill(
+            Number(channelId),
+            file as File,
+            zone === AUTO_ZONE ? undefined : Number(zone)
+          ),
     onSuccess: setReport,
   })
 
   const rate = Number(rateText) > 0 ? Number(rateText) : 0
   const canCompare =
-    Boolean(file) && Number(channelId) > 0 && !mutation.isPending
+    (source === 'byteplus' || Boolean(file)) &&
+    Number(channelId) > 0 &&
+    !mutation.isPending
 
   return (
     <Dialog
@@ -377,9 +405,15 @@ export function UpstreamBillDialog(props: {
       contentClassName='sm:max-w-5xl'
       bodyClassName='space-y-4'
       title={t('Upstream bill')}
-      description={t(
-        "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model."
-      )}
+      description={
+        source === 'byteplus'
+          ? t(
+              "Pull one month of the BytePlus split bill over its billing API (5-minute settlement windows, no per-call counts) and compare it with what this channel recorded, per model."
+            )
+          : t(
+              "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model."
+            )
+      }
       footer={
         <>
           {report && (
@@ -401,6 +435,23 @@ export function UpstreamBillDialog(props: {
     >
       <FieldGroup className='grid gap-3 sm:grid-cols-2'>
         <Field>
+          <FieldLabel htmlFor='upstream-bill-source'>
+            {t('Bill source')}
+          </FieldLabel>
+          <NativeSelect
+            id='upstream-bill-source'
+            value={source}
+            onChange={(e) => setSource(e.target.value as BillSource)}
+          >
+            <NativeSelectOption value='file'>
+              {t('Exported file (.xlsx / CSV)')}
+            </NativeSelectOption>
+            <NativeSelectOption value='byteplus'>
+              {t('BytePlus billing API')}
+            </NativeSelectOption>
+          </NativeSelect>
+        </Field>
+        <Field>
           <FieldLabel htmlFor='upstream-bill-channel'>
             {t('Channel')}
           </FieldLabel>
@@ -419,15 +470,36 @@ export function UpstreamBillDialog(props: {
             ))}
           </NativeSelect>
         </Field>
-        <Field>
-          <FieldLabel htmlFor='upstream-bill-file'>{t('Bill file')}</FieldLabel>
-          <Input
-            id='upstream-bill-file'
-            type='file'
-            accept='.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv'
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </Field>
+        {source === 'byteplus' ? (
+          <Field>
+            <FieldLabel htmlFor='upstream-bill-period'>
+              {t('Billing month')}
+            </FieldLabel>
+            <NativeSelect
+              id='upstream-bill-period'
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+            >
+              {BILL_PERIODS.map((p) => (
+                <NativeSelectOption key={p} value={p}>
+                  {p}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+        ) : (
+          <Field>
+            <FieldLabel htmlFor='upstream-bill-file'>
+              {t('Bill file')}
+            </FieldLabel>
+            <Input
+              id='upstream-bill-file'
+              type='file'
+              accept='.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv'
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </Field>
+        )}
         <Field>
           <FieldLabel htmlFor='upstream-bill-zone'>
             {t('Bill time zone')}
@@ -479,13 +551,18 @@ export function UpstreamBillDialog(props: {
             {dayjs((report.to + 3600) * 1000).format('YYYY-MM-DD HH:mm')} ·{' '}
             {zoneLabel(report.offset_minutes)}{' '}
             {report.offset_detected ? t('(detected)') : t('(pinned)')} ·{' '}
-            {t(
-              '{{matched}} of {{total}} bill requests fell in an hour we recorded',
-              {
-                matched: formatNumber(report.matched_requests),
-                total: formatNumber(report.bill.requests),
-              }
-            )}
+            {report.bill_requests_known
+              ? t(
+                  '{{matched}} of {{total}} bill requests fell in an hour we recorded',
+                  {
+                    matched: formatNumber(report.matched_requests),
+                    total: formatNumber(report.bill.requests),
+                  }
+                )
+              : t(
+                  '{{matched}} bill settlement windows fell in an hour we recorded',
+                  { matched: formatNumber(report.matched_requests) }
+                )}
           </p>
           <p className='text-muted-foreground text-xs'>
             {t(

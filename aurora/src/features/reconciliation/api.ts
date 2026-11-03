@@ -117,6 +117,9 @@ export type UpstreamBillReport = {
   offset_minutes: number
   offset_detected: boolean
   matched_requests: number
+  // False for an API bill whose rows are settlement windows, not calls: the
+  // bill's request counts are unknown and matched_requests counts windows.
+  bill_requests_known: boolean
   rows: UpstreamBillRow[]
   ours: UpstreamBillSide
   bill: UpstreamBillSide
@@ -168,6 +171,24 @@ export async function exportReconciliation(
   a.click()
   a.remove()
   window.URL.revokeObjectURL(url)
+}
+
+// Pulls a BytePlus split bill for one billing month over the billing API
+// (using the configured BytePlus access keys) and compares it like an
+// uploaded bill.
+export async function compareBytePlusBill(
+  channelId: number,
+  period: string,
+  billTzOffset?: number
+): Promise<UpstreamBillReport> {
+  const res = await api.post<ApiResp<UpstreamBillReport>>(
+    `/api/admin/reconciliation/byteplus-bill${rangeQuery()}`,
+    { channel_id: channelId, period, bill_tz_offset: billTzOffset ?? null },
+    { timeout: 150_000 }
+  )
+  if (!res.data?.success || !res.data.data)
+    throw new Error(res.data?.message || 'Failed to compare the bill')
+  return res.data.data
 }
 
 // Compares an upstream's exported bill with the channel's recorded usage.

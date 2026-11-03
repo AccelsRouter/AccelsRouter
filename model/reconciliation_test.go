@@ -110,11 +110,11 @@ func TestUpstreamBillParseAndCompare(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 4)
 	wall := time.Date(2026, 10, 12, 14, 20, 0, 0, time.UTC).Unix()
-	assert.Equal(t, UpstreamBillEntry{Wall: wall, Model: "claude-sonnet-4-6", PromptTokens: 2000, CompletionTokens: 40, CacheReadTokens: 100, Cost: 0.6}, entries[1])
+	assert.Equal(t, UpstreamBillEntry{Wall: wall, Model: "claude-sonnet-4-6", PromptTokens: 2000, CompletionTokens: 40, CacheReadTokens: 100, Cost: 0.6, Requests: 1}, entries[1])
 
 	csvEntries, err := ParseUpstreamBill("bill.csv", strings.NewReader("\ufeff时间,模型名,费用\n2026-10-12 14:10,m,\"1,000.5\"\n合计,,1000.5\n"))
 	require.NoError(t, err)
-	assert.Equal(t, []UpstreamBillEntry{{Wall: time.Date(2026, 10, 12, 14, 10, 0, 0, time.UTC).Unix(), Model: "m", Cost: 1000.5}}, csvEntries)
+	assert.Equal(t, []UpstreamBillEntry{{Wall: time.Date(2026, 10, 12, 14, 10, 0, 0, time.UTC).Unix(), Model: "m", Cost: 1000.5, Requests: 1}}, csvEntries)
 	_, err = ParseUpstreamBill("x.csv", strings.NewReader("a,b\n1,2\n"))
 	assert.ErrorContains(t, err, "unrecognized bill format")
 
@@ -131,7 +131,7 @@ func TestUpstreamBillParseAndCompare(t *testing.T) {
 		{UserID: 1, Username: "a", ModelName: "gpt-4o", CreatedAt: h, ChannelID: 9, Count: 1, Quota: 10, TokenUsed: 5},
 	}).Error)
 
-	rep, err := CompareUpstreamBill(9, entries, nil, 0)
+	rep, err := CompareUpstreamBill(9, entries, nil, 0, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "aigc", rep.Channel)
 	assert.True(t, rep.OffsetDetected)
@@ -153,10 +153,44 @@ func TestUpstreamBillParseAndCompare(t *testing.T) {
 
 	// A pinned zone is used as given even when nothing lines up.
 	pinned := 0
-	rep, err = CompareUpstreamBill(9, entries, &pinned, 480)
+	rep, err = CompareUpstreamBill(9, entries, &pinned, 480, nil)
 	require.NoError(t, err)
 	assert.False(t, rep.OffsetDetected)
 	assert.Equal(t, 0, rep.OffsetMinutes)
 	assert.Equal(t, int64(0), rep.MatchedRequests)
 	assert.Equal(t, int64(0), rep.Ours.Requests)
+}
+
+// An API bill arrives as settlement windows: entries carry no call count, so
+// the bill's requests stay unknown while tokens and cost still compare, and
+// model names are matched through the caller's normalizer.
+func TestCompareUpstreamBillAggregatedEntries(t *testing.T) {
+	DB.Exec("DELETE FROM channels WHERE id = 11")
+	DB.Exec("DELETE FROM quota_data WHERE channel_id = 11")
+	require.NoError(t, DB.Create(&Channel{Id: 11, Name: "bytepluses"}).Error)
+	h := time.Date(2026, 10, 8, 2, 0, 0, 0, time.UTC).Unix() // 10:15 UTC+8
+	require.NoError(t, DB.Create(&QuotaData{
+		UserID: 1, Username: "a", ModelName: "deepseek-v4-1-flash", CreatedAt: h, ChannelID: 11,
+		Count: 4, Quota: 50, TokenUsed: 3000, PromptTokens: 2000, CompletionTokens: 1000,
+	}).Error)
+	wall := time.Date(2026, 10, 8, 10, 15, 0, 0, time.UTC).Unix()
+	entries := []UpstreamBillEntry{
+		{Wall: wall, Model: "DeepSeek-V4.1-flash", PromptTokens: 2000, Cost: 0.001},
+		{Wall: wall, Model: "DeepSeek-V4.1-flash", CompletionTokens: 1000, Cost: 0.002},
+		{Wall: wall, Model: "Seedream-4.0", UsageUnit: "images", UsageAmount: 3, Cost: 0.09},
+	}
+	key := func(s string) string { return strings.ToLower(strings.NewReplacer(".", "-", "_", "-").Replace(s)) }
+	rep, err := CompareUpstreamBill(11, entries, nil, 0, key)
+	require.NoError(t, err)
+	assert.False(t, rep.BillRequestsKnown)
+	assert.True(t, rep.OffsetDetected)
+	assert.Equal(t, 480, rep.OffsetMinutes, "settlement windows line up with our hour at UTC+8")
+	require.Len(t, rep.Rows, 2)
+	assert.Equal(t, UpstreamBillRow{
+		Model: "deepseek-v4-1-flash",
+		Ours:  UpstreamBillSide{Requests: 4, Tokens: 3000, PromptTokens: 2000, CompletionTokens: 1000, Quota: 50},
+		Bill:  UpstreamBillSide{Tokens: 3000, PromptTokens: 2000, CompletionTokens: 1000, Cost: 0.003},
+	}, rep.Rows[1])
+	assert.Equal(t, UpstreamBillRow{Model: "seedream-4-0", Bill: UpstreamBillSide{UsageUnit: "images", UsageAmount: 3, Cost: 0.09}}, rep.Rows[0])
+	assert.Equal(t, int64(0), rep.Bill.Requests)
 }

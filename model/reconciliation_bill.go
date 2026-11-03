@@ -33,6 +33,14 @@ type UpstreamBillEntry struct {
 	CompletionTokens int64
 	CacheReadTokens  int64
 	Cost             float64 // in the bill's own currency
+	// Requests is how many billed calls the entry stands for: 1 for an
+	// exported bill's per-call row, 0 for an aggregated settlement row (an
+	// API bill) where the count is unknown.
+	Requests int64
+	// UsageUnit / UsageAmount carry a non-token billing unit (images, seconds)
+	// from an aggregated row; empty for token rows.
+	UsageUnit   string
+	UsageAmount int64
 }
 
 // upstreamBillColumns maps the header names a bill may use to the entry
@@ -167,7 +175,7 @@ func parseUpstreamBillRows(rows [][]string) ([]UpstreamBillEntry, error) {
 			}
 			return nil, fmt.Errorf("row %d: unrecognized time %q", headerAt+i+2, when)
 		}
-		entry := UpstreamBillEntry{Wall: wall.Unix(), Model: model}
+		entry := UpstreamBillEntry{Wall: wall.Unix(), Model: model, Requests: 1}
 		fields := []struct {
 			name string
 			dst  *int64
@@ -231,10 +239,14 @@ type UpstreamBillReport struct {
 	OffsetDetected bool  `json:"offset_detected"`
 	// MatchedRequests is how many bill requests fell in an hour where we
 	// recorded a request for the same model: the evidence behind the offset.
-	MatchedRequests int64             `json:"matched_requests"`
-	Rows            []UpstreamBillRow `json:"rows"`
-	Ours            UpstreamBillSide  `json:"ours"`
-	Bill            UpstreamBillSide  `json:"bill"`
+	MatchedRequests int64 `json:"matched_requests"`
+	// BillRequestsKnown is false for an aggregated (API) bill, whose rows are
+	// settlement windows rather than calls: the bill's request counts are
+	// then unknown and MatchedRequests counts windows.
+	BillRequestsKnown bool              `json:"bill_requests_known"`
+	Rows              []UpstreamBillRow `json:"rows"`
+	Ours              UpstreamBillSide  `json:"ours"`
+	Bill              UpstreamBillSide  `json:"bill"`
 }
 
 const (
@@ -262,8 +274,10 @@ type upstreamBillHourKey struct {
 
 // CompareUpstreamBill compares the bill with the channel's quota_data. A nil
 // offset asks for detection; fallbackOffset (minutes east of UTC) is used when
-// nothing lines up and breaks ties between equally good offsets.
-func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinutes *int, fallbackOffset int) (*UpstreamBillReport, error) {
+// nothing lines up and breaks ties between equally good offsets. modelKey,
+// when set, normalizes model names on both sides before they are matched (an
+// API bill names models its own way, e.g. "DeepSeek-V4.1-flash").
+func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinutes *int, fallbackOffset int, modelKey func(string) string) (*UpstreamBillReport, error) {
 	if len(entries) == 0 {
 		return nil, errors.New("the bill has no rows")
 	}
@@ -292,18 +306,27 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 		Scan(&scans).Error; err != nil {
 		return nil, err
 	}
+	if modelKey == nil {
+		modelKey = func(s string) string { return s }
+	}
+	for i := range entries {
+		entries[i].Model = modelKey(entries[i].Model)
+	}
 	ourHourly := map[upstreamBillHourKey]int64{}
 	for i := range scans {
 		if mapped := mapping[scans[i].ModelName]; mapped != "" {
 			scans[i].ModelName = mapped
 		}
+		scans[i].ModelName = modelKey(scans[i].ModelName)
 		ourHourly[upstreamBillHourKey{scans[i].CreatedAt, scans[i].ModelName}] += scans[i].Requests
 	}
+	// Offset detection scores hours where the bill and we both saw the model;
+	// an aggregated row counts as presence (1), a per-call row as one call.
 	matched := func(offset int) int64 {
 		billHourly := map[upstreamBillHourKey]int64{}
 		for _, e := range entries {
 			at := e.Wall - int64(offset)*60
-			billHourly[upstreamBillHourKey{at - at%3600, e.Model}]++
+			billHourly[upstreamBillHourKey{at - at%3600, e.Model}] += max(e.Requests, 1)
 		}
 		var score int64
 		for key, n := range billHourly {
@@ -313,6 +336,12 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 	}
 
 	report := &UpstreamBillReport{ChannelId: channelId, Channel: channel.Name, OffsetMinutes: fallbackOffset}
+	for _, e := range entries {
+		if e.Requests > 0 {
+			report.BillRequestsKnown = true
+			break
+		}
+	}
 	if offsetMinutes != nil {
 		report.OffsetMinutes = *offsetMinutes
 		report.MatchedRequests = matched(*offsetMinutes)
@@ -352,12 +381,16 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 	}
 	for _, e := range entries {
 		b := &row(e.Model).Bill
-		b.Requests++
+		b.Requests += e.Requests
 		b.PromptTokens += e.PromptTokens
 		b.CompletionTokens += e.CompletionTokens
 		b.CacheReadTokens += e.CacheReadTokens
 		b.Tokens += e.PromptTokens + e.CompletionTokens
 		b.Cost += e.Cost
+		if e.UsageUnit != "" {
+			b.UsageUnit = e.UsageUnit
+			b.UsageAmount += e.UsageAmount
+		}
 	}
 	report.Rows = make([]UpstreamBillRow, 0, len(rows))
 	for _, r := range rows {

@@ -153,7 +153,7 @@ func AdminCompareUpstreamBill(c *gin.Context) {
 		return
 	}
 	_, adminOffset := time.Now().In(reconLocation(c)).Zone()
-	report, err := model.CompareUpstreamBill(channelId, entries, pinned, adminOffset/60)
+	report, err := model.CompareUpstreamBill(channelId, entries, pinned, adminOffset/60, nil)
 	if err != nil {
 		common.ApiError(c, err)
 		return

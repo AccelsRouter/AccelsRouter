@@ -398,6 +398,8 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/admin/organizations/applications/:id/approve":       accessTokenScopeRule("user:write"),
 	"POST /api/admin/organizations/applications/:id/reject":        accessTokenScopeRule("user:write"),
 	"POST /api/admin/topup-orders/wondergate-resync":               accessTokenScopeRule("wallet:write"),
+	"POST /api/admin/reconciliation/byteplus-bill":                 accessTokenScopeRule("billing:read"),
+	"POST /api/admin/reconciliation/upstream-bill":                 accessTokenScopeRule("billing:read"),
 	"POST /api/admin/upstream/identity/baseline":                   accessTokenScopeRule("ops:write"),
 	"POST /api/admin/upstream/identity/probe":                      accessTokenScopeRule("ops:write"),
 	"POST /api/admin/upstream/price-source/test":                   accessTokenScopeRule("ops:write"),

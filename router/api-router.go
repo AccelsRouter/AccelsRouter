@@ -207,6 +207,7 @@ func SetApiRouter(router *gin.Engine) {
 			reconRoute.GET("", controller.AdminGetReconciliation)
 			reconRoute.GET("/export", controller.AdminExportReconciliation)
 			reconRoute.POST("/upstream-bill", controller.AdminCompareUpstreamBill)
+			reconRoute.POST("/byteplus-bill", controller.AdminCompareBytePlusBill)
 		}
 		// Upstream monitor: channel/model health history and price comparison.
 		upstreamRoute := apiRouter.Group("/admin/upstream")

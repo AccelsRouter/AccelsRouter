@@ -77,20 +77,27 @@ func customHMACSHA256(key []byte, message string) []byte {
 // signCustomBytePlusRequest signs a JSON POST to the ark control plane with an IAM
 // access key pair (HMAC-SHA256 over date/region/service).
 func signCustomBytePlusRequest(req *http.Request, body []byte, accessKey, secretKey string, now time.Time) {
+	signBytePlusOpenAPIRequest(req, body, accessKey, secretKey, now, customBytePlusPricingHost, customBytePlusPricingService, customBytePlusPricingQuery)
+}
+
+// signBytePlusOpenAPIRequest signs a BytePlus OpenAPI POST (HMAC-SHA256 v4
+// style) for the given host, service and Action/Version query; the region is
+// always ap-southeast-1.
+func signBytePlusOpenAPIRequest(req *http.Request, body []byte, accessKey, secretKey string, now time.Time, host, service, query string) {
 	now = now.UTC()
 	xDate, day := now.Format("20060102T150405Z"), now.Format("20060102")
 	bodyHash := sha256.Sum256(body)
 	bodyHex := hex.EncodeToString(bodyHash[:])
 	signedHeaders := "content-type;host;x-content-sha256;x-date"
 	canonical := strings.Join([]string{
-		http.MethodPost, "/", customBytePlusPricingQuery,
-		"content-type:application/json\nhost:" + customBytePlusPricingHost + "\nx-content-sha256:" + bodyHex + "\nx-date:" + xDate + "\n",
+		http.MethodPost, "/", query,
+		"content-type:application/json\nhost:" + host + "\nx-content-sha256:" + bodyHex + "\nx-date:" + xDate + "\n",
 		signedHeaders, bodyHex,
 	}, "\n")
 	canonicalHash := sha256.Sum256([]byte(canonical))
-	scope := day + "/" + customBytePlusPricingRegion + "/" + customBytePlusPricingService + "/request"
+	scope := day + "/" + customBytePlusPricingRegion + "/" + service + "/request"
 	toSign := strings.Join([]string{"HMAC-SHA256", xDate, scope, hex.EncodeToString(canonicalHash[:])}, "\n")
-	signingKey := customHMACSHA256(customHMACSHA256(customHMACSHA256(customHMACSHA256([]byte(secretKey), day), customBytePlusPricingRegion), customBytePlusPricingService), "request")
+	signingKey := customHMACSHA256(customHMACSHA256(customHMACSHA256(customHMACSHA256([]byte(secretKey), day), customBytePlusPricingRegion), service), "request")
 	signature := hex.EncodeToString(customHMACSHA256(signingKey, toSign))
 
 	req.Header.Set("Content-Type", "application/json")
