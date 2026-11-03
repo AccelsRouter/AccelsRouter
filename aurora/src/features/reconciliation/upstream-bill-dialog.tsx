@@ -40,6 +40,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { getChannels } from '@/features/channels/api'
 import {
+  type BytePlusBillScope,
   compareBytePlusBill,
   compareUpstreamBill,
   type UpstreamBillReport,
@@ -383,6 +384,7 @@ export function UpstreamBillDialog(props: {
   const { t } = useTranslation()
   const [source, setSource] = useState<BillSource>('file')
   const [period, setPeriod] = useState(BILL_PERIODS[0])
+  const [scope, setScope] = useState<BytePlusBillScope>('channel_key')
   const [channelId, setChannelId] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [zone, setZone] = useState(AUTO_ZONE)
@@ -408,6 +410,7 @@ export function UpstreamBillDialog(props: {
         ? compareBytePlusBill(
             Number(channelId),
             period,
+            scope,
             zone === AUTO_ZONE ? undefined : Number(zone)
           )
         : compareUpstreamBill(
@@ -497,22 +500,41 @@ export function UpstreamBillDialog(props: {
           </NativeSelect>
         </Field>
         {source === 'byteplus' ? (
-          <Field>
-            <FieldLabel htmlFor='upstream-bill-period'>
-              {t('Billing month')}
-            </FieldLabel>
-            <NativeSelect
-              id='upstream-bill-period'
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-            >
-              {BILL_PERIODS.map((p) => (
-                <NativeSelectOption key={p} value={p}>
-                  {p}
+          <>
+            <Field>
+              <FieldLabel htmlFor='upstream-bill-period'>
+                {t('Billing month')}
+              </FieldLabel>
+              <NativeSelect
+                id='upstream-bill-period'
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+              >
+                {BILL_PERIODS.map((p) => (
+                  <NativeSelectOption key={p} value={p}>
+                    {p}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor='upstream-bill-scope'>
+                {t('Bill scope')}
+              </FieldLabel>
+              <NativeSelect
+                id='upstream-bill-scope'
+                value={scope}
+                onChange={(e) => setScope(e.target.value as BytePlusBillScope)}
+              >
+                <NativeSelectOption value='channel_key'>
+                  {t("This channel's API key only")}
                 </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Field>
+                <NativeSelectOption value='account'>
+                  {t('Whole BytePlus account')}
+                </NativeSelectOption>
+              </NativeSelect>
+            </Field>
+          </>
         ) : (
           <Field>
             <FieldLabel htmlFor='upstream-bill-file'>
@@ -577,6 +599,11 @@ export function UpstreamBillDialog(props: {
             {dayjs((report.to + 3600) * 1000).format('YYYY-MM-DD HH:mm')} ·{' '}
             {zoneLabel(report.offset_minutes)}{' '}
             {report.offset_detected ? t('(detected)') : t('(pinned)')} ·{' '}
+            {report.bill_scope === 'channel_key' &&
+              t('bill filtered to {{keys}}', {
+                keys: (report.bill_split_items ?? []).join(', '),
+              }) + ' · '}
+            {report.bill_scope === 'account' && t('whole account bill') + ' · '}
             {report.bill_requests_known
               ? t(
                   '{{matched}} of {{total}} bill requests fell in an hour we recorded',

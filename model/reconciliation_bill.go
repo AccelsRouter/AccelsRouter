@@ -250,10 +250,16 @@ type UpstreamBillReport struct {
 	BillRequestsKnown bool `json:"bill_requests_known"`
 	// BillPayableKnown is true when the bill tells the payable amount (after
 	// coupons / credits) apart from the billed cost.
-	BillPayableKnown bool              `json:"bill_payable_known"`
-	Rows             []UpstreamBillRow `json:"rows"`
-	Ours             UpstreamBillSide  `json:"ours"`
-	Bill             UpstreamBillSide  `json:"bill"`
+	BillPayableKnown bool `json:"bill_payable_known"`
+	// BillScope says what an API bill was filtered to: "channel_key" (the
+	// usage attributed to the channel's own API keys, listed in
+	// BillSplitItems) or "account" (everything the account was billed for).
+	// Empty for an uploaded bill.
+	BillScope      string            `json:"bill_scope"`
+	BillSplitItems []string          `json:"bill_split_items"`
+	Rows           []UpstreamBillRow `json:"rows"`
+	Ours           UpstreamBillSide  `json:"ours"`
+	Bill           UpstreamBillSide  `json:"bill"`
 }
 
 const (

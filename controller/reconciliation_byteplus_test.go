@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,4 +58,18 @@ func TestBytePlusModelKey(t *testing.T) {
 	assert.Equal(t, "dola-seed-2-1-turbo", bytePlusModelKey("dola-seed-2-1-turbo-260628"))
 	assert.Equal(t, "deepseek-v4-flash-0731", bytePlusModelKey("DeepSeek-V4-flash-0731"))
 	assert.Equal(t, "glm-5-2", bytePlusModelKey(" GLM_5.2 "))
+}
+
+// The split-bill query asks for 5-minute settlement rows; with a split item
+// it also asks the bill to split by API key and filters to that key.
+func TestBytePlusSplitBillBody(t *testing.T) {
+	body := bytePlusSplitBillBody("2026-10", 2, "")
+	assert.Equal(t, map[string]any{"BillPeriod": "2026-10", "Limit": 300, "Offset": 600, "GroupTerm": 1, "GroupPeriod": 2, "NeedRecordNum": 1}, body)
+
+	body = bytePlusSplitBillBody("2026-10", 0, "apikey-20261019133633-rp9x5")
+	assert.Equal(t, "apikey-20261019133633-rp9x5", body["SplitItemID"])
+	var dims map[string]string
+	require.NoError(t, common.Unmarshal([]byte(body["SplitDimension"].(string)), &dims))
+	assert.Equal(t, "apikey_id", dims["ModelArk"])
+	assert.Equal(t, "apikey_id", dims["ModelArk_video_generation"])
 }

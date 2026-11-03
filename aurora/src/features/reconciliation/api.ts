@@ -125,6 +125,11 @@ export type UpstreamBillReport = {
   bill_requests_known: boolean
   // True when the bill tells the payable amount apart from the billed cost.
   bill_payable_known: boolean
+  // What an API bill was filtered to: 'channel_key' (the usage attributed
+  // to the channel's own API keys, listed in bill_split_items) or 'account'.
+  // Empty for an uploaded bill.
+  bill_scope: string
+  bill_split_items: string[] | null
   rows: UpstreamBillRow[]
   ours: UpstreamBillSide
   bill: UpstreamBillSide
@@ -178,17 +183,26 @@ export async function exportReconciliation(
   window.URL.revokeObjectURL(url)
 }
 
+export type BytePlusBillScope = 'channel_key' | 'account'
+
 // Pulls a BytePlus split bill for one billing month over the billing API
 // (using the configured BytePlus access keys) and compares it like an
-// uploaded bill.
+// uploaded bill. scope 'channel_key' keeps only the usage attributed to the
+// channel's own API keys; 'account' takes the whole account.
 export async function compareBytePlusBill(
   channelId: number,
   period: string,
+  scope: BytePlusBillScope,
   billTzOffset?: number
 ): Promise<UpstreamBillReport> {
   const res = await api.post<ApiResp<UpstreamBillReport>>(
     `/api/admin/reconciliation/byteplus-bill${rangeQuery()}`,
-    { channel_id: channelId, period, bill_tz_offset: billTzOffset ?? null },
+    {
+      channel_id: channelId,
+      period,
+      scope,
+      bill_tz_offset: billTzOffset ?? null,
+    },
     { timeout: 150_000 }
   )
   if (!res.data?.success || !res.data.data)

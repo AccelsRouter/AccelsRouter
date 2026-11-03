@@ -27,7 +27,85 @@ const (
 	bytePlusBillingQuery    = "Action=ListSplitBillDetail&Version=2022-01-01"
 	bytePlusBillingPageSize = 300
 	bytePlusBillingMaxPages = 100
+	// OpenGetApiKeySID resolves an Ark API key to the split item id the bill
+	// attributes its usage to (on the Ark control plane, not the billing one).
+	bytePlusApiKeySIDQuery = "Action=OpenGetApiKeySID&Version=2024-01-01"
 )
+
+// bytePlusSplitDimension asks the bill to split every ModelArk product by
+// API key, so rows can be filtered to one key's SID.
+var bytePlusSplitDimension = func() string {
+	products := []string{"ModelArk", "ModelArk_open_source_llm", "ModelArk_video_generation", "ModelArk_managed_agents", "Smart_Drawing_T2I", "hitem_third_party", "rodin_third_party"}
+	m := make(map[string]string, len(products))
+	for _, p := range products {
+		m[p] = "apikey_id"
+	}
+	s, _ := common.Marshal(m)
+	return string(s)
+}()
+
+// bytePlusSplitBillBody is one page of the split-bill query: settlement
+// rows in 5-minute windows, filtered to one API key's split item when
+// splitItemID is set.
+func bytePlusSplitBillBody(period string, page int, splitItemID string) map[string]any {
+	body := map[string]any{
+		"BillPeriod":    period,
+		"Limit":         bytePlusBillingPageSize,
+		"Offset":        page * bytePlusBillingPageSize,
+		"GroupTerm":     1, // per settlement row, not merged
+		"GroupPeriod":   2, // settlement detail: 5-minute ExpenseTime windows
+		"NeedRecordNum": 1,
+	}
+	if splitItemID != "" {
+		body["SplitDimension"] = bytePlusSplitDimension
+		body["SplitItemID"] = splitItemID
+	}
+	return body
+}
+
+// bytePlusApiKeySID resolves an Ark API key (as a channel stores it) to the
+// split item id ("apikey-...") the bill attributes its usage to.
+func bytePlusApiKeySID(ctx context.Context, client *http.Client, accessKey, secretKey, apiKey string) (string, error) {
+	body, err := common.Marshal(map[string]string{"ApiKey": apiKey})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+customBytePlusPricingHost+"/?"+bytePlusApiKeySIDQuery, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	signBytePlusOpenAPIRequest(req, body, accessKey, secretKey, time.Now(), customBytePlusPricingHost, customBytePlusPricingService, bytePlusApiKeySIDQuery)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxRatioConfigBytes))
+	resp.Body.Close()
+	if err != nil {
+		return "", err
+	}
+	var decoded struct {
+		ResponseMetadata struct {
+			Error *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+		} `json:"ResponseMetadata"`
+		Result struct {
+			SID string `json:"SID"`
+		} `json:"Result"`
+	}
+	if err := common.Unmarshal(raw, &decoded); err != nil {
+		return "", fmt.Errorf("%s", resp.Status)
+	}
+	if apiErr := decoded.ResponseMetadata.Error; apiErr != nil {
+		return "", fmt.Errorf("%s: %s", apiErr.Code, apiErr.Message)
+	}
+	if decoded.Result.SID == "" {
+		return "", fmt.Errorf("%s: no SID in the response", resp.Status)
+	}
+	return decoded.Result.SID, nil
+}
 
 type bytePlusBillRow struct {
 	ExpenseTime    string `json:"ExpenseTime"`  // "2026-10-08 10:15:00-2026-10-08 10:20:00"
@@ -60,17 +138,10 @@ type bytePlusBillPage struct {
 
 var bytePlusBillPeriodRe = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)
 
-func fetchBytePlusSplitBill(ctx context.Context, client *http.Client, accessKey, secretKey, period string) ([]bytePlusBillRow, error) {
+func fetchBytePlusSplitBill(ctx context.Context, client *http.Client, accessKey, secretKey, period, splitItemID string) ([]bytePlusBillRow, error) {
 	var rows []bytePlusBillRow
 	for page := range bytePlusBillingMaxPages {
-		body, err := common.Marshal(map[string]any{
-			"BillPeriod":    period,
-			"Limit":         bytePlusBillingPageSize,
-			"Offset":        page * bytePlusBillingPageSize,
-			"GroupTerm":     1, // per settlement row, not merged
-			"GroupPeriod":   2, // settlement detail: 5-minute ExpenseTime windows
-			"NeedRecordNum": 1,
-		})
+		body, err := common.Marshal(bytePlusSplitBillBody(period, page, splitItemID))
 		if err != nil {
 			return nil, err
 		}
@@ -204,11 +275,15 @@ func bytePlusModelKey(name string) string {
 }
 
 // AdminCompareBytePlusBill — POST /api/admin/reconciliation/byteplus-bill
-// {channel_id, period "YYYY-MM", bill_tz_offset?}
+// {channel_id, period "YYYY-MM", scope "channel_key" (default) | "account",
+// bill_tz_offset?}. With the channel_key scope the bill is filtered to the
+// usage attributed to the channel's own API key(s); the account scope takes
+// everything the account was billed for.
 func AdminCompareBytePlusBill(c *gin.Context) {
 	var req struct {
 		ChannelId    int    `json:"channel_id"`
 		Period       string `json:"period"`
+		Scope        string `json:"scope"`
 		BillTzOffset *int   `json:"bill_tz_offset"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -227,6 +302,13 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 		common.ApiErrorMsg(c, "Invalid bill time zone")
 		return
 	}
+	if req.Scope == "" {
+		req.Scope = "channel_key"
+	}
+	if req.Scope != "channel_key" && req.Scope != "account" {
+		common.ApiErrorMsg(c, "Bill scope must be channel_key or account")
+		return
+	}
 	common.OptionMapRWMutex.RLock()
 	accessKey := strings.TrimSpace(common.OptionMap[customBytePlusAccessKeyOption])
 	secretKey := strings.TrimSpace(common.OptionMap[customBytePlusSecretKeyOption])
@@ -238,7 +320,44 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
 	defer cancel()
 	client := &http.Client{Timeout: 30 * time.Second}
-	rows, err := fetchBytePlusSplitBill(ctx, client, accessKey, secretKey, req.Period)
+	var splitItems []string
+	var err error
+	if req.Scope == "channel_key" {
+		channel, err := model.GetChannelById(req.ChannelId, true)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		keys := channel.GetKeys()
+		if len(keys) == 0 {
+			common.ApiErrorMsg(c, "The channel has no API key to filter the bill by")
+			return
+		}
+		seen := map[string]bool{}
+		for _, key := range keys {
+			sid, err := bytePlusApiKeySID(ctx, client, accessKey, secretKey, strings.TrimSpace(key))
+			if err != nil {
+				common.ApiErrorMsg(c, "BytePlus could not resolve the channel's API key in this account ("+err.Error()+"); compare the whole account instead")
+				return
+			}
+			if !seen[sid] {
+				seen[sid] = true
+				splitItems = append(splitItems, sid)
+			}
+		}
+	}
+	var rows []bytePlusBillRow
+	if len(splitItems) == 0 {
+		rows, err = fetchBytePlusSplitBill(ctx, client, accessKey, secretKey, req.Period, "")
+	} else {
+		for _, sid := range splitItems {
+			var keyRows []bytePlusBillRow
+			if keyRows, err = fetchBytePlusSplitBill(ctx, client, accessKey, secretKey, req.Period, sid); err != nil {
+				break
+			}
+			rows = append(rows, keyRows...)
+		}
+	}
 	if err != nil {
 		common.ApiErrorMsg(c, "BytePlus billing API: "+err.Error())
 		return
@@ -255,5 +374,7 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 		return
 	}
 	report.BillPayableKnown = true
+	report.BillScope = req.Scope
+	report.BillSplitItems = splitItems
 	common.ApiSuccess(c, report)
 }
