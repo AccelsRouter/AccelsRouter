@@ -41,8 +41,9 @@ type customAlibabaPriceTier struct {
 }
 
 type customAlibabaModel struct {
-	Model  string                   `json:"model"`
-	Prices []customAlibabaPriceTier `json:"prices"`
+	Model    string                   `json:"model"`
+	Provider string                   `json:"provider"`
+	Prices   []customAlibabaPriceTier `json:"prices"`
 }
 
 type customAlibabaModelsPage struct {

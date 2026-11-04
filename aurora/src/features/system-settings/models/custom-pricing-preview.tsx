@@ -47,7 +47,10 @@ type LossSource = {
   sellHasRules: boolean
 }
 
-type VendorPrice = { price: UnitPrice; source: string }
+// `upper` is the largest input length (tokens) a tier covers; 0 means no bound.
+type VendorTier = { upper: number; price: UnitPrice }
+
+type VendorPrice = { price: UnitPrice; source: string; tiers?: VendorTier[] }
 
 type PreviewRow = {
   model: string
@@ -106,7 +109,16 @@ export function CustomPricingPreview() {
           success: boolean
           data?: Record<
             string,
-            { provider: string; input: number; output: number | null }
+            {
+              provider: string
+              input: number
+              output: number | null
+              tiers?: Array<{
+                upper: number
+                input: number
+                output: number | null
+              }>
+            }
           >
           sources?: Record<string, string>
         }>('/api/ratio_sync/vendor_prices')
@@ -129,6 +141,10 @@ export function CustomPricingPreview() {
             {
               price: { input: price.input, output: price.output },
               source: price.provider,
+              tiers: price.tiers?.map((tier) => ({
+                upper: tier.upper,
+                price: { input: tier.input, output: tier.output },
+              })),
             },
           ])
         )
@@ -310,17 +326,30 @@ export function CustomPricingPreview() {
     )
   }
 
-  // Vendor prices cover the base tier only.
-  const vendorCell = (model: string) => {
+  // A vendor price with tiers is shown for the tier covering each range; one
+  // without covers the base range only.
+  const vendorCell = (model: string, segment?: PriceSegment) => {
     const entry = vendor[model]
+    const tier =
+      entry?.tiers && segment
+        ? (entry.tiers.find(
+            // 200,000 and a 204,800 context size are the same cut.
+            (candidate) =>
+              candidate.upper <= 0 || candidate.upper * 1.05 >= segment.upper
+          ) ?? entry.tiers[entry.tiers.length - 1])
+        : undefined
+    const price = tier?.price ?? entry?.price
+    const hidden = segment && !entry?.tiers && segment.lower > 0
     return (
       <td
         className='text-muted-foreground text-right tabular-nums'
         title={entry ? getUpstreamDisplayName(entry.source, t) : undefined}
       >
-        {entry
-          ? `${formatUnit(entry.price.input)} / ${formatUnit(entry.price.output)}`
-          : '—'}
+        {entry && price && !hidden
+          ? `${formatUnit(price.input)} / ${formatUnit(price.output)}`
+          : hidden
+            ? ''
+            : '—'}
       </td>
     )
   }
@@ -530,11 +559,7 @@ export function CustomPricingPreview() {
                                 </span>
                               )}
                             </td>
-                            {segment.lower === 0 && firstOfLoss ? (
-                              vendorCell(row.model)
-                            ) : (
-                              <td />
-                            )}
+                            {vendorCell(row.model, segment)}
                             <td
                               className={cn(
                                 'text-right font-medium tabular-nums',

@@ -29,11 +29,21 @@ var customVendorProviders = []string{
 	"google", "xai", "mistral", "alibaba",
 }
 
-type customVendorPrice struct {
-	Provider  string   `json:"provider"`
+// customVendorTier is one input-length tier of a vendor price. Upper is the largest
+// input, in tokens, the tier covers; 0 means it has no upper bound.
+type customVendorTier struct {
+	Upper     float64  `json:"upper"`
 	Input     float64  `json:"input"`
 	Output    *float64 `json:"output"`
 	CacheRead *float64 `json:"cache_read"`
+}
+
+type customVendorPrice struct {
+	Provider  string             `json:"provider"`
+	Input     float64            `json:"input"`
+	Output    *float64           `json:"output"`
+	CacheRead *float64           `json:"cache_read"`
+	Tiers     []customVendorTier `json:"tiers,omitempty"`
 }
 
 // customVendorPricesFromModelsDev keeps, for every model, the price of the first
@@ -141,6 +151,16 @@ func fetchCustomVendorPrices(ctx context.Context) (map[string]customVendorPrice,
 			prices[model] = price
 		}
 		sources[source.Name] = fmt.Sprintf("ok: %d models", len(results[i].prices))
+	}
+	// Alibaba's own models: the tiered list price from Model Studio itself, the same
+	// data a channel sync reads, so the two cannot disagree.
+	if alibaba, err := fetchCustomAlibabaVendorPrices(ctx, client); err != nil {
+		sources["alibaba"] = "error: " + err.Error()
+	} else {
+		for model, price := range alibaba {
+			prices[model] = price
+		}
+		sources["alibaba"] = fmt.Sprintf("ok: %d models", len(alibaba))
 	}
 	if len(prices) == 0 {
 		return nil, sources, fmt.Errorf("no vendor prices could be loaded")

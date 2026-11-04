@@ -123,12 +123,52 @@ func customPagePrice(provider string, row []string, input, output, cache int) (c
 	return price, true
 }
 
+var (
+	customTierBelow = regexp.MustCompile(`(?i)(?:<=?|≤|up to)\s*([0-9][0-9,.]*)\s*([km]?)`)
+	customTierAbove = regexp.MustCompile(`(?i)(?:>=?|≥|over)\s*([0-9][0-9,.]*)\s*([km]?)`)
+)
+
+func customTierTokens(match []string) (float64, bool) {
+	value, err := strconv.ParseFloat(strings.ReplaceAll(match[1], ",", ""), 64)
+	if err != nil || value <= 0 {
+		return 0, false
+	}
+	switch strings.ToLower(match[2]) {
+	case "k":
+		value *= 1000
+	case "m":
+		value *= 1000000
+	}
+	return value, true
+}
+
+// customTierMarker reads the prompt-length condition from a model cell such as
+// "grok-4.7 (< 200k prompt tokens)" or "Claude Haiku 5.5 (for prompts over 100,000
+// tokens)". It returns the tier's upper bound (0 for the open-ended top tier).
+func customTierMarker(cell string) (upper float64, ok bool) {
+	open := strings.Index(cell, "(")
+	if open < 0 {
+		return 0, false
+	}
+	note := cell[open:]
+	if match := customTierBelow.FindStringSubmatch(note); match != nil {
+		return customTierTokens(match)
+	}
+	if match := customTierAbove.FindStringSubmatch(note); match != nil {
+		if _, valid := customTierTokens(match); valid {
+			return 0, true
+		}
+	}
+	return 0, false
+}
+
 // parseCustomPriceTables handles the common layout of one model per row with
-// input, output and cached-input columns. Rows of a model repeated for a longer
-// prompt tier are ignored, so the first (base) tier wins.
+// input, output and cached-input columns. A model listed again for a longer prompt
+// becomes a tier of the first (base) row; any other repeat is ignored.
 func parseCustomPriceTables(md, provider, inputHeader, outputHeader, cacheHeader string, name func(string) string) map[string]customVendorPrice {
 	prices := make(map[string]customVendorPrice)
-	for _, table := range parseCustomMarkdownTables(md) {
+	firstTable := make(map[string]int)
+	for tableIndex, table := range parseCustomMarkdownTables(md) {
 		input := customColumn(table.Header, inputHeader)
 		output := customColumn(table.Header, outputHeader)
 		cache := customColumn(table.Header, cacheHeader)
@@ -140,12 +180,38 @@ func parseCustomPriceTables(md, provider, inputHeader, outputHeader, cacheHeader
 			if model == "" {
 				continue
 			}
-			if _, taken := prices[model]; taken {
+			price, ok := customPagePrice(provider, row, input, output, cache)
+			if !ok {
 				continue
 			}
-			if price, ok := customPagePrice(provider, row, input, output, cache); ok {
-				prices[model] = price
+			existing, taken := prices[model]
+			if taken && firstTable[model] != tableIndex {
+				continue
 			}
+			upper, tiered := customTierMarker(customCell(row, 0))
+			tier := customVendorTier{Upper: upper, Input: price.Input, Output: price.Output, CacheRead: price.CacheRead}
+			if !taken {
+				if tiered {
+					price.Tiers = []customVendorTier{tier}
+				}
+				prices[model] = price
+				firstTable[model] = tableIndex
+				continue
+			}
+			if tiered && len(existing.Tiers) > 0 {
+				existing.Tiers = append(existing.Tiers, tier)
+				prices[model] = existing
+			}
+		}
+	}
+	// A tier list is only kept when it has a bounded first tier and a top tier.
+	for model, price := range prices {
+		if len(price.Tiers) == 0 {
+			continue
+		}
+		if len(price.Tiers) < 2 || price.Tiers[0].Upper <= 0 || price.Tiers[len(price.Tiers)-1].Upper != 0 {
+			price.Tiers = nil
+			prices[model] = price
 		}
 	}
 	return prices

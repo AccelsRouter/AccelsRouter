@@ -239,7 +239,47 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	require.NoError(t, err)
 	assertCustomVendorPrice(t, xai, "grok-4.7", 2, 6)
 	assertCustomVendorPrice(t, xai, "grok-4.3", 1.25, 2.5)
+	require.Len(t, xai["grok-4.7"].Tiers, 2)
+	assert.Equal(t, 200000.0, xai["grok-4.7"].Tiers[0].Upper)
+	assert.Equal(t, 2.0, xai["grok-4.7"].Tiers[0].Input)
+	assert.Equal(t, 0.0, xai["grok-4.7"].Tiers[1].Upper)
+	assert.Equal(t, 4.0, xai["grok-4.7"].Tiers[1].Input)
+	require.NotNil(t, xai["grok-4.7"].Tiers[1].Output)
+	assert.Equal(t, 12.0, *xai["grok-4.7"].Tiers[1].Output)
+	require.Len(t, claude["claude-haiku-5-5"].Tiers, 2)
+	assert.Equal(t, 100000.0, claude["claude-haiku-5-5"].Tiers[0].Upper)
+	assert.Equal(t, 0.5, claude["claude-haiku-5-5"].Tiers[1].Input)
+	assert.Empty(t, claude["claude-opus-5-5"].Tiers, "untiered models carry no tier list")
 
 	_, err = parseCustomZaiPricing([]byte("nothing here"))
 	assert.Error(t, err)
+}
+
+func TestCustomAlibabaVendorPrices(t *testing.T) {
+	const body = `{"success":true,"output":{"models":[
+{"model":"qwen3.7-flash","provider":"qwen","prices":[
+{"range_name":"256k<Input<=1m","prices":[{"type":"input_token","price":"0.2","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"0.8","price_unit":"Per 1M tokens","time_band":"standard"}]},
+{"range_name":"Input<=32k","prices":[{"type":"input_token","price":"0.03","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"0.13","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"input_token_cache","price":"0.006","price_unit":"Per 1M tokens","time_band":"standard"}]},
+{"range_name":"32k<Input<=256k","prices":[{"type":"input_token","price":"0.1","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"0.4","price_unit":"Per 1M tokens","time_band":"standard"}]}]},
+{"model":"qwen-max","provider":"qwen","prices":[{"range_name":"Default","prices":[{"type":"input_token","price":"1.6","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"6.4","price_unit":"Per 1M tokens","time_band":"standard"}]}]},
+{"model":"deepseek-v4-pro","provider":"deepseek","prices":[{"range_name":"Default","prices":[{"type":"input_token","price":"2.4","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"4.8","price_unit":"Per 1M tokens","time_band":"standard"}]}]},
+{"model":"qwen-peaky","provider":"qwen","prices":[{"range_name":"Default","prices":[{"type":"input_token","price":"1","price_unit":"Per 1M tokens","time_band":"peak"},{"type":"output_token","price":"2","price_unit":"Per 1M tokens","time_band":"peak"}]}]}]}}`
+	var page customAlibabaModelsPage
+	require.NoError(t, common.Unmarshal([]byte(body), &page))
+	prices := customAlibabaVendorPrices(page.Output.Models)
+
+	flash := prices["qwen3.7-flash"]
+	require.Len(t, flash.Tiers, 3, "tiers are sorted by input length")
+	assert.Equal(t, 0.03, flash.Input)
+	assert.Equal(t, 32.0*1024, flash.Tiers[0].Upper)
+	assert.Equal(t, 256.0*1024, flash.Tiers[1].Upper)
+	assert.Equal(t, 0.0, flash.Tiers[2].Upper, "the last tier has no upper bound")
+	assert.Equal(t, 0.2, flash.Tiers[2].Input)
+	require.NotNil(t, flash.CacheRead)
+	assert.Equal(t, 0.006, *flash.CacheRead)
+
+	assert.Empty(t, prices["qwen-max"].Tiers, "a single tier needs no tier list")
+	assert.Equal(t, 1.6, prices["qwen-max"].Input)
+	assert.NotContains(t, prices, "deepseek-v4-pro", "third-party models are not Alibaba's own price")
+	assert.NotContains(t, prices, "qwen-peaky", "time-band pricing is not guessed")
 }
