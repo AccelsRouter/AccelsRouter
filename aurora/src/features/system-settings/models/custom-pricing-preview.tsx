@@ -41,6 +41,8 @@ type LossSource = {
   ratio: number
 }
 
+type VendorPrice = { price: UnitPrice; source: string }
+
 type PreviewRow = {
   model: string
   channels: string[]
@@ -63,6 +65,7 @@ export function CustomPricingPreview() {
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [vendor, setVendor] = useState<Record<string, VendorPrice>>({})
   const [upstream, setUpstream] = useState<{
     prices: PricingSyncModels
     differences: DifferencesMap
@@ -91,18 +94,38 @@ export function CustomPricingPreview() {
           endpoint: getDefaultEndpointForChannel(c),
         }))
       if (!upstreams.length) throw new Error(t('No enabled channels'))
-      const response = await fetchUpstreamRatios({
-        upstreams,
-        timeout: 10,
-        include_unchanged: true,
-      })
+      // Vendors' own list prices, not the cheapest reseller listing.
+      const fetchVendor = async (): Promise<Record<string, VendorPrice>> => {
+        const res = await api.get<{
+          success: boolean
+          data?: Record<
+            string,
+            { provider: string; input: number; output: number | null }
+          >
+        }>('/api/ratio_sync/vendor_prices')
+        if (!res.data.success || !res.data.data) return {}
+        return Object.fromEntries(
+          Object.entries(res.data.data).map(([model, price]) => [
+            model,
+            {
+              price: { input: price.input, output: price.output },
+              source: price.provider,
+            },
+          ])
+        )
+      }
+      const [response, vendorPrices] = await Promise.all([
+        fetchUpstreamRatios({ upstreams, timeout: 10, include_unchanged: true }),
+        fetchVendor().catch(() => ({}) as Record<string, VendorPrice>),
+      ])
       if (!response.success || !response.data?.prices) {
         throw createServerError(response, t('Failed to fetch upstream prices'))
       }
-      return response.data
+      return { ...response.data, vendorPrices }
     },
     onSuccess: (data) => {
       setUpstream({ prices: data.prices, differences: data.differences })
+      setVendor(data.vendorPrices)
       const failed = data.test_results.filter((r) => r.status === 'error')
       if (failed.length) {
         toast.warning(
@@ -264,6 +287,20 @@ export function CustomPricingPreview() {
     )
   }
 
+  const vendorCell = (model: string) => {
+    const entry = vendor[model]
+    return (
+      <td
+        className='text-muted-foreground text-right tabular-nums'
+        title={entry ? getUpstreamDisplayName(entry.source, t) : undefined}
+      >
+        {entry
+          ? `${formatUnit(entry.price.input)} / ${formatUnit(entry.price.output)}`
+          : '—'}
+      </td>
+    )
+  }
+
   return (
     <div className='flex min-h-0 flex-col gap-3'>
       <div className='flex flex-wrap items-center gap-2'>
@@ -326,7 +363,7 @@ export function CustomPricingPreview() {
       {!upstream && (
         <p className='text-muted-foreground text-sm'>
           {t(
-            'Only models without a price are listed. Check upstream prices to also find price differences and loss risks.'
+            'Only models without a price are listed. Check upstream prices to also find price differences and loss risks, and to load vendor prices.'
           )}
         </p>
       )}
@@ -336,7 +373,7 @@ export function CustomPricingPreview() {
         </p>
       ) : (
         <div className='overflow-x-auto rounded-md border'>
-          <table className='w-full min-w-[56rem] text-sm'>
+          <table className='w-full min-w-[68rem] text-sm'>
             <thead className='bg-muted/40 text-muted-foreground text-xs'>
               <tr className='[&>th]:px-3 [&>th]:py-2 [&>th]:text-left [&>th]:font-medium'>
                 <th className='w-8' />
@@ -348,6 +385,9 @@ export function CustomPricingPreview() {
                 </th>
                 <th className='text-right!'>
                   {t('Current Price')} ({t('Input')} / {t('Output')})
+                </th>
+                <th className='text-right!'>
+                  {t('Vendor price')} ({t('Input')} / {t('Output')})
                 </th>
                 <th className='text-right!'>{t('Over price')}</th>
               </tr>
@@ -419,6 +459,7 @@ export function CustomPricingPreview() {
                           {formatUnit(loss.sell.input)} /{' '}
                           {formatUnit(loss.sell.output)}
                         </td>
+                        {vendorCell(row.model)}
                         <td className='text-destructive text-right font-medium tabular-nums'>
                           {Number.isFinite(loss.ratio)
                             ? `+${Math.round((loss.ratio - 1) * 100)}%`
@@ -426,13 +467,20 @@ export function CustomPricingPreview() {
                         </td>
                       </>
                     ) : (
-                      <td
-                        colSpan={4}
-                        className='text-muted-foreground max-w-0 truncate text-xs'
-                        title={row.channels.join(', ')}
-                      >
-                        {row.channels.join(', ')}
-                      </td>
+                      <>
+                        <td
+                          className='text-muted-foreground max-w-48 truncate text-xs'
+                          title={row.channels.join(', ')}
+                        >
+                          {row.channels.join(', ')}
+                        </td>
+                        <td />
+                        <td className='text-muted-foreground text-right tabular-nums'>
+                          {row.sell ?? '—'}
+                        </td>
+                        {vendorCell(row.model)}
+                        <td />
+                      </>
                     )}
                   </tr>
                 ))}

@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,4 +169,21 @@ func TestCustomRemoveChannelModels(t *testing.T) {
 	body["items"] = []map[string]any{{"channel_id": 0, "models": []string{"a"}}}
 	modelManagementRequest(t, CustomRemoveChannelModels, http.MethodPost, "/api/channel/remove_models", body, &response)
 	assert.False(t, response.Success)
+}
+
+func TestCustomVendorPricesFromModelsDev(t *testing.T) {
+	const body = `{
+"hpc-ai":{"models":{"glm-5.1":{"cost":{"input":0.615,"output":2.46}}}},
+"zai":{"models":{"glm-5.1":{"cost":{"input":1.4,"output":4.4,"cache_read":0.26}},"free":{"cost":{"input":0,"output":0}}}},
+"alibaba":{"models":{"glm-5.1":{"cost":{"input":9,"output":9}},"qwen3.7-plus":{"cost":{"input":0.4,"output":1.6}}}},
+"alibaba-cn":{"models":{"qwen-cn-only":{"cost":{"input":0.3,"output":1}}}}}`
+	prices, err := customVendorPricesFromModelsDev(strings.NewReader(body))
+	require.NoError(t, err)
+	assert.Equal(t, "zai", prices["glm-5.1"].Provider)
+	assert.Equal(t, 1.4, prices["glm-5.1"].Input)
+	assert.Equal(t, "alibaba", prices["qwen3.7-plus"].Provider)
+	assert.NotContains(t, prices, "free")
+	assert.NotContains(t, prices, "qwen-cn-only")
+	_, err = customVendorPricesFromModelsDev(strings.NewReader(`{"hpc-ai":{"models":{}}}`))
+	assert.Error(t, err)
 }
