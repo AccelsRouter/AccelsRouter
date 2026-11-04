@@ -1,21 +1,16 @@
 package controller
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/gin-gonic/gin"
 )
 
 const (
 	customVendorPricesURL      = "https://models.dev/api.json"
-	customVendorPricesCacheTTL = 30 * time.Minute
 	customVendorPricesMaxBytes = 32 << 20
 )
 
@@ -77,13 +72,6 @@ func customVendorPricesFromModelsDev(reader io.Reader) (map[string]customVendorP
 	return prices, nil
 }
 
-var customVendorPricesCache struct {
-	sync.Mutex
-	fetchedAt time.Time
-	prices    map[string]customVendorPrice
-	sources   map[string]string
-}
-
 func fetchCustomVendorBody(ctx context.Context, client *http.Client, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -99,85 +87,4 @@ func fetchCustomVendorBody(ctx context.Context, client *http.Client, url string)
 		return nil, fmt.Errorf("%s", resp.Status)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, customVendorPricesMaxBytes))
-}
-
-// fetchCustomVendorPrices combines models.dev with the vendors' own pricing pages.
-// A page price replaces the models.dev one; a page that cannot be read or parsed
-// is skipped and reported in sources, so one broken page never hides the rest.
-func fetchCustomVendorPrices(ctx context.Context) (map[string]customVendorPrice, map[string]string, error) {
-	customVendorPricesCache.Lock()
-	defer customVendorPricesCache.Unlock()
-	if customVendorPricesCache.prices != nil && time.Since(customVendorPricesCache.fetchedAt) < customVendorPricesCacheTTL {
-		return customVendorPricesCache.prices, customVendorPricesCache.sources, nil
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	sources := make(map[string]string)
-
-	prices := make(map[string]customVendorPrice)
-	if body, err := fetchCustomVendorBody(ctx, client, customVendorPricesURL); err != nil {
-		sources["models.dev"] = "error: " + err.Error()
-	} else if fetched, err := customVendorPricesFromModelsDev(bytes.NewReader(body)); err != nil {
-		sources["models.dev"] = "error: " + err.Error()
-	} else {
-		prices = fetched
-		sources["models.dev"] = fmt.Sprintf("ok: %d models", len(fetched))
-	}
-
-	type pageResult struct {
-		prices map[string]customVendorPrice
-		err    error
-	}
-	results := make([]pageResult, len(customVendorPageSources))
-	var wg sync.WaitGroup
-	for i, source := range customVendorPageSources {
-		wg.Add(1)
-		go func(i int, source customVendorPageSource) {
-			defer wg.Done()
-			body, err := fetchCustomVendorBody(ctx, client, source.URL)
-			if err != nil {
-				results[i].err = err
-				return
-			}
-			results[i].prices, results[i].err = source.Parse(body)
-		}(i, source)
-	}
-	wg.Wait()
-	for i, source := range customVendorPageSources {
-		if results[i].err != nil {
-			sources[source.Name] = "error: " + results[i].err.Error()
-			continue
-		}
-		for model, price := range results[i].prices {
-			prices[model] = price
-		}
-		sources[source.Name] = fmt.Sprintf("ok: %d models", len(results[i].prices))
-	}
-	// Alibaba's own models: the tiered list price from Model Studio itself, the same
-	// data a channel sync reads, so the two cannot disagree.
-	if alibaba, err := fetchCustomAlibabaVendorPrices(ctx, client); err != nil {
-		sources["alibaba"] = "error: " + err.Error()
-	} else {
-		for model, price := range alibaba {
-			prices[model] = price
-		}
-		sources["alibaba"] = fmt.Sprintf("ok: %d models", len(alibaba))
-	}
-	if len(prices) == 0 {
-		return nil, sources, fmt.Errorf("no vendor prices could be loaded")
-	}
-	customVendorPricesCache.prices = prices
-	customVendorPricesCache.sources = sources
-	customVendorPricesCache.fetchedAt = time.Now()
-	return prices, sources, nil
-}
-
-// GetCustomVendorPrices returns each model vendor's own list price, and how each
-// source fared.
-func GetCustomVendorPrices(c *gin.Context) {
-	prices, sources, err := fetchCustomVendorPrices(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error(), "sources": sources})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": prices, "sources": sources})
 }

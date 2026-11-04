@@ -75,6 +75,7 @@ export function CustomPricingPreview() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [vendor, setVendor] = useState<Record<string, VendorPrice>>({})
+  const [vendorSources, setVendorSources] = useState<Record<string, string>>({})
   const [upstream, setUpstream] = useState<{
     prices: PricingSyncModels
     differences: DifferencesMap
@@ -122,6 +123,7 @@ export function CustomPricingPreview() {
           >
           sources?: Record<string, string>
         }>('/api/ratio_sync/vendor_prices')
+        setVendorSources(res.data.sources ?? {})
         const failed = Object.entries(res.data.sources ?? {}).filter(
           ([, status]) => status.startsWith('error')
         )
@@ -412,6 +414,18 @@ export function CustomPricingPreview() {
             {t('Remove from high-price channels')} ({selected.size})
           </Button>
         </div>
+      )}
+      {Object.keys(vendorSources).length > 0 && (
+        <p className='text-muted-foreground text-xs'>
+          {t('Vendor price sources')}:{' '}
+          {Object.entries(vendorSources)
+            .map(([name, status]) =>
+              status.startsWith('error')
+                ? `${name} ✗ ${status.slice(7)}`
+                : `${name} ✓ ${status.replace('ok: ', '')}`
+            )
+            .join(' · ')}
+        </p>
       )}
       {!upstream && (
         <p className='text-muted-foreground text-sm'>

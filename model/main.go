@@ -402,6 +402,9 @@ func migrateDB() error {
 		&BdLead{},
 		&BdLeadModel{},
 		&BdAllocation{},
+		&CustomVendorPrice{},
+		&CustomVendorPriceChange{},
+		&CustomVendorPriceSource{},
 	)
 	if err != nil {
 		return err
