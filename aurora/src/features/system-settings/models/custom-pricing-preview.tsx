@@ -1,19 +1,20 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-
+import { api } from '@/lib/api'
+import { handleServerError } from '@/lib/handle-server-error'
+import {
+  createServerError,
+  requireServerSuccess,
+} from '@/lib/server-error-message'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
 import { StatusBadge } from '@/components/status-badge'
-import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { getModelPricing } from '@/features/model-pricing/api'
-import { api } from '@/lib/api'
-import { handleServerError } from '@/lib/handle-server-error'
-import { createServerError, requireServerSuccess } from '@/lib/server-error-message'
-
 import {
   fetchUpstreamRatios,
   getChannelModelSummaries,
@@ -41,6 +42,7 @@ type LossSource = {
   ratio: number
   tierIndex: number
   tierCount: number
+  tiers: UnitPrice[]
 }
 
 type VendorPrice = { price: UnitPrice; source: string }
@@ -104,7 +106,20 @@ export function CustomPricingPreview() {
             string,
             { provider: string; input: number; output: number | null }
           >
+          sources?: Record<string, string>
         }>('/api/ratio_sync/vendor_prices')
+        const failed = Object.entries(res.data.sources ?? {}).filter(
+          ([, status]) => status.startsWith('error')
+        )
+        if (failed.length) {
+          toast.warning(
+            t('Some vendor price sources failed: {{errorMsg}}', {
+              errorMsg: failed
+                .map(([name, status]) => `${name} (${status})`)
+                .join(', '),
+            })
+          )
+        }
         if (!res.data.success || !res.data.data) return {}
         return Object.fromEntries(
           Object.entries(res.data.data).map(([model, price]) => [
@@ -117,7 +132,11 @@ export function CustomPricingPreview() {
         )
       }
       const [response, vendorPrices] = await Promise.all([
-        fetchUpstreamRatios({ upstreams, timeout: 10, include_unchanged: true }),
+        fetchUpstreamRatios({
+          upstreams,
+          timeout: 10,
+          include_unchanged: true,
+        }),
         fetchVendor().catch(() => ({}) as Record<string, VendorPrice>),
       ])
       if (!response.success || !response.data?.prices) {
@@ -396,104 +415,121 @@ export function CustomPricingPreview() {
             </thead>
             {visible.map((row) => (
               <tbody key={row.model} className='border-t'>
-                {(row.losses.length ? row.losses : [null]).map((loss, index) => (
-                  <tr
-                    key={loss?.key ?? row.model}
-                    className='[&>td]:px-3 [&>td]:py-1.5 [&>td]:align-middle'
-                  >
-                    <td>
-                      {loss && (
-                        <Checkbox
-                          checked={selected.has(loss.key)}
-                          onCheckedChange={(checked) =>
-                            toggleLoss(loss.key, Boolean(checked))
-                          }
-                          aria-label={t('Select {{model}} on {{source}}', {
-                            model: row.model,
-                            source: getUpstreamDisplayName(loss.source, t),
-                          })}
-                        />
+                {(row.losses.length ? row.losses : [null]).map(
+                  (loss, index) => (
+                    <tr
+                      key={loss?.key ?? row.model}
+                      className='[&>td]:px-3 [&>td]:py-1.5 [&>td]:align-middle'
+                    >
+                      <td>
+                        {loss && (
+                          <Checkbox
+                            checked={selected.has(loss.key)}
+                            onCheckedChange={(checked) =>
+                              toggleLoss(loss.key, Boolean(checked))
+                            }
+                            aria-label={t('Select {{model}} on {{source}}', {
+                              model: row.model,
+                              source: getUpstreamDisplayName(loss.source, t),
+                            })}
+                          />
+                        )}
+                      </td>
+                      <td className='font-medium'>
+                        {index === 0 ? row.model : ''}
+                      </td>
+                      <td>
+                        {index === 0 && (
+                          <span className='flex gap-1'>
+                            {row.problems
+                              .filter(
+                                (problem) =>
+                                  !(
+                                    problem === 'difference' &&
+                                    row.losses.length
+                                  )
+                              )
+                              .map((problem) => (
+                                <StatusBadge
+                                  key={problem}
+                                  label={
+                                    problem === 'unpriced'
+                                      ? t('No price')
+                                      : problem === 'difference'
+                                        ? t('Price difference')
+                                        : t('Loss risk')
+                                  }
+                                  variant={
+                                    problem === 'loss'
+                                      ? 'danger'
+                                      : problem === 'unpriced'
+                                        ? 'warning'
+                                        : 'info'
+                                  }
+                                  size='sm'
+                                  copyable={false}
+                                />
+                              ))}
+                          </span>
+                        )}
+                      </td>
+                      {loss ? (
+                        <>
+                          <td>{getUpstreamDisplayName(loss.source, t)}</td>
+                          <td
+                            className='text-right tabular-nums'
+                            title={
+                              loss.tierCount > 1
+                                ? loss.tiers
+                                    .map(
+                                      (tier, i) =>
+                                        `${i + 1}: ${formatUnit(tier.input)} / ${formatUnit(tier.output)}`
+                                    )
+                                    .join('\n')
+                                : undefined
+                            }
+                          >
+                            {formatUnit(loss.cost.input)} /{' '}
+                            {formatUnit(loss.cost.output)}
+                            {loss.tierCount > 1 && (
+                              <span className='text-muted-foreground ml-1 text-xs'>
+                                {t('Tier {{index}}/{{count}}', {
+                                  index: loss.tierIndex + 1,
+                                  count: loss.tierCount,
+                                })}
+                              </span>
+                            )}
+                          </td>
+                          <td className='text-muted-foreground text-right tabular-nums'>
+                            {formatUnit(loss.sell.input)} /{' '}
+                            {formatUnit(loss.sell.output)}
+                          </td>
+                          {vendorCell(row.model)}
+                          <td className='text-destructive text-right font-medium tabular-nums'>
+                            {Number.isFinite(loss.ratio)
+                              ? `+${Math.round((loss.ratio - 1) * 100)}%`
+                              : '—'}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td
+                            className='text-muted-foreground max-w-48 truncate text-xs'
+                            title={row.channels.join(', ')}
+                          >
+                            {row.channels.join(', ')}
+                          </td>
+                          <td />
+                          <td className='text-muted-foreground text-right tabular-nums'>
+                            {row.sell ?? '—'}
+                          </td>
+                          {vendorCell(row.model)}
+                          <td />
+                        </>
                       )}
-                    </td>
-                    <td className='font-medium'>
-                      {index === 0 ? row.model : ''}
-                    </td>
-                    <td>
-                      {index === 0 && (
-                        <span className='flex gap-1'>
-                          {row.problems
-                            .filter(
-                              (problem) =>
-                                !(problem === 'difference' && row.losses.length)
-                            )
-                            .map((problem) => (
-                              <StatusBadge
-                                key={problem}
-                                label={
-                                  problem === 'unpriced'
-                                    ? t('No price')
-                                    : problem === 'difference'
-                                      ? t('Price difference')
-                                      : t('Loss risk')
-                                }
-                                variant={
-                                  problem === 'loss'
-                                    ? 'danger'
-                                    : problem === 'unpriced'
-                                      ? 'warning'
-                                      : 'info'
-                                }
-                                size='sm'
-                                copyable={false}
-                              />
-                            ))}
-                        </span>
-                      )}
-                    </td>
-                    {loss ? (
-                      <>
-                        <td>{getUpstreamDisplayName(loss.source, t)}</td>
-                        <td className='text-right tabular-nums'>
-                          {formatUnit(loss.cost.input)} /{' '}
-                          {formatUnit(loss.cost.output)}
-                          {loss.tierCount > 1 && (
-                            <span className='text-muted-foreground ml-1 text-xs'>
-                              {t('Tier {{index}}/{{count}}', {
-                                index: loss.tierIndex + 1,
-                                count: loss.tierCount,
-                              })}
-                            </span>
-                          )}
-                        </td>
-                        <td className='text-muted-foreground text-right tabular-nums'>
-                          {formatUnit(loss.sell.input)} /{' '}
-                          {formatUnit(loss.sell.output)}
-                        </td>
-                        {vendorCell(row.model)}
-                        <td className='text-destructive text-right font-medium tabular-nums'>
-                          {Number.isFinite(loss.ratio)
-                            ? `+${Math.round((loss.ratio - 1) * 100)}%`
-                            : '—'}
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td
-                          className='text-muted-foreground max-w-48 truncate text-xs'
-                          title={row.channels.join(', ')}
-                        >
-                          {row.channels.join(', ')}
-                        </td>
-                        <td />
-                        <td className='text-muted-foreground text-right tabular-nums'>
-                          {row.sell ?? '—'}
-                        </td>
-                        {vendorCell(row.model)}
-                        <td />
-                      </>
-                    )}
-                  </tr>
-                ))}
+                    </tr>
+                  )
+                )}
               </tbody>
             ))}
           </table>

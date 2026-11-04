@@ -48,6 +48,8 @@ export type Overage = {
   // Which of the upstream's tiers the cost comes from, e.g. a long-context tier.
   tierIndex: number
   tierCount: number
+  // Every tier of the upstream, in order, for display.
+  tiers: UnitPrice[]
 }
 
 // Tiers are compared one by one when both sides have the same tiers;
@@ -72,7 +74,14 @@ function findOverage(sell: UnitPrice[], cost: UnitPrice[]): Overage | null {
         : 1
     const ratio = Math.max(inputRatio, outputRatio)
     if (ratio > 1 + EPSILON && (!worst || ratio > worst.ratio)) {
-      worst = { cost: c, sell: s, ratio, tierIndex, tierCount: cost.length }
+      worst = {
+        cost: c,
+        sell: s,
+        ratio,
+        tierIndex,
+        tierCount: cost.length,
+        tiers: cost,
+      }
     }
   }
   return worst

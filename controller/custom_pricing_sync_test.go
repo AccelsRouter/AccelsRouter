@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -185,5 +186,60 @@ func TestCustomVendorPricesFromModelsDev(t *testing.T) {
 	assert.NotContains(t, prices, "free")
 	assert.NotContains(t, prices, "qwen-cn-only")
 	_, err = customVendorPricesFromModelsDev(strings.NewReader(`{"hpc-ai":{"models":{}}}`))
+	assert.Error(t, err)
+}
+
+func customVendorFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile("testdata/vendor_pages/" + name)
+	require.NoError(t, err)
+	return data
+}
+
+func assertCustomVendorPrice(t *testing.T, prices map[string]customVendorPrice, model string, input, output float64) {
+	t.Helper()
+	price, ok := prices[model]
+	require.True(t, ok, "missing %s", model)
+	assert.InDelta(t, input, price.Input, 1e-9, model)
+	require.NotNil(t, price.Output, model)
+	assert.InDelta(t, output, *price.Output, 1e-9, model)
+}
+
+func TestCustomVendorPageParsers(t *testing.T) {
+	zai, err := parseCustomZaiPricing(customVendorFixture(t, "zai.md"))
+	require.NoError(t, err)
+	assertCustomVendorPrice(t, zai, "glm-5.3", 1.4, 4.4)
+	assertCustomVendorPrice(t, zai, "glm-5.1", 1.4, 4.4)
+	assertCustomVendorPrice(t, zai, "glm-5.3-flash", 0.15, 0.5)
+	assert.NotContains(t, zai, "glm-4.7-flash", "free models are not priced")
+	require.NotNil(t, zai["glm-5.3"].CacheRead)
+	assert.InDelta(t, 0.26, *zai["glm-5.3"].CacheRead, 1e-9)
+
+	deepseek, err := parseCustomDeepSeekPricing(customVendorFixture(t, "deepseek.md"))
+	require.NoError(t, err)
+	assertCustomVendorPrice(t, deepseek, "deepseek-v4-pro", 1.32, 3.96)
+	assertCustomVendorPrice(t, deepseek, "deepseek-v4-pro-0813", 1.32, 3.96)
+	assertCustomVendorPrice(t, deepseek, "deepseek-flash", 0.3, 1.2)
+	assertCustomVendorPrice(t, deepseek, "deepseek-v4-flash", 0.3, 1.2)
+	assertCustomVendorPrice(t, deepseek, "deepseek-v4.1-flash-1017", 0.3, 1.2)
+
+	kimi, err := parseCustomKimiPricing(customVendorFixture(t, "kimi.html"))
+	require.NoError(t, err)
+	assertCustomVendorPrice(t, kimi, "kimi-k3", 3, 15)
+	assertCustomVendorPrice(t, kimi, "kimi-k3.1-pro", 2, 10)
+	assertCustomVendorPrice(t, kimi, "kimi-k2.7-code", 0.95, 4)
+
+	claude, err := parseCustomClaudePricing(customVendorFixture(t, "claude.md"))
+	require.NoError(t, err)
+	assertCustomVendorPrice(t, claude, "claude-opus-5-5", 4, 20)
+	assertCustomVendorPrice(t, claude, "claude-sonnet-4-6", 3, 15)
+	assertCustomVendorPrice(t, claude, "claude-haiku-5-5", 0.1, 0.5)
+
+	xai, err := parseCustomXAIPricing(customVendorFixture(t, "xai.md"))
+	require.NoError(t, err)
+	assertCustomVendorPrice(t, xai, "grok-4.7", 2, 6)
+	assertCustomVendorPrice(t, xai, "grok-4.3", 1.25, 2.5)
+
+	_, err = parseCustomZaiPricing([]byte("nothing here"))
 	assert.Error(t, err)
 }

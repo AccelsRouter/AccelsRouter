@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -70,42 +71,93 @@ var customVendorPricesCache struct {
 	sync.Mutex
 	fetchedAt time.Time
 	prices    map[string]customVendorPrice
+	sources   map[string]string
 }
 
-func fetchCustomVendorPrices(ctx context.Context) (map[string]customVendorPrice, error) {
-	customVendorPricesCache.Lock()
-	defer customVendorPricesCache.Unlock()
-	if customVendorPricesCache.prices != nil && time.Since(customVendorPricesCache.fetchedAt) < customVendorPricesCacheTTL {
-		return customVendorPricesCache.prices, nil
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, customVendorPricesURL, nil)
+func fetchCustomVendorBody(ctx context.Context, client *http.Client, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	req.Header.Set("User-Agent", customVendorPageUserAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("models.dev: %s", resp.Status)
+		return nil, fmt.Errorf("%s", resp.Status)
 	}
-	prices, err := customVendorPricesFromModelsDev(io.LimitReader(resp.Body, customVendorPricesMaxBytes))
-	if err != nil {
-		return nil, err
-	}
-	customVendorPricesCache.prices = prices
-	customVendorPricesCache.fetchedAt = time.Now()
-	return prices, nil
+	return io.ReadAll(io.LimitReader(resp.Body, customVendorPricesMaxBytes))
 }
 
-// GetCustomVendorPrices returns each model vendor's own list price.
+// fetchCustomVendorPrices combines models.dev with the vendors' own pricing pages.
+// A page price replaces the models.dev one; a page that cannot be read or parsed
+// is skipped and reported in sources, so one broken page never hides the rest.
+func fetchCustomVendorPrices(ctx context.Context) (map[string]customVendorPrice, map[string]string, error) {
+	customVendorPricesCache.Lock()
+	defer customVendorPricesCache.Unlock()
+	if customVendorPricesCache.prices != nil && time.Since(customVendorPricesCache.fetchedAt) < customVendorPricesCacheTTL {
+		return customVendorPricesCache.prices, customVendorPricesCache.sources, nil
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	sources := make(map[string]string)
+
+	prices := make(map[string]customVendorPrice)
+	if body, err := fetchCustomVendorBody(ctx, client, customVendorPricesURL); err != nil {
+		sources["models.dev"] = "error: " + err.Error()
+	} else if fetched, err := customVendorPricesFromModelsDev(bytes.NewReader(body)); err != nil {
+		sources["models.dev"] = "error: " + err.Error()
+	} else {
+		prices = fetched
+		sources["models.dev"] = fmt.Sprintf("ok: %d models", len(fetched))
+	}
+
+	type pageResult struct {
+		prices map[string]customVendorPrice
+		err    error
+	}
+	results := make([]pageResult, len(customVendorPageSources))
+	var wg sync.WaitGroup
+	for i, source := range customVendorPageSources {
+		wg.Add(1)
+		go func(i int, source customVendorPageSource) {
+			defer wg.Done()
+			body, err := fetchCustomVendorBody(ctx, client, source.URL)
+			if err != nil {
+				results[i].err = err
+				return
+			}
+			results[i].prices, results[i].err = source.Parse(body)
+		}(i, source)
+	}
+	wg.Wait()
+	for i, source := range customVendorPageSources {
+		if results[i].err != nil {
+			sources[source.Name] = "error: " + results[i].err.Error()
+			continue
+		}
+		for model, price := range results[i].prices {
+			prices[model] = price
+		}
+		sources[source.Name] = fmt.Sprintf("ok: %d models", len(results[i].prices))
+	}
+	if len(prices) == 0 {
+		return nil, sources, fmt.Errorf("no vendor prices could be loaded")
+	}
+	customVendorPricesCache.prices = prices
+	customVendorPricesCache.sources = sources
+	customVendorPricesCache.fetchedAt = time.Now()
+	return prices, sources, nil
+}
+
+// GetCustomVendorPrices returns each model vendor's own list price, and how each
+// source fared.
 func GetCustomVendorPrices(c *gin.Context) {
-	prices, err := fetchCustomVendorPrices(c.Request.Context())
+	prices, sources, err := fetchCustomVendorPrices(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error(), "sources": sources})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": prices})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": prices, "sources": sources})
 }
