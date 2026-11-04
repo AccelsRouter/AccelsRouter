@@ -41,7 +41,14 @@ function getTierUnitPrices(values?: PricingSyncValues): UnitPrice[] | null {
   }))
 }
 
-export type Overage = { cost: UnitPrice; sell: UnitPrice; ratio: number }
+export type Overage = {
+  cost: UnitPrice
+  sell: UnitPrice
+  ratio: number
+  // Which of the upstream's tiers the cost comes from, e.g. a long-context tier.
+  tierIndex: number
+  tierCount: number
+}
 
 // Tiers are compared one by one when both sides have the same tiers;
 // otherwise the most expensive tier of each side is compared, which only flags
@@ -49,10 +56,10 @@ export type Overage = { cost: UnitPrice; sell: UnitPrice; ratio: number }
 function findOverage(sell: UnitPrice[], cost: UnitPrice[]): Overage | null {
   const pairs =
     sell.length === cost.length
-      ? cost.map((c, i) => [sell[i], c] as const)
-      : [[maxTier(sell), maxTier(cost)] as const]
+      ? cost.map((c, i) => [sell[i], c, i] as const)
+      : [[maxTier(sell), maxTier(cost), cost.indexOf(maxTier(cost))] as const]
   let worst: Overage | null = null
-  for (const [s, c] of pairs) {
+  for (const [s, c, tierIndex] of pairs) {
     const inputRatio =
       s.input > 0 ? c.input / s.input : c.input > 0 ? Infinity : 1
     const outputRatio =
@@ -65,7 +72,7 @@ function findOverage(sell: UnitPrice[], cost: UnitPrice[]): Overage | null {
         : 1
     const ratio = Math.max(inputRatio, outputRatio)
     if (ratio > 1 + EPSILON && (!worst || ratio > worst.ratio)) {
-      worst = { cost: c, sell: s, ratio }
+      worst = { cost: c, sell: s, ratio, tierIndex, tierCount: cost.length }
     }
   }
   return worst

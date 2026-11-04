@@ -39,6 +39,8 @@ type LossSource = {
   cost: UnitPrice
   sell: UnitPrice
   ratio: number
+  tierIndex: number
+  tierCount: number
 }
 
 type VendorPrice = { price: UnitPrice; source: string }
@@ -454,6 +456,14 @@ export function CustomPricingPreview() {
                         <td className='text-right tabular-nums'>
                           {formatUnit(loss.cost.input)} /{' '}
                           {formatUnit(loss.cost.output)}
+                          {loss.tierCount > 1 && (
+                            <span className='text-muted-foreground ml-1 text-xs'>
+                              {t('Tier {{index}}/{{count}}', {
+                                index: loss.tierIndex + 1,
+                                count: loss.tierCount,
+                              })}
+                            </span>
+                          )}
                         </td>
                         <td className='text-muted-foreground text-right tabular-nums'>
                           {formatUnit(loss.sell.input)} /{' '}
