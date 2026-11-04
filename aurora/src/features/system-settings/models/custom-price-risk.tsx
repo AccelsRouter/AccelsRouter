@@ -41,61 +41,143 @@ function getTierUnitPrices(values?: PricingSyncValues): UnitPrice[] | null {
   }))
 }
 
+// One price tier, valid for inputs up to `upper` tokens (Infinity for the last).
+type PriceTier = { upper: number; price: UnitPrice }
+
+// Tiers with their upper input-length bounds, or null when the tiers depend on
+// something other than the input length and cannot be lined up.
+function getPriceTiers(values?: PricingSyncValues): PriceTier[] | null {
+  const tiers = getTierUnitPrices(values)
+  if (!tiers) return null
+  if (getSyncPriceKind(values) === 'token') {
+    return [{ upper: Infinity, price: tiers[0] }]
+  }
+  const config = tryParseVisualConfig(
+    splitBillingExprAndRequestRules(String(values?.billing_expr)).billingExpr
+  )
+  if (!config || config.tiers.length !== tiers.length) return null
+  const result: PriceTier[] = []
+  for (const [index, tier] of config.tiers.entries()) {
+    let upper = Infinity
+    for (const condition of tier.conditions) {
+      if (condition.var !== 'len') return null
+      if (condition.op === '<=' || condition.op === '<') {
+        upper = Math.min(upper, Number(condition.value))
+      }
+    }
+    if (!Number.isFinite(upper) && index < config.tiers.length - 1) return null
+    result.push({ upper, price: tiers[index] })
+  }
+  const bounds = result.map((tier) => tier.upper)
+  if (bounds.some((bound, i) => i > 0 && bound <= bounds[i - 1])) return null
+  return result
+}
+
+// One stretch of input lengths in which both sides charge a single price.
+export type PriceSegment = {
+  lower: number
+  upper: number
+  sell: UnitPrice
+  cost: UnitPrice
+  ratio: number
+}
+
 export type Overage = {
+  // Worst segment: the largest overage of upstream cost over the current price.
   cost: UnitPrice
   sell: UnitPrice
   ratio: number
-  // Which of the upstream's tiers the cost comes from, e.g. a long-context tier.
-  tierIndex: number
-  tierCount: number
-  sellTierIndex: number
-  sellTierCount: number
-  // Every tier of the upstream, in order, for display.
-  tiers: UnitPrice[]
+  segments: PriceSegment[]
 }
 
-// Tiers are compared one by one when both sides have the same tiers;
-// otherwise the most expensive tier of each side is compared, which only flags
-// the clearest cases.
-function findOverage(sell: UnitPrice[], cost: UnitPrice[]): Overage | null {
-  const pairs =
-    sell.length === cost.length
-      ? cost.map((c, i) => [sell[i], c, i, i] as const)
-      : [
-          [
-            maxTier(sell),
-            maxTier(cost),
-            cost.indexOf(maxTier(cost)),
-            sell.indexOf(maxTier(sell)),
-          ] as const,
-        ]
-  let worst: Overage | null = null
-  for (const [s, c, tierIndex, sellTierIndex] of pairs) {
-    const inputRatio =
-      s.input > 0 ? c.input / s.input : c.input > 0 ? Infinity : 1
-    const outputRatio =
-      s.output !== null && c.output !== null
-        ? s.output > 0
-          ? c.output / s.output
-          : c.output > 0
-            ? Infinity
-            : 1
-        : 1
-    const ratio = Math.max(inputRatio, outputRatio)
-    if (ratio > 1 + EPSILON && (!worst || ratio > worst.ratio)) {
-      worst = {
-        cost: c,
-        sell: s,
-        ratio,
-        tierIndex,
-        tierCount: cost.length,
-        sellTierIndex,
-        sellTierCount: sell.length,
-        tiers: cost,
-      }
+function overageRatio(sell: UnitPrice, cost: UnitPrice): number {
+  const inputRatio =
+    sell.input > 0 ? cost.input / sell.input : cost.input > 0 ? Infinity : 1
+  const outputRatio =
+    sell.output !== null && cost.output !== null
+      ? sell.output > 0
+        ? cost.output / sell.output
+        : cost.output > 0
+          ? Infinity
+          : 1
+      : 1
+  return Math.max(inputRatio, outputRatio)
+}
+
+function tierAt(tiers: PriceTier[], upper: number): UnitPrice {
+  return (tiers.find((tier) => tier.upper >= upper) ?? tiers[tiers.length - 1])
+    .price
+}
+
+// Splits the input length at every tier boundary of either side, so each segment
+// compares the price a request of that length pays on both sides.
+function alignSegments(sell: PriceTier[], cost: PriceTier[]): PriceSegment[] {
+  const bounds = [
+    ...new Set([...sell, ...cost].map((tier) => tier.upper)),
+  ].sort((a, b) => a - b)
+  return bounds.map((upper, i) => {
+    const sellPrice = tierAt(sell, upper)
+    const costPrice = tierAt(cost, upper)
+    return {
+      lower: i === 0 ? 0 : bounds[i - 1],
+      upper,
+      sell: sellPrice,
+      cost: costPrice,
+      ratio: overageRatio(sellPrice, costPrice),
     }
+  })
+}
+
+// Tiers that cannot be lined up by input length are compared by their most
+// expensive tier, which only flags the clearest cases.
+function findOverage(
+  sellValues?: PricingSyncValues,
+  costValues?: PricingSyncValues
+): Overage | null {
+  const sellTiers = getPriceTiers(sellValues)
+  const costTiers = getPriceTiers(costValues)
+  let segments: PriceSegment[]
+  if (sellTiers && costTiers) {
+    segments = alignSegments(sellTiers, costTiers)
+  } else {
+    const sell = getTierUnitPrices(sellValues)
+    const cost = getTierUnitPrices(costValues)
+    if (!sell || !cost) return null
+    const s = maxTier(sell)
+    const c = maxTier(cost)
+    segments = [
+      {
+        lower: 0,
+        upper: Infinity,
+        sell: s,
+        cost: c,
+        ratio: overageRatio(s, c),
+      },
+    ]
   }
-  return worst
+  const worst = segments.reduce((best, segment) =>
+    segment.ratio > best.ratio ? segment : best
+  )
+  if (worst.ratio <= 1 + EPSILON) return null
+  return { cost: worst.cost, sell: worst.sell, ratio: worst.ratio, segments }
+}
+
+// 32768 -> "32k" (context sizes), 200000 -> "200k", 1048576 -> "1M".
+export function formatTokenCount(n: number): string {
+  if (n % 1_000_000 === 0) return `${n / 1_000_000}M`
+  if (n % 1_048_576 === 0) return `${n / 1_048_576}M`
+  if (n % 1000 === 0) return `${n / 1000}k`
+  if (n % 1024 === 0) return `${n / 1024}k`
+  return n.toLocaleString()
+}
+
+export function formatSegmentRange(segment: PriceSegment): string {
+  if (segment.lower === 0 && !Number.isFinite(segment.upper)) return ''
+  if (segment.lower === 0) return `≤ ${formatTokenCount(segment.upper)}`
+  if (!Number.isFinite(segment.upper)) {
+    return `> ${formatTokenCount(segment.lower)}`
+  }
+  return `${formatTokenCount(segment.lower)} – ${formatTokenCount(segment.upper)}`
 }
 
 function maxTier(tiers: UnitPrice[]): UnitPrice {
@@ -112,10 +194,7 @@ function scalar(tiers: UnitPrice[]): number {
 }
 
 export function getSourceLoss(row: PriceRow, source: string): Overage | null {
-  const sell = getTierUnitPrices(row.current)
-  const cost = getTierUnitPrices(row.upstreams[source])
-  if (!sell || !cost) return null
-  return findOverage(sell, cost)
+  return findOverage(row.current, row.upstreams[source])
 }
 
 export type SourceRisk = 'loss' | 'highest' | null

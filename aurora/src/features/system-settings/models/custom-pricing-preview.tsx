@@ -8,6 +8,7 @@ import {
   createServerError,
   requireServerSuccess,
 } from '@/lib/server-error-message'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -22,9 +23,11 @@ import {
 } from '../api'
 import type { DifferencesMap, PricingSyncModels } from '../types'
 import {
+  formatSegmentRange,
   formatUnit,
   getSourceLoss,
   getUnitPriceText,
+  type PriceSegment,
   type UnitPrice,
 } from './custom-price-risk'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
@@ -40,11 +43,7 @@ type LossSource = {
   cost: UnitPrice
   sell: UnitPrice
   ratio: number
-  tierIndex: number
-  tierCount: number
-  sellTierIndex: number
-  sellTierCount: number
-  tiers: UnitPrice[]
+  segments: PriceSegment[]
 }
 
 type VendorPrice = { price: UnitPrice; source: string }
@@ -310,15 +309,8 @@ export function CustomPricingPreview() {
     )
   }
 
-  const tierTag = (index: number, count: number) =>
-    count > 1 && (
-      <span className='text-muted-foreground ml-1 text-xs'>
-        {t('Tier {{index}}/{{count}}', { index: index + 1, count })}
-      </span>
-    )
-
   // Vendor prices cover the base tier only.
-  const vendorCell = (model: string, tiered = false) => {
+  const vendorCell = (model: string) => {
     const entry = vendor[model]
     return (
       <td
@@ -328,9 +320,6 @@ export function CustomPricingPreview() {
         {entry
           ? `${formatUnit(entry.price.input)} / ${formatUnit(entry.price.output)}`
           : '—'}
-        {entry && tiered && (
-          <span className='ml-1 text-xs'>{t('Base tier')}</span>
-        )}
       </td>
     )
   }
@@ -407,13 +396,14 @@ export function CustomPricingPreview() {
         </p>
       ) : (
         <div className='overflow-x-auto rounded-md border'>
-          <table className='w-full min-w-[68rem] text-sm'>
+          <table className='w-full min-w-[76rem] text-sm'>
             <thead className='bg-muted/40 text-muted-foreground text-xs'>
               <tr className='[&>th]:px-3 [&>th]:py-2 [&>th]:text-left [&>th]:font-medium'>
                 <th className='w-8' />
                 <th>{t('Model')}</th>
                 <th>{t('Problem')}</th>
                 <th>{t('Channel')}</th>
+                <th>{t('Input length')}</th>
                 <th className='text-right!'>
                   {t('Upstream cost')} ({t('Input')} / {t('Output')})
                 </th>
@@ -426,129 +416,154 @@ export function CustomPricingPreview() {
                 <th className='text-right!'>{t('Over price')}</th>
               </tr>
             </thead>
-            {visible.map((row) => (
-              <tbody key={row.model} className='border-t'>
-                {(row.losses.length ? row.losses : [null]).map(
-                  (loss, index) => (
-                    <tr
-                      key={loss?.key ?? row.model}
-                      className='[&>td]:px-3 [&>td]:py-1.5 [&>td]:align-middle'
-                    >
-                      <td>
-                        {loss && (
-                          <Checkbox
-                            checked={selected.has(loss.key)}
-                            onCheckedChange={(checked) =>
-                              toggleLoss(loss.key, Boolean(checked))
-                            }
-                            aria-label={t('Select {{model}} on {{source}}', {
-                              model: row.model,
-                              source: getUpstreamDisplayName(loss.source, t),
-                            })}
-                          />
-                        )}
-                      </td>
-                      <td className='font-medium'>
-                        {index === 0 ? row.model : ''}
-                      </td>
-                      <td>
-                        {index === 0 && (
-                          <span className='flex gap-1'>
-                            {row.problems
-                              .filter(
-                                (problem) =>
-                                  !(
-                                    problem === 'difference' &&
-                                    row.losses.length
-                                  )
-                              )
-                              .map((problem) => (
-                                <StatusBadge
-                                  key={problem}
-                                  label={
-                                    problem === 'unpriced'
-                                      ? t('No price')
-                                      : problem === 'difference'
-                                        ? t('Price difference')
-                                        : t('Loss risk')
-                                  }
-                                  variant={
-                                    problem === 'loss'
-                                      ? 'danger'
-                                      : problem === 'unpriced'
-                                        ? 'warning'
-                                        : 'info'
-                                  }
-                                  size='sm'
-                                  copyable={false}
-                                />
-                              ))}
-                          </span>
-                        )}
-                      </td>
-                      {loss ? (
-                        <>
-                          <td>{getUpstreamDisplayName(loss.source, t)}</td>
-                          <td
-                            className='text-right tabular-nums'
-                            title={
-                              loss.tierCount > 1
-                                ? loss.tiers
-                                    .map(
-                                      (tier, i) =>
-                                        `${i + 1}: ${formatUnit(tier.input)} / ${formatUnit(tier.output)}`
-                                    )
-                                    .join('\n')
-                                : undefined
-                            }
-                          >
-                            {formatUnit(loss.cost.input)} /{' '}
-                            {formatUnit(loss.cost.output)}
-                            {loss.tierCount > 1 && (
-                              <span className='text-muted-foreground ml-1 text-xs'>
-                                {t('Tier {{index}}/{{count}}', {
-                                  index: loss.tierIndex + 1,
-                                  count: loss.tierCount,
-                                })}
-                              </span>
-                            )}
-                          </td>
-                          <td className='text-muted-foreground text-right tabular-nums'>
-                            {formatUnit(loss.sell.input)} /{' '}
-                            {formatUnit(loss.sell.output)}
-                            {tierTag(loss.sellTierIndex, loss.sellTierCount)}
-                          </td>
-                          {vendorCell(
-                            row.model,
-                            loss.tierCount > 1 || loss.sellTierCount > 1
-                          )}
-                          <td className='text-destructive text-right font-medium tabular-nums'>
-                            {Number.isFinite(loss.ratio)
-                              ? `+${Math.round((loss.ratio - 1) * 100)}%`
-                              : '—'}
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td
-                            className='text-muted-foreground max-w-48 truncate text-xs'
-                            title={row.channels.join(', ')}
-                          >
-                            {row.channels.join(', ')}
-                          </td>
-                          <td />
-                          <td className='text-muted-foreground text-right tabular-nums'>
-                            {row.sell ?? '—'}
-                          </td>
-                          {vendorCell(row.model)}
-                          <td />
-                        </>
-                      )}
-                    </tr>
+            {visible.map((row) => {
+              const lines = row.losses.length
+                ? row.losses.flatMap((loss, lossIndex) =>
+                    loss.segments.map((segment, segmentIndex) => ({
+                      loss,
+                      segment,
+                      firstOfModel: lossIndex === 0 && segmentIndex === 0,
+                      firstOfLoss: segmentIndex === 0,
+                    }))
                   )
-                )}
-              </tbody>
-            ))}
+                : [
+                    {
+                      loss: null,
+                      segment: null,
+                      firstOfModel: true,
+                      firstOfLoss: true,
+                    },
+                  ]
+              return (
+                <tbody key={row.model} className='border-t'>
+                  {lines.map(({ loss, segment, firstOfModel, firstOfLoss }) => {
+                    const over = segment !== null && segment.ratio > 1 + 1e-6
+                    return (
+                      <tr
+                        key={`${loss?.key ?? row.model}:${segment?.lower ?? 0}`}
+                        className={cn(
+                          '[&>td]:px-3 [&>td]:py-1.5 [&>td]:align-middle',
+                          !firstOfLoss && 'border-t-0'
+                        )}
+                      >
+                        <td>
+                          {loss && firstOfLoss && (
+                            <Checkbox
+                              checked={selected.has(loss.key)}
+                              onCheckedChange={(checked) =>
+                                toggleLoss(loss.key, Boolean(checked))
+                              }
+                              aria-label={t('Select {{model}} on {{source}}', {
+                                model: row.model,
+                                source: getUpstreamDisplayName(loss.source, t),
+                              })}
+                            />
+                          )}
+                        </td>
+                        <td className='font-medium'>
+                          {firstOfModel ? row.model : ''}
+                        </td>
+                        <td>
+                          {firstOfModel && (
+                            <span className='flex gap-1'>
+                              {row.problems
+                                .filter(
+                                  (problem) =>
+                                    !(
+                                      problem === 'difference' &&
+                                      row.losses.length
+                                    )
+                                )
+                                .map((problem) => (
+                                  <StatusBadge
+                                    key={problem}
+                                    label={
+                                      problem === 'unpriced'
+                                        ? t('No price')
+                                        : problem === 'difference'
+                                          ? t('Price difference')
+                                          : t('Loss risk')
+                                    }
+                                    variant={
+                                      problem === 'loss'
+                                        ? 'danger'
+                                        : problem === 'unpriced'
+                                          ? 'warning'
+                                          : 'info'
+                                    }
+                                    size='sm'
+                                    copyable={false}
+                                  />
+                                ))}
+                            </span>
+                          )}
+                        </td>
+                        {loss && segment ? (
+                          <>
+                            <td>
+                              {firstOfLoss
+                                ? getUpstreamDisplayName(loss.source, t)
+                                : ''}
+                            </td>
+                            <td className='text-muted-foreground text-xs'>
+                              {formatSegmentRange(segment)}
+                            </td>
+                            <td
+                              className={cn(
+                                'text-right tabular-nums',
+                                !over && 'text-muted-foreground'
+                              )}
+                            >
+                              {formatUnit(segment.cost.input)} /{' '}
+                              {formatUnit(segment.cost.output)}
+                            </td>
+                            <td className='text-muted-foreground text-right tabular-nums'>
+                              {formatUnit(segment.sell.input)} /{' '}
+                              {formatUnit(segment.sell.output)}
+                            </td>
+                            {segment.lower === 0 && firstOfLoss ? (
+                              vendorCell(row.model)
+                            ) : (
+                              <td />
+                            )}
+                            <td
+                              className={cn(
+                                'text-right font-medium tabular-nums',
+                                over
+                                  ? 'text-destructive'
+                                  : 'text-muted-foreground'
+                              )}
+                            >
+                              {over
+                                ? Number.isFinite(segment.ratio)
+                                  ? `+${Math.round((segment.ratio - 1) * 100)}%`
+                                  : '—'
+                                : '—'}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td
+                              className='text-muted-foreground max-w-48 truncate text-xs'
+                              title={row.channels.join(', ')}
+                            >
+                              {row.channels.join(', ')}
+                            </td>
+                            <td />
+                            <td />
+                            <td className='text-muted-foreground text-right tabular-nums'>
+                              {row.sell ?? '—'}
+                            </td>
+                            {vendorCell(row.model)}
+                            <td />
+                          </>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              )
+            })}
           </table>
         </div>
       )}
