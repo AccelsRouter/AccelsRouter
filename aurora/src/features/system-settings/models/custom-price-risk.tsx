@@ -48,6 +48,8 @@ export type Overage = {
   // Which of the upstream's tiers the cost comes from, e.g. a long-context tier.
   tierIndex: number
   tierCount: number
+  sellTierIndex: number
+  sellTierCount: number
   // Every tier of the upstream, in order, for display.
   tiers: UnitPrice[]
 }
@@ -58,10 +60,17 @@ export type Overage = {
 function findOverage(sell: UnitPrice[], cost: UnitPrice[]): Overage | null {
   const pairs =
     sell.length === cost.length
-      ? cost.map((c, i) => [sell[i], c, i] as const)
-      : [[maxTier(sell), maxTier(cost), cost.indexOf(maxTier(cost))] as const]
+      ? cost.map((c, i) => [sell[i], c, i, i] as const)
+      : [
+          [
+            maxTier(sell),
+            maxTier(cost),
+            cost.indexOf(maxTier(cost)),
+            sell.indexOf(maxTier(sell)),
+          ] as const,
+        ]
   let worst: Overage | null = null
-  for (const [s, c, tierIndex] of pairs) {
+  for (const [s, c, tierIndex, sellTierIndex] of pairs) {
     const inputRatio =
       s.input > 0 ? c.input / s.input : c.input > 0 ? Infinity : 1
     const outputRatio =
@@ -80,6 +89,8 @@ function findOverage(sell: UnitPrice[], cost: UnitPrice[]): Overage | null {
         ratio,
         tierIndex,
         tierCount: cost.length,
+        sellTierIndex,
+        sellTierCount: sell.length,
         tiers: cost,
       }
     }

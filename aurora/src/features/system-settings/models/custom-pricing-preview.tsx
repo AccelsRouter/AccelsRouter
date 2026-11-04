@@ -42,6 +42,8 @@ type LossSource = {
   ratio: number
   tierIndex: number
   tierCount: number
+  sellTierIndex: number
+  sellTierCount: number
   tiers: UnitPrice[]
 }
 
@@ -308,7 +310,15 @@ export function CustomPricingPreview() {
     )
   }
 
-  const vendorCell = (model: string) => {
+  const tierTag = (index: number, count: number) =>
+    count > 1 && (
+      <span className='text-muted-foreground ml-1 text-xs'>
+        {t('Tier {{index}}/{{count}}', { index: index + 1, count })}
+      </span>
+    )
+
+  // Vendor prices cover the base tier only.
+  const vendorCell = (model: string, tiered = false) => {
     const entry = vendor[model]
     return (
       <td
@@ -318,6 +328,9 @@ export function CustomPricingPreview() {
         {entry
           ? `${formatUnit(entry.price.input)} / ${formatUnit(entry.price.output)}`
           : '—'}
+        {entry && tiered && (
+          <span className='ml-1 text-xs'>{t('Base tier')}</span>
+        )}
       </td>
     )
   }
@@ -503,8 +516,12 @@ export function CustomPricingPreview() {
                           <td className='text-muted-foreground text-right tabular-nums'>
                             {formatUnit(loss.sell.input)} /{' '}
                             {formatUnit(loss.sell.output)}
+                            {tierTag(loss.sellTierIndex, loss.sellTierCount)}
                           </td>
-                          {vendorCell(row.model)}
+                          {vendorCell(
+                            row.model,
+                            loss.tierCount > 1 || loss.sellTierCount > 1
+                          )}
                           <td className='text-destructive text-right font-medium tabular-nums'>
                             {Number.isFinite(loss.ratio)
                               ? `+${Math.round((loss.ratio - 1) * 100)}%`
