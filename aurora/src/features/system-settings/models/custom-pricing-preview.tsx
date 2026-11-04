@@ -44,6 +44,7 @@ type LossSource = {
   sell: UnitPrice
   ratio: number
   segments: PriceSegment[]
+  sellHasRules: boolean
 }
 
 type VendorPrice = { price: UnitPrice; source: string }
@@ -520,6 +521,14 @@ export function CustomPricingPreview() {
                             <td className='text-muted-foreground text-right tabular-nums'>
                               {formatUnit(segment.sell.input)} /{' '}
                               {formatUnit(segment.sell.output)}
+                              {loss.sellHasRules && firstOfLoss && (
+                                <span
+                                  className='ml-1 text-xs'
+                                  title={t('Includes request rules')}
+                                >
+                                  *
+                                </span>
+                              )}
                             </td>
                             {segment.lower === 0 && firstOfLoss ? (
                               vendorCell(row.model)

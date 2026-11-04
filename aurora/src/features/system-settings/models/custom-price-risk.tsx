@@ -41,6 +41,14 @@ function getTierUnitPrices(values?: PricingSyncValues): UnitPrice[] | null {
   }))
 }
 
+function hasRequestRules(values?: PricingSyncValues): boolean {
+  if (getSyncPriceKind(values) !== 'expression') return false
+  return Boolean(
+    splitBillingExprAndRequestRules(String(values?.billing_expr))
+      .requestRuleExpr
+  )
+}
+
 // One price tier, valid for inputs up to `upper` tokens (Infinity for the last).
 type PriceTier = { upper: number; price: UnitPrice }
 
@@ -60,7 +68,9 @@ function getPriceTiers(values?: PricingSyncValues): PriceTier[] | null {
   for (const [index, tier] of config.tiers.entries()) {
     let upper = Infinity
     for (const condition of tier.conditions) {
-      if (condition.var !== 'len') return null
+      // `p` is the input token count; it only differs from `len` when part of
+      // the input is priced separately (e.g. cached tokens).
+      if (condition.var === 'c') return null
       if (condition.op === '<=' || condition.op === '<') {
         upper = Math.min(upper, Number(condition.value))
       }
@@ -88,6 +98,9 @@ export type Overage = {
   sell: UnitPrice
   ratio: number
   segments: PriceSegment[]
+  // The current price carries request rules (e.g. a peak-hour multiplier) that
+  // this comparison does not apply.
+  sellHasRules: boolean
 }
 
 function overageRatio(sell: UnitPrice, cost: UnitPrice): number {
@@ -109,9 +122,41 @@ function tierAt(tiers: PriceTier[], upper: number): UnitPrice {
     .price
 }
 
+// Boundaries such as 32,000 and 32,768 (a vendor's "32k" and a context size) are the
+// same cut in practice; snapping them avoids slivers like "32k - 32k".
+const BOUNDARY_TOLERANCE = 1.05
+
+function snapBounds(sell: PriceTier[], cost: PriceTier[]): PriceTier[][] {
+  const finite = [...new Set([...sell, ...cost].map((tier) => tier.upper))]
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b)
+  const canonical = new Map<number, number>()
+  let cluster: number[] = []
+  const flush = () => {
+    const top = cluster[cluster.length - 1]
+    for (const bound of cluster) canonical.set(bound, top)
+    cluster = []
+  }
+  for (const bound of finite) {
+    if (cluster.length && bound > cluster[0] * BOUNDARY_TOLERANCE) flush()
+    cluster.push(bound)
+  }
+  if (cluster.length) flush()
+  return [sell, cost].map((tiers) =>
+    tiers.map((tier) => ({
+      ...tier,
+      upper: canonical.get(tier.upper) ?? tier.upper,
+    }))
+  )
+}
+
 // Splits the input length at every tier boundary of either side, so each segment
 // compares the price a request of that length pays on both sides.
-function alignSegments(sell: PriceTier[], cost: PriceTier[]): PriceSegment[] {
+function alignSegments(
+  sellRaw: PriceTier[],
+  costRaw: PriceTier[]
+): PriceSegment[] {
+  const [sell, cost] = snapBounds(sellRaw, costRaw)
   const bounds = [
     ...new Set([...sell, ...cost].map((tier) => tier.upper)),
   ].sort((a, b) => a - b)
@@ -139,6 +184,15 @@ function findOverage(
   let segments: PriceSegment[]
   if (sellTiers && costTiers) {
     segments = alignSegments(sellTiers, costTiers)
+  } else if (costTiers) {
+    // The current price's tiers cannot be lined up, but the upstream's still can:
+    // show each of its ranges against our most expensive tier.
+    const sell = getTierUnitPrices(sellValues)
+    if (!sell) return null
+    segments = alignSegments(
+      [{ upper: Infinity, price: maxTier(sell) }],
+      costTiers
+    )
   } else {
     const sell = getTierUnitPrices(sellValues)
     const cost = getTierUnitPrices(costValues)
@@ -159,7 +213,13 @@ function findOverage(
     segment.ratio > best.ratio ? segment : best
   )
   if (worst.ratio <= 1 + EPSILON) return null
-  return { cost: worst.cost, sell: worst.sell, ratio: worst.ratio, segments }
+  return {
+    cost: worst.cost,
+    sell: worst.sell,
+    ratio: worst.ratio,
+    segments,
+    sellHasRules: hasRequestRules(sellValues),
+  }
 }
 
 // 32768 -> "32k" (context sizes), 200000 -> "200k", 1048576 -> "1M".
