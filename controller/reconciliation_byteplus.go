@@ -376,5 +376,6 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 	report.BillPayableKnown = true
 	report.BillScope = req.Scope
 	report.BillSplitItems = splitItems
+	report.BillSource = "byteplus"
 	common.ApiSuccess(c, report)
 }

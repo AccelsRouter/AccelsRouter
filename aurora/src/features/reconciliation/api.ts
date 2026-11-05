@@ -130,6 +130,9 @@ export type UpstreamBillReport = {
   // Empty for an uploaded bill.
   bill_scope: string
   bill_split_items: string[] | null
+  // The API the bill was pulled from ('byteplus', 'alibaba'); empty for an
+  // uploaded bill.
+  bill_source: string
   rows: UpstreamBillRow[]
   ours: UpstreamBillSide
   bill: UpstreamBillSide
@@ -183,7 +186,7 @@ export async function exportReconciliation(
   window.URL.revokeObjectURL(url)
 }
 
-export type BytePlusBillScope = 'channel_key' | 'account'
+export type UpstreamBillScope = 'channel_key' | 'account'
 
 // Pulls a BytePlus split bill for one billing month over the billing API
 // (using the configured BytePlus access keys) and compares it like an
@@ -192,11 +195,36 @@ export type BytePlusBillScope = 'channel_key' | 'account'
 export async function compareBytePlusBill(
   channelId: number,
   period: string,
-  scope: BytePlusBillScope,
+  scope: UpstreamBillScope,
   billTzOffset?: number
 ): Promise<UpstreamBillReport> {
   const res = await api.post<ApiResp<UpstreamBillReport>>(
     `/api/admin/reconciliation/byteplus-bill${rangeQuery()}`,
+    {
+      channel_id: channelId,
+      period,
+      scope,
+      bill_tz_offset: billTzOffset ?? null,
+    },
+    { timeout: 150_000 }
+  )
+  if (!res.data?.success || !res.data.data)
+    throw new Error(res.data?.message || 'Failed to compare the bill')
+  return res.data.data
+}
+
+// Pulls one month of the Alibaba Cloud Model Studio bill (one row per model,
+// API key and day) over the Expenses and Costs API, using the configured
+// Alibaba Cloud access key, and compares it like an uploaded bill. The bill's
+// rows are days, so its zone is UTC+8 unless billTzOffset pins another.
+export async function compareAlibabaBill(
+  channelId: number,
+  period: string,
+  scope: UpstreamBillScope,
+  billTzOffset?: number
+): Promise<UpstreamBillReport> {
+  const res = await api.post<ApiResp<UpstreamBillReport>>(
+    `/api/admin/reconciliation/alibaba-bill${rangeQuery()}`,
     {
       channel_id: channelId,
       period,

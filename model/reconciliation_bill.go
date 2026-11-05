@@ -27,7 +27,11 @@ import (
 type UpstreamBillEntry struct {
 	// Wall is the bill's wall-clock time read as if it were UTC; the zone
 	// offset is applied when the bill is compared.
-	Wall             int64
+	Wall int64
+	// Span is how long after Wall the row's usage extends, in seconds: 0 for
+	// a per-call row or a settlement window inside one hour, 86400 for a
+	// daily bill row.
+	Span             int64
 	Model            string
 	PromptTokens     int64
 	CompletionTokens int64
@@ -255,11 +259,14 @@ type UpstreamBillReport struct {
 	// usage attributed to the channel's own API keys, listed in
 	// BillSplitItems) or "account" (everything the account was billed for).
 	// Empty for an uploaded bill.
-	BillScope      string            `json:"bill_scope"`
-	BillSplitItems []string          `json:"bill_split_items"`
-	Rows           []UpstreamBillRow `json:"rows"`
-	Ours           UpstreamBillSide  `json:"ours"`
-	Bill           UpstreamBillSide  `json:"bill"`
+	BillScope      string   `json:"bill_scope"`
+	BillSplitItems []string `json:"bill_split_items"`
+	// BillSource names the API the bill was pulled from ("byteplus",
+	// "alibaba"); empty for an uploaded bill.
+	BillSource string            `json:"bill_source"`
+	Rows       []UpstreamBillRow `json:"rows"`
+	Ours       UpstreamBillSide  `json:"ours"`
+	Bill       UpstreamBillSide  `json:"bill"`
 }
 
 const (
@@ -305,9 +312,11 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 		}
 	}
 
+	// maxWall is the last second a row covers: a spanned row (a daily bill)
+	// reaches to the end of its span.
 	minWall, maxWall := entries[0].Wall, entries[0].Wall
-	for _, e := range entries[1:] {
-		minWall, maxWall = min(minWall, e.Wall), max(maxWall, e.Wall)
+	for _, e := range entries {
+		minWall, maxWall = min(minWall, e.Wall), max(maxWall, e.Wall+max(e.Span-1, 0))
 	}
 	// Wide enough for any offset; narrowed once the offset is known.
 	var scans []upstreamBillHourScan
@@ -334,14 +343,25 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 		ourHourly[upstreamBillHourKey{scans[i].CreatedAt, scans[i].ModelName}] += scans[i].Requests
 	}
 	// Offset detection scores hours where the bill and we both saw the model;
-	// an aggregated row counts as presence (1), a per-call row as one call.
+	// an aggregated row counts as presence (1), a per-call row as one call. A
+	// row spanning several hours (a daily bill) counts once when we saw the
+	// model in any hour it covers.
 	matched := func(offset int) int64 {
+		var score int64
 		billHourly := map[upstreamBillHourKey]int64{}
 		for _, e := range entries {
 			at := e.Wall - int64(offset)*60
-			billHourly[upstreamBillHourKey{at - at%3600, e.Model}] += max(e.Requests, 1)
+			if e.Span <= 3600 {
+				billHourly[upstreamBillHourKey{at - at%3600, e.Model}] += max(e.Requests, 1)
+				continue
+			}
+			for h := at - at%3600; h < at+e.Span; h += 3600 {
+				if ourHourly[upstreamBillHourKey{h, e.Model}] > 0 {
+					score++
+					break
+				}
+			}
 		}
-		var score int64
 		for key, n := range billHourly {
 			score += min(n, ourHourly[key])
 		}

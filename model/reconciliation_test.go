@@ -194,3 +194,35 @@ func TestCompareUpstreamBillAggregatedEntries(t *testing.T) {
 	assert.Equal(t, UpstreamBillRow{Model: "seedream-4-0", Bill: UpstreamBillSide{UsageUnit: "images", UsageAmount: 3, Cost: 0.09}}, rep.Rows[0])
 	assert.Equal(t, int64(0), rep.Bill.Requests)
 }
+
+// A daily bill row spans its whole day: with the zone pinned, our records
+// from every hour of that day fall in the range, and the row matches when
+// we saw the model in any of those hours.
+func TestCompareUpstreamBillDailyRows(t *testing.T) {
+	DB.Exec("DELETE FROM channels WHERE id = 12")
+	DB.Exec("DELETE FROM quota_data WHERE channel_id = 12")
+	require.NoError(t, DB.Create(&Channel{Id: 12, Name: "alibaba"}).Error)
+	// 2026-10-08 23:00 UTC+8 = 15:00 UTC: inside the bill's day, outside it read as UTC.
+	h := time.Date(2026, 10, 8, 15, 0, 0, 0, time.UTC).Unix()
+	require.NoError(t, DB.Create(&QuotaData{
+		UserID: 1, Username: "a", ModelName: "qwen-plus", CreatedAt: h, ChannelID: 12,
+		Count: 2, Quota: 10, TokenUsed: 300, PromptTokens: 200, CompletionTokens: 100,
+	}).Error)
+	day := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC).Unix()
+	entries := []UpstreamBillEntry{
+		{Wall: day, Span: 86400, Model: "qwen-plus", PromptTokens: 200, Cost: 0.001},
+		{Wall: day, Span: 86400, Model: "qwen-plus", CompletionTokens: 100, Cost: 0.002},
+	}
+	pinned := 480
+	rep, err := CompareUpstreamBill(12, entries, &pinned, 480, nil)
+	require.NoError(t, err)
+	assert.Equal(t, day-8*3600, rep.From)
+	assert.Equal(t, day-8*3600+23*3600, rep.To)
+	assert.Equal(t, int64(2), rep.MatchedRequests, "each daily row matches once")
+	require.Len(t, rep.Rows, 1)
+	assert.Equal(t, UpstreamBillRow{
+		Model: "qwen-plus",
+		Ours:  UpstreamBillSide{Requests: 2, Tokens: 300, PromptTokens: 200, CompletionTokens: 100, Quota: 10},
+		Bill:  UpstreamBillSide{Tokens: 300, PromptTokens: 200, CompletionTokens: 100, Cost: 0.003},
+	}, rep.Rows[0])
+}

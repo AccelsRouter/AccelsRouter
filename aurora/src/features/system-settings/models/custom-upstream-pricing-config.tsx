@@ -1,3 +1,4 @@
+import { CustomAlibabaCloudCard } from './custom-alibaba-cloud-card'
 import { CustomBytePlusPricingCard } from './custom-byteplus-pricing-card'
 import { CustomVendorPriceCatalog } from './custom-vendor-price-catalog'
 
@@ -7,6 +8,7 @@ export function CustomUpstreamPricingConfig() {
   return (
     <div className='max-w-3xl space-y-8'>
       <CustomBytePlusPricingCard />
+      <CustomAlibabaCloudCard />
       <CustomVendorPriceCatalog />
     </div>
   )

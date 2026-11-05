@@ -40,17 +40,18 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { getChannels } from '@/features/channels/api'
 import {
-  type BytePlusBillScope,
+  compareAlibabaBill,
   compareBytePlusBill,
   compareUpstreamBill,
   type UpstreamBillReport,
   type UpstreamBillRow,
+  type UpstreamBillScope,
   type UpstreamBillSide,
 } from './api'
 
 const AUTO_ZONE = 'auto'
 
-type BillSource = 'file' | 'byteplus'
+type BillSource = 'file' | 'byteplus' | 'alibaba'
 
 // The last twelve billing months, newest first, as YYYY-MM.
 const BILL_PERIODS = Array.from({ length: 12 }, (_, i) =>
@@ -384,12 +385,24 @@ export function UpstreamBillDialog(props: {
   const { t } = useTranslation()
   const [source, setSource] = useState<BillSource>('file')
   const [period, setPeriod] = useState(BILL_PERIODS[0])
-  const [scope, setScope] = useState<BytePlusBillScope>('channel_key')
+  const [scope, setScope] = useState<UpstreamBillScope>('channel_key')
   const [channelId, setChannelId] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [zone, setZone] = useState(AUTO_ZONE)
   const [rateText, setRateText] = useState('')
   const [report, setReport] = useState<UpstreamBillReport | null>(null)
+  // What each bill source compares, as the dialog's description.
+  const descriptions: Record<BillSource, string> = {
+    file: t(
+      "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model."
+    ),
+    byteplus: t(
+      'Pull one month of the BytePlus split bill over its billing API (5-minute settlement windows, no per-call counts) and compare it with what this channel recorded, per model. Model versions (-YYMMDD) are folded into the product the bill names; cached input counts as input on both sides.'
+    ),
+    alibaba: t(
+      'Pull one month of the Model Studio bill over the Alibaba Cloud billing API (one row per model, API key and day, no per-call counts) and compare it with what this channel recorded, per model. Dated snapshots (-YYYY-MM-DD) and -latest fold into the model the bill names; cached input counts as input on both sides. The bill is cut in UTC+8 unless another zone is pinned.'
+    ),
+  }
 
   const channels = useQuery({
     queryKey: ['reconciliation-bill-channels'],
@@ -405,25 +418,20 @@ export function UpstreamBillDialog(props: {
   )
 
   const mutation = useMutation({
-    mutationFn: () =>
-      source === 'byteplus'
-        ? compareBytePlusBill(
-            Number(channelId),
-            period,
-            scope,
-            zone === AUTO_ZONE ? undefined : Number(zone)
-          )
-        : compareUpstreamBill(
-            Number(channelId),
-            file as File,
-            zone === AUTO_ZONE ? undefined : Number(zone)
-          ),
+    mutationFn: () => {
+      const billZone = zone === AUTO_ZONE ? undefined : Number(zone)
+      if (source === 'byteplus')
+        return compareBytePlusBill(Number(channelId), period, scope, billZone)
+      if (source === 'alibaba')
+        return compareAlibabaBill(Number(channelId), period, scope, billZone)
+      return compareUpstreamBill(Number(channelId), file as File, billZone)
+    },
     onSuccess: setReport,
   })
 
   const rate = Number(rateText) > 0 ? Number(rateText) : 0
   const canCompare =
-    (source === 'byteplus' || Boolean(file)) &&
+    (source !== 'file' || Boolean(file)) &&
     Number(channelId) > 0 &&
     !mutation.isPending
 
@@ -434,15 +442,7 @@ export function UpstreamBillDialog(props: {
       contentClassName='sm:max-w-5xl'
       bodyClassName='space-y-4'
       title={t('Upstream bill')}
-      description={
-        source === 'byteplus'
-          ? t(
-              'Pull one month of the BytePlus split bill over its billing API (5-minute settlement windows, no per-call counts) and compare it with what this channel recorded, per model. Model versions (-YYMMDD) are folded into the product the bill names; cached input counts as input on both sides.'
-            )
-          : t(
-              "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model."
-            )
-      }
+      description={descriptions[source]}
       footer={
         <>
           {report && (
@@ -478,6 +478,9 @@ export function UpstreamBillDialog(props: {
             <NativeSelectOption value='byteplus'>
               {t('BytePlus billing API')}
             </NativeSelectOption>
+            <NativeSelectOption value='alibaba'>
+              {t('Alibaba Cloud Model Studio billing API')}
+            </NativeSelectOption>
           </NativeSelect>
         </Field>
         <Field>
@@ -499,7 +502,7 @@ export function UpstreamBillDialog(props: {
             ))}
           </NativeSelect>
         </Field>
-        {source === 'byteplus' ? (
+        {source !== 'file' ? (
           <>
             <Field>
               <FieldLabel htmlFor='upstream-bill-period'>
@@ -524,13 +527,15 @@ export function UpstreamBillDialog(props: {
               <NativeSelect
                 id='upstream-bill-scope'
                 value={scope}
-                onChange={(e) => setScope(e.target.value as BytePlusBillScope)}
+                onChange={(e) => setScope(e.target.value as UpstreamBillScope)}
               >
                 <NativeSelectOption value='channel_key'>
                   {t("This channel's API key only")}
                 </NativeSelectOption>
                 <NativeSelectOption value='account'>
-                  {t('Whole BytePlus account')}
+                  {source === 'alibaba'
+                    ? t('Whole Alibaba Cloud account')
+                    : t('Whole BytePlus account')}
                 </NativeSelectOption>
               </NativeSelect>
             </Field>
@@ -604,18 +609,27 @@ export function UpstreamBillDialog(props: {
                 keys: (report.bill_split_items ?? []).join(', '),
               }) + ' · '}
             {report.bill_scope === 'account' && t('whole account bill') + ' · '}
-            {report.bill_requests_known
-              ? t(
-                  '{{matched}} of {{total}} bill requests fell in an hour we recorded',
-                  {
-                    matched: formatNumber(report.matched_requests),
-                    total: formatNumber(report.bill.requests),
-                  }
-                )
-              : t(
-                  '{{matched}} bill settlement windows fell in an hour we recorded',
-                  { matched: formatNumber(report.matched_requests) }
-                )}
+            {report.bill_requests_known &&
+              t(
+                '{{matched}} of {{total}} bill requests fell in an hour we recorded',
+                {
+                  matched: formatNumber(report.matched_requests),
+                  total: formatNumber(report.bill.requests),
+                }
+              )}
+            {!report.bill_requests_known &&
+              report.bill_source !== 'alibaba' &&
+              t(
+                '{{matched}} bill settlement windows fell in an hour we recorded',
+                { matched: formatNumber(report.matched_requests) }
+              )}
+            {report.bill_source === 'alibaba' &&
+              t(
+                '{{matched}} bill rows (model and day) fell on a day we recorded',
+                {
+                  matched: formatNumber(report.matched_requests),
+                }
+              )}
           </p>
           <p className='text-muted-foreground text-xs'>
             {t(
@@ -627,9 +641,15 @@ export function UpstreamBillDialog(props: {
                   'Our records for this period carry no input / output split; compare the token totals.'
                 )}
             {report.bill_payable_known &&
+              report.bill_source !== 'alibaba' &&
               ' ' +
                 t(
                   'The bill column is the amount billed after the contract discount; "payable" is what was charged after coupons and free credit, tax included.'
+                )}
+            {report.bill_source === 'alibaba' &&
+              ' ' +
+                t(
+                  'The bill column is the list price less the contract discount; "payable" is what was charged after coupons and free quota, before tax.'
                 )}
           </p>
           <ComparisonTable report={report} rate={rate} />
