@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -172,23 +171,6 @@ func TestCustomRemoveChannelModels(t *testing.T) {
 	assert.False(t, response.Success)
 }
 
-func TestCustomVendorPricesFromModelsDev(t *testing.T) {
-	const body = `{
-"hpc-ai":{"models":{"glm-5.1":{"cost":{"input":0.615,"output":2.46}}}},
-"zai":{"models":{"glm-5.1":{"cost":{"input":1.4,"output":4.4,"cache_read":0.26}},"free":{"cost":{"input":0,"output":0}}}},
-"alibaba":{"models":{"glm-5.1":{"cost":{"input":9,"output":9}},"qwen3.7-plus":{"cost":{"input":0.4,"output":1.6}}}},
-"alibaba-cn":{"models":{"qwen-cn-only":{"cost":{"input":0.3,"output":1}}}}}`
-	prices, err := customVendorPricesFromModelsDev(strings.NewReader(body))
-	require.NoError(t, err)
-	assert.Equal(t, "zai", prices["glm-5.1"].Provider)
-	assert.Equal(t, 1.4, prices["glm-5.1"].Input)
-	assert.Equal(t, "alibaba", prices["qwen3.7-plus"].Provider)
-	assert.NotContains(t, prices, "free")
-	assert.NotContains(t, prices, "qwen-cn-only")
-	_, err = customVendorPricesFromModelsDev(strings.NewReader(`{"hpc-ai":{"models":{}}}`))
-	assert.Error(t, err)
-}
-
 func customVendorFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile("testdata/vendor_pages/" + name)
@@ -282,4 +264,16 @@ func TestCustomAlibabaVendorPrices(t *testing.T) {
 	assert.Equal(t, 1.6, prices["qwen-max"].Input)
 	assert.NotContains(t, prices, "deepseek-v4-pro", "third-party models are not Alibaba's own price")
 	assert.NotContains(t, prices, "qwen-peaky", "time-band pricing is not guessed")
+}
+
+func TestCustomAlibabaVendorNoteExplainsSkippedModels(t *testing.T) {
+	models := []customAlibabaModel{
+		{Model: "qwen-max", Provider: "qwen"},
+		{Model: "qwen-peaky", Provider: "qwen"},
+		{Model: "deepseek-v4-pro", Provider: "deepseek"},
+	}
+	prices := map[string]customVendorPrice{"qwen-max": {}}
+	note := customAlibabaVendorNote(models, prices)
+	assert.Contains(t, note, "lists 3 models; 1 are third-party")
+	assert.Contains(t, note, "1 Qwen models skipped for unreadable prices (e.g. qwen-peaky)")
 }

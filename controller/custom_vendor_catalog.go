@@ -34,20 +34,20 @@ const (
 
 // customVendorSourcePriority decides which source wins when several price a model.
 var customVendorSourcePriority = []string{
-	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai", "models.dev",
+	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai",
 }
 
 type customVendorSourceResult struct {
 	Name   string
 	Prices map[string]customVendorPrice
+	Note   string
 	Err    error
 }
 
 // fetchCustomVendorSources reads every source; one that fails is reported, not fatal.
 func fetchCustomVendorSources(ctx context.Context) []customVendorSourceResult {
 	client := &http.Client{Timeout: 30 * time.Second}
-	results := make([]customVendorSourceResult, 0, len(customVendorPageSources)+2)
-	results = append(results, customVendorSourceResult{Name: "models.dev"})
+	results := make([]customVendorSourceResult, 0, len(customVendorPageSources)+1)
 	for _, source := range customVendorPageSources {
 		results = append(results, customVendorSourceResult{Name: source.Name})
 	}
@@ -59,15 +59,8 @@ func fetchCustomVendorSources(ctx context.Context) []customVendorSourceResult {
 		go func(result *customVendorSourceResult) {
 			defer wg.Done()
 			switch result.Name {
-			case "models.dev":
-				body, err := fetchCustomVendorBody(ctx, client, customVendorPricesURL)
-				if err != nil {
-					result.Err = err
-					return
-				}
-				result.Prices, result.Err = customVendorPricesFromModelsDev(strings.NewReader(string(body)))
 			case "alibaba":
-				result.Prices, result.Err = fetchCustomAlibabaVendorPrices(ctx, client)
+				result.Prices, result.Note, result.Err = fetchCustomAlibabaVendorPrices(ctx, client)
 			default:
 				for _, source := range customVendorPageSources {
 					if source.Name != result.Name {
@@ -270,6 +263,7 @@ func RefreshCustomVendorPrices(ctx context.Context, force bool) error {
 	defer customVendorRefreshMu.Unlock()
 	now := common.GetTimestamp()
 	summary := &customVendorChangeSummary{}
+	dropRetiredCustomVendorSources()
 	for _, result := range fetchCustomVendorSources(ctx) {
 		status := model.CustomVendorPriceSource{Source: result.Name, RefreshedAt: now}
 		err := result.Err
@@ -278,7 +272,7 @@ func RefreshCustomVendorPrices(ctx context.Context, force bool) error {
 		}
 		switch {
 		case err == nil:
-			status.Status, status.Models = "ok", len(result.Prices)
+			status.Status, status.Models, status.Message = "ok", len(result.Prices), result.Note
 		case strings.HasPrefix(err.Error(), "suspect"):
 			status.Status, status.Message = "suspect", err.Error()
 		default:
@@ -290,6 +284,15 @@ func RefreshCustomVendorPrices(ctx context.Context, force bool) error {
 	}
 	notifyCustomVendorChanges(ctx, summary)
 	return nil
+}
+
+// dropRetiredCustomVendorSources removes what sources that are no longer read left
+// behind, so they stop showing up in the catalog.
+func dropRetiredCustomVendorSources() {
+	for _, source := range []string{"models.dev"} {
+		model.DB.Where("source = ?", source).Delete(&model.CustomVendorPrice{})
+		model.DB.Where("source = ?", source).Delete(&model.CustomVendorPriceSource{})
+	}
 }
 
 func notifyCustomVendorChanges(ctx context.Context, summary *customVendorChangeSummary) {
@@ -375,6 +378,9 @@ func customVendorSourceMessages() (map[string]string, error) {
 	for _, status := range statuses {
 		if status.Status == "ok" {
 			messages[status.Source] = fmt.Sprintf("ok: %d models", status.Models)
+			if status.Message != "" {
+				messages[status.Source] += " (" + status.Message + ")"
+			}
 		} else {
 			messages[status.Source] = "error: " + status.Message
 		}

@@ -118,7 +118,7 @@ func TestResolveCustomVendorPricesPrefersManualThenVendorSources(t *testing.T) {
 		source string
 		price  customVendorPrice
 	}{
-		{"models.dev", customVendorTestPrice(0.615, 2.46)},
+		{"kimi", customVendorTestPrice(0.615, 2.46)},
 		{"z.ai", customVendorTestPrice(1.4, 4.4)},
 	} {
 		row := customVendorRowFromPrice("glm-5.1", entry.source, entry.price, now)
@@ -126,7 +126,7 @@ func TestResolveCustomVendorPricesPrefersManualThenVendorSources(t *testing.T) {
 	}
 	prices, manual, err := resolveCustomVendorPrices()
 	require.NoError(t, err)
-	assert.InDelta(t, 1.4, prices["glm-5.1"].Input, 1e-9, "a vendor page beats the aggregator")
+	assert.InDelta(t, 1.4, prices["glm-5.1"].Input, 1e-9, "the higher-priority source wins")
 	assert.False(t, manual["glm-5.1"])
 
 	body := map[string]any{"model_name": "glm-5.1", "input": 1.2, "output": 4.0, "note": "confirmed"}
