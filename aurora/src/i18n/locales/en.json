@@ -2416,8 +2416,6 @@
     "Whole BytePlus account": "Whole BytePlus account",
     "bill filtered to {{keys}}": "bill filtered to {{keys}}",
     "whole account bill": "whole account bill",
-    "API key SID": "API key SID",
-    "apikey-…; optional, skips resolving the channel key (comma-separate several)": "apikey-…; optional, skips resolving the channel key (comma-separate several)",
     "Suspended": "Suspended",
     "Bill source": "Bill source",
     "Exported file (.xlsx / CSV)": "Exported file (.xlsx / CSV)",

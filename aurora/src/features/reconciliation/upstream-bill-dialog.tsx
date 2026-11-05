@@ -385,7 +385,6 @@ export function UpstreamBillDialog(props: {
   const [source, setSource] = useState<BillSource>('file')
   const [period, setPeriod] = useState(BILL_PERIODS[0])
   const [scope, setScope] = useState<BytePlusBillScope>('channel_key')
-  const [splitItemIds, setSplitItemIds] = useState('')
   const [channelId, setChannelId] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [zone, setZone] = useState(AUTO_ZONE)
@@ -412,7 +411,6 @@ export function UpstreamBillDialog(props: {
             Number(channelId),
             period,
             scope,
-            scope === 'channel_key' ? splitItemIds : '',
             zone === AUTO_ZONE ? undefined : Number(zone)
           )
         : compareUpstreamBill(
@@ -536,21 +534,6 @@ export function UpstreamBillDialog(props: {
                 </NativeSelectOption>
               </NativeSelect>
             </Field>
-            {scope === 'channel_key' && (
-              <Field>
-                <FieldLabel htmlFor='upstream-bill-split-items'>
-                  {t('API key SID')}
-                </FieldLabel>
-                <Input
-                  id='upstream-bill-split-items'
-                  value={splitItemIds}
-                  onChange={(e) => setSplitItemIds(e.target.value)}
-                  placeholder={t(
-                    'apikey-…; optional, skips resolving the channel key (comma-separate several)'
-                  )}
-                />
-              </Field>
-            )}
           </>
         ) : (
           <Field>

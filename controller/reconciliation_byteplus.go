@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -138,9 +137,6 @@ type bytePlusBillPage struct {
 }
 
 var bytePlusBillPeriodRe = regexp.MustCompile(`^\d{4}-(0[1-9]|1[0-2])$`)
-
-// bytePlusSplitItemRe is an API key's split item id as the bill carries it.
-var bytePlusSplitItemRe = regexp.MustCompile(`^apikey-\d{14}-[a-z0-9]+$`)
 
 func fetchBytePlusSplitBill(ctx context.Context, client *http.Client, accessKey, secretKey, period, splitItemID string) ([]bytePlusBillRow, error) {
 	var rows []bytePlusBillRow
@@ -285,13 +281,9 @@ func bytePlusModelKey(name string) string {
 // everything the account was billed for.
 func AdminCompareBytePlusBill(c *gin.Context) {
 	var req struct {
-		ChannelId int    `json:"channel_id"`
-		Period    string `json:"period"`
-		Scope     string `json:"scope"`
-		// SplitItemIDs are the bill's split items ("apikey-...") to filter
-		// to, given by hand; with any set, the channel's keys are not
-		// resolved (which needs ark:OpenGetApiKeySID).
-		SplitItemIDs string `json:"split_item_ids"`
+		ChannelId    int    `json:"channel_id"`
+		Period       string `json:"period"`
+		Scope        string `json:"scope"`
 		BillTzOffset *int   `json:"bill_tz_offset"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -330,16 +322,7 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	var splitItems []string
 	var err error
-	for _, sid := range strings.FieldsFunc(req.SplitItemIDs, func(r rune) bool { return r == ',' || r == '\n' || r == ' ' || r == ';' }) {
-		if !bytePlusSplitItemRe.MatchString(sid) {
-			common.ApiErrorMsg(c, "API key SID must look like apikey-20261019133633-rp9x5: "+sid)
-			return
-		}
-		if !slices.Contains(splitItems, sid) {
-			splitItems = append(splitItems, sid)
-		}
-	}
-	if req.Scope == "channel_key" && len(splitItems) == 0 {
+	if req.Scope == "channel_key" {
 		channel, err := model.GetChannelById(req.ChannelId, true)
 		if err != nil {
 			common.ApiError(c, err)
@@ -354,7 +337,7 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 		for _, key := range keys {
 			sid, err := bytePlusApiKeySID(ctx, client, accessKey, secretKey, strings.TrimSpace(key))
 			if err != nil {
-				common.ApiErrorMsg(c, "BytePlus could not resolve the channel's API key in this account ("+err.Error()+"); enter the key's SID by hand or compare the whole account")
+				common.ApiErrorMsg(c, "BytePlus could not resolve the channel's API key in this account ("+err.Error()+"); compare the whole account instead")
 				return
 			}
 			if !seen[sid] {

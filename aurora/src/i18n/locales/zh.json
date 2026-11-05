@@ -2424,8 +2424,6 @@
     "Whole BytePlus account": "整个 BytePlus 账号",
     "bill filtered to {{keys}}": "账单已过滤到 {{keys}}",
     "whole account bill": "整个账号的账单",
-    "API key SID": "API key SID",
-    "apikey-…; optional, skips resolving the channel key (comma-separate several)": "apikey-…；选填，填了就不反查渠道 key（多个用逗号分隔）",
     "Suspended": "已暂停",
     "Bill source": "账单来源",
     "Exported file (.xlsx / CSV)": "导出文件（.xlsx / CSV）",

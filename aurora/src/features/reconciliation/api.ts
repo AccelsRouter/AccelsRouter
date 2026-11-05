@@ -188,13 +188,11 @@ export type BytePlusBillScope = 'channel_key' | 'account'
 // Pulls a BytePlus split bill for one billing month over the billing API
 // (using the configured BytePlus access keys) and compares it like an
 // uploaded bill. scope 'channel_key' keeps only the usage attributed to the
-// channel's own API keys, resolved from the channel's key or given by hand
-// as split item ids ("apikey-..."); 'account' takes the whole account.
+// channel's own API keys; 'account' takes the whole account.
 export async function compareBytePlusBill(
   channelId: number,
   period: string,
   scope: BytePlusBillScope,
-  splitItemIds: string,
   billTzOffset?: number
 ): Promise<UpstreamBillReport> {
   const res = await api.post<ApiResp<UpstreamBillReport>>(
@@ -203,7 +201,6 @@ export async function compareBytePlusBill(
       channel_id: channelId,
       period,
       scope,
-      split_item_ids: splitItemIds,
       bill_tz_offset: billTzOffset ?? null,
     },
     { timeout: 150_000 }
