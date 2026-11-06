@@ -330,6 +330,13 @@ func alibabaApiKeyIDs(ctx context.Context, client *http.Client, host, accessKey,
 	return ids, nil
 }
 
+// alibabaModelStudioRow says whether a bill row is Model Studio usage: its
+// product code, or an instance id shaped like Model Studio's (the product
+// code of the international site is not pinned down).
+func alibabaModelStudioRow(it alibabaBillItem) bool {
+	return it.ProductCode == alibabaBillingProduct || strings.Count(it.InstanceID, ";") >= 3
+}
+
 // alibabaBillEntries turns Model Studio pay-as-you-go rows into bill entries
 // spanning their day: tokens classified by the instance id's input/output
 // type (cached input counts towards the prompt too, as in our records), the
@@ -342,7 +349,7 @@ func alibabaBillEntries(items []alibabaBillItem, apiKeyIDs []string) ([]model.Up
 	entries := make([]model.UpstreamBillEntry, 0, len(items))
 	for i, it := range items {
 		segments := strings.Split(it.InstanceID, ";")
-		if it.ProductCode != alibabaBillingProduct && len(segments) < 4 {
+		if !alibabaModelStudioRow(it) {
 			continue
 		}
 		if (it.Item != "" && it.Item != "PayAsYouGoBill") || it.SubscriptionType == "Subscription" {
@@ -498,7 +505,7 @@ func AdminCompareAlibabaBill(c *gin.Context) {
 		rows := make([]json.RawMessage, 0, len(items))
 		for _, it := range items {
 			keyID, _, _ := strings.Cut(it.InstanceID, ";")
-			if it.ProductCode == alibabaBillingProduct && (len(apiKeyIDs) == 0 || slices.Contains(apiKeyIDs, keyID)) {
+			if alibabaModelStudioRow(it) && (len(apiKeyIDs) == 0 || slices.Contains(apiKeyIDs, keyID)) {
 				rows = append(rows, it.Raw)
 			}
 		}
