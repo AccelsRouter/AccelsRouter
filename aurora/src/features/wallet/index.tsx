@@ -318,6 +318,10 @@ export function Wallet(props: WalletProps) {
               <div className='border-border/60 bg-muted/30 text-muted-foreground rounded-lg border p-4 text-sm'>
                 {t(
                   'Your credit is provided by your distributor. To add credit, please contact your distributor.'
+                )}{' '}
+                {t(
+                  'It is a spending allowance granted by {{brand}}, not a deposit held for you: when the relationship ends the distributor reclaims what is left, and any refund is settled with the distributor directly.',
+                  { brand: orgContext?.brand_name || t('your distributor') }
                 )}
               </div>
             )}

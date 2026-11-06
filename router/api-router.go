@@ -379,6 +379,8 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.PUT("/customers/:id/pricing", controller.SetMyCustomerPricing)
 			// Models + pricing saved as one validated, atomic offer.
 			resellerRoute.PUT("/customers/:id/offer", controller.SetMyCustomerOffer)
+			// Ending the relationship: allowed once the customer's allowance is zero.
+			resellerRoute.DELETE("/customers/:id", controller.RemoveMyCustomer)
 		}
 
 		personalByokRoute := apiRouter.Group("/personal_byok")

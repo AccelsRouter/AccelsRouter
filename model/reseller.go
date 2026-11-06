@@ -247,6 +247,64 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	return customer, nil
 }
 
+// ErrCustomerHoldsBalance refuses to unlink a customer that still has an
+// unconsumed allowance: the reseller reclaims it first, so nothing the
+// reseller granted is silently left behind.
+var ErrCustomerHoldsBalance = errors.New("该客户仍有未消耗额度，请先全部回收再解除绑定")
+
+// RemoveResellerCustomer ends the relationship with a customer: the link is
+// removed, the customer org's keys are disabled and the org is suspended, so
+// it neither keeps consuming on the reseller's wallet nor turns into a
+// self-funded direct enterprise. Its members keep their accounts. The
+// customer's allowance must already be zero (ErrCustomerHoldsBalance).
+// Returns how many keys were disabled.
+func RemoveResellerCustomer(resellerOrgId, customerOrgId int) (int, error) {
+	var tokens []Token
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var customer Organization
+		if err := lockForUpdate(tx).Where("id = ?", customerOrgId).First(&customer).Error; err != nil {
+			return err
+		}
+		if customer.WalletQuota != 0 {
+			return ErrCustomerHoldsBalance
+		}
+		res := tx.Where("reseller_org_id = ? AND customer_org_id = ?", resellerOrgId, customerOrgId).Delete(&ResellerCustomerLink{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return errors.New("该组织不是你的客户")
+		}
+		if err := tx.Where("status = ?", common.TokenStatusEnabled).
+			Where("id IN (?)", tx.Table("workspace_tokens").Select("token_id").Where("org_id = ?", customerOrgId)).
+			Find(&tokens).Error; err != nil {
+			return err
+		}
+		if len(tokens) > 0 {
+			ids := make([]int, 0, len(tokens))
+			for _, t := range tokens {
+				ids = append(ids, t.Id)
+			}
+			if err := tx.Model(&Token{}).Where("id IN ?", ids).Update("status", common.TokenStatusDisabled).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&Organization{}).Where("id = ?", customerOrgId).
+			Updates(map[string]any{"status": OrgStatusSuspended, "updated_time": common.GetTimestamp()}).Error
+	})
+	if err != nil {
+		return 0, err
+	}
+	if err := invalidateTokensCache(tokens); err != nil {
+		common.SysError("failed to invalidate removed customer token cache: " + err.Error())
+	}
+	for _, t := range tokens {
+		InvalidateTokenWorkspaceCache(t.Id)
+	}
+	InvalidateOrgPayerCacheForOrg(customerOrgId)
+	return len(tokens), nil
+}
+
 // ListResellerCustomers returns the reseller's linked customers, each with the
 // org and the current net allocation.
 func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {

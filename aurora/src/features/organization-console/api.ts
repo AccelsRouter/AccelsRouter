@@ -343,6 +343,16 @@ export async function leaveMyOrganization(): Promise<void> {
     throw new Error(res.data?.message || 'Failed to leave organization')
 }
 
+// Ends the relationship with a customer whose allowance is already zero:
+// unlinks it, disables its keys and suspends its org.
+export async function removeCustomer(customerId: number): Promise<void> {
+  const res = await api.delete<ApiResp<unknown>>(
+    `/api/reseller/customers/${customerId}`
+  )
+  if (!res.data?.success)
+    throw new Error(res.data?.message || 'Failed to remove customer')
+}
+
 export async function revokeCustomerInvitation(
   customerId: number,
   invId: number
