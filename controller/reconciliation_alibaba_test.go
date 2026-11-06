@@ -51,14 +51,16 @@ func TestAlibabaCloudRegion(t *testing.T) {
 func TestAlibabaBillEntries(t *testing.T) {
 	items := []alibabaBillItem{
 		{InstanceID: "2965964;ws-1;qwen-plus;input_token;;0", BillingDate: "2026-10-08", Item: "PayAsYouGoBill", SubscriptionType: "PayAsYouGo", ProductCode: "bailian", Usage: "12345", UsageUnit: "Token", PretaxGrossAmount: 0.0049, InvoiceDiscount: 0.0009, PretaxAmount: 0.004},
-		{InstanceID: "2965964;ws-1;qwen-plus;output_token", BillingDate: "2026-10-08", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "1.5", UsageUnit: "KToken", PretaxGrossAmount: 0.0018, PretaxAmount: 0.0018},
-		{InstanceID: "2965964;ws-1;qwen-plus;cached_input_token;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "1,000", UsageUnit: "Token", PretaxGrossAmount: 0.0001, PretaxAmount: 0},
-		{InstanceID: "2965964;ws-1;wan2.2-t2i-flash;image;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "3", UsageUnit: "Piece", PretaxGrossAmount: 0.06, PretaxAmount: 0.06},
-		// Free-quota usage: covered by a resource plan, reported outside Usage.
-		{InstanceID: "2965964;ws-1;qwen3.8-flash;input_token;;1", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "0", UsageUnit: "Token", DeductedByResourcePackage: "87807"},
-		{InstanceID: "2965964;ws-1;qwen3.8-flash;output_token;;1", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "17", UsageUnit: "Token", DeductedByResourcePackage: "1300", PretaxGrossAmount: 0.00001, PretaxAmount: 0.00001},
+		{InstanceID: "2965964;ws-1;qwen-plus;output_token", BillingDate: "2026-10-08", Item: "PayAsYouGoBill", ProductCode: "sfm", Usage: "1.5", UsageUnit: "KToken", PretaxGrossAmount: 0.0018, PretaxAmount: 0.0018},
+		{InstanceID: "2965964;ws-1;qwen-plus;cached_input_token;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "sfm", Usage: "1,000", UsageUnit: "Token", PretaxGrossAmount: 0.0001, PretaxAmount: 0},
+		{InstanceID: "2965964;ws-1;wan2.2-t2i-flash;image;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "sfm", Usage: "3", UsageUnit: "Piece", PretaxGrossAmount: 0.06, PretaxAmount: 0.06},
+		// Usage a resource plan covered is reported outside Usage.
+		{InstanceID: "2965964;ws-1;qwen3.8-flash;input_token;;1", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "sfm", Usage: "0", UsageUnit: "Token", DeductedByResourcePackage: "87807"},
+		{InstanceID: "2965964;ws-1;qwen3.8-flash;output_token;;1", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "sfm", Usage: "17", UsageUnit: "Token", DeductedByResourcePackage: "1300", PretaxGrossAmount: 0.00001, PretaxAmount: 0.00001},
+		// Free-quota usage as the international site bills it: a row with nothing on it.
+		{InstanceID: "2965964;ws-1;qwen3.8-flash;input_token_cache;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "sfm", Usage: "0", UsageUnit: "千tokens", DeductedByResourcePackage: ""},
 		// Another key's usage.
-		{InstanceID: "111;ws-1;qwen-max;input_token;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "500", UsageUnit: "Token", PretaxGrossAmount: 0.001, PretaxAmount: 0.001},
+		{InstanceID: "111;ws-1;qwen-max;input_token;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "sfm", Usage: "500", UsageUnit: "Token", PretaxGrossAmount: 0.001, PretaxAmount: 0.001},
 		// Not model usage.
 		{InstanceID: "i-abc", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "ecs", Usage: "24", UsageUnit: "Hour", PretaxGrossAmount: 1, PretaxAmount: 1},
 		{InstanceID: "sp-123", BillingDate: "2026-10-01", Item: "SubscriptionOrder", SubscriptionType: "Subscription", ProductCode: "bailian", PretaxGrossAmount: 100, PretaxAmount: 100},
@@ -74,6 +76,7 @@ func TestAlibabaBillEntries(t *testing.T) {
 		{Wall: d9, Span: 86400, Model: "wan2.2-t2i-flash", UsageUnit: "Piece", UsageAmount: 3, Cost: 0.06, Payable: 0.06},
 		{Wall: d9, Span: 86400, Model: "qwen3.8-flash", PromptTokens: 87807},
 		{Wall: d9, Span: 86400, Model: "qwen3.8-flash", CompletionTokens: 1317, Cost: 0.00001, Payable: 0.00001},
+		{Wall: d9, Span: 86400, Model: "qwen3.8-flash"},
 		{Wall: d9, Span: 86400, Model: "qwen-max", PromptTokens: 500, Cost: 0.001, Payable: 0.001},
 	}, entries)
 

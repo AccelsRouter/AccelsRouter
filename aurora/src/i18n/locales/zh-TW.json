@@ -2462,6 +2462,7 @@
     "The bill column is the list price less the contract discount; \"payable\" is what was charged after coupons and free quota, before tax.": "帳單列是目錄價扣除合約折扣後的金額；「應付」是扣除代金券和免費額度後、不含稅的實際收費。",
     "Alibaba Cloud access key": "阿里雲存取金鑰",
     "RAM access key used to pull the Model Studio bill and list its API keys when comparing an Alibaba Cloud channel with the bill. It needs read access to Expenses and Costs (DescribeInstanceBill) and to Model Studio API keys (ListApiKeys).": "對帳阿里雲渠道時，用於拉取百煉（Model Studio）帳單和列出其 API Key 的 RAM 存取金鑰，需要有費用與成本（DescribeInstanceBill）和百煉 API Key（ListApiKeys）的讀取權限。",
+    "Free quota, not metered in the bill": "免費額度，帳單不計用量",
     "Suspended": "已暫停",
     "Bill source": "帳單來源",
     "Exported file (.xlsx / CSV)": "匯出檔案（.xlsx / CSV）",

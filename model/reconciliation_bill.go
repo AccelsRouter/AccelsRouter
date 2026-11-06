@@ -227,6 +227,9 @@ type UpstreamBillSide struct {
 	UsageAmount      int64   `json:"usage_amount"`
 	Cost             float64 `json:"cost"`
 	Payable          float64 `json:"payable"`
+	// Rows is how many bill rows named the model (bill side only): a row
+	// with nothing on it still says the upstream saw the model.
+	Rows int64 `json:"rows"`
 }
 
 // UpstreamBillRow is one model as the bill names it, with our rows mapped
@@ -414,6 +417,7 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 	}
 	for _, e := range entries {
 		b := &row(e.Model).Bill
+		b.Rows++
 		b.Requests += e.Requests
 		b.PromptTokens += e.PromptTokens
 		b.CompletionTokens += e.CompletionTokens

@@ -104,6 +104,8 @@ export type UpstreamBillSide = {
   // What the upstream actually charges after coupons / credits; meaningful
   // only when the report's bill_payable_known is set.
   payable: number
+  // Bill rows naming the model (bill side only).
+  rows: number
 }
 
 export type UpstreamBillRow = {

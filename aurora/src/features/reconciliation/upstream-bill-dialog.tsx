@@ -70,11 +70,12 @@ function zoneLabel(offsetMinutes: number): string {
 means we have no such figure for the period, shown as a dash, not a zero. */
 function Pair(props: {
   ours: number | null
-  bill: number
+  bill: number | null
   format?: (n: number) => string
 }) {
   const f = props.format ?? formatNumber
-  const differs = props.ours !== null && props.ours !== props.bill
+  const differs =
+    props.ours !== null && props.bill !== null && props.ours !== props.bill
   return (
     <span
       className={`inline-flex flex-col items-end tabular-nums ${differs ? 'text-destructive' : ''}`}
@@ -82,7 +83,9 @@ function Pair(props: {
       <span className={props.ours === null ? 'text-muted-foreground' : ''}>
         {props.ours === null ? '-' : f(props.ours)}
       </span>
-      <span className='text-muted-foreground text-[11px]'>{f(props.bill)}</span>
+      <span className='text-muted-foreground text-[11px]'>
+        {props.bill === null ? '-' : f(props.bill)}
+      </span>
     </span>
   )
 }
@@ -181,20 +184,31 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
             const billPresent = report.bill_requests_known
               ? r.bill.requests > 0
               : r.bill.tokens + r.bill.cost + r.bill.usage_amount > 0
+            /* Alibaba bills free-quota usage as a row with zero usage and
+            zero amounts: the bill saw the model but metered nothing. */
+            const freeQuota =
+              report.bill_source === 'alibaba' &&
+              !billPresent &&
+              r.bill.rows > 0
             const only =
               r.ours.requests === 0
                 ? t('Only in bill')
-                : !billPresent
-                  ? t('Only in ours')
-                  : ''
+                : freeQuota
+                  ? t('Free quota, not metered in the bill')
+                  : !billPresent
+                    ? t('Only in ours')
+                    : ''
             const tokens = isTokenRow(r)
+            const billTokens = (n: number) => (freeQuota ? null : n)
             const diff = usdFromQuota(r.ours.quota) - r.bill.cost / rate
             return (
               <tr key={r.model} className='hover:bg-muted/30'>
                 <td className='px-3 py-2 font-medium'>
                   {r.model || '-'}
                   {only && (
-                    <span className='text-destructive ml-2 text-[11px]'>
+                    <span
+                      className={`ml-2 text-[11px] ${freeQuota ? 'text-muted-foreground' : 'text-destructive'}`}
+                    >
                       {only}
                     </span>
                   )}
@@ -211,7 +225,10 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                 </td>
                 <td className='px-3 py-2 text-right'>
                   {tokens ? (
-                    <Pair ours={r.ours.tokens} bill={r.bill.tokens} />
+                    <Pair
+                      ours={r.ours.tokens}
+                      bill={billTokens(r.bill.tokens)}
+                    />
                   ) : (
                     <span className='text-muted-foreground'>-</span>
                   )}
@@ -220,7 +237,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {tokens ? (
                     <Pair
                       ours={splitOrNull(r.ours, r.ours.prompt_tokens)}
-                      bill={r.bill.prompt_tokens}
+                      bill={billTokens(r.bill.prompt_tokens)}
                     />
                   ) : (
                     <span className='text-muted-foreground'>-</span>
@@ -230,7 +247,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {tokens ? (
                     <Pair
                       ours={splitOrNull(r.ours, r.ours.completion_tokens)}
-                      bill={r.bill.completion_tokens}
+                      bill={billTokens(r.bill.completion_tokens)}
                     />
                   ) : (
                     <span className='text-muted-foreground'>-</span>
@@ -240,7 +257,7 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {tokens ? (
                     <Pair
                       ours={splitOrNull(r.ours, r.ours.cache_read_tokens)}
-                      bill={r.bill.cache_read_tokens}
+                      bill={billTokens(r.bill.cache_read_tokens)}
                     />
                   ) : (
                     <span className='text-muted-foreground'>-</span>

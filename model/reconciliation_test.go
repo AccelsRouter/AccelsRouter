@@ -140,11 +140,11 @@ func TestUpstreamBillParseAndCompare(t *testing.T) {
 	assert.Equal(t, h, rep.From)
 	assert.Equal(t, time.Date(2026, 10, 13, 1, 0, 0, 0, time.UTC).Unix(), rep.To)
 	require.Len(t, rep.Rows, 3)
-	assert.Equal(t, UpstreamBillRow{Model: "doubao-seedance-2-5-260628", Bill: UpstreamBillSide{Requests: 1, Cost: 60}}, rep.Rows[0])
+	assert.Equal(t, UpstreamBillRow{Model: "doubao-seedance-2-5-260628", Bill: UpstreamBillSide{Requests: 1, Cost: 60, Rows: 1}}, rep.Rows[0])
 	assert.Equal(t, UpstreamBillRow{
 		Model: "claude-sonnet-4-6",
 		Ours:  UpstreamBillSide{Requests: 3, Tokens: 6120, PromptTokens: 6000, CompletionTokens: 120, CacheReadTokens: 100, Quota: 900},
-		Bill:  UpstreamBillSide{Requests: 3, Tokens: 6120, PromptTokens: 6000, CompletionTokens: 120, CacheReadTokens: 100, Cost: 1.7},
+		Bill:  UpstreamBillSide{Requests: 3, Tokens: 6120, PromptTokens: 6000, CompletionTokens: 120, CacheReadTokens: 100, Cost: 1.7, Rows: 3},
 	}, rep.Rows[1])
 	assert.Equal(t, UpstreamBillRow{Model: "gpt-4o", Ours: UpstreamBillSide{Requests: 1, Tokens: 5, Quota: 10}}, rep.Rows[2])
 	assert.Equal(t, int64(4), rep.Ours.Requests)
@@ -189,9 +189,9 @@ func TestCompareUpstreamBillAggregatedEntries(t *testing.T) {
 	assert.Equal(t, UpstreamBillRow{
 		Model: "deepseek-v4-1-flash",
 		Ours:  UpstreamBillSide{Requests: 4, Tokens: 3000, PromptTokens: 2000, CompletionTokens: 1000, Quota: 50},
-		Bill:  UpstreamBillSide{Tokens: 3000, PromptTokens: 2000, CompletionTokens: 1000, Cost: 0.003},
+		Bill:  UpstreamBillSide{Tokens: 3000, PromptTokens: 2000, CompletionTokens: 1000, Cost: 0.003, Rows: 2},
 	}, rep.Rows[1])
-	assert.Equal(t, UpstreamBillRow{Model: "seedream-4-0", Bill: UpstreamBillSide{UsageUnit: "images", UsageAmount: 3, Cost: 0.09}}, rep.Rows[0])
+	assert.Equal(t, UpstreamBillRow{Model: "seedream-4-0", Bill: UpstreamBillSide{UsageUnit: "images", UsageAmount: 3, Cost: 0.09, Rows: 1}}, rep.Rows[0])
 	assert.Equal(t, int64(0), rep.Bill.Requests)
 }
 
@@ -223,6 +223,6 @@ func TestCompareUpstreamBillDailyRows(t *testing.T) {
 	assert.Equal(t, UpstreamBillRow{
 		Model: "qwen-plus",
 		Ours:  UpstreamBillSide{Requests: 2, Tokens: 300, PromptTokens: 200, CompletionTokens: 100, Quota: 10},
-		Bill:  UpstreamBillSide{Tokens: 300, PromptTokens: 200, CompletionTokens: 100, Cost: 0.003},
+		Bill:  UpstreamBillSide{Tokens: 300, PromptTokens: 200, CompletionTokens: 100, Cost: 0.003, Rows: 2},
 	}, rep.Rows[0])
 }

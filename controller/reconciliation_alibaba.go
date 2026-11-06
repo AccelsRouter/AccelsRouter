@@ -36,7 +36,7 @@ const (
 
 	alibabaBillingAction   = "DescribeInstanceBill"
 	alibabaBillingVersion  = "2017-12-14"
-	alibabaBillingProduct  = "bailian"
+	alibabaBillingProduct  = "sfm" // Model Studio's product code in the bill
 	alibabaBillingPageSize = 300
 	alibabaBillingMaxPages = 500
 
@@ -189,9 +189,9 @@ type alibabaBillItem struct {
 	BillingItem      string `json:"BillingItem"`
 	Usage            string `json:"Usage"`
 	UsageUnit        string `json:"UsageUnit"`
-	// DeductedByResourcePackage is the usage (in UsageUnit) covered by a
-	// resource plan; Model Studio's free quota is one, and usage it covers
-	// is reported here rather than in Usage.
+	// DeductedByResourcePackage is the usage (in UsageUnit) a resource plan
+	// covered, reported outside Usage. The free quota is not one: usage it
+	// covers is billed as a row with zero usage and zero amounts.
 	DeductedByResourcePackage string  `json:"DeductedByResourcePackage"`
 	Currency                  string  `json:"Currency"`
 	PretaxGrossAmount         float64 `json:"PretaxGrossAmount"` // list price
@@ -331,8 +331,7 @@ func alibabaApiKeyIDs(ctx context.Context, client *http.Client, host, accessKey,
 }
 
 // alibabaModelStudioRow says whether a bill row is Model Studio usage: its
-// product code, or an instance id shaped like Model Studio's (the product
-// code of the international site is not pinned down).
+// product code, or an instance id shaped like Model Studio's.
 func alibabaModelStudioRow(it alibabaBillItem) bool {
 	return it.ProductCode == alibabaBillingProduct || strings.Count(it.InstanceID, ";") >= 3
 }
@@ -340,7 +339,7 @@ func alibabaModelStudioRow(it alibabaBillItem) bool {
 // alibabaBillEntries turns Model Studio pay-as-you-go rows into bill entries
 // spanning their day: tokens classified by the instance id's input/output
 // type (cached input counts towards the prompt too, as in our records), the
-// usage (billed plus free-quota covered) scaled by its unit, the cost =
+// usage (billed plus resource-plan covered) scaled by its unit, the cost =
 // list price minus the contract / promotion discount, the payable = what is
 // charged after coupons and free quota (before tax). Rows of other products, subscriptions, refunds and
 // adjustments are skipped; when apiKeyIDs is set, so are rows attributed
