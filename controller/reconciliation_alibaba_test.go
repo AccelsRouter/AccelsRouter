@@ -54,6 +54,9 @@ func TestAlibabaBillEntries(t *testing.T) {
 		{InstanceID: "2965964;ws-1;qwen-plus;output_token", BillingDate: "2026-10-08", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "1.5", UsageUnit: "KToken", PretaxGrossAmount: 0.0018, PretaxAmount: 0.0018},
 		{InstanceID: "2965964;ws-1;qwen-plus;cached_input_token;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "1,000", UsageUnit: "Token", PretaxGrossAmount: 0.0001, PretaxAmount: 0},
 		{InstanceID: "2965964;ws-1;wan2.2-t2i-flash;image;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "3", UsageUnit: "Piece", PretaxGrossAmount: 0.06, PretaxAmount: 0.06},
+		// Free-quota usage: covered by a resource plan, reported outside Usage.
+		{InstanceID: "2965964;ws-1;qwen3.8-flash;input_token;;1", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "0", UsageUnit: "Token", DeductedByResourcePackage: "87807"},
+		{InstanceID: "2965964;ws-1;qwen3.8-flash;output_token;;1", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "17", UsageUnit: "Token", DeductedByResourcePackage: "1300", PretaxGrossAmount: 0.00001, PretaxAmount: 0.00001},
 		// Another key's usage.
 		{InstanceID: "111;ws-1;qwen-max;input_token;;0", BillingDate: "2026-10-09", Item: "PayAsYouGoBill", ProductCode: "bailian", Usage: "500", UsageUnit: "Token", PretaxGrossAmount: 0.001, PretaxAmount: 0.001},
 		// Not model usage.
@@ -69,6 +72,8 @@ func TestAlibabaBillEntries(t *testing.T) {
 		{Wall: d8, Span: 86400, Model: "qwen-plus", CompletionTokens: 1500, Cost: 0.0018, Payable: 0.0018},
 		{Wall: d9, Span: 86400, Model: "qwen-plus", PromptTokens: 1000, CacheReadTokens: 1000, Cost: 0.0001},
 		{Wall: d9, Span: 86400, Model: "wan2.2-t2i-flash", UsageUnit: "Piece", UsageAmount: 3, Cost: 0.06, Payable: 0.06},
+		{Wall: d9, Span: 86400, Model: "qwen3.8-flash", PromptTokens: 87807},
+		{Wall: d9, Span: 86400, Model: "qwen3.8-flash", CompletionTokens: 1317, Cost: 0.00001, Payable: 0.00001},
 		{Wall: d9, Span: 86400, Model: "qwen-max", PromptTokens: 500, Cost: 0.001, Payable: 0.001},
 	}, entries)
 

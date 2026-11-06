@@ -180,18 +180,22 @@ func callAlibabaCloud(ctx context.Context, client *http.Client, rawURL, accessKe
 type alibabaBillItem struct {
 	// InstanceID is "<api key id>;<workspace>;<model>;<input_token|output_token|...>;<channel>;<free-quota flag>"
 	// for a Model Studio inference row; trailing empty segments are dropped.
-	InstanceID        string  `json:"InstanceID"`
-	BillingDate       string  `json:"BillingDate"` // "2026-10-08"
-	Item              string  `json:"Item"`        // "PayAsYouGoBill", "SubscriptionOrder", "Refund", "Adjustment"
-	SubscriptionType  string  `json:"SubscriptionType"`
-	ProductCode       string  `json:"ProductCode"`
-	BillingItem       string  `json:"BillingItem"`
-	Usage             string  `json:"Usage"`
-	UsageUnit         string  `json:"UsageUnit"`
-	Currency          string  `json:"Currency"`
-	PretaxGrossAmount float64 `json:"PretaxGrossAmount"` // list price
-	InvoiceDiscount   float64 `json:"InvoiceDiscount"`   // contract / promotion discount
-	PretaxAmount      float64 `json:"PretaxAmount"`      // payable after coupons and free quota, before tax
+	InstanceID       string `json:"InstanceID"`
+	BillingDate      string `json:"BillingDate"` // "2026-10-08"
+	Item             string `json:"Item"`        // "PayAsYouGoBill", "SubscriptionOrder", "Refund", "Adjustment"
+	SubscriptionType string `json:"SubscriptionType"`
+	ProductCode      string `json:"ProductCode"`
+	BillingItem      string `json:"BillingItem"`
+	Usage            string `json:"Usage"`
+	UsageUnit        string `json:"UsageUnit"`
+	// DeductedByResourcePackage is the usage (in UsageUnit) covered by a
+	// resource plan; Model Studio's free quota is one, and usage it covers
+	// is reported here rather than in Usage.
+	DeductedByResourcePackage string  `json:"DeductedByResourcePackage"`
+	Currency                  string  `json:"Currency"`
+	PretaxGrossAmount         float64 `json:"PretaxGrossAmount"` // list price
+	InvoiceDiscount           float64 `json:"InvoiceDiscount"`   // contract / promotion discount
+	PretaxAmount              float64 `json:"PretaxAmount"`      // payable after coupons and free quota, before tax
 }
 
 type alibabaBillPage struct {
@@ -319,9 +323,9 @@ func alibabaApiKeyIDs(ctx context.Context, client *http.Client, host, accessKey,
 // alibabaBillEntries turns Model Studio pay-as-you-go rows into bill entries
 // spanning their day: tokens classified by the instance id's input/output
 // type (cached input counts towards the prompt too, as in our records), the
-// usage scaled by its unit, the cost = list price minus the contract /
-// promotion discount, the payable = what is charged after coupons and free
-// quota (before tax). Rows of other products, subscriptions, refunds and
+// usage (billed plus free-quota covered) scaled by its unit, the cost =
+// list price minus the contract / promotion discount, the payable = what is
+// charged after coupons and free quota (before tax). Rows of other products, subscriptions, refunds and
 // adjustments are skipped; when apiKeyIDs is set, so are rows attributed
 // to other keys.
 func alibabaBillEntries(items []alibabaBillItem, apiKeyIDs []string) ([]model.UpstreamBillEntry, error) {
@@ -345,6 +349,11 @@ func alibabaBillEntries(items []alibabaBillItem, apiKeyIDs []string) ([]model.Up
 		if err != nil {
 			return nil, fmt.Errorf("row %d: Usage %q", i+1, it.Usage)
 		}
+		deducted, err := bytePlusAmount(it.DeductedByResourcePackage)
+		if err != nil {
+			return nil, fmt.Errorf("row %d: DeductedByResourcePackage %q", i+1, it.DeductedByResourcePackage)
+		}
+		count += deducted
 		e := model.UpstreamBillEntry{
 			Wall: day.Unix(), Span: 24 * 3600, Model: strings.TrimSpace(it.InstanceID),
 			Cost: it.PretaxGrossAmount - it.InvoiceDiscount, Payable: it.PretaxAmount,
