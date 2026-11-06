@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -196,6 +197,8 @@ type alibabaBillItem struct {
 	PretaxGrossAmount         float64 `json:"PretaxGrossAmount"` // list price
 	InvoiceDiscount           float64 `json:"InvoiceDiscount"`   // contract / promotion discount
 	PretaxAmount              float64 `json:"PretaxAmount"`      // payable after coupons and free quota, before tax
+	// Raw is the row as the API returned it, for the raw dump.
+	Raw json.RawMessage `json:"-"`
 }
 
 type alibabaBillPage struct {
@@ -203,7 +206,7 @@ type alibabaBillPage struct {
 	Message string `json:"Message"`
 	Success bool   `json:"Success"`
 	Data    struct {
-		Items     []alibabaBillItem `json:"Items"`
+		Items     []json.RawMessage `json:"Items"`
 		NextToken string            `json:"NextToken"`
 	} `json:"Data"`
 }
@@ -241,7 +244,14 @@ func fetchAlibabaDailyBill(ctx context.Context, client *http.Client, host, acces
 			if !page.Success {
 				return nil, fmt.Errorf("%s: %s", page.Code, page.Message)
 			}
-			items = append(items, page.Data.Items...)
+			for _, raw := range page.Data.Items {
+				var item alibabaBillItem
+				if err := json.Unmarshal(raw, &item); err != nil {
+					return nil, fmt.Errorf("bill row: %w", err)
+				}
+				item.Raw = raw
+				items = append(items, item)
+			}
 			nextToken = page.Data.NextToken
 			if nextToken == "" {
 				break
@@ -408,16 +418,19 @@ func alibabaModelKey(name string) string {
 
 // AdminCompareAlibabaBill — POST /api/admin/reconciliation/alibaba-bill
 // {channel_id, period "YYYY-MM", scope "channel_key" (default) | "account",
-// bill_tz_offset?}. With the channel_key scope the bill is filtered to the
-// usage attributed to the channel's own API key(s); the account scope takes
-// everything the account was billed for Model Studio. The bill's rows are
-// days, so the zone is never detected: UTC+8 unless pinned.
+// bill_tz_offset?, raw?}. With the channel_key scope the bill is filtered to
+// the usage attributed to the channel's own API key(s); the account scope
+// takes everything the account was billed for Model Studio. The bill's rows
+// are days, so the zone is never detected: UTC+8 unless pinned. With raw,
+// the Model Studio rows are returned as the API sent them instead of the
+// comparison, to check what the bill carries.
 func AdminCompareAlibabaBill(c *gin.Context) {
 	var req struct {
 		ChannelId    int    `json:"channel_id"`
 		Period       string `json:"period"`
 		Scope        string `json:"scope"`
 		BillTzOffset *int   `json:"bill_tz_offset"`
+		Raw          bool   `json:"raw"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
@@ -479,6 +492,17 @@ func AdminCompareAlibabaBill(c *gin.Context) {
 	items, err := fetchAlibabaDailyBill(ctx, client, billingHost, accessKey, secretKey, req.Period)
 	if err != nil {
 		common.ApiErrorMsg(c, "Alibaba Cloud billing API: "+err.Error())
+		return
+	}
+	if req.Raw {
+		rows := make([]json.RawMessage, 0, len(items))
+		for _, it := range items {
+			keyID, _, _ := strings.Cut(it.InstanceID, ";")
+			if it.ProductCode == alibabaBillingProduct && (len(apiKeyIDs) == 0 || slices.Contains(apiKeyIDs, keyID)) {
+				rows = append(rows, it.Raw)
+			}
+		}
+		common.ApiSuccess(c, gin.H{"api_key_ids": apiKeyIDs, "rows": rows})
 		return
 	}
 	entries, err := alibabaBillEntries(items, apiKeyIDs)
