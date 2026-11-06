@@ -68,14 +68,18 @@ function zoneLabel(offsetMinutes: number): string {
 
 /* Our figure above the bill's; red when they differ. A null on our side
 means we have no such figure for the period, shown as a dash, not a zero. */
+/* Our figure over the bill's, red where they differ unless the difference
+is explained (a note under the pair says how). */
 function Pair(props: {
   ours: number | null
-  bill: number | null
+  bill: number
   format?: (n: number) => string
+  explained?: boolean
+  note?: string
 }) {
   const f = props.format ?? formatNumber
   const differs =
-    props.ours !== null && props.bill !== null && props.ours !== props.bill
+    props.ours !== null && props.ours !== props.bill && !props.explained
   return (
     <span
       className={`inline-flex flex-col items-end tabular-nums ${differs ? 'text-destructive' : ''}`}
@@ -83,12 +87,15 @@ function Pair(props: {
       <span className={props.ours === null ? 'text-muted-foreground' : ''}>
         {props.ours === null ? '-' : f(props.ours)}
       </span>
-      <span className='text-muted-foreground text-[11px]'>
-        {props.bill === null ? '-' : f(props.bill)}
-      </span>
+      <span className='text-muted-foreground text-[11px]'>{f(props.bill)}</span>
+      {props.note && <span className='text-[11px]'>{props.note}</span>}
     </span>
   )
 }
+
+/* Alibaba's free quota per model: input and output tokens together, so
+the bill may meter up to this many fewer tokens than we counted. */
+const ALIBABA_FREE_QUOTA_TOKENS = 1_000_000
 
 /* The bill's amount in USD at the given rate, with the billed figure under
 it; the billed figure alone when no rate was entered. A payable amount (what
@@ -184,31 +191,28 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
             const billPresent = report.bill_requests_known
               ? r.bill.requests > 0
               : r.bill.tokens + r.bill.cost + r.bill.usage_amount > 0
-            /* Alibaba bills free-quota usage as a row with zero usage and
-            zero amounts: the bill saw the model but metered nothing. */
-            const freeQuota =
-              report.bill_source === 'alibaba' &&
-              !billPresent &&
-              r.bill.rows > 0
+            const tokens = isTokenRow(r)
+            /* Alibaba meters nothing for usage its free quota covers, so the
+            bill's rows name the model with fewer tokens (or none): the gap
+            is the free quota deduction, plausible up to the quota itself. */
+            const freeGap =
+              report.bill_source === 'alibaba' && r.bill.rows > 0 && tokens
+                ? r.ours.tokens - r.bill.tokens
+                : 0
+            const freeOk = freeGap > 0 && freeGap <= ALIBABA_FREE_QUOTA_TOKENS
             const only =
               r.ours.requests === 0
                 ? t('Only in bill')
-                : freeQuota
-                  ? t('Free quota, not metered in the bill')
-                  : !billPresent
-                    ? t('Only in ours')
-                    : ''
-            const tokens = isTokenRow(r)
-            const billTokens = (n: number) => (freeQuota ? null : n)
+                : !billPresent && freeGap <= 0
+                  ? t('Only in ours')
+                  : ''
             const diff = usdFromQuota(r.ours.quota) - r.bill.cost / rate
             return (
               <tr key={r.model} className='hover:bg-muted/30'>
                 <td className='px-3 py-2 font-medium'>
                   {r.model || '-'}
                   {only && (
-                    <span
-                      className={`ml-2 text-[11px] ${freeQuota ? 'text-muted-foreground' : 'text-destructive'}`}
-                    >
+                    <span className='text-destructive ml-2 text-[11px]'>
                       {only}
                     </span>
                   )}
@@ -227,7 +231,13 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {tokens ? (
                     <Pair
                       ours={r.ours.tokens}
-                      bill={billTokens(r.bill.tokens)}
+                      bill={r.bill.tokens}
+                      explained={freeOk}
+                      note={
+                        freeGap > 0
+                          ? t('Free quota {{n}}', { n: formatNumber(freeGap) })
+                          : undefined
+                      }
                     />
                   ) : (
                     <span className='text-muted-foreground'>-</span>
@@ -237,7 +247,8 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {tokens ? (
                     <Pair
                       ours={splitOrNull(r.ours, r.ours.prompt_tokens)}
-                      bill={billTokens(r.bill.prompt_tokens)}
+                      bill={r.bill.prompt_tokens}
+                      explained={freeOk}
                     />
                   ) : (
                     <span className='text-muted-foreground'>-</span>
@@ -247,7 +258,8 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {tokens ? (
                     <Pair
                       ours={splitOrNull(r.ours, r.ours.completion_tokens)}
-                      bill={billTokens(r.bill.completion_tokens)}
+                      bill={r.bill.completion_tokens}
+                      explained={freeOk}
                     />
                   ) : (
                     <span className='text-muted-foreground'>-</span>
@@ -257,7 +269,8 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   {tokens ? (
                     <Pair
                       ours={splitOrNull(r.ours, r.ours.cache_read_tokens)}
-                      bill={billTokens(r.bill.cache_read_tokens)}
+                      bill={r.bill.cache_read_tokens}
+                      explained={freeOk}
                     />
                   ) : (
                     <span className='text-muted-foreground'>-</span>
@@ -667,6 +680,10 @@ export function UpstreamBillDialog(props: {
               ' ' +
                 t(
                   'The bill column is the list price less the contract discount; "payable" is what was charged after coupons and free quota, before tax.'
+                ) +
+                ' ' +
+                t(
+                  'Usage the free quota covers is not metered in the bill: the shortfall against our count is shown as the free quota deduction, normally up to 1,000,000 tokens per model.'
                 )}
           </p>
           <ComparisonTable report={report} rate={rate} />
