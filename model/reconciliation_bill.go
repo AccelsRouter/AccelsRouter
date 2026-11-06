@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -255,6 +256,11 @@ type UpstreamBillReport struct {
 	// settlement windows rather than calls: the bill's request counts are
 	// then unknown and MatchedRequests counts windows.
 	BillRequestsKnown bool `json:"bill_requests_known"`
+	// BillRequestsFromUsage is true when the bill side's request counts were
+	// filled from the upstream's usage statistics instead (SetBillRequests);
+	// UsageError says why they could not be.
+	BillRequestsFromUsage bool   `json:"bill_requests_from_usage"`
+	UsageError            string `json:"usage_error"`
 	// BillPayableKnown is true when the bill tells the payable amount (after
 	// coupons / credits) apart from the billed cost.
 	BillPayableKnown bool `json:"bill_payable_known"`
@@ -458,6 +464,37 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 		return a.Model < b.Model
 	})
 	return report, nil
+}
+
+// SetBillRequests fills the bill side's request counts from the upstream's
+// usage statistics, which count calls where an aggregated bill does not:
+// requests per model as the usage names it, matched to the rows through
+// modelKey. A model only the usage saw gets a row of its own, after the
+// sorted rows in name order.
+func (r *UpstreamBillReport) SetBillRequests(requests map[string]int64, modelKey func(string) string) {
+	byModel := map[string]int64{}
+	for name, n := range requests {
+		byModel[modelKey(name)] += n
+	}
+	r.Bill.Requests = 0
+	for i := range r.Rows {
+		n := byModel[r.Rows[i].Model]
+		r.Rows[i].Bill.Requests = n
+		r.Bill.Requests += n
+		delete(byModel, r.Rows[i].Model)
+	}
+	extra := make([]string, 0, len(byModel))
+	for model, n := range byModel {
+		if n > 0 {
+			extra = append(extra, model)
+		}
+	}
+	slices.Sort(extra)
+	for _, model := range extra {
+		r.Rows = append(r.Rows, UpstreamBillRow{Model: model, Bill: UpstreamBillSide{Requests: byModel[model]}})
+		r.Bill.Requests += byModel[model]
+	}
+	r.BillRequestsFromUsage = true
 }
 
 func abs(n int) int {

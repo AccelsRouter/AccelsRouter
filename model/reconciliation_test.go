@@ -226,3 +226,23 @@ func TestCompareUpstreamBillDailyRows(t *testing.T) {
 		Bill:  UpstreamBillSide{Tokens: 300, PromptTokens: 200, CompletionTokens: 100, Cost: 0.003, Rows: 2},
 	}, rep.Rows[0])
 }
+
+// Request counts from an upstream's usage statistics land on the bill side
+// of the matching rows (through the model key), a model only the usage saw
+// becomes a row after the others, and the total follows.
+func TestUpstreamBillReportSetBillRequests(t *testing.T) {
+	report := &UpstreamBillReport{Rows: []UpstreamBillRow{
+		{Model: "deepseek-v4-1-flash", Ours: UpstreamBillSide{Requests: 12}, Bill: UpstreamBillSide{Tokens: 500, Cost: 1}},
+		{Model: "seed-2-0-lite", Ours: UpstreamBillSide{Requests: 3}},
+	}, Ours: UpstreamBillSide{Requests: 15}}
+	lower := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, ".", "-")) }
+	report.SetBillRequests(map[string]int64{"DeepSeek-V4.1-flash": 7, "deepseek-v4-1-flash": 4, "Seed-2.0-lite": 0, "Seedream-4.0": 2}, lower)
+	assert.True(t, report.BillRequestsFromUsage)
+	assert.Equal(t, []UpstreamBillRow{
+		{Model: "deepseek-v4-1-flash", Ours: UpstreamBillSide{Requests: 12}, Bill: UpstreamBillSide{Requests: 11, Tokens: 500, Cost: 1}},
+		{Model: "seed-2-0-lite", Ours: UpstreamBillSide{Requests: 3}},
+		{Model: "seedream-4-0", Bill: UpstreamBillSide{Requests: 2}},
+	}, report.Rows)
+	assert.Equal(t, int64(13), report.Bill.Requests)
+	assert.Equal(t, int64(15), report.Ours.Requests)
+}

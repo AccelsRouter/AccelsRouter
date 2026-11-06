@@ -125,6 +125,10 @@ export type UpstreamBillReport = {
   // False for an API bill whose rows are settlement windows, not calls: the
   // bill's request counts are unknown and matched_requests counts windows.
   bill_requests_known: boolean
+  // The bill side's request counts came from the upstream's usage
+  // statistics instead; usage_error says why they could not.
+  bill_requests_from_usage: boolean
+  usage_error: string
   // True when the bill tells the payable amount apart from the billed cost.
   bill_payable_known: boolean
   // What an API bill was filtered to: 'channel_key' (the usage attributed

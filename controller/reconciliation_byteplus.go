@@ -30,6 +30,11 @@ const (
 	// OpenGetApiKeySID resolves an Ark API key to the split item id the bill
 	// attributes its usage to (on the Ark control plane, not the billing one).
 	bytePlusApiKeySIDQuery = "Action=OpenGetApiKeySID&Version=2024-01-01"
+	// GetInferenceUsage is the usage statistics behind the console's usage
+	// page (also on the Ark control plane): per-day request and token counts
+	// by model and API key, 5-30 minutes behind the calls. The bill has no
+	// call counts, so the request counts come from here.
+	bytePlusUsageQuery = "Action=GetInferenceUsage&Version=2024-01-01"
 )
 
 // bytePlusSplitDimension asks the bill to split every ModelArk product by
@@ -105,6 +110,90 @@ func bytePlusApiKeySID(ctx context.Context, client *http.Client, accessKey, secr
 		return "", fmt.Errorf("%s: no SID in the response", resp.Status)
 	}
 	return decoded.Result.SID, nil
+}
+
+// bytePlusUsageBody asks the usage statistics for the period's days up to
+// lastDay (the last day the bill covers, so the near-real-time usage does
+// not run past the T+1 bill), per model, filtered to the API key ids when
+// given: the bill's split item ids are those same ids.
+func bytePlusUsageBody(period, lastDay string, apiKeyIDs []string) map[string]any {
+	filters := []map[string]any{{"Key": "ModelName", "Values": []string{}}}
+	if len(apiKeyIDs) > 0 {
+		filters = append(filters, map[string]any{"Key": "ApikeyID", "Values": apiKeyIDs})
+	}
+	return map[string]any{"StartTime": period + "-01", "EndTime": lastDay, "QueryInterval": "Day", "Filters": filters}
+}
+
+// fetchBytePlusInferenceUsage returns how many requests the usage statistics
+// count per model (as the usage names it) for the period's days up to
+// lastDay. The response is a table: Fields names the columns, Data holds
+// the rows as strings.
+func fetchBytePlusInferenceUsage(ctx context.Context, client *http.Client, accessKey, secretKey, period, lastDay string, apiKeyIDs []string) (map[string]int64, error) {
+	body, err := common.Marshal(bytePlusUsageBody(period, lastDay, apiKeyIDs))
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+customBytePlusPricingHost+"/?"+bytePlusUsageQuery, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	signBytePlusOpenAPIRequest(req, body, accessKey, secretKey, time.Now(), customBytePlusPricingHost, customBytePlusPricingService, bytePlusUsageQuery)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxRatioConfigBytes))
+	resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	var decoded struct {
+		ResponseMetadata struct {
+			Error *struct {
+				Code    string `json:"Code"`
+				Message string `json:"Message"`
+			} `json:"Error"`
+		} `json:"ResponseMetadata"`
+		Result struct {
+			Fields []struct {
+				Name string `json:"Name"`
+			} `json:"Fields"`
+			Data [][]string `json:"Data"`
+		} `json:"Result"`
+	}
+	if err := common.Unmarshal(raw, &decoded); err != nil {
+		return nil, fmt.Errorf("%s", resp.Status)
+	}
+	if apiErr := decoded.ResponseMetadata.Error; apiErr != nil {
+		return nil, fmt.Errorf("%s: %s", apiErr.Code, apiErr.Message)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s", resp.Status)
+	}
+	modelCol, requestsCol := -1, -1
+	for i, f := range decoded.Result.Fields {
+		switch f.Name {
+		case "ModelName":
+			modelCol = i
+		case "ReqCnt":
+			requestsCol = i
+		}
+	}
+	if modelCol < 0 || requestsCol < 0 {
+		return nil, errors.New("the usage has no ModelName / ReqCnt columns")
+	}
+	requests := map[string]int64{}
+	for i, row := range decoded.Result.Data {
+		if len(row) <= max(modelCol, requestsCol) {
+			return nil, fmt.Errorf("row %d: %d columns", i+1, len(row))
+		}
+		n, err := strconv.ParseInt(strings.TrimSpace(row[requestsCol]), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("row %d: ReqCnt %q", i+1, row[requestsCol])
+		}
+		requests[strings.TrimSpace(row[modelCol])] += n
+	}
+	return requests, nil
 }
 
 type bytePlusBillRow struct {
@@ -377,5 +466,18 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 	report.BillScope = req.Scope
 	report.BillSplitItems = splitItems
 	report.BillSource = "byteplus"
+	// The bill counts no calls; the usage statistics do. A failure there
+	// (a key without the usage permission) leaves the comparison without
+	// request counts rather than without a comparison.
+	var lastWall int64
+	for _, e := range entries {
+		lastWall = max(lastWall, e.Wall)
+	}
+	lastDay := time.Unix(lastWall, 0).UTC().Format("2006-01-02")
+	if usage, err := fetchBytePlusInferenceUsage(ctx, client, accessKey, secretKey, req.Period, lastDay, splitItems); err != nil {
+		report.UsageError = "BytePlus usage API: " + err.Error()
+	} else {
+		report.SetBillRequests(usage, bytePlusModelKey)
+	}
 	common.ApiSuccess(c, report)
 }

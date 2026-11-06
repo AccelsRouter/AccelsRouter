@@ -1,6 +1,10 @@
 package controller
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,4 +76,46 @@ func TestBytePlusSplitBillBody(t *testing.T) {
 	require.NoError(t, common.Unmarshal([]byte(body["SplitDimension"].(string)), &dims))
 	assert.Equal(t, "apikey_id", dims["ModelArk"])
 	assert.Equal(t, "apikey_id", dims["ModelArk_video_generation"])
+}
+
+// The usage statistics are asked for the period's days up to the bill's
+// last day, per model, filtered to the channel's API key ids; the table
+// they return is summed into requests per model. An API error or a table
+// without the columns is an error.
+func TestBytePlusInferenceUsage(t *testing.T) {
+	body := bytePlusUsageBody("2026-10", "2026-10-09", []string{"apikey-1", "apikey-2"})
+	assert.Equal(t, "2026-10-01", body["StartTime"])
+	assert.Equal(t, "2026-10-09", body["EndTime"])
+	assert.Equal(t, "Day", body["QueryInterval"])
+	assert.Equal(t, []map[string]any{{"Key": "ModelName", "Values": []string{}}, {"Key": "ApikeyID", "Values": []string{"apikey-1", "apikey-2"}}}, body["Filters"])
+	assert.Len(t, bytePlusUsageBody("2026-10", "2026-10-31", nil)["Filters"], 1)
+
+	var sent map[string]any
+	reply := `{"ResponseMetadata":{"RequestId":"x"},"Result":{"Fields":[{"Name":"AccountID","Type":"BIGINT"},{"Name":"ModelName","Type":"STRING"},{"Name":"ModelUnitID","Type":"STRING"},{"Name":"Day","Type":"DATE"},{"Name":"InputTokens","Type":"BIGINT"},{"Name":"OutputTokens","Type":"BIGINT"},{"Name":"TotalTokens","Type":"BIGINT"},{"Name":"ReqCnt","Type":"BIGINT"}],
+		"Data":[["1","DeepSeek-V4.1-flash","","2026-10-08","3062","914","3976","7"],["1","DeepSeek-V4.1-flash","","2026-10-09","10","2","12","4"],["1","Seed-2.0-lite","","2026-10-09","0","0","0","0"]],"DataCount":3}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Action=GetInferenceUsage&Version=2024-01-01", r.URL.RawQuery)
+		assert.Contains(t, r.Header.Get("Authorization"), "Credential=ak/")
+		require.NoError(t, common.DecodeJson(r.Body, &sent))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(reply))
+	}))
+	defer srv.Close()
+	client := srv.Client()
+	client.Transport = rewriteToPlain(srv.URL)
+
+	usage, err := fetchBytePlusInferenceUsage(context.Background(), client, "ak", "sk", "2026-10", "2026-10-09", []string{"apikey-1"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]int64{"DeepSeek-V4.1-flash": 11, "Seed-2.0-lite": 0}, usage)
+	assert.Equal(t, "2026-10-09", sent["EndTime"])
+	assert.Len(t, sent["Filters"], 2)
+
+	reply = `{"ResponseMetadata":{"Error":{"Code":"AccessDenied","Message":"no ark:GetInferenceUsage"}}}`
+	_, err = fetchBytePlusInferenceUsage(context.Background(), client, "ak", "sk", "2026-10", "2026-10-09", nil)
+	require.Error(t, err)
+	assert.True(t, strings.HasPrefix(err.Error(), "AccessDenied: "))
+
+	reply = `{"ResponseMetadata":{},"Result":{"Fields":[{"Name":"Day","Type":"DATE"},{"Name":"ReqCnt","Type":"BIGINT"}],"Data":[["2026-10-08","7"]],"DataCount":1}}`
+	_, err = fetchBytePlusInferenceUsage(context.Background(), client, "ak", "sk", "2026-10", "2026-10-09", nil)
+	require.Error(t, err)
 }

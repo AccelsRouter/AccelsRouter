@@ -190,7 +190,11 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
           {report.rows.map((r) => {
             const billPresent = report.bill_requests_known
               ? r.bill.requests > 0
-              : r.bill.tokens + r.bill.cost + r.bill.usage_amount > 0
+              : r.bill.tokens +
+                  r.bill.cost +
+                  r.bill.usage_amount +
+                  r.bill.requests >
+                0
             const tokens = isTokenRow(r)
             /* Alibaba meters nothing for usage its free quota covers, so the
             bill's rows name the model with fewer tokens (or none): the gap
@@ -218,7 +222,8 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   )}
                 </td>
                 <td className='px-3 py-2 text-right'>
-                  {report.bill_requests_known ? (
+                  {report.bill_requests_known ||
+                  report.bill_requests_from_usage ? (
                     <Pair ours={r.ours.requests} bill={r.bill.requests} />
                   ) : (
                     <span className='inline-flex flex-col items-end tabular-nums'>
@@ -427,7 +432,7 @@ export function UpstreamBillDialog(props: {
       "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model."
     ),
     byteplus: t(
-      'Pull one month of the BytePlus split bill over its billing API (5-minute settlement windows, no per-call counts) and compare it with what this channel recorded, per model. Model versions (-YYMMDD) are folded into the product the bill names; cached input counts as input on both sides.'
+      'Pull one month of the BytePlus split bill over its billing API (5-minute settlement windows; request counts come from its usage statistics) and compare it with what this channel recorded, per model. Model versions (-YYMMDD) are folded into the product the bill names; cached input counts as input on both sides.'
     ),
     alibaba: t(
       'Pull one month of the Model Studio bill over the Alibaba Cloud billing API (one row per model, API key and day, no per-call counts) and compare it with what this channel recorded, per model. Dated snapshots (-YYYY-MM-DD) and -latest fold into the model the bill names; cached input counts as input on both sides. The bill is cut in UTC+8 unless another zone is pinned.'
@@ -676,6 +681,19 @@ export function UpstreamBillDialog(props: {
                 t(
                   'The bill column is the amount billed after the contract discount; "payable" is what was charged after coupons and free credit, tax included.'
                 )}
+            {report.bill_requests_from_usage &&
+              ' ' +
+                t(
+                  'Bill request counts come from the BytePlus usage statistics (5 to 30 minutes behind the calls), for the days the bill covers.'
+                )}
+            {report.usage_error && (
+              <span className='text-destructive'>
+                {' '}
+                {t('Request counts unavailable: {{error}}', {
+                  error: report.usage_error,
+                })}
+              </span>
+            )}
             {report.bill_source === 'alibaba' &&
               ' ' +
                 t(
