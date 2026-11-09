@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Skipped, this gateway cannot save it: {{reason}}": "Skipped, this gateway cannot save it: {{reason}}",
+    "All selected prices were skipped: this gateway cannot save them.": "All selected prices were skipped: this gateway cannot save them.",
     "{{count}} unsaved price changes": "{{count}} thay đổi giá chưa lưu",
     "{{name}}: {{reason}}": "{{name}}: {{reason}}",
     "Address format": "Định dạng địa chỉ",

@@ -486,7 +486,12 @@ export type DifferencesMap = Record<
 export type PricingSyncValues = Partial<Record<RatioType, number | string>>
 export type PricingSyncModels = Record<
   string,
-  { current: PricingSyncValues; upstreams: Record<string, PricingSyncValues> }
+  {
+    current: PricingSyncValues
+    upstreams: Record<string, PricingSyncValues>
+    /** Fork: per upstream, why its expression cannot be saved on this gateway */
+    expr_errors?: Record<string, string>
+  }
 >
 
 export type UpstreamChannelsResponse = {

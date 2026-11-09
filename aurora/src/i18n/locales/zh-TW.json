@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Skipped, this gateway cannot save it: {{reason}}": "已跳過，本站無法儲存：{{reason}}",
+    "All selected prices were skipped: this gateway cannot save them.": "所選價格全部被跳過：本站無法儲存這些表達式。",
     "{{count}} unsaved price changes": "{{count}} 項未儲存",
     "{{name}}: {{reason}}": "{{name}}：{{reason}}",
     "Address format": "位址形式",

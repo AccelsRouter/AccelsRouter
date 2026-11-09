@@ -277,3 +277,20 @@ func TestCustomAlibabaVendorNoteExplainsSkippedModels(t *testing.T) {
 	assert.Contains(t, note, "lists 3 models; 1 are third-party")
 	assert.Contains(t, note, "1 Qwen models skipped for unreadable prices (e.g. qwen-peaky)")
 }
+
+// An upstream's usage expression for a model no local task plugin serves is
+// flagged for the sync preview instead of failing the whole save; ordinary
+// token expressions and usage-free candidates are not.
+func TestCustomBillingExprErrorFlagsUnservedUsageExpressions(t *testing.T) {
+	var errors map[string]string
+	usage := map[string]any{billing_setting.BillingExprField: `u("audio") == "on" ? tier("on", u("seconds") * 0.13) : tier("off", u("seconds") * 0.09)`}
+	customRecordBillingExprError(&errors, "aigc", "kling-video-v3", usage)
+	require.Contains(t, errors, "aigc")
+	assert.Contains(t, errors["aigc"], "no task plugin usage schema")
+	assert.Contains(t, errors["aigc"], "seconds")
+
+	customRecordBillingExprError(&errors, "other", "gpt-image-2.6-flare", map[string]any{billing_setting.BillingExprField: `tier("base", p * 5 + c * 1.25 + img * 8)`})
+	customRecordBillingExprError(&errors, "other", "gpt-image-2.6-flare", map[string]any{"model_ratio": 2.5})
+	assert.NotContains(t, errors, "other")
+	assert.Len(t, errors, 1)
+}

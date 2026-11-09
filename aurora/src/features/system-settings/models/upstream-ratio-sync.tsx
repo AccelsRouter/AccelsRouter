@@ -327,7 +327,10 @@ export function UpstreamRatioSync() {
       const selected = adjustedPrices[model]?.values
       const row = prices[model]
       if (!row || !selected) return
-      resolutions[model] = selected
+      // Fork: an expression this gateway cannot save (no local task plugin
+      // serves the model) stays visible in the preview but out of the save.
+      const skipped = row.expr_errors?.[entry.source]
+      if (!skipped) resolutions[model] = selected
       let adjustment = t('Keep source price')
       if (entry.adjustment === 'divide') {
         adjustment = t('Divide by exchange rate (÷ {{rate}})', {
@@ -345,6 +348,7 @@ export function UpstreamRatioSync() {
         current: describeSyncPrice(row.current, t),
         newVal: describeSyncPrice(selected, t),
         adjustment,
+        skipped,
         siteVal:
           isValidPricingCurrency(currency) &&
           (selected.billing_mode !== 'tiered_expr' ||
@@ -352,6 +356,12 @@ export function UpstreamRatioSync() {
             ? describeSyncPrice(selected, t, currency)
             : undefined,
       })
+    }
+    if (!Object.keys(resolutions).length) {
+      toast.warning(
+        t('All selected prices were skipped: this gateway cannot save them.')
+      )
+      return
     }
     try {
       const after = applyPriceSyncSelections(
