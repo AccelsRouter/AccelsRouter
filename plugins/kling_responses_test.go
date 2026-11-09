@@ -12,6 +12,7 @@ import (
 	builtinplugins "github.com/QuantumNous/new-api/plugins"
 	taskplugin "github.com/QuantumNous/new-api/relay/channel/task/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -542,5 +543,121 @@ func TestKling4(t *testing.T) {
 		require.NoError(t, err)
 		data, _ := alibabaObject(t, status)["data"].(map[string]any)
 		assert.Equal(t, "processing", data["task_status"], "the earlier query route does not pass a 4.0 reply off as its own")
+	})
+}
+
+// Fork: kling-video-v3 and kling-video-v4 are served by kling-v3 and
+// kling-4.0 and billed per output second with the facts an upstream gateway
+// prices by (resolution, native audio, reference input), so its expressions
+// apply unchanged; the official names keep Kling's unit deduction.
+func TestKlingPerSecondAliases(t *testing.T) {
+	source, err := builtinplugins.Source("kling")
+	require.NoError(t, err)
+	plugin, err := jsplugin.NewRegistry().RegisterFactory(source, jsplugin.Options{Key: "kling"})
+	require.NoError(t, err)
+	call := func(t *testing.T, name string, args ...any) map[string]any {
+		t.Helper()
+		value, err := plugin.Engine.CallPath(t.Context(), name, nil, args...)
+		require.NoError(t, err)
+		return alibabaObject(t, value)
+	}
+	type submission struct {
+		url   string
+		body  map[string]any
+		facts map[string]any
+		state map[string]any
+	}
+	openaiVideo := []string{"protocols", "openai_video", "decodeRequest"}
+	submit := func(t *testing.T, model string, body map[string]any, reply map[string]any) submission {
+		t.Helper()
+		value, err := plugin.Engine.CallPath(t.Context(), openaiVideo[0], openaiVideo[1:], map[string]any{"model": model, "body": map[string]any{"kind": "json", "value": body}})
+		require.NoError(t, err)
+		info := &relaycommon.RelayInfo{
+			ChannelMeta:     &relaycommon.ChannelMeta{ChannelBaseUrl: "https://api-singapore.klingai.com", ApiKey: "ak|sk", UpstreamModelName: model},
+			OriginModelName: model,
+			TaskRelayInfo:   &relaycommon.TaskRelayInfo{PublicTaskID: "task_public"},
+		}
+		adaptor := taskplugin.New(plugin)
+		adaptor.Init(info)
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+		requestBody := alibabaObject(t, value)["requestBody"]
+		c.Set("task_request", requestBody)
+		require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
+		reader, err := adaptor.BuildRequestBody(c, info)
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		var sent map[string]any
+		require.NoError(t, common.Unmarshal(encoded, &sent))
+		url, err := adaptor.BuildRequestURL(info)
+		require.NoError(t, err)
+		facts, err := adaptor.ExtractUsageFactsValidated(c, info)
+		require.NoError(t, err)
+		parsed := call(t, "parseSubmitResponse", map[string]any{"model": model, "requestBody": requestBody}, map[string]any{"statusCode": 200, "body": reply})
+		state, _ := parsed["state"].(map[string]any)
+		return submission{url: url, body: sent, facts: facts, state: state}
+	}
+	v3Reply := map[string]any{"code": 0, "message": "SUCCEED", "data": map[string]any{"task_id": "kling_3", "task_status": "submitted"}}
+	v4Reply := map[string]any{"code": 0, "message": "SUCCEED", "data": map[string]any{"id": "kling_4", "status": "submitted"}}
+
+	t.Run("v3 by mode and sound", func(t *testing.T) {
+		sent := submit(t, "kling-video-v3", map[string]any{"model": "kling-video-v3", "prompt": "a cat", "seconds": 10, "metadata": map[string]any{"mode": "pro", "sound": "on"}}, v3Reply)
+		assert.Equal(t, "https://api-singapore.klingai.com/v1/videos/text2video", sent.url)
+		assert.Equal(t, "kling-v3", sent.body["model_name"], "Kling receives its own model name")
+		assert.Equal(t, "10", sent.body["duration"])
+		assert.Equal(t, map[string]any{"seconds": float64(10), "resolution": "1080p", "audio": "on"}, sent.facts)
+		perSecond, _ := sent.state["perSecond"].(map[string]any)
+		require.NotNil(t, perSecond)
+		assert.Equal(t, map[string]any{"seconds": float64(10), "resolution": "1080p", "audio": "on"}, perSecond["facts"])
+		assert.Nil(t, sent.state["resolution"], "a v3 task is not looked up as a Kling 4.0 one")
+
+		// Kling bills the requested duration, so the slightly longer output and
+		// the unit deduction do not change the facts.
+		facts := call(t, "extractUsageOnComplete", map[string]any{"taskId": "kling_3", "state": sent.state}, map[string]any{"status": "SUCCESS"},
+			map[string]any{"code": 0, "data": map[string]any{"task_id": "kling_3", "task_status": "succeed", "final_unit_deduction": "12",
+				"task_result": map[string]any{"videos": []any{map[string]any{"url": "https://cdn.example/out.mp4", "duration": "10.2"}}}}})
+		assert.Equal(t, map[string]any{"seconds": float64(10), "resolution": "1080p", "audio": "on"}, facts)
+
+		sent = submit(t, "kling-video-v3", map[string]any{"model": "kling-video-v3", "prompt": "a cat"}, v3Reply)
+		assert.Equal(t, map[string]any{"seconds": float64(5), "resolution": "720p", "audio": "off"}, sent.facts, "Kling's defaults: std for 5 seconds, silent")
+		sent = submit(t, "kling-video-v3", map[string]any{"model": "kling-video-v3", "prompt": "a cat", "metadata": map[string]any{"mode": "4k"}}, v3Reply)
+		assert.Equal(t, "4k", sent.facts["resolution"])
+	})
+
+	t.Run("v4 by resolution and reference input", func(t *testing.T) {
+		sent := submit(t, "kling-video-v4", map[string]any{"model": "kling-video-v4", "prompt": "a cat", "size": "1280x720"}, v4Reply)
+		assert.Equal(t, "https://api-singapore.klingai.com/text-to-video/kling-4.0", sent.url)
+		assert.Equal(t, map[string]any{"seconds": float64(30), "resolution": "720p", "reference": "none"}, sent.facts, "without a duration the longest is reserved")
+		assert.Equal(t, "720p", sent.state["resolution"], "still looked up at GET /tasks")
+		facts := call(t, "extractUsageOnComplete", map[string]any{"taskId": "kling_4", "state": sent.state}, map[string]any{"status": "SUCCESS"},
+			map[string]any{"code": 0, "data": []any{map[string]any{"id": "kling_4", "status": "succeeded",
+				"outputs": []any{map[string]any{"type": "video", "url": "https://cdn.example/out.mp4", "duration": "7.4"}},
+				"billing": []any{map[string]any{"charge_type": "unit", "amount": "8", "package_type": "video"}}}}})
+		assert.Equal(t, map[string]any{"seconds": float64(8), "resolution": "720p", "reference": "none"}, facts, "the output's length settles an open duration")
+
+		sent = submit(t, "kling-video-v4", map[string]any{"model": "kling-video-v4", "prompt": "a cat", "input_reference": "https://cdn.example/a.png", "seconds": 5}, v4Reply)
+		assert.Equal(t, "https://api-singapore.klingai.com/image-to-video/kling-4.0", sent.url)
+		assert.Equal(t, map[string]any{"seconds": float64(5), "resolution": "1080p", "reference": "reference"}, sent.facts)
+		facts = call(t, "extractUsageOnComplete", map[string]any{"taskId": "kling_4", "state": sent.state}, map[string]any{"status": "SUCCESS"},
+			map[string]any{"code": 0, "data": []any{map[string]any{"id": "kling_4", "status": "succeeded",
+				"outputs": []any{map[string]any{"type": "video", "url": "https://cdn.example/out.mp4", "duration": "5.3"}}}}})
+		assert.Equal(t, map[string]any{"seconds": float64(5), "resolution": "1080p", "reference": "reference"}, facts, "a requested duration is billed as requested")
+	})
+
+	t.Run("official names keep the unit deduction", func(t *testing.T) {
+		sent := submit(t, "kling-v3", map[string]any{"model": "kling-v3", "prompt": "a cat", "seconds": 10, "metadata": map[string]any{"mode": "pro"}}, v3Reply)
+		assert.Equal(t, map[string]any{"units": float64(8)}, sent.facts)
+		assert.Nil(t, sent.state)
+	})
+
+	// The upstream gateway's own expressions save against these schemas.
+	t.Run("upstream expressions apply unchanged", func(t *testing.T) {
+		v3, _ := plugin.Meta.UsageForModel("kling-video-v3")
+		require.NoError(t, billing_setting.SmokeTestTaskExpr(`u("audio") == "off" && u("resolution") == "720p" ? tier("off·720p", u("seconds") * 0.088235294118) : u("audio") == "off" && u("resolution") == "1080p" ? tier("off·1080p", u("seconds") * 0.117647058824) : u("audio") == "off" && u("resolution") == "4k" ? tier("off·4k", u("seconds") * 0.441176470588) : u("audio") == "on" && u("resolution") == "720p" ? tier("on·720p", u("seconds") * 0.132352941176) : u("audio") == "on" && u("resolution") == "1080p" ? tier("on·1080p", u("seconds") * 0.176470588235) : tier("on·4k", u("seconds") * 0.441176470588)`, v3))
+		v4, _ := plugin.Meta.UsageForModel("kling-video-v4")
+		require.NoError(t, billing_setting.SmokeTestTaskExpr(`u("reference") == "none" && u("resolution") == "720p" ? tier("none·720p", u("seconds") * 0.147058823529) : u("reference") == "none" && u("resolution") == "1080p" ? tier("none·1080p", u("seconds") * 0.220588235294) : u("reference") == "reference" && u("resolution") == "720p" ? tier("reference·720p", u("seconds") * 0.088235294118) : tier("reference·1080p", u("seconds") * 0.132352941176)`, v4))
+		units, _ := plugin.Meta.UsageForModel("kling-v3")
+		assert.Error(t, billing_setting.SmokeTestTaskExpr(`tier("a", u("seconds") * 0.1)`, units), "the official name has no seconds fact")
 	})
 }

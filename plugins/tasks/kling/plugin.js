@@ -1,3 +1,36 @@
+// Fork: kling-video-v3 and kling-video-v4 are the names an upstream gateway
+// prices per output second by resolution and by native audio (v3) or
+// reference input (v4). Each is served by its official Kling model and billed
+// with those facts instead of Kling's unit deduction, so the upstream's
+// per-second expressions apply unchanged.
+const PER_SECOND_MODELS = { "kling-video-v3": "kling-v3", "kling-video-v4": "kling-4.0" };
+// Kling v3 mode to the resolution it renders; a mode outside the table reserves the dearest.
+const V3_MODE_RESOLUTIONS = { std: "720p", pro: "1080p", "4k": "4k" };
+const SECONDS_FIELD = { type: "number", unit: "second", description: { en: "Video generation unit price", zh: "视频生成单价" } };
+function resolutionField(resolutions) {
+  const labels = {};
+  for (const resolution of resolutions) labels[resolution] = { en: resolution, zh: resolution };
+  return { enum: resolutions, enumLabels: labels, description: { en: "Output video resolution", zh: "输出视频分辨率" } };
+}
+const V3_PER_SECOND_SCHEMA = {
+  seconds: SECONDS_FIELD,
+  resolution: resolutionField(["720p", "1080p", "4k"]),
+  audio: {
+    enum: ["off", "on"],
+    enumLabels: { off: { en: "Silent", zh: "无声" }, on: { en: "With native audio", zh: "有原生音频" } },
+    description: { en: "Native audio", zh: "原生音频" },
+  },
+};
+const V4_PER_SECOND_SCHEMA = {
+  seconds: SECONDS_FIELD,
+  resolution: resolutionField(["720p", "1080p"]),
+  reference: {
+    enum: ["none", "reference"],
+    enumLabels: { none: { en: "No reference input", zh: "无参考输入" }, reference: { en: "With reference input", zh: "有参考输入" } },
+    description: { en: "Reference input", zh: "参考输入" },
+  },
+};
+
 export const meta = {
   apiVersion: 1,
   key: "kling",
@@ -10,7 +43,7 @@ export const meta = {
   version: "1.2.0",
   author: { name: "QuantumNous" },
   channelTypes: [50],
-  models: ["kling-v2-5-turbo", "kling-v2-6", "kling-v3", "kling-4.0"],
+  models: ["kling-v2-5-turbo", "kling-v2-6", "kling-v3", "kling-4.0"].concat(Object.keys(PER_SECOND_MODELS)),
   fetchMode: "per_task",
   upstreams: ["vendor", "new_api"],
   usageSchema: {
@@ -28,6 +61,25 @@ export const meta = {
     { label: "v3 4k 5s", facts: { units: 15 } },
     { label: "4.0 1080p 10s", facts: { units: 15 } },
     { label: "4.0 1080p 10s · video input", facts: { units: 18 } },
+  ],
+  // Fork: the per-second billing names (see PER_SECOND_MODELS).
+  usageProfiles: [
+    {
+      models: ["kling-video-v3"],
+      schema: V3_PER_SECOND_SCHEMA,
+      examples: [
+        { label: "v3 pro 5s", facts: { seconds: 5, resolution: "1080p", audio: "off" } },
+        { label: "v3 4k 10s · audio", facts: { seconds: 10, resolution: "4k", audio: "on" } },
+      ],
+    },
+    {
+      models: ["kling-video-v4"],
+      schema: V4_PER_SECOND_SCHEMA,
+      examples: [
+        { label: "v4 1080p 10s", facts: { seconds: 10, resolution: "1080p", reference: "none" } },
+        { label: "v4 720p 10s · reference", facts: { seconds: 10, resolution: "720p", reference: "reference" } },
+      ],
+    },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
   // Kling's own paths; the gateway also serves each under /kling.
@@ -206,8 +258,62 @@ function aspectRatio(dimensions, ratios) {
   return nearest;
 }
 
-function submitModel(ctx, req) {
+// The model the request names; the per-second names stand for their official Kling model.
+function requestedModel(ctx, req) {
   return trimmed((ctx && ctx.upstreamModel) || (ctx && ctx.model) || (req && req.model));
+}
+
+function submitModel(ctx, req) {
+  const model = requestedModel(ctx, req);
+  return PER_SECOND_MODELS[model] || model;
+}
+
+// Fork: the per-second facts of a request for a PER_SECOND_MODELS name, or
+// null for every other model. seconds is the duration Kling bills (the one it
+// receives; Kling 4.0 without a duration picks the length, so the longest is
+// reserved and the output's length settles it), resolution the one it renders
+// (v3 by mode, 4.0 by settings), audio Kling's sound switch, and reference
+// whether the request carries any image, video or element input.
+function perSecondUsage(ctx) {
+  const req = (ctx && ctx.requestBody) || {};
+  if (!PER_SECOND_MODELS[requestedModel(ctx, req)]) return null;
+  if (usesKling4(ctx, req)) {
+    const body = kling4Submission(ctx).body;
+    const settings = plainObject(body.settings);
+    const open = settings.duration === undefined || settings.duration === null;
+    const contents = Array.isArray(body.contents) ? body.contents : [];
+    const reference = contents.some(function (item) {
+      return item && item.type && item.type !== "prompt";
+    });
+    return {
+      facts: { seconds: open ? KLING4_MAX_SECONDS : kling4Duration(settings.duration), resolution: kling4Resolution(settings), reference: reference ? "reference" : "none" },
+      settleOnOutput: open,
+    };
+  }
+  const source = req.vendorBody ? { metadata: req.vendorBody } : req;
+  const metadata = source.metadata || {};
+  return {
+    facts: {
+      seconds: outboundDuration(source),
+      resolution: V3_MODE_RESOLUTIONS[outboundMode(source)] || "4k",
+      audio: trimmed(metadata.sound).toLowerCase() === "on" ? "on" : "off",
+    },
+    settleOnOutput: false,
+  };
+}
+
+// The output's length in whole seconds from a finished task's reply, 0 when unknown.
+function outputSeconds(ctx, body) {
+  let duration = "";
+  if (isKling4Task(ctx)) {
+    const videos = kling4Videos(kling4Entry(body, ctx && ctx.taskId));
+    duration = videos.length ? videos[0].duration : "";
+  } else {
+    const result = plainObject(plainObject(body).data).task_result;
+    const videos = result && Array.isArray(result.videos) ? result.videos : [];
+    duration = videos.length ? videos[0].duration : "";
+  }
+  return Math.ceil(reportedSeconds(duration));
 }
 
 function klingModel(model) {
@@ -577,18 +683,24 @@ export function parseSubmitResponse(ctx, resp) {
   const result = resp.body || {};
   if (result.code !== 0) throw new Error(result.message || "kling submit failed");
   const req = (ctx && ctx.requestBody) || {};
+  const perSecond = perSecondUsage(ctx);
   if (usesKling4(ctx, req)) {
     if (!result.data || !result.data.id) throw new Error("missing task id");
     const settings = plainObject(kling4Submission(ctx).body.settings);
-    return { taskId: result.data.id, taskData: result, state: { resolution: kling4Resolution(settings) } };
+    const state = { resolution: kling4Resolution(settings) };
+    if (perSecond) state.perSecond = perSecond;
+    return { taskId: result.data.id, taskData: result, state: state };
   }
   if (!result.data || !result.data.task_id) throw new Error("missing task_id");
+  if (perSecond) return { taskId: result.data.task_id, taskData: result, state: { perSecond: perSecond } };
   return { taskId: result.data.task_id, taskData: result };
 }
 
 export function extractUsage(ctx) {
   if (ctx.usagePurpose === "billing_ratios") return null;
   const req = ctx.requestBody || {};
+  const perSecond = perSecondUsage(ctx);
+  if (perSecond) return perSecond.facts;
   if (usesKling4(ctx, req)) return { units: kling4ReservedUnits(kling4Submission(ctx).body) };
   // A native body reads like the metadata of a host-protocol request.
   const source = req.vendorBody ? { metadata: req.vendorBody } : req;
@@ -661,6 +773,13 @@ export function buildContentRequest(ctx) {
 }
 
 export function extractUsageOnComplete(ctx, _taskResult, body) {
+  const perSecond = plainObject(ctx && ctx.state).perSecond;
+  if (perSecond && perSecond.facts) {
+    const facts = Object.assign({}, perSecond.facts);
+    const output = perSecond.settleOnOutput ? outputSeconds(ctx, body) : 0;
+    if (output > 0) facts.seconds = output;
+    return facts;
+  }
   if (isKling4Task(ctx)) return kling4CompletedUnits(ctx, body);
   const data = (body && body.data) || {};
   if (
