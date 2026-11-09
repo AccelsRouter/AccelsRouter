@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -331,7 +332,7 @@ func CreateMyByokChannel(c *gin.Context) {
 		return
 	}
 	group := model.OrgPrivateGroup(org.Id)
-	baseURL := req.BaseURL
+	baseURL := strings.TrimSpace(req.BaseURL)
 	channel := &model.Channel{
 		Type:   req.Type,
 		Name:   "[BYOK] " + req.Name,
@@ -341,6 +342,13 @@ func CreateMyByokChannel(c *gin.Context) {
 		Status: common.ChannelStatusEnabled,
 	}
 	if baseURL != "" {
+		// A BYOK base URL is end-user controlled, unlike operator-managed provider
+		// channels. The relay dialer is intentionally not SSRF-protected, so block
+		// internal/metadata targets here at creation time.
+		if err := service.ValidateSSRFProtectedFetchURL(baseURL); err != nil {
+			common.ApiErrorMsg(c, "base_url 无效或指向被禁止的内网地址")
+			return
+		}
 		channel.BaseURL = &baseURL
 	}
 	if err := channel.Insert(); err != nil {
