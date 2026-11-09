@@ -491,6 +491,8 @@ export type PricingSyncModels = Record<
     upstreams: Record<string, PricingSyncValues>
     /** Fork: per upstream, why its expression cannot be saved on this gateway */
     expr_errors?: Record<string, string>
+    /** Fork: per upstream, the usage expression its candidate was converted from */
+    expr_conversions?: Record<string, string>
   }
 >
 

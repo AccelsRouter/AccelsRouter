@@ -331,6 +331,7 @@ export function UpstreamRatioSync() {
       // serves the model) stays visible in the preview but out of the save.
       const skipped = row.expr_errors?.[entry.source]
       if (!skipped) resolutions[model] = selected
+      const converted = row.expr_conversions?.[entry.source]
       let adjustment = t('Keep source price')
       if (entry.adjustment === 'divide') {
         adjustment = t('Divide by exchange rate (÷ {{rate}})', {
@@ -349,6 +350,11 @@ export function UpstreamRatioSync() {
         newVal: describeSyncPrice(selected, t),
         adjustment,
         skipped,
+        note: converted
+          ? t('Converted from the upstream usage expression: {{expr}}', {
+              expr: converted,
+            })
+          : undefined,
         siteVal:
           isValidPricingCurrency(currency) &&
           (selected.billing_mode !== 'tiered_expr' ||

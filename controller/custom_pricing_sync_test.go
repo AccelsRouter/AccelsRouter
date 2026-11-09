@@ -282,15 +282,47 @@ func TestCustomAlibabaVendorNoteExplainsSkippedModels(t *testing.T) {
 // flagged for the sync preview instead of failing the whole save; ordinary
 // token expressions and usage-free candidates are not.
 func TestCustomBillingExprErrorFlagsUnservedUsageExpressions(t *testing.T) {
-	var errors map[string]string
+	var errors, conversions map[string]string
 	usage := map[string]any{billing_setting.BillingExprField: `u("audio") == "on" ? tier("on", u("seconds") * 0.13) : tier("off", u("seconds") * 0.09)`}
-	customRecordBillingExprError(&errors, "aigc", "kling-video-v3", usage)
+	// Built-in plugins are registered here, so the model must be one none of them serves.
+	customRecordBillingExprError(&errors, &conversions, "aigc", "vendor-video-x", usage)
 	require.Contains(t, errors, "aigc")
 	assert.Contains(t, errors["aigc"], "no task plugin usage schema")
 	assert.Contains(t, errors["aigc"], "seconds")
 
-	customRecordBillingExprError(&errors, "other", "gpt-image-2.6-flare", map[string]any{billing_setting.BillingExprField: `tier("base", p * 5 + c * 1.25 + img * 8)`})
-	customRecordBillingExprError(&errors, "other", "gpt-image-2.6-flare", map[string]any{"model_ratio": 2.5})
+	customRecordBillingExprError(&errors, &conversions, "other", "gpt-image-2.6-flare", map[string]any{billing_setting.BillingExprField: `tier("base", p * 5 + c * 1.25 + img * 8)`})
+	customRecordBillingExprError(&errors, &conversions, "other", "gpt-image-2.6-flare", map[string]any{"model_ratio": 2.5})
 	assert.NotContains(t, errors, "other")
 	assert.Len(t, errors, 1)
+	assert.Empty(t, conversions)
+}
+
+// A per-character task price of a model no local plugin serves becomes the
+// ordinary expression the speech relay bills with (characters are the prompt
+// tokens), and the original is reported; non-linear character prices and
+// prices with a constant or request rules stay errors.
+func TestCustomCharacterExpressionConversion(t *testing.T) {
+	var errors, conversions map[string]string
+	candidate := map[string]any{billing_setting.BillingModeField: billing_setting.BillingModeTieredExpr, billing_setting.BillingExprField: `u("characters") / 10000 * 0.4412`}
+	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", candidate)
+	assert.Empty(t, errors)
+	assert.Equal(t, `tier("base", p * 44.12)`, candidate[billing_setting.BillingExprField])
+	assert.Equal(t, `u("characters") / 10000 * 0.4412`, conversions["aigc"])
+
+	assert.Equal(t, `tier("base", p * 50)`, customConvertCharacterExpr(`tier("base", u("characters") * 0.00005)`))
+	assert.Equal(t, `tier("base", p * 0)`, customConvertCharacterExpr(`u("characters") * 0`))
+	for name, expression := range map[string]string{
+		"tiered":        `u("characters") > 10000 ? tier("big", u("characters") * 0.00004) : tier("small", u("characters") * 0.00005)`,
+		"constant":      `tier("base", 0.01 + u("characters") * 0.00005)`,
+		"other key":     `tier("base", u("characters") * 0.00005 + u("seconds") * 0.1)`,
+		"request rule":  `(tier("base", u("characters") * 0.00005)) * (header("x-fast") == "1" ? 2 : 1)`,
+		"not a usage":   `tier("base", p * 5)`,
+		"fixed pricing": `tier("base", fixed(0.01))`,
+	} {
+		assert.Empty(t, customConvertCharacterExpr(expression), name)
+	}
+	errors, conversions = nil, nil
+	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", map[string]any{billing_setting.BillingExprField: `tier("base", 0.01 + u("characters") * 0.00005)`})
+	assert.Contains(t, errors, "aigc")
+	assert.Empty(t, conversions)
 }

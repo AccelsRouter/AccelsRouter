@@ -613,8 +613,10 @@ func FetchUpstreamRatios(c *gin.Context) {
 	type modelSyncPrices struct {
 		Current   map[string]any            `json:"current"`
 		Upstreams map[string]map[string]any `json:"upstreams"`
-		// Fork: per upstream, why its expression cannot be saved on this gateway.
-		ExprErrors map[string]string `json:"expr_errors,omitempty"`
+		// Fork: per upstream, why its expression cannot be saved on this gateway,
+		// or the usage expression its candidate was converted from.
+		ExprErrors      map[string]string `json:"expr_errors,omitempty"`
+		ExprConversions map[string]string `json:"expr_conversions,omitempty"`
 	}
 	models := make(map[string]struct{}, len(differences))
 	for name := range differences {
@@ -649,7 +651,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 			_, hasExpression := candidate[billing_setting.BillingExprField]
 			if hasRatio || hasPrice || hasExpression {
 				row.Upstreams[channel.name] = candidate
-				customRecordBillingExprError(&row.ExprErrors, channel.name, name, candidate) // Fork
+				customRecordBillingExprError(&row.ExprErrors, &row.ExprConversions, channel.name, name, candidate) // Fork
 			}
 		}
 		if len(row.Upstreams) > 0 {
