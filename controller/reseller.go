@@ -312,6 +312,24 @@ func callerResellerCustomer(c *gin.Context) (reseller *model.Organization, custo
 	return reseller, customerId, true
 }
 
+// RemoveMyCustomer — DELETE /api/reseller/customers/:id
+// Ends the relationship with a customer whose allowance has been reclaimed
+// in full: unlinks it, disables its keys and suspends its org (see
+// model.RemoveResellerCustomer).
+func RemoveMyCustomer(c *gin.Context) {
+	reseller, customerId, ok := callerResellerCustomer(c)
+	if !ok {
+		return
+	}
+	disabled, err := model.RemoveResellerCustomer(reseller.Id, customerId)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.remove", fmt.Sprintf("org:%d", customerId), fmt.Sprintf("keys_disabled=%d", disabled))
+	common.ApiSuccess(c, gin.H{"keys_disabled": disabled})
+}
+
 // InviteMyCustomerOwner — POST /api/reseller/customers/:id/invitations
 // Deliver a provisioned (ownerless) customer to its operator: invite an email
 // to take over the customer org as its admin. The invitee accepts via the

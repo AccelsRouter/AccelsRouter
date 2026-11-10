@@ -101,3 +101,66 @@ func TestTaskAdjustFundingSettlesOrgWallets(t *testing.T) {
 	assert.Equal(t, int64(-800), row.ChargedQuota)
 	assert.Equal(t, int64(-800), row.CostQuota, "cost follows the refund like the submission's cost did")
 }
+
+// A pre-send org-wallet reservation (image quantity / task retry price, where the
+// balance must cover the charge before the upstream call) MUST gate on the
+// balance: an insufficient wallet is rejected and never driven negative, and
+// successive reservations accumulate the charged amount so Refund unwinds the full
+// total. Regression for the image-quantity reservation that charged the org
+// wallet unconditionally via Settle and could drive it (and the reseller cost
+// wallet) negative.
+func TestOrgWalletFundingPreConsumeGatesBalance(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, db.AutoMigrate(&model.Organization{}, &model.OrgAccount{}, &model.Workspace{}))
+	previousDB, previousRedis := model.DB, common.RedisEnabled
+	previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
+	model.DB, common.RedisEnabled = db, false
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	t.Cleanup(func() {
+		model.DB, common.RedisEnabled = previousDB, previousRedis
+		common.SetDatabaseTypes(previousMain, previousLog)
+		require.NoError(t, sqlDB.Close())
+	})
+	require.NoError(t, db.Create(&model.Organization{Id: 1, Name: "customer", Type: model.OrgTypeEnterprise, Status: model.OrgStatusActive, WalletQuota: 100}).Error)
+
+	walletOf := func(id int) int {
+		var org model.Organization
+		require.NoError(t, db.First(&org, id).Error)
+		return org.WalletQuota
+	}
+
+	// No workspace/member-budget rows: the member and workspace gates pass through
+	// so the test isolates the wallet balance gate.
+	funding := &OrgWalletFunding{orgId: 1, userId: 7}
+
+	// Insufficient balance: reject, wallet untouched (never negative).
+	err = funding.PreConsume(500)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errOrgWalletInsufficient)
+	assert.Equal(t, 100, walletOf(1), "a rejected reserve must not mutate the wallet")
+	assert.Equal(t, 0, funding.consumed)
+
+	// Successive reservations accumulate consumed and debit the wallet additively.
+	require.NoError(t, funding.PreConsume(60))
+	assert.Equal(t, 40, walletOf(1))
+	assert.Equal(t, 60, funding.consumed)
+	require.NoError(t, funding.PreConsume(30))
+	assert.Equal(t, 10, walletOf(1))
+	assert.Equal(t, 90, funding.consumed, "second reserve accumulates, never overwrites")
+
+	// A reserve beyond the remaining balance is rejected; the wallet never goes
+	// negative (the core of the fix).
+	err = funding.PreConsume(50)
+	require.Error(t, err)
+	assert.Equal(t, 10, walletOf(1), "wallet must never go negative on a pre-send reserve")
+	assert.Equal(t, 90, funding.consumed)
+
+	// Refund returns exactly the accumulated total.
+	require.NoError(t, funding.Refund())
+	assert.Equal(t, 100, walletOf(1))
+	assert.Equal(t, 0, funding.consumed)
+}

@@ -23,11 +23,16 @@ discount given to resellers and what the platform actually received
 group / user / reseller, over a date range and a day/week/month time series,
 with CSV export.
 */
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
-import { Download, Loader2 } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Loader2,
+  Upload,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import {
   Area,
   AreaChart,
@@ -37,25 +42,23 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-
-import { SectionPageLayout } from '@/components/layout'
-import { Button } from '@/components/ui/button'
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
+import { toast } from 'sonner'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 import { formatNumber } from '@/lib/format'
-
+import { Button } from '@/components/ui/button'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SectionPageLayout } from '@/components/layout'
+import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import {
   exportReconciliation,
   getReconciliation,
   type Granularity,
+  type ReconMatrixRow,
   type ReconRow,
 } from './api'
+import { UpstreamBillDialog } from './upstream-bill-dialog'
 
 function toUnix(d?: Date): number | undefined {
   return d ? Math.floor(d.getTime() / 1000) : undefined
@@ -73,42 +76,223 @@ function StatCard(props: { label: string; value: string; hint?: string }) {
   )
 }
 
-function DimTable(props: { keyLabel: string; rows: ReconRow[] }) {
+/*
+Usage in the unit the model is billed in. A token model shows its tokens with
+the input / output (and cached input) split vendors bill by; a task model
+billed by seconds, images or clips shows that amount with the task count
+beside it; a model billed per task shows the task count.
+*/
+const USAGE_UNIT_LABELS: Record<string, string> = {
+  token: 'tokens',
+  second: 'seconds',
+  image: 'images',
+  clip: 'clips',
+}
+
+type UsageRow = {
+  quota: number
+  requests: number
+  tokens: number
+  prompt_tokens: number
+  completion_tokens: number
+  cache_read_tokens: number
+  usage_unit: string
+  usage_amount: number
+}
+
+function UsageCell(props: { row: UsageRow }) {
   const { t } = useTranslation()
-  if (props.rows.length === 0) {
+  const row = props.row
+  const unit = row.usage_unit || 'token'
+  const amount = row.usage_unit ? row.usage_amount : row.tokens
+  if (amount <= 0) {
     return (
-      <p className='text-muted-foreground py-8 text-center text-sm'>
-        {t('No data.')}
-      </p>
+      <span className='tabular-nums'>
+        {formatNumber(row.requests)}{' '}
+        <span className='text-muted-foreground text-xs'>{t('tasks')}</span>
+      </span>
     )
   }
+  const split =
+    unit === 'token' && row.prompt_tokens + row.completion_tokens > 0
+  return (
+    <span className='inline-flex flex-col items-end tabular-nums'>
+      <span>
+        {formatNumber(amount)}{' '}
+        <span className='text-muted-foreground text-xs'>
+          {t(USAGE_UNIT_LABELS[unit] ?? 'tokens')}
+        </span>
+        {unit !== 'token' && (
+          <span className='text-muted-foreground text-xs'>
+            {' '}
+            · {formatNumber(row.requests)} {t('tasks')}
+          </span>
+        )}
+      </span>
+      {split && (
+        <span className='text-muted-foreground text-[11px]'>
+          {t('Input')} {formatNumber(row.prompt_tokens)} · {t('Output')}{' '}
+          {formatNumber(row.completion_tokens)}
+          {row.cache_read_tokens > 0 &&
+            ` · ${t('Cache read')} ${formatNumber(row.cache_read_tokens)}`}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function NumberCells(props: { row: UsageRow }) {
+  return (
+    <>
+      <td className='px-3 py-2 text-right tabular-nums'>
+        {formatQuotaWithCurrency(props.row.quota, {
+          digitsLarge: 4,
+          digitsSmall: 6,
+        })}
+      </td>
+      <td className='px-3 py-2 text-right tabular-nums'>
+        {formatNumber(props.row.requests)}
+      </td>
+      <td className='px-3 py-2 text-right'>
+        <UsageCell row={props.row} />
+      </td>
+    </>
+  )
+}
+
+function EmptyRows() {
+  const { t } = useTranslation()
+  return (
+    <p className='text-muted-foreground py-8 text-center text-sm'>
+      {t('No data.')}
+    </p>
+  )
+}
+
+/*
+A dimension table whose rows expand to their (model, channel) breakdown when
+`details` is given: a model row lists the channels that served it, a channel
+row lists the models it served.
+*/
+function DimTable(props: {
+  keyLabel: string
+  rows: ReconRow[]
+  details?: { label: string; of: (row: ReconRow) => ReconMatrixRow[] }
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  if (props.rows.length === 0) return <EmptyRows />
+  const details = props.details
   return (
     <div className='border-border/60 max-h-[420px] overflow-auto rounded-md border'>
       <table className='w-full text-sm'>
         <thead className='bg-muted/40 text-muted-foreground sticky top-0 text-xs'>
           <tr>
-            <th className='px-3 py-2 text-left font-medium'>{props.keyLabel}</th>
-            <th className='px-3 py-2 text-right font-medium'>{t('Standard')}</th>
-            <th className='px-3 py-2 text-right font-medium'>{t('Requests')}</th>
-            <th className='px-3 py-2 text-right font-medium'>{t('Tokens')}</th>
+            <th className='px-3 py-2 text-left font-medium'>
+              {props.keyLabel}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Standard')}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Requests')}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>{t('Usage')}</th>
+          </tr>
+        </thead>
+        <tbody className='divide-border/60 divide-y'>
+          {props.rows.map((r) => {
+            const children = details ? details.of(r) : []
+            const expandable = children.length > 0
+            const expanded = expandable && open[r.key] === true
+            return (
+              <Fragment key={r.key}>
+                <tr
+                  className={
+                    expandable
+                      ? 'hover:bg-muted/30 cursor-pointer'
+                      : 'hover:bg-muted/30'
+                  }
+                  onClick={() => {
+                    if (expandable)
+                      setOpen((s) => ({ ...s, [r.key]: !s[r.key] }))
+                  }}
+                  aria-expanded={expandable ? expanded : undefined}
+                >
+                  <td className='px-3 py-2 font-medium'>
+                    <span className='inline-flex items-center gap-1'>
+                      {expandable &&
+                        (expanded ? (
+                          <ChevronDown
+                            className='text-muted-foreground h-3.5 w-3.5'
+                            aria-hidden='true'
+                          />
+                        ) : (
+                          <ChevronRight
+                            className='text-muted-foreground h-3.5 w-3.5'
+                            aria-hidden='true'
+                          />
+                        ))}
+                      {r.key || '-'}
+                    </span>
+                  </td>
+                  <NumberCells row={r} />
+                </tr>
+                {expanded &&
+                  children.map((d) => (
+                    <tr
+                      key={`${d.model}#${d.channel_id}`}
+                      className='bg-muted/20'
+                    >
+                      <td className='text-muted-foreground py-1.5 pr-3 pl-9 text-xs'>
+                        <span className='mr-1'>{details?.label}</span>
+                        <span className='text-foreground'>
+                          {details?.label === t('Channel')
+                            ? d.channel
+                            : d.model}
+                        </span>
+                      </td>
+                      <NumberCells row={d} />
+                    </tr>
+                  ))}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* Every (model, channel) pair of the window, one row each, largest first. */
+function MatrixTable(props: { rows: ReconMatrixRow[] }) {
+  const { t } = useTranslation()
+  if (props.rows.length === 0) return <EmptyRows />
+  return (
+    <div className='border-border/60 max-h-[420px] overflow-auto rounded-md border'>
+      <table className='w-full text-sm'>
+        <thead className='bg-muted/40 text-muted-foreground sticky top-0 text-xs'>
+          <tr>
+            <th className='px-3 py-2 text-left font-medium'>{t('Model')}</th>
+            <th className='px-3 py-2 text-left font-medium'>{t('Channel')}</th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Standard')}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Requests')}
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>{t('Usage')}</th>
           </tr>
         </thead>
         <tbody className='divide-border/60 divide-y'>
           {props.rows.map((r) => (
-            <tr key={r.key} className='hover:bg-muted/30'>
-              <td className='px-3 py-2 font-medium'>{r.key || '-'}</td>
-              <td className='px-3 py-2 text-right tabular-nums'>
-                {formatQuotaWithCurrency(r.quota, {
-                  digitsLarge: 4,
-                  digitsSmall: 6,
-                })}
-              </td>
-              <td className='px-3 py-2 text-right tabular-nums'>
-                {formatNumber(r.requests)}
-              </td>
-              <td className='px-3 py-2 text-right tabular-nums'>
-                {formatNumber(r.tokens)}
-              </td>
+            <tr
+              key={`${r.model}#${r.channel_id}`}
+              className='hover:bg-muted/30'
+            >
+              <td className='px-3 py-2 font-medium'>{r.model || '-'}</td>
+              <td className='px-3 py-2'>{r.channel}</td>
+              <NumberCells row={r} />
             </tr>
           ))}
         </tbody>
@@ -124,6 +308,7 @@ export function Reconciliation() {
     end: dayjs().endOf('day').toDate(),
   }))
   const [granularity, setGranularity] = useState<Granularity>('day')
+  const [billOpen, setBillOpen] = useState(false)
 
   const from = toUnix(range.start)
   const to = toUnix(range.end)
@@ -141,6 +326,11 @@ export function Reconciliation() {
 
   const q = (v: number) =>
     formatQuotaWithCurrency(v, { digitsLarge: 4, digitsSmall: 6 })
+
+  const matrix = useMemo(
+    () => data?.by_model_channel ?? [],
+    [data?.by_model_channel]
+  )
 
   const chartData = useMemo(
     () =>
@@ -179,6 +369,16 @@ export function Reconciliation() {
           )}
           {t('Export CSV')}
         </Button>
+        <Button
+          variant='outline'
+          size='sm'
+          className='gap-1.5'
+          onClick={() => setBillOpen(true)}
+        >
+          <Upload className='h-3.5 w-3.5' />
+          {t('Upstream bill')}
+        </Button>
+        <UpstreamBillDialog open={billOpen} onOpenChange={setBillOpen} />
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='flex flex-col gap-5'>
@@ -288,23 +488,41 @@ export function Reconciliation() {
                 </div>
               </div>
 
-              <Tabs defaultValue='model'>
+              <Tabs defaultValue='channel'>
                 <TabsList className='max-w-full flex-wrap justify-start'>
                   <TabsTrigger value='model'>{t('By Model')}</TabsTrigger>
                   <TabsTrigger value='channel'>
                     {t('By Channel (upstream)')}
                   </TabsTrigger>
+                  <TabsTrigger value='matrix'>
+                    {t('Model x Channel')}
+                  </TabsTrigger>
                   <TabsTrigger value='group'>{t('By Group')}</TabsTrigger>
                   <TabsTrigger value='user'>{t('By Member')}</TabsTrigger>
-                  <TabsTrigger value='reseller'>
-                    {t('Resellers')}
-                  </TabsTrigger>
+                  <TabsTrigger value='reseller'>{t('Resellers')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value='model' className='pt-3'>
-                  <DimTable keyLabel={t('Model')} rows={data.by_model} />
+                  <DimTable
+                    keyLabel={t('Model')}
+                    rows={data.by_model}
+                    details={{
+                      label: t('Channel'),
+                      of: (row) => matrix.filter((m) => m.model === row.key),
+                    }}
+                  />
                 </TabsContent>
                 <TabsContent value='channel' className='pt-3'>
-                  <DimTable keyLabel={t('Channel')} rows={data.by_channel} />
+                  <DimTable
+                    keyLabel={t('Channel')}
+                    rows={data.by_channel}
+                    details={{
+                      label: t('Model'),
+                      of: (row) => matrix.filter((m) => m.channel === row.key),
+                    }}
+                  />
+                </TabsContent>
+                <TabsContent value='matrix' className='pt-3'>
+                  <MatrixTable rows={matrix} />
                 </TabsContent>
                 <TabsContent value='group' className='pt-3'>
                   <DimTable keyLabel={t('Group')} rows={data.by_group} />

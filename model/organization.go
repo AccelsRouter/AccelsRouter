@@ -412,10 +412,14 @@ func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
 		Relation      string
 		AllowedModels string
 	}
-	err := DB.Table("org_accounts").
-		Select("org_accounts.org_id as org_id, organizations.status as org_status, organizations.type as org_type, org_accounts.status as account_status, org_accounts.monthly_budget as monthly_budget, org_accounts.relation as relation, organizations.allowed_models as allowed_models").
-		Joins("join organizations on organizations.id = org_accounts.org_id").
-		Where("org_accounts.user_id = ?", userId).
+	// Table names go through the naming strategy so a prefixed schema (tests)
+	// resolves the same way as production.
+	accounts := DB.NamingStrategy.TableName("org_accounts")
+	orgs := DB.NamingStrategy.TableName("organizations")
+	err := DB.Table(accounts).
+		Select(accounts+".org_id as org_id, "+orgs+".status as org_status, "+orgs+".type as org_type, "+accounts+".status as account_status, "+accounts+".monthly_budget as monthly_budget, "+accounts+".relation as relation, "+orgs+".allowed_models as allowed_models").
+		Joins("join "+orgs+" on "+orgs+".id = "+accounts+".org_id").
+		Where(accounts+".user_id = ?", userId).
 		Limit(1).
 		Scan(&row).Error
 	if err != nil {

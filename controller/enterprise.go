@@ -6,23 +6,18 @@
 package controller
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	larkWebhookEnvVar  = "LARK_ENTERPRISE_WEBHOOK_URL"
-	larkRequestTimeout = 8 * time.Second
-)
+const larkRequestTimeout = 8 * time.Second
 
 type enterpriseInquiryRequest struct {
 	Name           string   `json:"name"`
@@ -35,20 +30,16 @@ type enterpriseInquiryRequest struct {
 	Source         string   `json:"source"`
 }
 
-type larkCardPayload struct {
-	MsgType string         `json:"msg_type"`
-	Card    map[string]any `json:"card"`
-}
-
 // PostEnterpriseInquiry receives the form payload from aurora's /enterprise
 // page and forwards a Lark interactive card to the configured webhook.
 //
-// The webhook URL is loaded from LARK_ENTERPRISE_WEBHOOK_URL at request time
-// (not at startup) so operators can rotate it without restarting the server.
+// The bot (webhook address and optional signing secret) is read from the admin
+// settings page at request time, so it can be changed without a restart. The old
+// LARK_ENTERPRISE_WEBHOOK_URL variable is used until the page has a value.
 func PostEnterpriseInquiry(c *gin.Context) {
-	webhookURL := strings.TrimSpace(os.Getenv(larkWebhookEnvVar))
-	if webhookURL == "" {
-		logger.LogError(c.Request.Context(), "enterprise inquiry rejected: "+larkWebhookEnvVar+" not set")
+	target := service.LarkEnterpriseTarget()
+	if !target.Configured() {
+		logger.LogError(c.Request.Context(), "enterprise inquiry rejected: the Lark webhook is not configured (admin settings, or "+service.LarkEnterpriseWebhookEnv+")")
 		common.ApiError(c, fmt.Errorf("enterprise contact is not configured"))
 		return
 	}
@@ -81,37 +72,11 @@ func PostEnterpriseInquiry(c *gin.Context) {
 	}
 
 	card := buildLarkCard(&req, c.ClientIP(), c.Request.UserAgent())
-	body, err := common.Marshal(larkCardPayload{MsgType: "interactive", Card: card})
-	if err != nil {
-		common.ApiError(c, fmt.Errorf("failed to encode webhook payload: %w", err))
-		return
-	}
-
-	httpReq, err := http.NewRequestWithContext(c.Request.Context(),
-		http.MethodPost, webhookURL, bytes.NewReader(body))
-	if err != nil {
-		common.ApiError(c, fmt.Errorf("failed to build webhook request: %w", err))
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: larkRequestTimeout}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		logger.LogError(c.Request.Context(),
-			fmt.Sprintf("enterprise inquiry webhook POST failed: %v", err))
+	ctx, cancel := context.WithTimeout(c.Request.Context(), larkRequestTimeout)
+	defer cancel()
+	if err := service.SendLarkRaw(ctx, target, card); err != nil {
+		logger.LogError(c.Request.Context(), "enterprise inquiry webhook failed: "+err.Error())
 		common.ApiError(c, fmt.Errorf("failed to reach contact service, please try again later"))
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		// Read up to 1KB of body for log diagnostics; don't expose to client.
-		preview, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		logger.LogError(c.Request.Context(),
-			fmt.Sprintf("enterprise inquiry webhook returned %d: %s",
-				resp.StatusCode, string(preview)))
-		common.ApiError(c, fmt.Errorf("contact service returned an error, please try again later"))
 		return
 	}
 

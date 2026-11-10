@@ -24,6 +24,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 
 import type { PricingSyncValues } from '../types'
+import { CustomSourceRiskBadge } from './custom-price-risk'
 import { PriceAdjustmentSelect } from './price-adjustment-select'
 import {
   getSyncPriceKind,
@@ -78,7 +79,7 @@ export function SyncPriceCell(props: {
               </div>
             ))}
             {parsed.requestRuleExpr && (
-              <div className='text-muted-foreground text-xs! break-all'>
+              <div className='text-muted-foreground text-xs! break-all whitespace-normal'>
                 {t('Includes request rules')}: {parsed.requestRuleExpr}
               </div>
             )}
@@ -196,6 +197,7 @@ export function SyncSourcePriceCell(props: {
         context.selectedSources[model] === props.source && 'bg-primary/8'
       )}
     >
+      <CustomSourceRiskBadge row={props.row.prices} source={props.source} />
       {!canSelect ? (
         <StatusBadge
           label={t('Same as Local')}

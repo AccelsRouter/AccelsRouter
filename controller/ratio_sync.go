@@ -323,6 +323,15 @@ func FetchUpstreamRatios(c *gin.Context) {
 			ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(req.Timeout)*time.Second)
 			defer cancel()
 
+			if data, handled, err := fetchCustomPricingSync(ctx, client, chItem); handled {
+				if err != nil {
+					ch <- upstreamResult{Name: uniqueName, Err: err.Error()}
+				} else {
+					ch <- upstreamResult{Name: uniqueName, Data: data}
+				}
+				return
+			}
+
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 			if err != nil {
 				logger.LogWarn(c.Request.Context(), common.LogText("build request failed: %s", err.Error()))
@@ -604,6 +613,10 @@ func FetchUpstreamRatios(c *gin.Context) {
 	type modelSyncPrices struct {
 		Current   map[string]any            `json:"current"`
 		Upstreams map[string]map[string]any `json:"upstreams"`
+		// Fork: per upstream, why its expression cannot be saved on this gateway,
+		// or the usage expression its candidate was converted from.
+		ExprErrors      map[string]string `json:"expr_errors,omitempty"`
+		ExprConversions map[string]string `json:"expr_conversions,omitempty"`
 	}
 	models := make(map[string]struct{}, len(differences))
 	for name := range differences {
@@ -638,6 +651,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 			_, hasExpression := candidate[billing_setting.BillingExprField]
 			if hasRatio || hasPrice || hasExpression {
 				row.Upstreams[channel.name] = candidate
+				customRecordBillingExprError(&row.ExprErrors, &row.ExprConversions, channel.name, name, candidate) // Fork
 			}
 		}
 		if len(row.Upstreams) > 0 {
@@ -1162,6 +1176,14 @@ func GetSyncableChannels(c *gin.Context) {
 		ID:      modelsDevPresetID,
 		Name:    modelsDevPresetName,
 		BaseURL: modelsDevPresetBaseURL,
+		Status:  1,
+	})
+
+	// Fork: the stored vendor list prices, served by fetchCustomPricingSync.
+	syncableChannels = append(syncableChannels, dto.SyncableChannel{
+		ID:      customVendorPresetID,
+		Name:    customVendorPresetName,
+		BaseURL: customVendorPresetBaseURL,
 		Status:  1,
 	})
 

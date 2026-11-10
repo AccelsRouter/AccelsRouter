@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
+import { LarkSettingsSection } from '../integrations/lark-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
@@ -79,6 +80,48 @@ const OPERATIONS_SECTIONS = [
           SMTPStartTLSEnabled: settings.SMTPStartTLSEnabled,
           SMTPInsecureSkipVerify: settings.SMTPInsecureSkipVerify,
           SMTPForceAuthLogin: settings.SMTPForceAuthLogin,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'lark',
+    titleKey: 'Lark notifications',
+    build: (settings: OperationsSettings) => (
+      <LarkSettingsSection
+        defaultValues={{
+          'lark_setting.alert_enabled':
+            settings['lark_setting.alert_enabled'] ?? false,
+          'lark_setting.alert_window_minutes':
+            settings['lark_setting.alert_window_minutes'] ?? 5,
+          'lark_setting.alert_failure_threshold':
+            settings['lark_setting.alert_failure_threshold'] ?? 3,
+          'lark_setting.alert_mute_minutes':
+            settings['lark_setting.alert_mute_minutes'] ?? 10,
+          'lark_setting.usage_alert_enabled':
+            settings['lark_setting.usage_alert_enabled'] ?? false,
+          'lark_setting.usage_alert_multiplier':
+            settings['lark_setting.usage_alert_multiplier'] ?? 3,
+          'lark_setting.usage_alert_baseline_days':
+            settings['lark_setting.usage_alert_baseline_days'] ?? 7,
+          'lark_setting.usage_alert_min_spend_usd':
+            settings['lark_setting.usage_alert_min_spend_usd'] ?? 10,
+          'lark_setting.usage_alert_daily_threshold_usd':
+            settings['lark_setting.usage_alert_daily_threshold_usd'] ?? 0,
+          'lark_setting.usage_alert_monthly_threshold_usd':
+            settings['lark_setting.usage_alert_monthly_threshold_usd'] ?? 0,
+          'lark_setting.usage_alert_check_minutes':
+            settings['lark_setting.usage_alert_check_minutes'] ?? 60,
+          'lark_setting.usage_alert_utc_offset_hours':
+            settings['lark_setting.usage_alert_utc_offset_hours'] ?? 0,
+          'lark_setting.enterprise_webhook_url_secret':
+            settings['lark_setting.enterprise_webhook_url_secret'] ?? '',
+          'lark_setting.enterprise_sign_secret':
+            settings['lark_setting.enterprise_sign_secret'] ?? '',
+          'lark_setting.alert_webhook_url_secret':
+            settings['lark_setting.alert_webhook_url_secret'] ?? '',
+          'lark_setting.alert_sign_secret':
+            settings['lark_setting.alert_sign_secret'] ?? '',
         }}
       />
     ),

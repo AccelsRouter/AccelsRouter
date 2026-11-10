@@ -23,8 +23,8 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
 )
 
 type ModelRequest struct {
@@ -258,33 +258,11 @@ func Distribute() func(c *gin.Context) {
 						}
 					}
 
-					// Fork: reseller upstream routing. A reseller customer's request is
-					// routed only through the channels the platform admin bound to its
-					// reseller, via the reseller's private group (reseller-<id>), with
-					// per-model priority and sticky affinity. Mirrors transparent BYOK:
-					// switch BOTH UsingGroup (channel selection, and the group the
-					// channel-affinity check below is constrained to) and TokenGroup
-					// (retry/failover stays inside the reseller group). Billing does NOT
-					// follow — the origin group is stashed and relay/helper/price.go
-					// bills with it, so the customer pays exactly what it paid before.
-					// Additive and default-off: fires only for reseller customers whose
-					// reseller has bound channels, only while the global switch is on,
-					// and never for the "auto" group (whose billing group is resolved
-					// later from the auto selection).
-					if channel == nil && setting.ResellerRoutingEnabled && usingGroup != "auto" {
-						if payer, perr := model.GetOrgPayerInfo(c.GetInt("id")); perr == nil && payer != nil && payer.ResellerOrgId > 0 {
-							if cfg := model.GetResellerRoutingCached(payer.ResellerOrgId); cfg != nil && len(cfg.ChannelIdList) > 0 {
-								resellerGroup := model.ResellerRoutingGroup(payer.ResellerOrgId)
-								common.SetContextKey(c, constant.ContextKeyResellerOriginGroup, usingGroup)
-								usingGroup = resellerGroup
-								common.SetContextKey(c, constant.ContextKeyUsingGroup, resellerGroup)
-								common.SetContextKey(c, constant.ContextKeyTokenGroup, resellerGroup)
-								if !cfg.AffinityOff {
-									common.SetContextKey(c, constant.ContextKeyResellerAffinityHash,
-										service.ResellerAffinityHash(payer.ResellerOrgId, payer.OrgId, modelRequest.Model))
-								}
-							}
-						}
+					// Fork: reseller upstream routing (see applyResellerRoutingGroup).
+					// Task plugin endpoints already switched in RouteTaskPluginEndpoint;
+					// the helper is idempotent.
+					if channel == nil {
+						usingGroup = applyResellerRoutingGroup(c, modelRequest.Model)
 					}
 
 				}
@@ -356,23 +334,71 @@ func Distribute() func(c *gin.Context) {
 // noAvailableChannelMessage explains a 503 for a task-plugin-claimed model.
 // The response tells the caller the model is plugin-claimed without naming the
 // plugin; the candidate plugin keys go to the server log under the request id.
+// applyResellerRoutingGroup switches a reseller customer's request to the
+// reseller's private group (reseller-<id>) and returns the group now in effect.
+// Fork: the customer is routed only through the channels the platform admin
+// bound to its reseller, with per-model priority and sticky affinity. Mirrors
+// transparent BYOK: BOTH UsingGroup (channel selection, and the group the
+// channel-affinity check is constrained to) and TokenGroup (retry/failover
+// stays inside the reseller group) switch. Billing does NOT follow: the origin
+// group is stashed and relay/helper/price.go bills with it, so the customer
+// pays exactly what it paid before. Additive and default-off: fires only for
+// reseller customers whose reseller has bound channels, only while the global
+// switch is on, and never for the "auto" group (whose billing group is
+// resolved later from the auto selection). Idempotent: a request already
+// switched keeps its origin group, so RouteTaskPluginEndpoint can call it
+// before Distribute does.
+func applyResellerRoutingGroup(c *gin.Context, modelName string) string {
+	usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	if !setting.ResellerRoutingEnabled || usingGroup == "auto" {
+		return usingGroup
+	}
+	if _, switched := common.GetContextKey(c, constant.ContextKeyResellerOriginGroup); switched {
+		return usingGroup
+	}
+	payer, err := model.GetOrgPayerInfo(c.GetInt("id"))
+	if err != nil || payer == nil || payer.ResellerOrgId <= 0 {
+		return usingGroup
+	}
+	cfg := model.GetResellerRoutingCached(payer.ResellerOrgId)
+	if cfg == nil || len(cfg.ChannelIdList) == 0 {
+		return usingGroup
+	}
+	resellerGroup := model.ResellerRoutingGroup(payer.ResellerOrgId)
+	common.SetContextKey(c, constant.ContextKeyResellerOriginGroup, usingGroup)
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, resellerGroup)
+	common.SetContextKey(c, constant.ContextKeyTokenGroup, resellerGroup)
+	if !cfg.AffinityOff {
+		common.SetContextKey(c, constant.ContextKeyResellerAffinityHash,
+			service.ResellerAffinityHash(payer.ResellerOrgId, payer.OrgId, modelName))
+	}
+	return resellerGroup
+}
+
 func noAvailableChannelMessage(c *gin.Context, group, modelName string) string {
 	value, exists := c.Get(jsplugin.ContextKeyPinnedPlugin)
 	pinned, ok := value.(jsplugin.PinnedPlugin)
 	if exists && ok && pinned.Plugin != nil {
 		keys := []string{pinned.Plugin.Meta.Key}
-		if value, exists := c.Get(jsplugin.ContextKeyPinnedEndpoint); exists {
-			if endpoint, ok := value.(jsplugin.PinnedEndpoint); ok && len(endpoint.Candidates) > 0 {
-				keys = nil
-				for _, candidate := range endpoint.Candidates {
-					if candidate.Plugin != nil {
-						keys = append(keys, candidate.Plugin.Meta.Key)
-					}
+		if _, candidates := pinnedCandidatePlugins(c); len(candidates) > 0 {
+			keys = nil
+			for _, candidate := range candidates {
+				if candidate != nil {
+					keys = append(keys, candidate.Meta.Key)
 				}
 			}
 		}
 		logger.LogWarn(c, common.LogText("task_plugin subsystem=distribution event=no_available_channel group=%q model=%q plugins=%q reason=no_eligible_channel", group, modelName, strings.Join(keys, ",")))
-		return i18n.T(c, i18n.MsgDistributorNoAvailableChannelTaskPlugin, map[string]any{"Group": group, "Model": modelName})
+		message := i18n.T(c, i18n.MsgDistributorNoAvailableChannelTaskPlugin, map[string]any{"Group": group, "Model": modelName})
+		// Fork: a candidate that does have a channel may have refused the
+		// request body; without its reason the caller only sees a routing
+		// error for what is really a validation error.
+		if rejected, ok := c.Get(contextKeyTaskPluginRejectedCandidates); ok {
+			if failures, ok := rejected.([]string); ok && len(failures) > 0 {
+				message += "; rejected by " + strings.Join(failures, "; ")
+			}
+		}
+		return message
 	}
 	return i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": group, "Model": modelName})
 }
@@ -405,27 +431,55 @@ func channelMatchesExpectedTaskPlugin(c *gin.Context, channel *model.Channel, ex
 	return ok && plugin == pinned.Plugin
 }
 
-func pinnedEndpointCandidateForChannel(c *gin.Context, channel *model.Channel, expected string) (jsplugin.ProtocolBinding, bool) {
+// pinnedCandidatePlugins returns the plugins a pinned shared host endpoint, or
+// a native route several plugins declare, may execute, in ascending key order.
+func pinnedCandidatePlugins(c *gin.Context) (*jsplugin.RoutingGeneration, []*jsplugin.LoadedPlugin) {
+	if value, exists := c.Get(jsplugin.ContextKeyPinnedEndpoint); exists {
+		pinned, ok := value.(jsplugin.PinnedEndpoint)
+		if !ok || pinned.Generation == nil || pinned.Plugin == nil {
+			return nil, nil
+		}
+		if len(pinned.Candidates) == 0 {
+			return pinned.Generation, []*jsplugin.LoadedPlugin{pinned.Plugin}
+		}
+		plugins := make([]*jsplugin.LoadedPlugin, 0, len(pinned.Candidates))
+		for _, candidate := range pinned.Candidates {
+			plugins = append(plugins, candidate.Plugin)
+		}
+		return pinned.Generation, plugins
+	}
+	if value, exists := c.Get(jsplugin.ContextKeyPinnedRoute); exists {
+		pinned, ok := value.(jsplugin.PinnedRoute)
+		if !ok || pinned.Generation == nil || len(pinned.Candidates) < 2 {
+			return nil, nil
+		}
+		plugins := make([]*jsplugin.LoadedPlugin, 0, len(pinned.Candidates))
+		for _, candidate := range pinned.Candidates {
+			plugins = append(plugins, candidate.Plugin)
+		}
+		return pinned.Generation, plugins
+	}
+	return nil, nil
+}
+
+// pinnedEndpointCandidateForChannel returns the index, among
+// pinnedCandidatePlugins, of the candidate that executes on channel.
+func pinnedEndpointCandidateForChannel(c *gin.Context, channel *model.Channel, expected string) (int, bool) {
 	if c == nil || channel == nil || expected == "" {
-		return jsplugin.ProtocolBinding{}, false
+		return -1, false
 	}
-	value, exists := c.Get(jsplugin.ContextKeyPinnedEndpoint)
-	pinned, ok := value.(jsplugin.PinnedEndpoint)
-	if !exists || !ok || pinned.Generation == nil || pinned.Plugin == nil {
-		return jsplugin.ProtocolBinding{}, false
-	}
-	candidates := pinned.Candidates
-	if len(candidates) == 0 {
-		candidates = []jsplugin.ProtocolBinding{{Plugin: pinned.Plugin, Protocol: pinned.Protocol, Operation: pinned.Operation, Model: pinned.Model}}
+	generation, candidates := pinnedCandidatePlugins(c)
+	if generation == nil {
+		return -1, false
 	}
 	expectedOwned := false
-	selected := jsplugin.ProtocolBinding{}
+	selected := -1
 	setting := channel.GetSetting()
-	for _, candidate := range candidates {
-		if candidate.Plugin == nil {
+	for index, candidate := range candidates {
+		if candidate == nil {
 			continue
 		}
-		if candidate.Plugin.Meta.Key == expected {
+		if candidate.Meta.Key == expected {
 			expectedOwned = true
 		}
 		if channel.Type == constant.ChannelTypeTaskPlugin || channel.Type == constant.ChannelTypeNewAPI {
@@ -433,17 +487,17 @@ func pinnedEndpointCandidateForChannel(c *gin.Context, channel *model.Channel, e
 			// candidate in generation order executes, so the billing provider
 			// depends only on the channel and the request, never on which
 			// channels an earlier retry attempt happened to try.
-			if selected.Plugin == nil && setting.BindsTaskPlugin(candidate.Plugin.Meta.Key) {
-				selected = candidate
+			if selected < 0 && setting.BindsTaskPlugin(candidate.Meta.Key) {
+				selected = index
 			}
 			continue
 		}
-		plugin, indexed := pinned.Generation.GetByChannelType(channel.Type)
-		if indexed && plugin == candidate.Plugin {
-			selected = candidate
+		plugin, indexed := generation.GetByChannelType(channel.Type)
+		if indexed && plugin == candidate {
+			selected = index
 		}
 	}
-	return selected, expectedOwned && selected.Plugin != nil
+	return selected, expectedOwned && selected >= 0
 }
 
 // channelSupportsRequestPath reports whether a channel can serve the request path.
@@ -493,14 +547,14 @@ func getModelFromJSONBody(c *gin.Context) (*ModelRequest, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !gjson.ValidBytes(requestBody) {
+	if !ojson.ValidBytes(requestBody) {
 		return nil, errors.New("invalid JSON request body")
 	}
 	if countTopLevelJSONKey(requestBody, "model") > 1 {
 		return nil, errors.New("model must be provided once")
 	}
 
-	values := gjson.GetManyBytes(requestBody, "model", "group")
+	values := ojson.GetManyBytes(requestBody, "model", "group")
 	model, err := getJSONStringValue(values[0], "model")
 	if err != nil {
 		return nil, err
@@ -579,11 +633,11 @@ func countTopLevelJSONKey(data []byte, target string) int {
 	return count
 }
 
-func getJSONStringValue(result gjson.Result, field string) (string, error) {
-	if !result.Exists() || result.Type == gjson.Null {
+func getJSONStringValue(result ojson.Result, field string) (string, error) {
+	if !result.Exists() || result.Type == ojson.Null {
 		return "", nil
 	}
-	if result.Type != gjson.String {
+	if result.Type != ojson.String {
 		return "", fmt.Errorf("field %s must be a string", field)
 	}
 	return result.String(), nil
@@ -800,29 +854,43 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 			types.ErrOptionWithSkipRetry(),
 		)
 	}
-	if candidate, matched := pinnedEndpointCandidateForChannel(c, channel, expectedPlugin); matched {
+	if index, matched := pinnedEndpointCandidateForChannel(c, channel, expectedPlugin); matched {
+		previousPlugin := ""
+		var selected *jsplugin.LoadedPlugin
+		var generation *jsplugin.RoutingGeneration
 		if value, exists := c.Get(jsplugin.ContextKeyPinnedEndpoint); exists {
-			if pinned, ok := value.(jsplugin.PinnedEndpoint); ok && candidate.Plugin != nil && candidate.Plugin != pinned.Plugin {
-				previousPlugin := pinned.Plugin.Meta.Key
+			if pinned, ok := value.(jsplugin.PinnedEndpoint); ok && index < len(pinned.Candidates) && pinned.Candidates[index].Plugin != pinned.Plugin {
+				candidate := pinned.Candidates[index]
+				previousPlugin, selected, generation = pinned.Plugin.Meta.Key, candidate.Plugin, pinned.Generation
 				pinned.Plugin = candidate.Plugin
 				pinned.Protocol = candidate.Protocol
 				pinned.Operation = candidate.Operation
 				c.Set(jsplugin.ContextKeyPinnedEndpoint, pinned)
-				c.Set(jsplugin.ContextKeyPinnedPlugin, jsplugin.PinnedPlugin{Generation: pinned.Generation, Plugin: candidate.Plugin})
-				c.Set("expected_task_plugin_key", candidate.Plugin.Meta.Key)
-				c.Set("task_plugin_key", candidate.Plugin.Meta.Key)
-				c.Set("platform", candidate.Plugin.Meta.Key)
-				logger.LogDebug(
-					c,
-					"task_plugin subsystem=endpoint event=provider_selected generation=%d previous_plugin=%q plugin=%q model=%q channel_id=%d channel_type=%d",
-					pinned.Generation.Number,
-					previousPlugin,
-					candidate.Plugin.Meta.Key,
-					modelName,
-					channel.Id,
-					channel.Type,
-				)
 			}
+		} else if value, exists := c.Get(jsplugin.ContextKeyPinnedRoute); exists {
+			if pinned, ok := value.(jsplugin.PinnedRoute); ok && pinned.Plugin != nil && pinned.Candidates[index].Plugin != pinned.Plugin {
+				candidate := pinned.Candidates[index]
+				previousPlugin, selected, generation = pinned.Plugin.Meta.Key, candidate.Plugin, pinned.Generation
+				pinned.Plugin = candidate.Plugin
+				pinned.Route = candidate.Route
+				c.Set(jsplugin.ContextKeyPinnedRoute, pinned)
+			}
+		}
+		if selected != nil {
+			c.Set(jsplugin.ContextKeyPinnedPlugin, jsplugin.PinnedPlugin{Generation: generation, Plugin: selected})
+			c.Set("expected_task_plugin_key", selected.Meta.Key)
+			c.Set("task_plugin_key", selected.Meta.Key)
+			c.Set("platform", selected.Meta.Key)
+			logger.LogDebug(
+				c,
+				"task_plugin subsystem=endpoint event=provider_selected generation=%d previous_plugin=%q plugin=%q model=%q channel_id=%d channel_type=%d",
+				generation.Number,
+				previousPlugin,
+				selected.Meta.Key,
+				modelName,
+				channel.Id,
+				channel.Type,
+			)
 		}
 	}
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)

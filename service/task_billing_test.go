@@ -1814,3 +1814,42 @@ func TestSettle_TokenRecalcFallsBackToCompletionTokens(t *testing.T) {
 		})
 	}
 }
+
+// The usage a task is billed by, in precedence order, becomes the quota_data
+// usage unit; vendor tokens also land in the log's completion tokens.
+func TestTaskUsageAmountPrecedenceAndTokens(t *testing.T) {
+	for name, tc := range map[string]struct {
+		facts  map[string]any
+		unit   string
+		amount int64
+	}{
+		"tokens win":        {map[string]any{"tokens": int64(411300), "seconds": float64(5)}, model.UsageUnitToken, 411300},
+		"seconds":           {map[string]any{"seconds": float64(5), "resolution": "720P"}, model.UsageUnitSecond, 5},
+		"images":            {map[string]any{"image_count": 3}, model.UsageUnitImage, 3},
+		"clips":             {map[string]any{"clips": int64(2)}, model.UsageUnitClip, 2},
+		"per-call no facts": {map[string]any{"resolution": "720P"}, "", 0},
+		"negative clamps":   {map[string]any{"seconds": float64(-3)}, model.UsageUnitSecond, 0},
+	} {
+		unit, amount := TaskUsageAmount(tc.facts)
+		assert.Equal(t, tc.unit, unit, name)
+		assert.Equal(t, tc.amount, amount, name)
+	}
+
+	truncate(t)
+	const userID, channelID = 41, 41
+	seedUser(t, userID, 10_000)
+	seedChannel(t, channelID)
+	task := makeTask(userID, channelID, 100, 0, BillingSourceWallet, 0)
+	info := &relaycommon.RelayInfo{
+		UserId: userID, OriginModelName: "doubao-seedance-2-5-260628", UsingGroup: "default",
+		ChannelMeta:   &relaycommon.ChannelMeta{ChannelId: channelID},
+		TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: "text_to_video"},
+		PriceData:     types.PriceData{Quota: 100, GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}},
+		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
+			ExprString: `tier("base", u("tokens") * 2)`, EstimatedTier: "base",
+			UsageFacts: map[string]any{"tokens": int64(411300), "resolution": "720p"},
+		},
+	}
+	log := callLogTaskConsumption(t, info, task)
+	assert.Equal(t, 411300, log.CompletionTokens, "vendor tokens are the task's output tokens")
+}

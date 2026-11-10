@@ -18,6 +18,10 @@ const AGENT_TOOLS: { icon: string; name: string }[] = [
   { icon: 'Codex.Color', name: 'Codex' },
   { icon: 'KiloCode', name: 'Kilo CLI' },
   { icon: 'OpenClaw.Color', name: 'OpenClaw' },
+  // WorkBuddy and Coze's current mark are local assets (see CUSTOM_ICONS in
+  // lib/lobe-icon).
+  { icon: 'WorkBuddy', name: 'WorkBuddy' },
+  { icon: 'CozeMark', name: 'Coze' },
 ]
 
 export function AgentTools() {
@@ -36,7 +40,7 @@ export function AgentTools() {
         </AnimateInView>
 
         <AnimateInView animation='fade-up'>
-          <div className='grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-5'>
+          <div className='grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-5 lg:grid-cols-5'>
             {AGENT_TOOLS.map((tool, i) => (
               <AnimateInView
                 key={tool.name}

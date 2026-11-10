@@ -307,8 +307,20 @@ func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) e
 		}
 		return nil
 	case *OrgWalletFunding:
+		if requireAvailableQuota {
+			// Image quantities and task retry prices are known before submission.
+			// Reserve against the org wallet conditionally and reject on an
+			// insufficient balance, mirroring WalletFunding — the unconditional
+			// Settle below would otherwise admit org (and reseller cost) wallet
+			// debt before the upstream call. PreConsume tracks funding.consumed
+			// itself, so do NOT adjust consumed here.
+			if err := funding.PreConsume(delta); err != nil {
+				return orgReserveError(err)
+			}
+			return nil
+		}
 		// Mid-stream reserve for tiered pricing: charge the org wallet
-		// unconditionally (the tokens are consumed) and record the spend on
+		// unconditionally (the tokens are already consumed) and record the spend on
 		// the member/workspace counters past the budget, mirroring Settle.
 		// Settle applies the retail discount and tracks funding.consumed itself,
 		// so do NOT adjust consumed here (it would double-count in standard units).

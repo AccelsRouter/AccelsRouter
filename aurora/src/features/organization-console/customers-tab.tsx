@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
 import {
@@ -57,6 +58,7 @@ import {
   exportCustomerLogs,
   listCustomerLogs,
   listCustomers,
+  removeCustomer,
   revokeCustomerInvitation,
 } from './api'
 import { CallRecords } from './call-records'
@@ -89,11 +91,25 @@ export function CustomersTab(props: { walletQuota: number }) {
   const [offerCustomer, setOfferCustomer] = useState<ResellerCustomer | null>(
     null
   )
+  const [removing, setRemoving] = useState<ResellerCustomer | null>(null)
+  const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['org-customers'],
     queryFn: listCustomers,
   })
+  // Unlinking is allowed only once the allowance is reclaimed in full: the
+  // balance is a cap the reseller granted, so nothing may be left behind.
+  const remove = useMutation({
+    mutationFn: (customer: ResellerCustomer) => removeCustomer(customer.org.id),
+    onSuccess: () => {
+      toast.success(t('Customer removed'))
+      queryClient.invalidateQueries({ queryKey: ['org-customers'] })
+      setRemoving(null)
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
+  const removingBalance = removing?.org.wallet_quota ?? 0
 
   const customers = data ?? []
 
@@ -193,6 +209,14 @@ export function CustomersTab(props: { walletQuota: number }) {
                       >
                         {t('Usage')}
                       </Button>
+                      <Button
+                        size='sm'
+                        variant='outline'
+                        className='text-destructive'
+                        onClick={() => setRemoving(c)}
+                      >
+                        {t('Remove customer')}
+                      </Button>
                     </div>
                   </Td>
                 </tr>
@@ -201,6 +225,28 @@ export function CustomersTab(props: { walletQuota: number }) {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title={t('Remove this customer?')}
+        desc={
+          removingBalance > 0
+            ? t(
+                'The customer still holds {{balance}}. Reclaim all of it with "Adjust quota" first: the allowance is a cap you granted, and any refund is settled between you and the customer.',
+                { balance: formatQuotaWithCurrency(removingBalance) }
+              )
+            : t(
+                '{{name}} is unlinked from you: its API keys are disabled and its organization suspended. Its members keep their accounts. This cannot be undone.',
+                { name: removing?.org.name ?? '' }
+              )
+        }
+        destructive
+        disabled={removingBalance > 0}
+        isLoading={remove.isPending}
+        confirmText={t('Remove')}
+        handleConfirm={() => removing && remove.mutate(removing)}
+      />
 
       <CreateCustomerDialog
         open={createOpen}

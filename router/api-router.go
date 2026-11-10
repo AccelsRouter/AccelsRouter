@@ -206,6 +206,9 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			reconRoute.GET("", controller.AdminGetReconciliation)
 			reconRoute.GET("/export", controller.AdminExportReconciliation)
+			reconRoute.POST("/upstream-bill", controller.AdminCompareUpstreamBill)
+			reconRoute.POST("/byteplus-bill", controller.AdminCompareBytePlusBill)
+			reconRoute.POST("/alibaba-bill", controller.AdminCompareAlibabaBill)
 		}
 		// Upstream monitor: channel/model health history and price comparison.
 		upstreamRoute := apiRouter.Group("/admin/upstream")
@@ -376,6 +379,8 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.PUT("/customers/:id/pricing", controller.SetMyCustomerPricing)
 			// Models + pricing saved as one validated, atomic offer.
 			resellerRoute.PUT("/customers/:id/offer", controller.SetMyCustomerOffer)
+			// Ending the relationship: allowed once the customer's allowance is zero.
+			resellerRoute.DELETE("/customers/:id", controller.RemoveMyCustomer)
 		}
 
 		personalByokRoute := apiRouter.Group("/personal_byok")
@@ -433,8 +438,10 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.GET("/request_policy", controller.GetRequestPolicy)
 			optionRoute.PATCH("/request_policy", controller.UpdateRequestPolicy)
 			optionRoute.PUT("/", controller.UpdateOption)
+			optionRoute.POST("/lark_test", controller.TestLarkNotify)
 			optionRoute.PUT("/passkey/domains", controller.UpdatePasskeyDomains)
 			optionRoute.GET("/model_pricing", controller.GetModelPricingConfig)
+			optionRoute.GET("/model_pricing/issues", controller.GetModelPricingIssues)
 			optionRoute.PATCH("/model_pricing", controller.UpdateModelPricingConfig)
 			optionRoute.POST("/model_pricing/convert", controller.PreviewModelPricingConversion)
 			optionRoute.POST("/model_pricing/preview", controller.PreviewModelPricing)
@@ -476,6 +483,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
+			controller.RegisterCustomVendorPriceRoutes(ratioSyncRoute)
 		}
 		taskPluginRoute := apiRouter.Group("/plugin/task")
 		taskPluginRoute.Use(middleware.RootAuth())

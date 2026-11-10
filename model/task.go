@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -173,6 +174,10 @@ type TaskBillingContext struct {
 	OriginModelName string                       `json:"origin_model_name,omitempty"` // 模型名称，必须为OriginModelName
 	PerCallBilling  bool                         `json:"per_call_billing,omitempty"`  // 按次计费：跳过轮询阶段的差额结算
 	TieredSnapshot  *billingexpr.BillingSnapshot `json:"tiered_snapshot,omitempty"`
+	// Fork: the usage the submission reserved, in the model's billing unit
+	// (QuotaData.UsageUnit), so settlement can record only the difference.
+	UsageUnit   string `json:"usage_unit,omitempty"`
+	UsageAmount int64  `json:"usage_amount,omitempty"`
 }
 
 // TaskOrgFunding is the fork's serialisable snapshot of an org-wallet funded
@@ -194,6 +199,17 @@ type TaskOrgFunding struct {
 // protocol retrieve endpoints, artifact projection) may serve this task.
 func (t *Task) ResultRetrievable() bool {
 	return !t.PrivateData.ResultDiscarded
+}
+
+// MockTaskIDPrefix marks a task whose upstream call was faked by the dev-only
+// mock in the task plugin adaptor: nothing was consumed upstream.
+const MockTaskIDPrefix = "cgt-mock-"
+
+// IsMock reports whether the task never reached a real upstream (see
+// MockTaskIDPrefix). Such tasks are billed and logged, but kept out of the
+// consumption rollups that reconciliation and the dashboard read.
+func (t *Task) IsMock() bool {
+	return strings.HasPrefix(t.GetUpstreamTaskID(), MockTaskIDPrefix)
 }
 
 // GetUpstreamTaskID 获取上游真实 task ID（用于与 provider 通信）

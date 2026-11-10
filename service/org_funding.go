@@ -182,10 +182,14 @@ func (o *OrgWalletFunding) PreConsume(stdAmount int) error {
 				}
 				return rErr
 			}
-			o.resellerConsumed = wAmount
+			o.resellerConsumed += wAmount
 		}
 	}
-	o.consumed = amount
+	// Accumulate (not assign): PreConsume runs once at base reserve (consumed
+	// starts at 0, so this is identical there) and is reused by reserveFunding for
+	// pre-send delta reservations (image quantity / task retry), where the charge
+	// must add to what is already reserved so Refund/Settle unwind the full total.
+	o.consumed += amount
 	return nil
 }
 
@@ -398,4 +402,21 @@ func orgFundingError(apiErr *types.NewAPIError) *types.NewAPIError {
 		errors.New(msg),
 		types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
 		types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+}
+
+// orgReserveError maps a pre-send org-wallet reserve failure (image quantity or
+// task retry price, where the wallet balance must cover the charge before the
+// upstream call) to a user-facing 403, mirroring WalletFunding's
+// insufficient-quota path. A non-sentinel error (e.g. a database failure) stays a
+// generic update error.
+func orgReserveError(err error) *types.NewAPIError {
+	switch {
+	case errors.Is(err, errOrgWalletInsufficient),
+		errors.Is(err, errOrgBudgetExceeded),
+		errors.Is(err, errWorkspaceBudgetExceeded),
+		errors.Is(err, errResellerBalanceInsufficient):
+		return orgFundingError(types.NewError(err, types.ErrorCodeInsufficientUserQuota, types.ErrOptionWithSkipRetry()))
+	default:
+		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+	}
 }

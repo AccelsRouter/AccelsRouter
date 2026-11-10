@@ -30,6 +30,10 @@ export type ConflictItem = {
   newVal: string
   adjustment?: string
   siteVal?: string
+  /** Fork: set when the row is shown but left out of the save, with the reason */
+  skipped?: string
+  /** Fork: how the saved value differs from the upstream's own expression */
+  note?: string
 }
 type ConflictConfirmDialogProps = {
   open: boolean
@@ -102,9 +106,21 @@ export function ConflictConfirmDialog(props: ConflictConfirmDialogProps) {
             header: t('Final saved price'),
             cell: (conflict) => (
               <div className='space-y-2'>
+                {conflict.skipped && (
+                  <p className='text-destructive text-xs'>
+                    {t('Skipped, this gateway cannot save it: {{reason}}', {
+                      reason: conflict.skipped,
+                    })}
+                  </p>
+                )}
                 {conflict.adjustment && (
                   <p className='text-muted-foreground text-xs'>
                     {conflict.adjustment}
+                  </p>
+                )}
+                {conflict.note && (
+                  <p className='text-muted-foreground text-xs break-all'>
+                    {conflict.note}
                   </p>
                 )}
                 <pre className='text-sm whitespace-pre-wrap'>

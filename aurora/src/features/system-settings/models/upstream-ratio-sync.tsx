@@ -54,6 +54,7 @@ import type {
   UpstreamConfig,
 } from '../types'
 import { ChannelSelectorDialog } from './channel-selector-dialog'
+import { CustomPriceRiskSummary } from './custom-price-risk'
 import {
   ConflictConfirmDialog,
   type ConflictItem,
@@ -66,6 +67,7 @@ import {
   OFFICIAL_CHANNEL_ID,
   OPENROUTER_CHANNEL_TYPE,
   OPENROUTER_ENDPOINT,
+  VENDOR_PRICE_PRESET_ID,
 } from './constants'
 import { PriceAdjustmentSelect } from './price-adjustment-select'
 import {
@@ -80,7 +82,7 @@ import {
 } from './upstream-ratio-sync-helpers'
 import { UpstreamRatioSyncTable } from './upstream-ratio-sync-table'
 
-function getDefaultEndpointForChannel(channel: UpstreamChannel): string {
+export function getDefaultEndpointForChannel(channel: UpstreamChannel): string {
   if (channel.id === MODELS_DEV_PRESET_ID) return MODELS_DEV_PRESET_ENDPOINT
   if (channel.id === OFFICIAL_CHANNEL_ID) return OFFICIAL_CHANNEL_ENDPOINT
   if (channel.type === OPENROUTER_CHANNEL_TYPE) return OPENROUTER_ENDPOINT
@@ -326,7 +328,11 @@ export function UpstreamRatioSync() {
       const selected = adjustedPrices[model]?.values
       const row = prices[model]
       if (!row || !selected) return
-      resolutions[model] = selected
+      // Fork: an expression this gateway cannot save (no local task plugin
+      // serves the model) stays visible in the preview but out of the save.
+      const skipped = row.expr_errors?.[entry.source]
+      if (!skipped) resolutions[model] = selected
+      const converted = row.expr_conversions?.[entry.source]
       let adjustment = t('Keep source price')
       if (entry.adjustment === 'divide') {
         adjustment = t('Divide by exchange rate (÷ {{rate}})', {
@@ -344,6 +350,12 @@ export function UpstreamRatioSync() {
         current: describeSyncPrice(row.current, t),
         newVal: describeSyncPrice(selected, t),
         adjustment,
+        skipped,
+        note: converted
+          ? t('Converted from the upstream usage expression: {{expr}}', {
+              expr: converted,
+            })
+          : undefined,
         siteVal:
           isValidPricingCurrency(currency) &&
           (selected.billing_mode !== 'tiered_expr' ||
@@ -351,6 +363,12 @@ export function UpstreamRatioSync() {
             ? describeSyncPrice(selected, t, currency)
             : undefined,
       })
+    }
+    if (!Object.keys(resolutions).length) {
+      toast.warning(
+        t('All selected prices were skipped: this gateway cannot save them.')
+      )
+      return
     }
     try {
       const after = applyPriceSyncSelections(
@@ -404,6 +422,7 @@ export function UpstreamRatioSync() {
             : t('A valid site exchange rate is required.')}
         </span>
       </div>
+      {!fetchMutation.isError && <CustomPriceRiskSummary prices={prices} />}
       <div className='min-h-0 flex-1'>
         {fetchMutation.isError ? (
           <ErrorState
@@ -422,14 +441,28 @@ export function UpstreamRatioSync() {
         ) : (
           <UpstreamRatioSyncTable
             toolbar={
-              <Button
-                variant='outline'
-                onClick={() => setChannelDialogOpen(true)}
-                disabled={isLoading}
-              >
-                <RefreshCcw className='size-4' aria-hidden />
-                {t('Select price sources')}
-              </Button>
+              <>
+                <Button
+                  variant='outline'
+                  onClick={() => setChannelDialogOpen(true)}
+                  disabled={isLoading}
+                >
+                  <RefreshCcw className='size-4' aria-hidden />
+                  {t('Select price sources')}
+                </Button>
+                {/* Fork: prices follow the vendor list price, so that source
+                    is one click away instead of inside the selector. */}
+                <Button
+                  variant='outline'
+                  disabled={isLoading}
+                  onClick={() => {
+                    setSelectedChannelIds([VENDOR_PRICE_PRESET_ID])
+                    void handleConfirmChannelSelection([VENDOR_PRICE_PRESET_ID])
+                  }}
+                >
+                  {t('Load vendor list prices')}
+                </Button>
+              </>
             }
             prices={prices}
             differences={differences}

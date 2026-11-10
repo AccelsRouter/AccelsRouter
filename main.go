@@ -5,7 +5,6 @@ import (
 	"context"
 	"embed"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -120,6 +119,7 @@ func main() {
 	// 热更新配置
 	go model.SyncOptions(common.SyncFrequency)
 	go controller.SyncTaskPlugins()
+	go controller.StartCustomVendorPriceRefresh()
 
 	// 周期性重载授权策略，保证多节点/多 master 部署下权限变更能传播到每个实例
 	go authz.StartPolicySync(common.SyncFrequency)
@@ -193,15 +193,7 @@ func main() {
 		common.FatalLog(common.LogText("failed to configure trusted proxies: %s", err.Error()))
 		return
 	}
-	server.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
-		common.SysLog(common.LogText("panic detected: %v", err))
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"message": fmt.Sprintf("Panic detected, error: %v. Please submit a issue here: https://github.com/Calcium-Ion/new-api", err),
-				"type":    "new_api_panic",
-			},
-		})
-	}))
+	server.Use(middleware.PanicRecover())
 	// This will cause SSE not to work!!!
 	//server.Use(gzip.Gzip(gzip.DefaultCompression))
 	server.Use(middleware.RequestId())
@@ -371,6 +363,8 @@ func InitResources() error {
 	model.StartUpstreamHealthFlusher()
 	// Upstream monitor: scheduled probe sweep (master only, monitor_setting.upstream_probe_*).
 	controller.StartUpstreamProbeScheduler()
+	// Abnormal usage alerts to the Lark alert group (master only, lark_setting.usage_alert_*).
+	service.StartUsageAlertScheduler()
 
 	// Initialize Redis
 	err = common.InitRedisClient()
