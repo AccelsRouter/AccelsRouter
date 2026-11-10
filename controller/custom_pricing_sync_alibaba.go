@@ -100,22 +100,37 @@ func fetchCustomAlibabaModels(ctx context.Context, client *http.Client, baseURL,
 	return models, nil
 }
 
+// customPricingSkippedField carries, beside a sync result's pricing fields, why
+// each model the source lists got no price: model name to reason.
+const customPricingSkippedField = "custom_skipped"
+
+// customAlibabaPeakHours is when Model Studio charges the peak price of a model
+// it prices by time of day: 08:00-22:00 Beijing time, every day. The price list
+// names the band of each price but not its hours. Model Studio documents them
+// on its DeepSeek model pages, so only DeepSeek models priced this way convert.
+const customAlibabaPeakHours = `hour("Asia/Shanghai") >= 8 && hour("Asia/Shanghai") < 22`
+
 // convertCustomAlibabaModelsToBillingExpr turns Model Studio USD price lists into
-// token billing expressions. A model is skipped, never guessed, when any tier
-// carries a billing item or range this converter does not understand.
+// billing expressions. A model is skipped, never guessed, when any tier carries
+// a billing item or range this converter does not understand; the reason is
+// kept under customPricingSkippedField.
 func convertCustomAlibabaModelsToBillingExpr(models []customAlibabaModel) map[string]any {
 	modes := make(map[string]string)
 	exprs := make(map[string]string)
+	skipped := make(map[string]string)
 	for _, item := range models {
 		name := strings.TrimSpace(item.Model)
 		if name == "" {
 			continue
 		}
-		expr, ok := customAlibabaBillingExpr(item.Prices)
-		if !ok {
-			continue
+		expr, reason := customAlibabaBillingExpr(name, item)
+		if reason == "" {
+			if _, err := billingexpr.CompileFromCache(expr); err != nil {
+				reason = err.Error()
+			}
 		}
-		if _, err := billingexpr.CompileFromCache(expr); err != nil {
+		if reason != "" {
+			skipped[name] = reason
 			continue
 		}
 		modes[name] = billing_setting.BillingModeTieredExpr
@@ -127,97 +142,150 @@ func convertCustomAlibabaModelsToBillingExpr(models []customAlibabaModel) map[st
 	return map[string]any{
 		billing_setting.BillingModeField: modes,
 		billing_setting.BillingExprField: exprs,
+		customPricingSkippedField:        skipped,
 	}
 }
 
-func customAlibabaBillingExpr(tiers []customAlibabaPriceTier) (string, bool) {
+// customAlibabaBillingExpr renders the price list of one model, or says why it
+// cannot: token prices by input length, DeepSeek token prices by time of day,
+// or one price per image.
+func customAlibabaBillingExpr(name string, item customAlibabaModel) (expr string, reason string) {
+	tiers := item.Prices
 	if len(tiers) == 0 {
-		return "", false
+		return "", "Model Studio lists no price"
 	}
 	type boundedTier struct {
 		limit float64
-		label string
 		body  string
 	}
 	bounded := make([]boundedTier, 0, len(tiers))
 	for _, tier := range tiers {
-		body, image, ok := customAlibabaTierBody(tier.Prices)
-		if !ok {
-			return "", false
+		prices, reason := customAlibabaTierPrices(tier.Prices)
+		if reason != "" {
+			return "", reason
 		}
-		if image {
+		if prices.image != "" {
 			if len(tiers) != 1 {
-				return "", false
+				return "", "per-image price with input-length tiers"
 			}
-			return fmt.Sprintf(`tier("image", fixed(%s)) * image_count`, body), true
+			fixed := fmt.Sprintf(`tier("image", fixed(%s)) * image_count`, prices.image)
+			usage := fmt.Sprintf(`tier("image", u("image_count") * %s)`, prices.image)
+			// A model a task plugin serves is billed on the plugin's image_count fact.
+			if customBillingExprError(name, fixed) != "" && customBillingExprError(name, usage) == "" {
+				return usage, ""
+			}
+			return fixed, ""
+		}
+		if prices.offPeak != "" {
+			if len(tiers) != 1 {
+				return "", "time-of-day prices with input-length tiers"
+			}
+			if !strings.HasPrefix(strings.ToLower(item.Provider), "deepseek") {
+				return "", "priced by time of day, and the peak hours are only known for DeepSeek models"
+			}
+			return fmt.Sprintf(`%s ? tier("peak", %s) : tier("off_peak", %s)`, customAlibabaPeakHours, prices.tokens, prices.offPeak), ""
 		}
 		limit, label, ok := customAlibabaRangeLimit(tier.RangeName, len(tiers) == 1)
 		if !ok {
-			return "", false
+			return "", fmt.Sprintf("unreadable input range %q", tier.RangeName)
 		}
-		bounded = append(bounded, boundedTier{limit, label, fmt.Sprintf(`tier("%s", %s)`, label, body)})
+		bounded = append(bounded, boundedTier{limit, fmt.Sprintf(`tier("%s", %s)`, label, prices.tokens)})
 	}
 	sort.Slice(bounded, func(i, j int) bool { return bounded[i].limit < bounded[j].limit })
-	expr := bounded[len(bounded)-1].body
+	expr = bounded[len(bounded)-1].body
 	for i := len(bounded) - 2; i >= 0; i-- {
 		expr = fmt.Sprintf("len <= %d ? %s : %s", int64(bounded[i].limit), bounded[i].body, expr)
 	}
-	return expr, true
+	return expr, ""
 }
 
-// customAlibabaTierBody renders one tier from real-time prices per 1M tokens: input,
-// output, optional implicit cache hit (explicit cache read is the fallback) and
-// optional explicit cache creation, or exactly one image_number price per image.
-// Batch prices are ignored; any other item type, or a time band other than
-// "standard" (e.g. peak/off-peak), makes the whole model unsupported.
-func customAlibabaTierBody(items []customAlibabaPriceItem) (body string, image bool, ok bool) {
-	var input, output, imagePrice, cacheImplicit, cacheRead, cacheCreate string
+// customAlibabaTierPrice is one tier of a Model Studio price list: the token
+// price body (the peak one when offPeak is set), or the price of one image.
+type customAlibabaTierPrice struct {
+	tokens  string
+	offPeak string
+	image   string
+}
+
+// customAlibabaTierPrices reads one tier from real-time prices per 1M tokens:
+// input, output, optional implicit cache hit (explicit cache read is the
+// fallback) and optional explicit cache creation, either at one standard price
+// or at a peak and an off-peak price, or exactly one image_number price per
+// image. Batch prices are ignored; any other item makes the whole model
+// unsupported, with the reason.
+func customAlibabaTierPrices(items []customAlibabaPriceItem) (customAlibabaTierPrice, string) {
+	type bandPrices struct{ input, output, cacheImplicit, cacheRead, cacheCreate string }
+	bands := map[string]*bandPrices{"standard": {}, "peak": {}, "off_peak": {}}
+	var image string
 	for _, item := range items {
-		if band := strings.ToLower(strings.TrimSpace(item.TimeBand)); band != "" && band != "standard" {
-			return "", false, false
+		var band string
+		switch strings.NewReplacer("_", "", "-", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(item.TimeBand))) {
+		case "", "standard":
+			band = "standard"
+		case "peak", "busy":
+			band = "peak"
+		case "offpeak", "idle":
+			band = "off_peak"
+		default:
+			return customAlibabaTierPrice{}, fmt.Sprintf("unknown time band %q", item.TimeBand)
 		}
 		price, valid := customAlibabaPriceString(item.Price)
 		if !valid {
-			return "", false, false
+			return customAlibabaTierPrice{}, fmt.Sprintf("unreadable price of %s", item.Type)
 		}
 		unit := strings.ToLower(strings.TrimSpace(item.PriceUnit))
 		perM := unit == customAlibabaPerMillionUnit || unit == "per million tokens"
+		prices := bands[band]
 		switch {
-		case item.Type == "input_token" && perM && input == "":
-			input = price
-		case item.Type == "output_token" && perM && output == "":
-			output = price
-		case item.Type == "input_token_cache" && perM && cacheImplicit == "":
-			cacheImplicit = price
-		case item.Type == "input_token_cache_read" && perM && cacheRead == "":
-			cacheRead = price
-		case item.Type == "input_token_cache_creation_5m" && perM && cacheCreate == "":
-			cacheCreate = price
+		case item.Type == "input_token" && perM && prices.input == "":
+			prices.input = price
+		case item.Type == "output_token" && perM && prices.output == "":
+			prices.output = price
+		case item.Type == "input_token_cache" && perM && prices.cacheImplicit == "":
+			prices.cacheImplicit = price
+		case item.Type == "input_token_cache_read" && perM && prices.cacheRead == "":
+			prices.cacheRead = price
+		case item.Type == "input_token_cache_creation_5m" && perM && prices.cacheCreate == "":
+			prices.cacheCreate = price
 		case (item.Type == "input_token_batch" || item.Type == "output_token_batch") && perM:
-		case item.Type == "image_number" && unit == customAlibabaPerImageUnit && imagePrice == "":
-			imagePrice = price
+		case item.Type == "image_number" && unit == customAlibabaPerImageUnit && band == "standard" && image == "":
+			image = price
 		default:
-			return "", false, false
+			return customAlibabaTierPrice{}, fmt.Sprintf("unsupported price item %s (%s, %s)", item.Type, item.PriceUnit, band)
 		}
 	}
-	if imagePrice != "" && input == "" && output == "" {
-		return imagePrice, true, true
+	body := func(prices *bandPrices) string {
+		if prices.input == "" || prices.output == "" {
+			return ""
+		}
+		text := fmt.Sprintf("p * %s + c * %s", prices.input, prices.output)
+		cacheHit := prices.cacheImplicit
+		if cacheHit == "" {
+			cacheHit = prices.cacheRead
+		}
+		if cacheHit != "" {
+			text += " + cr * " + cacheHit
+		}
+		if prices.cacheCreate != "" {
+			text += " + cc * " + prices.cacheCreate
+		}
+		return text
 	}
-	if input == "" || output == "" || imagePrice != "" {
-		return "", false, false
+	standard, peak, offPeak := body(bands["standard"]), body(bands["peak"]), body(bands["off_peak"])
+	timed := *bands["peak"] != bandPrices{} || *bands["off_peak"] != bandPrices{}
+	switch {
+	case image != "" && *bands["standard"] == bandPrices{} && !timed:
+		return customAlibabaTierPrice{image: image}, ""
+	case image != "":
+		return customAlibabaTierPrice{}, "per-image price mixed with token prices"
+	case timed && (*bands["standard"] != bandPrices{} || peak == "" || offPeak == ""):
+		return customAlibabaTierPrice{}, "time-of-day prices without both a peak and an off-peak input and output price"
+	case timed:
+		return customAlibabaTierPrice{tokens: peak, offPeak: offPeak}, ""
+	case standard == "":
+		return customAlibabaTierPrice{}, "no input and output token price"
 	}
-	body = fmt.Sprintf("p * %s + c * %s", input, output)
-	cacheHit := cacheImplicit
-	if cacheHit == "" {
-		cacheHit = cacheRead
-	}
-	if cacheHit != "" {
-		body += " + cr * " + cacheHit
-	}
-	if cacheCreate != "" {
-		body += " + cc * " + cacheCreate
-	}
-	return body, false, true
+	return customAlibabaTierPrice{tokens: standard}, ""
 }
 
 func customAlibabaPriceString(value any) (string, bool) {

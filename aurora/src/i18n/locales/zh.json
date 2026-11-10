@@ -1,5 +1,6 @@
 {
   "translation": {
+    "No readable price from this upstream: {{reason}}": "该上游没有可读取的价格：{{reason}}",
     "Peak hours": "峰时",
     "Off-peak: {{price}}": "谷时：{{price}}",
     "Remove from channels": "从渠道移除",

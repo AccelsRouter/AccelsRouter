@@ -528,6 +528,8 @@ export type UpstreamRatiosResponse = {
     differences: DifferencesMap
     prices: PricingSyncModels
     test_results: TestResult[]
+    /** Fork: per upstream, why a model it lists got no price */
+    skipped?: Record<string, Record<string, string>>
   }
 }
 
