@@ -26,17 +26,24 @@ import type {
   PricingSyncModels,
   PricingSyncValues,
 } from '../types'
+import { VENDOR_PRICE_PRESET_ID, VENDOR_PRICE_PRESET_NAME } from './constants'
 import {
   formatSegmentRange,
   formatUnit,
   getSourceLoss,
+  getTimeBandPrices,
   getUnitPriceText,
   matchesVendorPrice,
   type PriceSegment,
+  type TimeBandPrices,
   type UnitPrice,
 } from './custom-price-risk'
+import { CustomUnpricedFill } from './custom-unpriced-fill'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
-import { getUpstreamDisplayName } from './upstream-ratio-sync-helpers'
+import {
+  describeSyncPrice,
+  getUpstreamDisplayName,
+} from './upstream-ratio-sync-helpers'
 
 type Problem = 'unpriced' | 'difference' | 'loss' | 'vendor'
 type Filter = 'all' | Problem
@@ -59,6 +66,8 @@ type VendorPrice = {
   price: UnitPrice
   source: string
   tiers?: VendorTier[]
+  // Set instead of tiers when the vendor prices by time of day.
+  bands?: TimeBandPrices
   // The price sync offers this vendor price as the model's price.
   syncable: boolean
 }
@@ -75,10 +84,16 @@ const PROBLEM_BADGES: Record<
 
 type PreviewRow = {
   model: string
-  channels: string[]
+  channels: Array<{ id: number; name: string }>
   problems: Problem[]
   sell: string | null
+  // Set when the current price is by time of day: sell is the peak price.
+  sellOffPeak: string | null
   losses: LossSource[]
+}
+
+function unitText(price: UnitPrice): string {
+  return `${formatUnit(price.input)} / ${formatUnit(price.output)}`
 }
 
 const ENABLED_STATUS = 1
@@ -101,6 +116,12 @@ export function CustomPricingPreview() {
     prices: PricingSyncModels
     differences: DifferencesMap
   } | null>(null)
+  // What the vendor list price source offers each model, kept apart from the
+  // upstream channels so it never counts as a price difference or a cost.
+  const [vendorOffers, setVendorOffers] = useState<PricingSyncModels>({})
+  // Pricing unpriced models from one upstream: the upstream and the models.
+  const [fillSource, setFillSource] = useState('')
+  const [fillPicked, setFillPicked] = useState<Set<string>>(new Set())
 
   const channelsQuery = useQuery({
     queryKey: ['custom-pricing-preview', 'channels'],
@@ -140,6 +161,7 @@ export function CustomPricingPreview() {
                 upper: number
                 input: number
                 output: number | null
+                band?: string
               }>
             }
           >
@@ -160,36 +182,75 @@ export function CustomPricingPreview() {
         }
         if (!res.data.success || !res.data.data) return {}
         return Object.fromEntries(
-          Object.entries(res.data.data).map(([model, price]) => [
-            model,
-            {
-              price: { input: price.input, output: price.output },
-              source: price.provider,
-              syncable: price.syncable === true,
-              tiers: price.tiers?.map((tier) => ({
-                upper: tier.upper,
-                price: { input: tier.input, output: tier.output },
-              })),
-            },
-          ])
+          Object.entries(res.data.data).map(([model, price]) => {
+            const band = (name: string) =>
+              price.tiers?.find((tier) => tier.band === name)
+            const peak = band('peak')
+            const offPeak = band('off_peak')
+            const lengthTiers = price.tiers?.filter((tier) => !tier.band)
+            return [
+              model,
+              {
+                price: { input: price.input, output: price.output },
+                source: price.provider,
+                syncable: price.syncable === true,
+                tiers: lengthTiers?.length
+                  ? lengthTiers.map((tier) => ({
+                      upper: tier.upper,
+                      price: { input: tier.input, output: tier.output },
+                    }))
+                  : undefined,
+                bands:
+                  peak && offPeak
+                    ? {
+                        peak: { input: peak.input, output: peak.output },
+                        offPeak: {
+                          input: offPeak.input,
+                          output: offPeak.output,
+                        },
+                      }
+                    : undefined,
+              },
+            ]
+          })
         )
       }
-      const [response, vendorPrices] = await Promise.all([
+      // The same vendor prices as the expressions the price sync would save.
+      const preset = channels.find((c) => c.id === VENDOR_PRICE_PRESET_ID)
+      const fetchVendorOffers = async (): Promise<PricingSyncModels> => {
+        if (!preset) return {}
+        const offers = await fetchUpstreamRatios({
+          upstreams: [
+            {
+              id: preset.id,
+              name: preset.name,
+              base_url: preset.base_url,
+              endpoint: getDefaultEndpointForChannel(preset),
+            },
+          ],
+          timeout: 10,
+          include_unchanged: true,
+        })
+        return offers.success ? (offers.data?.prices ?? {}) : {}
+      }
+      const [response, vendorPrices, offers] = await Promise.all([
         fetchUpstreamRatios({
           upstreams,
           timeout: 10,
           include_unchanged: true,
         }),
         fetchVendor().catch(() => ({}) as Record<string, VendorPrice>),
+        fetchVendorOffers().catch(() => ({}) as PricingSyncModels),
       ])
       if (!response.success || !response.data?.prices) {
         throw createServerError(response, t('Failed to fetch upstream prices'))
       }
-      return { ...response.data, vendorPrices }
+      return { ...response.data, vendorPrices, offers }
     },
     onSuccess: (data) => {
       setUpstream({ prices: data.prices, differences: data.differences })
       setVendor(data.vendorPrices)
+      setVendorOffers(data.offers)
       const failed = data.test_results.filter((r) => r.status === 'error')
       if (failed.length) {
         toast.warning(
@@ -242,7 +303,7 @@ export function CustomPricingPreview() {
 
   const rows = useMemo<PreviewRow[]>(() => {
     if (!channelsQuery.data || !pricingQuery.data) return []
-    const channelsByModel = new Map<string, string[]>()
+    const channelsByModel = new Map<string, PreviewRow['channels']>()
     const serving = new Set<string>()
     for (const channel of channelsQuery.data) {
       if (channel.status !== ENABLED_STATUS) continue
@@ -250,7 +311,7 @@ export function CustomPricingPreview() {
         serving.add(`${channel.id}\n${model}`)
         channelsByModel.set(model, [
           ...(channelsByModel.get(model) ?? []),
-          channel.name,
+          { id: channel.id, name: channel.name },
         ])
       }
     }
@@ -289,11 +350,15 @@ export function CustomPricingPreview() {
     const result: PreviewRow[] = []
     for (const [model, channels] of channelsByModel) {
       const problems: Problem[] = []
-      let sell: string | null = null
       const losses: LossSource[] = []
       if (!priced.has(model)) problems.push('unpriced')
       const row = upstream?.prices[model]
-      const current = row?.current ?? saved.get(model)
+      // The saved price is fresher than the one the upstream check returned.
+      const current = saved.get(model) ?? row?.current
+      // A price by time of day has no single unit price: show the peak one.
+      const bands = getTimeBandPrices(current)
+      const sell = bands ? unitText(bands.peak) : getUnitPriceText(current)
+      const sellOffPeak = bands ? unitText(bands.offPeak) : null
       const list = vendor[model]
       // Prices follow the vendor's list price: flag a priced model that
       // charges something else.
@@ -303,10 +368,8 @@ export function CustomPricingPreview() {
         matchesVendorPrice(current, list) === false
       ) {
         problems.push('vendor')
-        sell = getUnitPriceText(current)
       }
       if (row) {
-        sell = getUnitPriceText(row.current)
         if (upstream?.differences[model]) problems.push('difference')
         for (const source of Object.keys(row.upstreams)) {
           const channelId = parseChannelId(source)
@@ -321,7 +384,7 @@ export function CustomPricingPreview() {
       }
       losses.sort((a, b) => b.ratio - a.ratio)
       if (problems.length)
-        result.push({ model, channels, problems, sell, losses })
+        result.push({ model, channels, problems, sell, sellOffPeak, losses })
     }
     return result.sort(
       (a, b) =>
@@ -342,20 +405,75 @@ export function CustomPricingPreview() {
       else next.delete(key)
       return next
     })
-  const selectedPairs = rows
-    .flatMap((row) => row.losses.map((loss) => ({ row, loss })))
-    .filter(({ loss }) => selected.has(loss.key))
+  // Every "<channel id>\n<model>" marked for removal, from a loss-risk line
+  // or from a channel name in any other row.
+  const channelNames = new Map(
+    (channelsQuery.data ?? []).map((channel) => [channel.id, channel.name])
+  )
+  const servedBy = new Map(rows.map((row) => [row.model, row.channels.length]))
+  const selectedPairs = [...selected].map((key) => {
+    const [channelId, model] = key.split('\n')
+    return {
+      key,
+      model,
+      channel: channelNames.get(Number(channelId)) ?? channelId,
+    }
+  })
   const orphaned = [
     ...new Set(
       selectedPairs
         .filter(
-          ({ row }) =>
-            selectedPairs.filter((pair) => pair.row.model === row.model)
-              .length >= row.channels.length
+          (pair) =>
+            selectedPairs.filter((other) => other.model === pair.model)
+              .length >= (servedBy.get(pair.model) ?? 0)
         )
-        .map(({ row }) => row.model)
+        .map((pair) => pair.model)
     ),
   ]
+  // The prices an unpriced model can take: every upstream channel's, plus
+  // the vendor list price.
+  const offers: PricingSyncModels = { ...upstream?.prices }
+  for (const [model, row] of Object.entries(vendorOffers)) {
+    const channels = offers[model]
+    offers[model] = {
+      current: channels?.current ?? row.current,
+      upstreams: { ...channels?.upstreams, ...row.upstreams },
+      expr_errors: { ...channels?.expr_errors, ...row.expr_errors },
+      expr_conversions: {
+        ...channels?.expr_conversions,
+        ...row.expr_conversions,
+      },
+    }
+  }
+  // Unpriced models a source has a price for that can be saved here.
+  const fillable = (model: string, source: string) => {
+    const row = offers[model]
+    return row?.upstreams[source] && !row.expr_errors?.[source]
+      ? row.upstreams[source]
+      : undefined
+  }
+  const unpriced = rows.filter((row) => row.problems.includes('unpriced'))
+  const fillCounts = new Map<string, number>()
+  for (const row of unpriced) {
+    for (const source of Object.keys(offers[row.model]?.upstreams ?? {})) {
+      if (fillable(row.model, source)) {
+        fillCounts.set(source, (fillCounts.get(source) ?? 0) + 1)
+      }
+    }
+  }
+  // Prices follow the vendor list price, so that source is listed first.
+  const vendorSource = `${VENDOR_PRICE_PRESET_NAME}(${VENDOR_PRICE_PRESET_ID})`
+  const fillSources = [...fillCounts]
+    .map(([name, count]) => ({ name, count }))
+    .sort(
+      (a, b) =>
+        Number(b.name === vendorSource) - Number(a.name === vendorSource) ||
+        b.count - a.count ||
+        a.name.localeCompare(b.name)
+    )
+  const fillModels = unpriced
+    .filter((row) => fillSource && fillable(row.model, fillSource))
+    .map((row) => row.model)
   const count = (problem: Problem) =>
     rows.filter((r) => r.problems.includes(problem)).length
   const filters: Array<[Filter, string, number]> = [
@@ -382,6 +500,48 @@ export function CustomPricingPreview() {
     )
   }
 
+  // The price the selected upstream would give an unpriced model, in the
+  // upstream cost column.
+  const fillCell = (model: string) => {
+    const row = fillSource ? offers[model] : undefined
+    const blocked = row?.expr_errors?.[fillSource]
+    const candidate = fillable(model, fillSource)
+    if (!candidate) {
+      return (
+        <td
+          className='text-muted-foreground text-right'
+          title={
+            blocked
+              ? t('Skipped, this gateway cannot save it: {{reason}}', {
+                  reason: blocked,
+                })
+              : undefined
+          }
+        >
+          {blocked ? '—' : ''}
+        </td>
+      )
+    }
+    return (
+      <td
+        className='text-right tabular-nums'
+        title={describeSyncPrice(candidate, t)}
+      >
+        {getUnitPriceText(candidate) ?? t('Expression billing')}
+      </td>
+    )
+  }
+
+  // Marks a price as the peak-hour one; the off-peak price is in the tooltip.
+  const peakLabel = (offPeak: string) => (
+    <span
+      className='ml-1 text-xs'
+      title={t('Off-peak: {{price}}', { price: offPeak })}
+    >
+      {t('Peak hours')}
+    </span>
+  )
+
   // A vendor price with tiers is shown for the tier covering each range; one
   // without covers the base range only.
   const vendorCell = (model: string, segment?: PriceSegment) => {
@@ -396,16 +556,16 @@ export function CustomPricingPreview() {
         : undefined
     const price = tier?.price ?? entry?.price
     const hidden = segment && !entry?.tiers && segment.lower > 0
+    let text = '—'
+    if (hidden) text = ''
+    else if (entry && price) text = unitText(price)
     return (
       <td
         className='text-muted-foreground text-right tabular-nums'
         title={entry ? getUpstreamDisplayName(entry.source, t) : undefined}
       >
-        {entry && price && !hidden
-          ? `${formatUnit(price.input)} / ${formatUnit(price.output)}`
-          : hidden
-            ? ''
-            : '—'}
+        {text}
+        {entry?.bands && !hidden && peakLabel(unitText(entry.bands.offPeak))}
       </td>
     )
   }
@@ -437,18 +597,41 @@ export function CustomPricingPreview() {
             : t('Check upstream prices')}
         </Button>
       </div>
-      {visibleLosses.length > 0 && (
+      {upstream && fillSources.length > 0 && pricingQuery.data && (
+        <CustomUnpricedFill
+          sources={fillSources}
+          source={fillSource}
+          onSourceChange={(source) => {
+            setFillSource(source)
+            setFillPicked(new Set())
+          }}
+          models={fillModels}
+          picked={fillPicked}
+          onPickedChange={setFillPicked}
+          prices={offers}
+          baseline={pricingQuery.data}
+        />
+      )}
+      {(visibleLosses.length > 0 || selected.size > 0) && (
         <div className='flex flex-wrap items-center gap-2'>
-          <Button
-            type='button'
-            size='sm'
-            variant='outline'
-            onClick={() =>
-              setSelected(new Set(visibleLosses.map((loss) => loss.key)))
-            }
-          >
-            {t('Select all loss risks')}
-          </Button>
+          {visibleLosses.length > 0 && (
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              onClick={() =>
+                setSelected(
+                  (previous) =>
+                    new Set([
+                      ...previous,
+                      ...visibleLosses.map((loss) => loss.key),
+                    ])
+                )
+              }
+            >
+              {t('Select all loss risks')}
+            </Button>
+          )}
           <Button
             type='button'
             size='sm'
@@ -465,7 +648,7 @@ export function CustomPricingPreview() {
             disabled={selected.size === 0 || removeMutation.isPending}
             onClick={() => setConfirmOpen(true)}
           >
-            {t('Remove from high-price channels')} ({selected.size})
+            {t('Remove from channels')} ({selected.size})
           </Button>
         </div>
       )}
@@ -492,6 +675,13 @@ export function CustomPricingPreview() {
         <p className='text-muted-foreground text-sm'>
           {t(
             'Only models without a price are listed. Check upstream prices to also find price differences and loss risks, and to load vendor prices.'
+          )}
+        </p>
+      )}
+      {visible.length > 0 && (
+        <p className='text-muted-foreground text-xs'>
+          {t(
+            'Click a channel name to mark the model for removal from that channel.'
           )}
         </p>
       )}
@@ -561,6 +751,23 @@ export function CustomPricingPreview() {
                               aria-label={t('Select {{model}} on {{source}}', {
                                 model: row.model,
                                 source: getUpstreamDisplayName(loss.source, t),
+                              })}
+                            />
+                          )}
+                          {!loss && fillModels.includes(row.model) && (
+                            <Checkbox
+                              checked={fillPicked.has(row.model)}
+                              onCheckedChange={(checked) =>
+                                setFillPicked((previous) => {
+                                  const next = new Set(previous)
+                                  if (checked) next.add(row.model)
+                                  else next.delete(row.model)
+                                  return next
+                                })
+                              }
+                              aria-label={t('Select {{model}} on {{source}}', {
+                                model: row.model,
+                                source: getUpstreamDisplayName(fillSource, t),
                               })}
                             />
                           )}
@@ -640,16 +847,42 @@ export function CustomPricingPreview() {
                           </>
                         ) : (
                           <>
-                            <td
-                              className='text-muted-foreground max-w-48 truncate text-xs'
-                              title={row.channels.join(', ')}
-                            >
-                              {row.channels.join(', ')}
+                            <td className='max-w-64 text-xs'>
+                              <span className='flex flex-wrap gap-x-2 gap-y-1'>
+                                {row.channels.map((channel) => {
+                                  const key = `${channel.id}\n${row.model}`
+                                  const marked = selected.has(key)
+                                  return (
+                                    <button
+                                      key={channel.id}
+                                      type='button'
+                                      aria-pressed={marked}
+                                      title={t(
+                                        'Remove {{model}} from {{channel}}',
+                                        {
+                                          model: row.model,
+                                          channel: channel.name,
+                                        }
+                                      )}
+                                      className={cn(
+                                        'hover:text-destructive cursor-pointer underline-offset-2 hover:underline',
+                                        marked
+                                          ? 'text-destructive line-through'
+                                          : 'text-muted-foreground'
+                                      )}
+                                      onClick={() => toggleLoss(key, !marked)}
+                                    >
+                                      {channel.name}
+                                    </button>
+                                  )
+                                })}
+                              </span>
                             </td>
                             <td />
-                            <td />
+                            {fillCell(row.model)}
                             <td className='text-muted-foreground text-right tabular-nums'>
                               {row.sell ?? '—'}
+                              {row.sellOffPeak && peakLabel(row.sellOffPeak)}
                             </td>
                             {vendorCell(row.model)}
                             <td />
@@ -667,7 +900,7 @@ export function CustomPricingPreview() {
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title={t('Remove models from high-price channels?')}
+        title={t('Remove models from channels?')}
         desc={
           <div className='space-y-2'>
             <p>
@@ -684,9 +917,9 @@ export function CustomPricingPreview() {
               </p>
             )}
             <ul className='max-h-48 overflow-y-auto text-sm'>
-              {selectedPairs.map(({ row, loss }) => (
-                <li key={loss.key}>
-                  {row.model} — {getUpstreamDisplayName(loss.source, t)}
+              {selectedPairs.map((pair) => (
+                <li key={pair.key}>
+                  {pair.model} — {pair.channel}
                 </li>
               ))}
             </ul>

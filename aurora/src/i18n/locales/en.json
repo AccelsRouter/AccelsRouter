@@ -1,5 +1,14 @@
 {
   "translation": {
+    "Peak hours": "Peak hours",
+    "Off-peak: {{price}}": "Off-peak: {{price}}",
+    "Remove from channels": "Remove from channels",
+    "Remove models from channels?": "Remove models from channels?",
+    "Remove {{model}} from {{channel}}": "Remove {{model}} from {{channel}}",
+    "Click a channel name to mark the model for removal from that channel.": "Click a channel name to mark the model for removal from that channel.",
+    "Price models without a price from": "Price models without a price from",
+    "Select a price source": "Select a price source",
+    "Save prices": "Save prices",
     "Vendor list price alerts": "Vendor list price alerts",
     "Tells the alert group when a vendor changes an official list price, lists a new model, or a price source can no longer be read. Checked once a day. It uses the alert bot above and is always on while that bot has a webhook address.": "Tells the alert group when a vendor changes an official list price, lists a new model, or a price source can no longer be read. Checked once a day. It uses the alert bot above and is always on while that bot has a webhook address.",
     "Load vendor list prices": "Load vendor list prices",
