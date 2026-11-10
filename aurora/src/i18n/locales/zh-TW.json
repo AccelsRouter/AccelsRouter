@@ -1,5 +1,14 @@
 {
   "translation": {
+    "Peak hours": "峰時",
+    "Off-peak: {{price}}": "谷時：{{price}}",
+    "Remove from channels": "從渠道移除",
+    "Remove models from channels?": "從渠道移除這些模型？",
+    "Remove {{model}} from {{channel}}": "把 {{model}} 從 {{channel}} 移除",
+    "Click a channel name to mark the model for removal from that channel.": "點擊渠道名，可標記把該模型從這個渠道移除。",
+    "Price models without a price from": "無價格的模型，從此上游取價",
+    "Select a price source": "選擇價格來源",
+    "Save prices": "儲存價格",
     "Vendor list price alerts": "廠商官方定價變動通知",
     "Tells the alert group when a vendor changes an official list price, lists a new model, or a price source can no longer be read. Checked once a day. It uses the alert bot above and is always on while that bot has a webhook address.": "廠商調整官方定價、上架新模型，或某個價格來源無法讀取時，通知告警群。每天檢查一次，使用上面的告警機器人；只要該機器人填了 Webhook 位址就一直生效。",
     "Load vendor list prices": "載入廠商標價",

@@ -227,11 +227,42 @@ function findOverage(
   }
 }
 
+// The two prices of a model billed by time of day.
+export type TimeBandPrices = { peak: UnitPrice; offPeak: UnitPrice }
+
+function bandLeafPrice(body: string): UnitPrice | null {
+  const input = body.match(/\bp\s*\*\s*([\d.eE+-]+)/)
+  const output = body.match(/\bc\s*\*\s*([\d.eE+-]+)/)
+  if (!input) return null
+  return { input: Number(input[1]), output: output ? Number(output[1]) : null }
+}
+
+// Peak and off-peak unit prices of an expression that prices by time of day,
+// `<condition> ? tier("peak", …) : tier("off_peak", …)`, as DeepSeek's do.
+// null for every other price.
+export function getTimeBandPrices(
+  values?: PricingSyncValues
+): TimeBandPrices | null {
+  if (getSyncPriceKind(values) !== 'expression') return null
+  const leaves = [
+    ...splitBillingExprAndRequestRules(
+      String(values?.billing_expr)
+    ).billingExpr.matchAll(/tier\("(peak|off_peak)",\s*([^()]*)\)/g),
+  ]
+  if (leaves.length !== 2 || leaves[0][1] !== 'peak') return null
+  if (leaves[1][1] !== 'off_peak') return null
+  const peak = bandLeafPrice(leaves[0][2])
+  const offPeak = bandLeafPrice(leaves[1][2])
+  return peak && offPeak ? { peak, offPeak } : null
+}
+
 // A vendor list price; `upper` is the largest input length (tokens) a tier
-// covers, 0 for the open-ended top tier.
+// covers, 0 for the open-ended top tier. `bands` is set instead of `tiers`
+// when the vendor prices by time of day.
 export type VendorListPrice = {
   price: UnitPrice
   tiers?: Array<{ upper: number; price: UnitPrice }>
+  bands?: TimeBandPrices
 }
 
 function sameUnit(a: number | null, b: number | null): boolean {
@@ -246,8 +277,22 @@ export function matchesVendorPrice(
   current: PricingSyncValues | undefined,
   vendor: VendorListPrice
 ): boolean | null {
+  const bands = getTimeBandPrices(current)
+  if (bands && vendor.bands) {
+    return [
+      [bands.peak, vendor.bands.peak],
+      [bands.offPeak, vendor.bands.offPeak],
+    ].every(
+      ([ours, theirs]) =>
+        sameUnit(ours.input, theirs.input) &&
+        sameUnit(ours.output, theirs.output)
+    )
+  }
+  if (bands) return null
   const sell = getPriceTiers(current)
   if (!sell) return null
+  // A single price cannot be the vendor's peak and off-peak prices at once.
+  if (vendor.bands) return false
   const list: PriceTier[] = vendor.tiers?.length
     ? vendor.tiers.map((tier) => ({
         upper: tier.upper > 0 ? tier.upper : Infinity,
