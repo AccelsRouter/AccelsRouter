@@ -233,6 +233,55 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	assert.Equal(t, 0.5, claude["claude-haiku-5-5"].Tiers[1].Input)
 	assert.Empty(t, claude["claude-opus-5-5"].Tiers, "untiered models carry no tier list")
 
+	// DeepSeek charges half off-peak; both prices are kept as time bands.
+	require.Len(t, deepseek["deepseek-v4-pro"].Tiers, 2)
+	assert.Equal(t, "peak", deepseek["deepseek-v4-pro"].Tiers[0].Band)
+	assert.Equal(t, "off_peak", deepseek["deepseek-v4-pro"].Tiers[1].Band)
+	assert.Equal(t, 0.66, deepseek["deepseek-v4-pro"].Tiers[1].Input)
+	require.NotNil(t, deepseek["deepseek-flash"].Tiers[1].CacheRead)
+	assert.Equal(t, 0.003, *deepseek["deepseek-flash"].Tiers[1].CacheRead)
+	assertCustomVendorPrice(t, deepseek, "deepseek-v4-flash-vision-exp", 0.3, 1.2)
+
+	// Gemini: a price with an effective date follows the date, prompt-length
+	// tiers and a separate audio input price are kept, and models priced per
+	// minute, per image or by output modality are left out.
+	google, err := parseCustomGooglePricing(customVendorFixture(t, "google.md"), time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	assertCustomVendorPrice(t, google, "gemini-4-argon", 2, 10)
+	require.NotNil(t, google["gemini-4-argon"].CacheRead)
+	assert.Equal(t, 0.1, *google["gemini-4-argon"].CacheRead)
+	assertCustomVendorPrice(t, google, "gemini-2.5-pro", 1.25, 10)
+	require.Len(t, google["gemini-2.5-pro"].Tiers, 2)
+	assert.Equal(t, 200000.0, google["gemini-2.5-pro"].Tiers[0].Upper)
+	assert.Equal(t, 2.5, google["gemini-2.5-pro"].Tiers[1].Input)
+	assert.Equal(t, 15.0, *google["gemini-2.5-pro"].Tiers[1].Output)
+	assert.Equal(t, 0.25, *google["gemini-2.5-pro"].Tiers[1].CacheRead)
+	assertCustomVendorPrice(t, google, "gemini-2.5-flash", 0.3, 2.5)
+	require.Len(t, google["gemini-2.5-flash"].Tiers, 1)
+	assert.Equal(t, 1.0, *google["gemini-2.5-flash"].Tiers[0].AudioInput)
+	for _, name := range []string{"gemini-3.1-flash-tts-preview", "gemini-3.5-transcribe", "gemini-3.1-flash-image", "gemini-embedding-001"} {
+		assert.NotContains(t, google, name)
+	}
+	later, err := parseCustomGooglePricing(customVendorFixture(t, "google.md"), time.Date(2026, 12, 1, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	assertCustomVendorPrice(t, later, "gemini-4-argon", 4, 20)
+
+	// OpenAI's own models from OpenRouter's list: long-prompt overrides become
+	// tiers and the cache write price is kept; batch variants, gpt-oss, models
+	// with audio prices and other providers are left out.
+	openai, err := parseCustomOpenAIPricing(customVendorFixture(t, "openrouter.json"))
+	require.NoError(t, err)
+	assert.Len(t, openai, 3)
+	assertCustomVendorPrice(t, openai, "gpt-5", 1.25, 10)
+	assert.Empty(t, openai["gpt-5"].Tiers)
+	assertCustomVendorPrice(t, openai, "gpt-6.1-sol", 2, 10)
+	require.Len(t, openai["gpt-6.1-sol"].Tiers, 2)
+	assert.Equal(t, 272000.0, openai["gpt-6.1-sol"].Tiers[0].Upper)
+	assert.Equal(t, 2.5, *openai["gpt-6.1-sol"].Tiers[0].CacheWrite)
+	assert.Equal(t, 4.0, openai["gpt-6.1-sol"].Tiers[1].Input)
+	assert.Equal(t, 15.0, *openai["gpt-6.1-sol"].Tiers[1].Output)
+	assert.Contains(t, openai, "gpt-5.4")
+
 	_, err = parseCustomZaiPricing([]byte("nothing here"))
 	assert.Error(t, err)
 }

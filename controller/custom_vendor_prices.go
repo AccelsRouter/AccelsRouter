@@ -12,12 +12,18 @@ const (
 )
 
 // customVendorTier is one input-length tier of a vendor price. Upper is the largest
-// input, in tokens, the tier covers; 0 means it has no upper bound.
+// input, in tokens, the tier covers; 0 means it has no upper bound. A price
+// that needs CacheWrite or AudioInput carries them on its tiers, a single
+// unbounded tier when the vendor has no length tiers. Band marks the tiers of
+// a vendor that prices by time of day instead ("peak" first, then "off_peak").
 type customVendorTier struct {
-	Upper     float64  `json:"upper"`
-	Input     float64  `json:"input"`
-	Output    *float64 `json:"output"`
-	CacheRead *float64 `json:"cache_read"`
+	Upper      float64  `json:"upper"`
+	Input      float64  `json:"input"`
+	Output     *float64 `json:"output"`
+	CacheRead  *float64 `json:"cache_read"`
+	CacheWrite *float64 `json:"cache_write,omitempty"`
+	AudioInput *float64 `json:"audio_input,omitempty"`
+	Band       string   `json:"band,omitempty"`
 }
 
 type customVendorPrice struct {

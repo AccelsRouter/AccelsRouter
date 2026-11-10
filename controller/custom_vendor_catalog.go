@@ -34,7 +34,7 @@ const (
 
 // customVendorSourcePriority decides which source wins when several price a model.
 var customVendorSourcePriority = []string{
-	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai",
+	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai", "google", "openai",
 }
 
 type customVendorSourceResult struct {

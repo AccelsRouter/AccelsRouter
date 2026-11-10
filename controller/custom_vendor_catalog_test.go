@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
@@ -154,12 +155,17 @@ func TestResolveCustomVendorPricesPrefersManualThenVendorSources(t *testing.T) {
 // The vendor list prices are a price-sync source: a manual entry wins over the
 // fetched one, input-length tiers become branches, Claude models carry
 // Anthropic's cache-write multiples, and prices that cannot be charged exactly
-// (no output price, DeepSeek's peak-only entry) are left out.
+// (no output price, a DeepSeek entry with the peak price alone) are left out.
 func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 	db := setupCustomVendorCatalogDB(t)
 	_, handled, err := fetchCustomPricingSync(t.Context(), nil, dto.UpstreamDTO{ID: customVendorPresetID, Name: customVendorPresetName, BaseURL: customVendorPresetBaseURL})
 	require.True(t, handled)
 	require.ErrorContains(t, err, "catalog is empty")
+
+	// The built-in price of a model no saved price overrides.
+	builtinDeepSeekPro, ok := billing_setting.GetBillingExpr("deepseek-v4-pro")
+	require.True(t, ok)
+	require.True(t, strings.HasPrefix(builtinDeepSeekPro, customVendorDeepSeekPeak), "the peak window follows the built-in DeepSeek expressions")
 
 	out := func(value float64) *float64 { return &value }
 	rows := map[string]customVendorPrice{
@@ -171,7 +177,19 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 			{Input: 4, Output: out(12), CacheRead: out(1)},
 		}},
 		"text-embedding-x": {Provider: "z.ai pricing page", Input: 0.1},
-		"deepseek-v4-pro":  {Provider: customVendorDeepSeekProvider, Input: 1.32, Output: out(3.96)},
+		// A DeepSeek entry with the peak price alone, as stored before both bands were read.
+		"deepseek-flash": {Provider: customVendorDeepSeekProvider + " (peak)", Input: 0.3, Output: out(1.2)},
+		"deepseek-v4-pro": {Provider: customVendorDeepSeekProvider, Input: 1.32, Output: out(3.96), CacheRead: out(0.044), Tiers: []customVendorTier{
+			{Band: "peak", Input: 1.32, Output: out(3.96), CacheRead: out(0.044)},
+			{Band: "off_peak", Input: 0.66, Output: out(1.98), CacheRead: out(0.022)},
+		}},
+		"gpt-6.1-sol": {Provider: customVendorOpenAIProvider, Input: 2, Output: out(10), CacheRead: out(0.1), Tiers: []customVendorTier{
+			{Upper: 272000, Input: 2, Output: out(10), CacheRead: out(0.1), CacheWrite: out(2.5)},
+			{Input: 4, Output: out(15), CacheRead: out(0.2), CacheWrite: out(5)},
+		}},
+		"gemini-2.5-flash": {Provider: customVendorGoogleProvider, Input: 0.3, Output: out(2.5), CacheRead: out(0.03), Tiers: []customVendorTier{
+			{Input: 0.3, Output: out(2.5), CacheRead: out(0.03), AudioInput: out(1)},
+		}},
 	}
 	for name, price := range rows {
 		row := customVendorRowFromPrice(name, "kimi", price, 100)
@@ -188,8 +206,12 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 		"kimi-k3":         `tier("base", p * 2.5 + c * 12)`,
 		"claude-sonnet-5": `tier("base", p * 3 + c * 15 + cr * 0.3 + cc * 3.75 + cc1h * 6)`,
 		"grok-4.7":        `len <= 200000 ? tier("base", p * 2 + c * 6 + cr * 0.5) : tier("tier_2", p * 4 + c * 12 + cr * 1)`,
+		// DeepSeek's two bands render as the built-in expression does.
+		"deepseek-v4-pro":  builtinDeepSeekPro,
+		"gpt-6.1-sol":      `len <= 272000 ? tier("base", p * 2 + c * 10 + cr * 0.1 + cc * 2.5) : tier("tier_2", p * 4 + c * 15 + cr * 0.2 + cc * 5)`,
+		"gemini-2.5-flash": `tier("base", p * 0.3 + c * 2.5 + cr * 0.03 + ai * 1)`,
 	}, data[billing_setting.BillingExprField])
 	modes := data[billing_setting.BillingModeField].(map[string]string)
-	assert.Len(t, modes, 4)
+	assert.Len(t, modes, 7)
 	assert.Equal(t, billing_setting.BillingModeTieredExpr, modes["grok-4.7"])
 }

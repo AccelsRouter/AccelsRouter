@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Parsers for the model vendors' own pricing pages. Each takes the raw page and
@@ -18,8 +19,14 @@ type customVendorPageSource struct {
 
 const customVendorPageUserAgent = "Mozilla/5.0 (compatible; price-sync)"
 
-// The DeepSeek entry is its peak-hour price only.
-const customVendorDeepSeekProvider = "DeepSeek pricing page (peak)"
+// DeepSeek prices peak and off-peak hours differently; an entry stored before
+// both were read carries this name with a "(peak)" suffix.
+const customVendorDeepSeekProvider = "DeepSeek pricing page"
+
+// The peak window the DeepSeek page states; the price sync's expression for it
+// is customVendorDeepSeekPeak. Off-peak prices are only kept while the page
+// still states this window.
+const customDeepSeekPeakWindow = "Peak hours are 01:00 - 04:00 and 06:00 - 10:00 UTC, Monday through Friday"
 
 var customVendorPageSources = []customVendorPageSource{
 	{Name: "z.ai", URL: "https://docs.z.ai/guides/overview/pricing.md", Parse: parseCustomZaiPricing},
@@ -27,6 +34,13 @@ var customVendorPageSources = []customVendorPageSource{
 	{Name: "kimi", URL: "https://platform.kimi.ai/docs/pricing/chat", Parse: parseCustomKimiPricing},
 	{Name: "anthropic", URL: "https://platform.claude.com/docs/en/about-claude/pricing.md", Parse: parseCustomClaudePricing},
 	{Name: "xai", URL: "https://docs.x.ai/developers/pricing.md", Parse: parseCustomXAIPricing},
+	{Name: "google", URL: "https://ai.google.dev/gemini-api/docs/pricing.md.txt", Parse: func(page []byte) (map[string]customVendorPrice, error) {
+		return parseCustomGooglePricing(page, time.Now())
+	}},
+	// OpenAI's own pricing pages refuse automated clients, so its list prices
+	// are read from OpenRouter's public model list, which carries each
+	// provider's own price.
+	{Name: "openai", URL: "https://openrouter.ai/api/v1/models", Parse: parseCustomOpenAIPricing},
 }
 
 type customMarkdownTable struct {
@@ -252,25 +266,28 @@ func parseCustomClaudePricing(page []byte) (map[string]customVendorPrice, error)
 }
 
 // parseCustomDeepSeekPricing reads the model-per-column table. DeepSeek bills
-// peak and off-peak hours differently; the peak price is used, which is the
-// higher one. Model versions listed in the table are registered as aliases.
+// peak and off-peak hours differently: the peak price is the base price, and
+// both are kept as time bands while the page states the known peak window.
+// Model versions listed in the table are registered as aliases.
 func parseCustomDeepSeekPricing(page []byte) (map[string]customVendorPrice, error) {
 	const provider = customVendorDeepSeekProvider
+	knownWindow := strings.Contains(string(page), customDeepSeekPeakWindow)
 	prices := make(map[string]customVendorPrice)
 	for _, table := range parseCustomMarkdownTables(string(page)) {
 		if len(table.Header) == 0 || !strings.EqualFold(table.Header[0], "model") {
 			continue
 		}
 		type column struct {
-			names []string
-			price customVendorPrice
+			names   []string
+			peak    customVendorTier
+			offPeak customVendorTier
 		}
 		columns := make(map[int]*column)
 		for i, cell := range table.Header {
 			if i == 0 || strings.EqualFold(cell, "model") || cell == "" {
 				continue
 			}
-			columns[i] = &column{names: []string{customLowerName(cell)}, price: customVendorPrice{Provider: provider}}
+			columns[i] = &column{names: []string{customLowerName(cell)}, peak: customVendorTier{Band: "peak"}, offPeak: customVendorTier{Band: "off_peak"}}
 		}
 		for _, row := range table.Rows {
 			label := strings.ToLower(customCell(row, 0))
@@ -282,7 +299,11 @@ func parseCustomDeepSeekPricing(page []byte) (map[string]customVendorPrice, erro
 				}
 				continue
 			}
-			if !strings.HasPrefix(label, "pricing") || !strings.EqualFold(customCell(row, 2), "peak") {
+			if !strings.HasPrefix(label, "pricing") {
+				continue
+			}
+			band := strings.ToLower(customCell(row, 2))
+			if band != "peak" && band != "off-peak" {
 				continue
 			}
 			kind := strings.ToLower(customCell(row, 1))
@@ -291,30 +312,37 @@ func parseCustomDeepSeekPricing(page []byte) (map[string]customVendorPrice, erro
 				if !ok {
 					continue
 				}
+				tier := &col.peak
+				if band == "off-peak" {
+					tier = &col.offPeak
+				}
 				switch {
 				case strings.Contains(kind, "cache miss"):
-					col.price.Input = value
+					tier.Input = value
 				case strings.Contains(kind, "cache hit"):
-					hit := value
-					col.price.CacheRead = &hit
+					tier.CacheRead = &value
 				case strings.Contains(kind, "output"):
-					out := value
-					col.price.Output = &out
+					tier.Output = &value
 				}
 			}
 		}
 		for _, col := range columns {
-			if col.price.Input <= 0 {
+			if col.peak.Input <= 0 {
 				continue
 			}
+			price := customVendorPrice{Provider: provider, Input: col.peak.Input, Output: col.peak.Output, CacheRead: col.peak.CacheRead}
+			if knownWindow && col.peak.Output != nil && col.offPeak.Input > 0 && col.offPeak.Output != nil {
+				price.Tiers = []customVendorTier{col.peak, col.offPeak}
+			}
 			for _, name := range col.names {
-				prices[name] = col.price
+				prices[name] = price
 			}
 		}
 	}
-	// The page documents deepseek-v4-flash as a legacy name billed at the flash price.
+	// The page documents these legacy names as billed at the flash price.
 	if flash, ok := prices["deepseek-flash"]; ok {
 		prices["deepseek-v4-flash"] = flash
+		prices["deepseek-v4-flash-vision-exp"] = flash
 	}
 	return customPageResult(prices)
 }

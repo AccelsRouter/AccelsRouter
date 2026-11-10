@@ -23,41 +23,74 @@ func customVendorPriceText(value float64) string {
 	return strconv.FormatFloat(math.Round(value*1e6)/1e6, 'f', -1, 64)
 }
 
+// customVendorDeepSeekPeak is DeepSeek's peak window, Monday to Friday
+// 01:00-04:00 and 06:00-10:00 UTC, in the form the built-in DeepSeek
+// expressions use (Beijing time).
+const customVendorDeepSeekPeak = `weekday("Asia/Shanghai") >= 1 && weekday("Asia/Shanghai") <= 5 && ((hour("Asia/Shanghai") >= 9 && hour("Asia/Shanghai") < 12) || (hour("Asia/Shanghai") >= 14 && hour("Asia/Shanghai") < 18))`
+
 // customVendorTierBody renders one tier's USD per 1M tokens. A cache read the
-// vendor does not price stays in p at the input price. Anthropic publishes
-// cache writes as multiples of the base input price (1.25x for 5 minutes, 2x
-// for 1 hour) and the billing engine separates them for names containing
-// "claude", so those models carry cc and cc1h.
-func customVendorTierBody(name string, input float64, output, cacheRead *float64) (string, bool) {
-	if output == nil || input <= 0 || !validCustomVendorNumber(input) || !validCustomVendorNumber(*output) {
+// vendor does not price stays in p at the input price. A vendor's own cache
+// write price is cc; without one, names containing "claude" carry Anthropic's
+// published multiples of the base input price (1.25x for 5 minutes, 2x for 1
+// hour), which the billing engine separates for those names. A separate audio
+// input price is ai.
+func customVendorTierBody(name string, tier customVendorTier) (string, bool) {
+	if tier.Output == nil || tier.Input <= 0 || !validCustomVendorNumber(tier.Input) || !validCustomVendorNumber(*tier.Output) {
 		return "", false
 	}
-	body := fmt.Sprintf("p * %s + c * %s", customVendorPriceText(input), customVendorPriceText(*output))
-	if cacheRead != nil && validCustomVendorNumber(*cacheRead) {
-		body += " + cr * " + customVendorPriceText(*cacheRead)
+	body := fmt.Sprintf("p * %s + c * %s", customVendorPriceText(tier.Input), customVendorPriceText(*tier.Output))
+	if tier.CacheRead != nil && validCustomVendorNumber(*tier.CacheRead) {
+		body += " + cr * " + customVendorPriceText(*tier.CacheRead)
 	}
-	if strings.Contains(strings.ToLower(name), "claude") {
-		body += fmt.Sprintf(" + cc * %s + cc1h * %s", customVendorPriceText(input*1.25), customVendorPriceText(input*2))
+	switch {
+	case tier.CacheWrite != nil && validCustomVendorNumber(*tier.CacheWrite):
+		body += " + cc * " + customVendorPriceText(*tier.CacheWrite)
+	case strings.Contains(strings.ToLower(name), "claude"):
+		body += fmt.Sprintf(" + cc * %s + cc1h * %s", customVendorPriceText(tier.Input*1.25), customVendorPriceText(tier.Input*2))
+	}
+	if tier.AudioInput != nil && validCustomVendorNumber(*tier.AudioInput) {
+		body += " + ai * " + customVendorPriceText(*tier.AudioInput)
 	}
 	return body, true
 }
 
-// customVendorBillingExpr renders a vendor list price as a token billing
-// expression, with one branch per input-length tier. A price without an output
-// price cannot be charged exactly and yields no expression.
-func customVendorBillingExpr(name string, price customVendorPrice) (string, bool) {
-	if len(price.Tiers) == 0 {
-		body, ok := customVendorTierBody(name, price.Input, price.Output, price.CacheRead)
-		if !ok {
+// customVendorTimeBandExpr renders DeepSeek's peak and off-peak prices in the
+// shape of the built-in DeepSeek expressions.
+func customVendorTimeBandExpr(price customVendorPrice) (string, bool) {
+	if !strings.HasPrefix(price.Provider, customVendorDeepSeekProvider) || len(price.Tiers) != 2 ||
+		price.Tiers[0].Band != "peak" || price.Tiers[1].Band != "off_peak" {
+		return "", false
+	}
+	leaves := make([]string, 0, 2)
+	for _, tier := range price.Tiers {
+		if tier.Output == nil || tier.Input <= 0 || !validCustomVendorNumber(tier.Input) || !validCustomVendorNumber(*tier.Output) {
 			return "", false
 		}
-		return fmt.Sprintf(`tier("base", %s)`, body), true
+		body := "p * " + customVendorPriceText(tier.Input)
+		if tier.CacheRead != nil && validCustomVendorNumber(*tier.CacheRead) {
+			body += " + cr * " + customVendorPriceText(*tier.CacheRead)
+		}
+		leaves = append(leaves, fmt.Sprintf(`tier("%s", %s + c * %s)`, tier.Band, body, customVendorPriceText(*tier.Output)))
+	}
+	return customVendorDeepSeekPeak + " ? " + leaves[0] + " : " + leaves[1], true
+}
+
+// customVendorBillingExpr renders a vendor list price as a token billing
+// expression, with one branch per input-length tier or per time band. A price
+// without an output price cannot be charged exactly and yields no expression.
+func customVendorBillingExpr(name string, price customVendorPrice) (string, bool) {
+	tiers := price.Tiers
+	if len(tiers) == 0 {
+		tiers = []customVendorTier{{Input: price.Input, Output: price.Output, CacheRead: price.CacheRead}}
+	}
+	if tiers[0].Band != "" {
+		return customVendorTimeBandExpr(price)
 	}
 	var expr string
-	for i := len(price.Tiers) - 1; i >= 0; i-- {
-		tier := price.Tiers[i]
-		body, ok := customVendorTierBody(name, tier.Input, tier.Output, tier.CacheRead)
-		if !ok {
+	for i := len(tiers) - 1; i >= 0; i-- {
+		tier := tiers[i]
+		body, ok := customVendorTierBody(name, tier)
+		if !ok || tier.Band != "" {
 			return "", false
 		}
 		label := "base"
@@ -65,7 +98,7 @@ func customVendorBillingExpr(name string, price customVendorPrice) (string, bool
 			label = fmt.Sprintf("tier_%d", i+1)
 		}
 		leaf := fmt.Sprintf(`tier("%s", %s)`, label, body)
-		if i == len(price.Tiers)-1 {
+		if i == len(tiers)-1 {
 			if tier.Upper != 0 {
 				return "", false
 			}
@@ -81,11 +114,11 @@ func customVendorBillingExpr(name string, price customVendorPrice) (string, bool
 }
 
 // customVendorSyncExpr is the expression the price sync offers for a vendor
-// list price, or false when the price cannot be charged exactly. DeepSeek is
-// left out: the catalog keeps only its peak-hour price, while the built-in
-// expressions carry DeepSeek's peak and off-peak prices.
+// list price, or false when the price cannot be charged exactly. A DeepSeek
+// entry that holds only the peak-hour price is left out: DeepSeek charges half
+// of it off-peak.
 func customVendorSyncExpr(name string, price customVendorPrice) (string, bool) {
-	if price.Provider == customVendorDeepSeekProvider {
+	if strings.HasPrefix(price.Provider, customVendorDeepSeekProvider) && len(price.Tiers) == 0 {
 		return "", false
 	}
 	expr, ok := customVendorBillingExpr(name, price)
