@@ -1,5 +1,6 @@
 {
   "translation": {
+    "They also join each channel's ignored upstream models, so the upstream model sync does not add them back.": "Они также добавляются в список игнорируемых моделей апстрима каждого канала, поэтому синхронизация моделей не вернёт их обратно.",
     "This source does not list the model": "Этот источник не содержит эту модель",
     "Use the channel price": "Использовать цену канала",
     "No readable price from this upstream: {{reason}}": "У этого апстрима нет читаемой цены: {{reason}}",

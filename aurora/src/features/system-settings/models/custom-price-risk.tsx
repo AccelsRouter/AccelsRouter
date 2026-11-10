@@ -35,10 +35,13 @@ function getTierUnitPrices(values?: PricingSyncValues): UnitPrice[] | null {
     ]
   }
   if (kind !== 'expression') return null
-  const config = tryParseVisualConfig(
-    splitBillingExprAndRequestRules(String(values.billing_expr)).billingExpr
-  )
-  if (!config || config.tiers.length === 0) return null
+  const expr = splitBillingExprAndRequestRules(
+    String(values.billing_expr)
+  ).billingExpr
+  const config = tryParseVisualConfig(expr)
+  if (!config || config.tiers.length === 0) {
+    return readLooseTiers(expr)?.map((tier) => tier.price) ?? null
+  }
   if (config.tiers.some((tier) => tier.billing_unit === 'request')) return null
   return config.tiers.map((tier) => ({
     input: tier.input_unit_cost,
@@ -57,6 +60,31 @@ function hasRequestRules(values?: PricingSyncValues): boolean {
 // One price tier, valid for inputs up to `upper` tokens (Infinity for the last).
 type PriceTier = { upper: number; price: UnitPrice }
 
+// Token tiers of an expression the visual editor cannot read: leaves
+// `tier("name", p * X + c * Y …)` with their terms in any order or without an
+// output price, chosen by input-length conditions `len <= N ? … : …` however
+// they are parenthesised. null when anything else decides the price.
+function readLooseTiers(expr: string): PriceTier[] | null {
+  const leaf = /tier\("[^"]*",\s*([^()]*)\)/g
+  const prices = [...expr.matchAll(leaf)].map((match) =>
+    bandLeafPrice(match[1])
+  )
+  const condition = /\b(?:len|p)\s*<=?\s*([\d.eE+]+)/g
+  const bounds = [...expr.replace(leaf, '').matchAll(condition)].map((match) =>
+    Number(match[1])
+  )
+  const rest = expr.replace(leaf, '').replace(condition, '')
+  if (!prices.length || /[^\s()?:]/.test(rest)) return null
+  if (bounds.length !== prices.length - 1) return null
+  if (bounds.some((bound, i) => i > 0 && bound <= bounds[i - 1])) return null
+  const tiers: PriceTier[] = []
+  for (const [index, price] of prices.entries()) {
+    if (!price) return null
+    tiers.push({ upper: bounds[index] ?? Infinity, price })
+  }
+  return tiers
+}
+
 // Tiers with their upper input-length bounds, or null when the tiers depend on
 // something other than the input length and cannot be lined up.
 function getPriceTiers(values?: PricingSyncValues): PriceTier[] | null {
@@ -65,10 +93,12 @@ function getPriceTiers(values?: PricingSyncValues): PriceTier[] | null {
   if (getSyncPriceKind(values) === 'token') {
     return [{ upper: Infinity, price: tiers[0] }]
   }
-  const config = tryParseVisualConfig(
-    splitBillingExprAndRequestRules(String(values?.billing_expr)).billingExpr
-  )
-  if (!config || config.tiers.length !== tiers.length) return null
+  const expr = splitBillingExprAndRequestRules(
+    String(values?.billing_expr)
+  ).billingExpr
+  const config = tryParseVisualConfig(expr)
+  if (!config || config.tiers.length === 0) return readLooseTiers(expr)
+  if (config.tiers.length !== tiers.length) return null
   const result: PriceTier[] = []
   for (const [index, tier] of config.tiers.entries()) {
     let upper = Infinity

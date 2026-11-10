@@ -556,9 +556,20 @@ export function CustomPricingPreview() {
   // price, is a dash with the reason.
   const costCell = (row: PreviewRow) => {
     const offer = offers[row.model]
+    const serving = row.channels.map(
+      (channel) => `${channel.name}(${channel.id})`
+    )
+    // Without a selected source: the channels serving the model, then every
+    // other upstream that prices it, which is where a price difference with
+    // no serving-channel price comes from.
     const sources = fillSource
       ? [fillSource]
-      : row.channels.map((channel) => `${channel.name}(${channel.id})`)
+      : [
+          ...serving,
+          ...Object.keys(upstream?.prices[row.model]?.upstreams ?? {}).filter(
+            (source) => !serving.includes(source)
+          ),
+        ]
     const lines = sources.flatMap((source) => {
       const candidate = offer?.upstreams[source]
       const blocked = offer?.expr_errors?.[source]
@@ -995,6 +1006,9 @@ export function CustomPricingPreview() {
             <p>
               {t(
                 'These models will no longer be routed to the channels below. Users are not affected as long as another channel serves the model.'
+              )}{' '}
+              {t(
+                "They also join each channel's ignored upstream models, so the upstream model sync does not add them back."
               )}
             </p>
             {orphaned.length > 0 && (

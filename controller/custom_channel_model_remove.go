@@ -22,7 +22,9 @@ type customRemoveChannelModelsRequest struct {
 }
 
 // CustomRemoveChannelModels takes the given models out of each channel's model
-// list, e.g. to stop routing loss-making models to an expensive upstream.
+// list, e.g. to stop routing loss-making models to an expensive upstream. The
+// removed models join the channel's ignored upstream models, so the upstream
+// model sync does not add them back.
 func CustomRemoveChannelModels(c *gin.Context) {
 	var req customRemoveChannelModelsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,8 +52,11 @@ func CustomRemoveChannelModels(c *gin.Context) {
 		if slices.Equal(origin, next) {
 			continue
 		}
+		gone := subtractModelNames(origin, next)
 		channel.Models = strings.Join(next, ",")
-		if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("models", channel.Models).Error; err != nil {
+		settings := channel.GetOtherSettings()
+		settings.UpstreamModelUpdateIgnoredModels = mergeModelNames(settings.UpstreamModelUpdateIgnoredModels, gone)
+		if err := updateChannelUpstreamModelSettings(channel, settings, true); err != nil {
 			common.ApiError(c, err)
 			return
 		}
@@ -59,7 +64,7 @@ func CustomRemoveChannelModels(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
-		removed[channel.Id] = subtractModelNames(origin, next)
+		removed[channel.Id] = gone
 	}
 	if len(removed) > 0 {
 		refreshChannelRuntimeCache()

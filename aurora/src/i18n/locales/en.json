@@ -1,5 +1,6 @@
 {
   "translation": {
+    "They also join each channel's ignored upstream models, so the upstream model sync does not add them back.": "They also join each channel's ignored upstream models, so the upstream model sync does not add them back.",
     "This source does not list the model": "This source does not list the model",
     "Use the channel price": "Use the channel price",
     "No readable price from this upstream: {{reason}}": "No readable price from this upstream: {{reason}}",
