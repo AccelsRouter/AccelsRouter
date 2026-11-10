@@ -38,7 +38,11 @@ import {
   type TimeBandPrices,
   type UnitPrice,
 } from './custom-price-risk'
-import { CustomUnpricedFill } from './custom-unpriced-fill'
+import {
+  CustomSavePricesButton,
+  CustomUnpricedFill,
+  type PriceSelection,
+} from './custom-unpriced-fill'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
 import {
   describeSyncPrice,
@@ -89,6 +93,7 @@ type PreviewRow = {
   sell: string | null
   // Set when the current price is by time of day: sell is the peak price.
   sellOffPeak: string | null
+  current: PricingSyncValues
   losses: LossSource[]
 }
 
@@ -117,6 +122,8 @@ export function CustomPricingPreview() {
     differences: DifferencesMap
     // Per upstream, why a model it lists got no price.
     skipped: Record<string, Record<string, string>>
+    // Per upstream whose prices could not be fetched, the error.
+    failed: Record<string, string>
   } | null>(null)
   // What the vendor list price source offers each model, kept apart from the
   // upstream channels so it never counts as a price difference or a cost.
@@ -254,6 +261,11 @@ export function CustomPricingPreview() {
         prices: data.prices,
         differences: data.differences,
         skipped: data.skipped ?? {},
+        failed: Object.fromEntries(
+          data.test_results
+            .filter((result) => result.status === 'error')
+            .map((result) => [result.name, result.error ?? ''])
+        ),
       })
       setVendor(data.vendorPrices)
       setVendorOffers(data.offers)
@@ -381,7 +393,10 @@ export function CustomPricingPreview() {
           const channelId = parseChannelId(source)
           const key = `${channelId}\n${model}`
           // Only channels that still serve the model can lose money on it.
-          const loss = serving.has(key) ? getSourceLoss(row, source) : null
+          // Against the saved price, so a repriced model stops being a loss.
+          const loss = serving.has(key)
+            ? getSourceLoss({ ...row, current: current ?? row.current }, source)
+            : null
           if (loss) {
             if (!problems.includes('loss')) problems.push('loss')
             losses.push({ key, channelId, source, ...loss })
@@ -390,7 +405,15 @@ export function CustomPricingPreview() {
       }
       losses.sort((a, b) => b.ratio - a.ratio)
       if (problems.length)
-        result.push({ model, channels, problems, sell, sellOffPeak, losses })
+        result.push({
+          model,
+          channels,
+          problems,
+          sell,
+          sellOffPeak,
+          current: current ?? {},
+          losses,
+        })
     }
     return result.sort(
       (a, b) =>
@@ -458,6 +481,17 @@ export function CustomPricingPreview() {
       ? row.upstreams[source]
       : undefined
   }
+  // Selected loss risks whose channel price can replace the current price;
+  // a model selected on several channels takes the most expensive one.
+  const repriceSelections = rows.flatMap((row): PriceSelection[] => {
+    const loss = row.losses.find(
+      (candidate) =>
+        selected.has(candidate.key) && fillable(row.model, candidate.source)
+    )
+    return loss
+      ? [{ model: row.model, source: loss.source, current: row.current }]
+      : []
+  })
   const unpriced = rows.filter((row) => row.problems.includes('unpriced'))
   const fillCounts = new Map<string, number>()
   for (const row of unpriced) {
@@ -548,15 +582,23 @@ export function CustomPricingPreview() {
           },
         ]
       }
-      const reason = blocked
-        ? t('Skipped, this gateway cannot save it: {{reason}}', {
-            reason: blocked,
-          })
-        : skipped &&
-          t('No readable price from this upstream: {{reason}}', {
-            reason: skipped,
-          })
-      return reason ? [{ source, text: '—', offPeak: null, title: reason }] : []
+      if (!upstream) return []
+      const failed = upstream.failed[source]
+      let reason = t('This source does not list the model')
+      if (failed !== undefined) {
+        reason = `${t('Failed to fetch upstream prices')}: ${failed}`
+      }
+      if (skipped) {
+        reason = t('No readable price from this upstream: {{reason}}', {
+          reason: skipped,
+        })
+      }
+      if (blocked) {
+        reason = t('Skipped, this gateway cannot save it: {{reason}}', {
+          reason: blocked,
+        })
+      }
+      return [{ source, text: '—', offPeak: null, title: reason }]
     })
     return (
       <td className='text-right tabular-nums'>
@@ -687,6 +729,16 @@ export function CustomPricingPreview() {
           >
             {t('Remove from channels')} ({selected.size})
           </Button>
+          {pricingQuery.data && (
+            <CustomSavePricesButton
+              label={t('Use the channel price')}
+              variant='outline'
+              selections={repriceSelections}
+              prices={offers}
+              baseline={pricingQuery.data}
+              onSaved={() => setSelected(new Set())}
+            />
+          )}
         </div>
       )}
       {Object.keys(vendorSources).length > 0 && (

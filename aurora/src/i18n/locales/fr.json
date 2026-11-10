@@ -1,5 +1,7 @@
 {
   "translation": {
+    "This source does not list the model": "Cette source ne liste pas le modèle",
+    "Use the channel price": "Utiliser le prix du canal",
     "No readable price from this upstream: {{reason}}": "Aucun prix lisible chez ce fournisseur amont : {{reason}}",
     "Peak hours": "Peak hours",
     "Off-peak: {{price}}": "Off-peak: {{price}}",

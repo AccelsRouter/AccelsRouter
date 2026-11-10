@@ -1,5 +1,7 @@
 {
   "translation": {
+    "This source does not list the model": "该来源没有列出这个模型",
+    "Use the channel price": "改用该渠道的价格",
     "No readable price from this upstream: {{reason}}": "该上游没有可读取的价格：{{reason}}",
     "Peak hours": "峰时",
     "Off-peak: {{price}}": "谷时：{{price}}",
