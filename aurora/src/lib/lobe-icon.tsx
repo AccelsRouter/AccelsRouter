@@ -35,6 +35,7 @@ import {
 } from 'react'
 
 import sglangLogo from '@/assets/brand-icons/sglang.svg'
+import workbuddyLogo from '@/assets/brand-icons/workbuddy.svg'
 import { IconSub2api } from '@/assets/custom/icon-sub2api'
 import { IconWan } from '@/assets/custom/icon-wan'
 
@@ -51,6 +52,18 @@ const CUSTOM_ICONS: Record<string, ComponentType<{ size?: number }>> = {
   ),
   Sub2API: IconSub2api,
   Wan: IconWan,
+  // Fork: WorkBuddy ships with @lobehub/icons 6.x; this build pins 5.x, so
+  // its colour mark is kept as a local asset.
+  WorkBuddy: (props) => (
+    <img
+      src={workbuddyLogo}
+      alt=''
+      aria-hidden='true'
+      width={props.size ?? 20}
+      height={props.size ?? 20}
+      className='object-contain'
+    />
+  ),
 }
 
 const ICON_METADATA = new Map(toc.map((icon) => [icon.id, icon]))
