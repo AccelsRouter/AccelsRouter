@@ -26,6 +26,7 @@ import type {
   PricingSyncModels,
   PricingSyncValues,
 } from '../types'
+import { VENDOR_PRICE_PRESET_ID, VENDOR_PRICE_PRESET_NAME } from './constants'
 import {
   formatSegmentRange,
   formatUnit,
@@ -115,6 +116,9 @@ export function CustomPricingPreview() {
     prices: PricingSyncModels
     differences: DifferencesMap
   } | null>(null)
+  // What the vendor list price source offers each model, kept apart from the
+  // upstream channels so it never counts as a price difference or a cost.
+  const [vendorOffers, setVendorOffers] = useState<PricingSyncModels>({})
   // Pricing unpriced models from one upstream: the upstream and the models.
   const [fillSource, setFillSource] = useState('')
   const [fillPicked, setFillPicked] = useState<Set<string>>(new Set())
@@ -211,22 +215,42 @@ export function CustomPricingPreview() {
           })
         )
       }
-      const [response, vendorPrices] = await Promise.all([
+      // The same vendor prices as the expressions the price sync would save.
+      const preset = channels.find((c) => c.id === VENDOR_PRICE_PRESET_ID)
+      const fetchVendorOffers = async (): Promise<PricingSyncModels> => {
+        if (!preset) return {}
+        const offers = await fetchUpstreamRatios({
+          upstreams: [
+            {
+              id: preset.id,
+              name: preset.name,
+              base_url: preset.base_url,
+              endpoint: getDefaultEndpointForChannel(preset),
+            },
+          ],
+          timeout: 10,
+          include_unchanged: true,
+        })
+        return offers.success ? (offers.data?.prices ?? {}) : {}
+      }
+      const [response, vendorPrices, offers] = await Promise.all([
         fetchUpstreamRatios({
           upstreams,
           timeout: 10,
           include_unchanged: true,
         }),
         fetchVendor().catch(() => ({}) as Record<string, VendorPrice>),
+        fetchVendorOffers().catch(() => ({}) as PricingSyncModels),
       ])
       if (!response.success || !response.data?.prices) {
         throw createServerError(response, t('Failed to fetch upstream prices'))
       }
-      return { ...response.data, vendorPrices }
+      return { ...response.data, vendorPrices, offers }
     },
     onSuccess: (data) => {
       setUpstream({ prices: data.prices, differences: data.differences })
       setVendor(data.vendorPrices)
+      setVendorOffers(data.offers)
       const failed = data.test_results.filter((r) => r.status === 'error')
       if (failed.length) {
         toast.warning(
@@ -406,9 +430,24 @@ export function CustomPricingPreview() {
         .map((pair) => pair.model)
     ),
   ]
-  // Unpriced models an upstream has a price for that can be saved here.
+  // The prices an unpriced model can take: every upstream channel's, plus
+  // the vendor list price.
+  const offers: PricingSyncModels = { ...upstream?.prices }
+  for (const [model, row] of Object.entries(vendorOffers)) {
+    const channels = offers[model]
+    offers[model] = {
+      current: channels?.current ?? row.current,
+      upstreams: { ...channels?.upstreams, ...row.upstreams },
+      expr_errors: { ...channels?.expr_errors, ...row.expr_errors },
+      expr_conversions: {
+        ...channels?.expr_conversions,
+        ...row.expr_conversions,
+      },
+    }
+  }
+  // Unpriced models a source has a price for that can be saved here.
   const fillable = (model: string, source: string) => {
-    const row = upstream?.prices[model]
+    const row = offers[model]
     return row?.upstreams[source] && !row.expr_errors?.[source]
       ? row.upstreams[source]
       : undefined
@@ -416,17 +455,22 @@ export function CustomPricingPreview() {
   const unpriced = rows.filter((row) => row.problems.includes('unpriced'))
   const fillCounts = new Map<string, number>()
   for (const row of unpriced) {
-    for (const source of Object.keys(
-      upstream?.prices[row.model]?.upstreams ?? {}
-    )) {
+    for (const source of Object.keys(offers[row.model]?.upstreams ?? {})) {
       if (fillable(row.model, source)) {
         fillCounts.set(source, (fillCounts.get(source) ?? 0) + 1)
       }
     }
   }
+  // Prices follow the vendor list price, so that source is listed first.
+  const vendorSource = `${VENDOR_PRICE_PRESET_NAME}(${VENDOR_PRICE_PRESET_ID})`
   const fillSources = [...fillCounts]
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .sort(
+      (a, b) =>
+        Number(b.name === vendorSource) - Number(a.name === vendorSource) ||
+        b.count - a.count ||
+        a.name.localeCompare(b.name)
+    )
   const fillModels = unpriced
     .filter((row) => fillSource && fillable(row.model, fillSource))
     .map((row) => row.model)
@@ -459,7 +503,7 @@ export function CustomPricingPreview() {
   // The price the selected upstream would give an unpriced model, in the
   // upstream cost column.
   const fillCell = (model: string) => {
-    const row = fillSource ? upstream?.prices[model] : undefined
+    const row = fillSource ? offers[model] : undefined
     const blocked = row?.expr_errors?.[fillSource]
     const candidate = fillable(model, fillSource)
     if (!candidate) {
@@ -564,7 +608,7 @@ export function CustomPricingPreview() {
           models={fillModels}
           picked={fillPicked}
           onPickedChange={setFillPicked}
-          prices={upstream.prices}
+          prices={offers}
           baseline={pricingQuery.data}
         />
       )}
