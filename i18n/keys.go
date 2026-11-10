@@ -155,3 +155,21 @@ const (
 	MsgLarkUsageMore         = "lark.usage_more"
 	MsgLarkUsageNote         = "lark.usage_note"
 )
+
+// Lark vendor list price card. The same keys are used by pkg/larknotify.
+const (
+	MsgLarkVendorPriceTitle       = "lark.vendor_price_title"
+	MsgLarkVendorPriceKindPending = "lark.vendor_price_kind_pending"
+	MsgLarkVendorPriceKindChanged = "lark.vendor_price_kind_changed"
+	MsgLarkVendorPriceKindNew     = "lark.vendor_price_kind_new"
+	MsgLarkVendorPriceInUse       = "lark.vendor_price_in_use"
+	MsgLarkVendorPriceTier        = "lark.vendor_price_tier"
+	MsgLarkVendorPriceCacheRead   = "lark.vendor_price_cache_read"
+	MsgLarkVendorPriceCacheWrite  = "lark.vendor_price_cache_write"
+	MsgLarkVendorPriceAudioInput  = "lark.vendor_price_audio_input"
+	MsgLarkVendorPriceBandPeak    = "lark.vendor_price_band_peak"
+	MsgLarkVendorPriceBandOffPeak = "lark.vendor_price_band_off_peak"
+	MsgLarkVendorPriceFieldFailed = "lark.vendor_price_field_failed"
+	MsgLarkVendorPriceMore        = "lark.vendor_price_more"
+	MsgLarkVendorPriceNote        = "lark.vendor_price_note"
+)

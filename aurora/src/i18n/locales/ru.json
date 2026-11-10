@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Vendor list price alerts": "Vendor list price alerts",
+    "Tells the alert group when a vendor changes an official list price, lists a new model, or a price source can no longer be read. Checked once a day. It uses the alert bot above and is always on while that bot has a webhook address.": "Tells the alert group when a vendor changes an official list price, lists a new model, or a price source can no longer be read. Checked once a day. It uses the alert bot above and is always on while that bot has a webhook address.",
     "Load vendor list prices": "Load vendor list prices",
     "Vendor list prices": "Vendor list prices",
     "Differs from vendor price": "Differs from vendor price",

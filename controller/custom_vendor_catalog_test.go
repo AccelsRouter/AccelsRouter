@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/larknotify"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/gin-gonic/gin"
@@ -48,6 +49,12 @@ func TestApplyCustomVendorSourceStoresAndTracksChanges(t *testing.T) {
 		"glm-5.3": customVendorTestPrice(1.4, 4.4),
 	}, false, 200, summary))
 	assert.Equal(t, 1, summary.Applied)
+	require.Len(t, summary.Report.Changes, 1)
+	change := summary.Report.Changes[0]
+	assert.Equal(t, larknotify.VendorPriceChanged, change.Kind)
+	assert.Equal(t, "glm-5.1", change.Model)
+	assert.Equal(t, 1.4, change.Old[0].Input)
+	assert.Equal(t, 1.5, change.New[0].Input)
 	var row model.CustomVendorPrice
 	require.NoError(t, db.Where("model_name = ? AND source = ?", "glm-5.1", "z.ai").First(&row).Error)
 	assert.InDelta(t, 1.5, row.InputPrice, 1e-9)
@@ -214,4 +221,49 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 	modes := data[billing_setting.BillingModeField].(map[string]string)
 	assert.Len(t, modes, 7)
 	assert.Equal(t, billing_setting.BillingModeTieredExpr, modes["grok-4.7"])
+}
+
+// One refresh reports to Lark what a person has to know: a model the vendor
+// lists for the first time, a price held for review, and a source that stops
+// being readable. The first fill of a source and a source that stays broken
+// are not reported again.
+func TestCustomVendorRefreshReportsNewModelsAndBrokenSources(t *testing.T) {
+	setupCustomVendorCatalogDB(t)
+	output := func(value float64) *float64 { return &value }
+	tiered := customVendorPrice{Provider: "test", Input: 2, Output: output(10), Tiers: []customVendorTier{
+		{Upper: 200000, Input: 2, Output: output(10)},
+		{Input: 4, Output: output(15)},
+	}}
+	first, err := storeCustomVendorResults([]customVendorSourceResult{
+		{Name: "google", Prices: map[string]customVendorPrice{"gemini-a": customVendorTestPrice(1, 5)}},
+		{Name: "kimi", Prices: map[string]customVendorPrice{"kimi-a": customVendorTestPrice(3, 15)}},
+	}, false, 100)
+	require.NoError(t, err)
+	assert.Empty(t, first.Report.Changes, "the first fill is not a change")
+	assert.Empty(t, first.Report.Failures)
+
+	second, err := storeCustomVendorResults([]customVendorSourceResult{
+		{Name: "google", Prices: map[string]customVendorPrice{"gemini-a": customVendorTestPrice(1, 5), "gemini-b": tiered}},
+		{Name: "kimi", Err: fmt.Errorf("503 Service Unavailable")},
+		{Name: "openai", Err: fmt.Errorf("403 Forbidden")},
+	}, false, 200)
+	require.NoError(t, err)
+	require.Len(t, second.Report.Changes, 1)
+	listed := second.Report.Changes[0]
+	assert.Equal(t, larknotify.VendorPriceNew, listed.Kind)
+	assert.Equal(t, "gemini-b", listed.Model)
+	assert.Empty(t, listed.Old)
+	require.Len(t, listed.New, 2)
+	assert.Equal(t, "≤200k", listed.New[0].Range)
+	assert.Equal(t, ">200k", listed.New[1].Range)
+	assert.Equal(t, []larknotify.VendorPriceFailure{
+		{Source: "kimi", Message: "503 Service Unavailable"},
+		{Source: "openai", Message: "403 Forbidden"},
+	}, second.Report.Failures, "a source that could be read before, and one failing on its first refresh")
+
+	third, err := storeCustomVendorResults([]customVendorSourceResult{
+		{Name: "kimi", Err: fmt.Errorf("503 Service Unavailable")},
+	}, false, 300)
+	require.NoError(t, err)
+	assert.Empty(t, third.Report.Failures, "a source that stays broken is not reported again")
 }

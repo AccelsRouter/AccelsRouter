@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,7 +30,6 @@ const (
 	customVendorMinKeepShare = 0.5
 	customVendorGuardMinRows = 10
 	customVendorRefreshEvery = 24 * time.Hour
-	customVendorNotifyLimit  = 12
 )
 
 // customVendorSourcePriority decides which source wins when several price a model.
@@ -154,34 +154,63 @@ func customVendorPriceJSON(row model.CustomVendorPrice) string {
 	return string(encoded)
 }
 
+// customVendorChangeSummary collects what one refresh found, for the Lark card.
 type customVendorChangeSummary struct {
 	Applied int
 	Pending int
-	Lines   []string
+	Report  larknotify.VendorPriceReport
+}
+
+// customVendorTokenCount writes a prompt-length bound the way vendors do:
+// 200000 as "200k", 1000000 as "1M".
+func customVendorTokenCount(tokens float64) string {
+	switch {
+	case tokens >= 1e6 && math.Mod(tokens, 1e6) == 0:
+		return strconv.FormatFloat(tokens/1e6, 'f', -1, 64) + "M"
+	case tokens >= 1e3 && math.Mod(tokens, 1e3) == 0:
+		return strconv.FormatFloat(tokens/1e3, 'f', -1, 64) + "k"
+	}
+	return strconv.FormatFloat(tokens, 'f', -1, 64)
+}
+
+// customVendorCardTiers lists a stored price the way the Lark card shows it:
+// one line per input-length tier or time band.
+func customVendorCardTiers(row model.CustomVendorPrice) []larknotify.VendorPriceTier {
+	price := customVendorPriceFromRow(row)
+	tiers := price.Tiers
+	if len(tiers) == 0 {
+		tiers = []customVendorTier{{Input: price.Input, Output: price.Output, CacheRead: price.CacheRead}}
+	}
+	lines := make([]larknotify.VendorPriceTier, 0, len(tiers))
+	for i, tier := range tiers {
+		line := larknotify.VendorPriceTier{
+			Band: tier.Band, Input: tier.Input, Output: tier.Output,
+			CacheRead: tier.CacheRead, CacheWrite: tier.CacheWrite, AudioInput: tier.AudioInput,
+		}
+		switch {
+		case tier.Band != "" || len(tiers) == 1:
+		case tier.Upper > 0:
+			line.Range = "≤" + customVendorTokenCount(tier.Upper)
+		case i > 0:
+			line.Range = ">" + customVendorTokenCount(tiers[i-1].Upper)
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func (s *customVendorChangeSummary) add(source, modelName string, old, next model.CustomVendorPrice, pending bool) {
+	kind := larknotify.VendorPriceChanged
 	if pending {
 		s.Pending++
+		kind = larknotify.VendorPricePending
 	} else {
 		s.Applied++
 	}
-	if len(s.Lines) < customVendorNotifyLimit {
-		mark := ""
-		if pending {
-			mark = " [needs review]"
-		}
-		s.Lines = append(s.Lines, fmt.Sprintf("%s (%s): in %s -> %s, out %s -> %s%s", modelName, source,
-			customFormatPriceValue(&old.InputPrice), customFormatPriceValue(&next.InputPrice),
-			customFormatPriceValue(old.OutputPrice), customFormatPriceValue(next.OutputPrice), mark))
-	}
-}
-
-func customFormatPriceValue(value *float64) string {
-	if value == nil {
-		return "-"
-	}
-	return "$" + strconv.FormatFloat(*value, 'f', -1, 64)
+	s.Report.Changes = append(s.Report.Changes, larknotify.VendorPriceChange{
+		Kind: kind, Model: modelName, Source: source,
+		Old: customVendorCardTiers(old), New: customVendorCardTiers(next),
+	})
 }
 
 // applyCustomVendorSource stores one source's fresh prices. Nothing is written when
@@ -207,6 +236,11 @@ func applyCustomVendorSource(source string, fetched map[string]customVendorPrice
 		if !found {
 			if err := model.DB.Create(&next).Error; err != nil {
 				return err
+			}
+			if !initial {
+				summary.Report.Changes = append(summary.Report.Changes, larknotify.VendorPriceChange{
+					Kind: larknotify.VendorPriceNew, Model: name, Source: source, New: customVendorCardTiers(next),
+				})
 			}
 			continue
 		}
@@ -261,10 +295,29 @@ var customVendorRefreshMu sync.Mutex
 func RefreshCustomVendorPrices(ctx context.Context, force bool) error {
 	customVendorRefreshMu.Lock()
 	defer customVendorRefreshMu.Unlock()
-	now := common.GetTimestamp()
-	summary := &customVendorChangeSummary{}
 	dropRetiredCustomVendorSources()
-	for _, result := range fetchCustomVendorSources(ctx) {
+	summary, err := storeCustomVendorResults(fetchCustomVendorSources(ctx), force, common.GetTimestamp())
+	if err != nil {
+		return err
+	}
+	notifyCustomVendorChanges(ctx, summary)
+	return nil
+}
+
+// storeCustomVendorResults stores what every source returned and records how
+// its refresh went. A source is reported as failed when it stops being
+// readable (or fails on its first refresh), not again while it stays broken.
+func storeCustomVendorResults(results []customVendorSourceResult, force bool, now int64) (*customVendorChangeSummary, error) {
+	summary := &customVendorChangeSummary{}
+	var previous []model.CustomVendorPriceSource
+	if err := model.DB.Find(&previous).Error; err != nil {
+		return nil, err
+	}
+	broken := make(map[string]bool, len(previous))
+	for _, status := range previous {
+		broken[status.Source] = status.Status != "ok"
+	}
+	for _, result := range results {
 		status := model.CustomVendorPriceSource{Source: result.Name, RefreshedAt: now}
 		err := result.Err
 		if err == nil {
@@ -278,12 +331,14 @@ func RefreshCustomVendorPrices(ctx context.Context, force bool) error {
 		default:
 			status.Status, status.Message = "error", err.Error()
 		}
+		if status.Status != "ok" && !broken[result.Name] {
+			summary.Report.Failures = append(summary.Report.Failures, larknotify.VendorPriceFailure{Source: result.Name, Message: status.Message})
+		}
 		if err := model.DB.Save(&status).Error; err != nil {
-			return err
+			return nil, err
 		}
 	}
-	notifyCustomVendorChanges(ctx, summary)
-	return nil
+	return summary, nil
 }
 
 // dropRetiredCustomVendorSources removes what sources that are no longer read left
@@ -295,25 +350,19 @@ func dropRetiredCustomVendorSources() {
 	}
 }
 
+// notifyCustomVendorChanges sends the refresh's findings to the Lark alert
+// group: prices that changed or are held for review, newly listed models, and
+// sources that stopped being readable. Models the gateway serves are marked.
 func notifyCustomVendorChanges(ctx context.Context, summary *customVendorChangeSummary) {
-	if summary.Applied+summary.Pending == 0 {
+	report := summary.Report
+	if len(report.Changes)+len(report.Failures) == 0 {
 		return
 	}
-	color := "orange"
-	if summary.Pending > 0 {
-		color = "red"
+	served := model.GetEnabledModels()
+	for i := range report.Changes {
+		report.Changes[i].InUse = slices.Contains(served, report.Changes[i].Model)
 	}
-	card := larknotify.Card{
-		Title: "Vendor list price changes",
-		Color: color,
-		Fields: []larknotify.Field{
-			{Name: "Applied", Value: strconv.Itoa(summary.Applied)},
-			{Name: "Needs review", Value: strconv.Itoa(summary.Pending)},
-			{Name: "Changes", Value: strings.Join(summary.Lines, "\n")},
-		},
-		Note: "Review pending changes under Billing > Upstream pricing config.",
-	}
-	if err := service.SendLarkCard(ctx, service.LarkAlertTarget(), card); err != nil {
+	if err := service.SendLarkCard(ctx, service.LarkAlertTarget(), larknotify.VendorPriceCard(report, service.LarkTranslator)); err != nil {
 		common.SysLog(common.LogText("vendor price change alert not sent: %s", err.Error()))
 	}
 }

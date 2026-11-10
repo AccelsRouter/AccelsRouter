@@ -569,6 +569,17 @@ export function LarkSettingsSection({
               )}
             </p>
           </div>
+
+          <div className='space-y-3'>
+            <h3 className='text-sm font-medium'>
+              {t('Vendor list price alerts')}
+            </h3>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Tells the alert group when a vendor changes an official list price, lists a new model, or a price source can no longer be read. Checked once a day. It uses the alert bot above and is always on while that bot has a webhook address.'
+              )}
+            </p>
+          </div>
         </SettingsForm>
       </Form>
     </SettingsSection>

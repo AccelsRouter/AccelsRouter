@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Vendor list price alerts": "廠商官方定價變動通知",
+    "Tells the alert group when a vendor changes an official list price, lists a new model, or a price source can no longer be read. Checked once a day. It uses the alert bot above and is always on while that bot has a webhook address.": "廠商調整官方定價、上架新模型，或某個價格來源無法讀取時，通知告警群。每天檢查一次，使用上面的告警機器人；只要該機器人填了 Webhook 位址就一直生效。",
     "Load vendor list prices": "載入廠商標價",
     "Vendor list prices": "廠商標價",
     "Differs from vendor price": "與廠商標價不一致",

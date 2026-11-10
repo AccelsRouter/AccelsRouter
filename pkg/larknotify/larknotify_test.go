@@ -528,3 +528,71 @@ func TestUsageDaysFollowTheTimeZoneOfToday(t *testing.T) {
 		}
 	}
 }
+
+func TestVendorPriceCard(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	report := VendorPriceReport{
+		Changes: []VendorPriceChange{
+			{Kind: VendorPriceNew, Model: "gemini-b", Source: "google", New: []VendorPriceTier{
+				{Range: "≤200k", Input: 2, Output: f(10), CacheRead: f(0.2)},
+				{Range: ">200k", Input: 4, Output: f(15), CacheRead: f(0.4)},
+			}},
+			{Kind: VendorPriceChanged, Model: "zeta", Source: "z.ai", Old: []VendorPriceTier{{Input: 1, Output: f(2)}}, New: []VendorPriceTier{{Input: 1.5, Output: f(2)}}},
+			{Kind: VendorPriceChanged, Model: "deepseek-v4-pro", Source: "deepseek", InUse: true,
+				Old: []VendorPriceTier{{Input: 1.32, Output: f(3.96)}},
+				New: []VendorPriceTier{
+					{Band: "peak", Input: 1.32, Output: f(3.96), CacheRead: f(0.044)},
+					{Band: "off_peak", Input: 0.66, Output: f(1.98), CacheRead: f(0.022)},
+				}},
+			{Kind: VendorPricePending, Model: "kimi-k3", Source: "kimi", Old: []VendorPriceTier{{Input: 3, Output: f(15)}}, New: []VendorPriceTier{{Input: 30, Output: f(150)}}},
+		},
+	}
+	card := VendorPriceCard(report, fakeTr)
+	if card.Title != MsgVendorPriceTitle || card.Color != "red" || card.Note != MsgVendorPriceNote || len(card.Fields) != 4 {
+		t.Fatalf("card = %+v", card)
+	}
+	// Held changes first, then the models in use, then the rest by name, then new listings.
+	wantNames := []string{
+		MsgVendorPriceKindPending + " · kimi-k3 (kimi)",
+		MsgVendorPriceKindChanged + " · deepseek-v4-pro (deepseek) · " + MsgVendorPriceInUse,
+		MsgVendorPriceKindChanged + " · zeta (z.ai)",
+		MsgVendorPriceKindNew + " · gemini-b (google)",
+	}
+	wantValues := []string{
+		MsgVendorPriceTier + "[Input=3,Output=15]\n→ " + MsgVendorPriceTier + "[Input=30,Output=150]",
+		MsgVendorPriceTier + "[Input=1.32,Output=3.96]\n→ " +
+			MsgVendorPriceBandPeak + ": " + MsgVendorPriceTier + "[Input=1.32,Output=3.96] · " + MsgVendorPriceCacheRead + "[Price=0.044]\n" +
+			MsgVendorPriceBandOffPeak + ": " + MsgVendorPriceTier + "[Input=0.66,Output=1.98] · " + MsgVendorPriceCacheRead + "[Price=0.022]",
+		MsgVendorPriceTier + "[Input=1,Output=2]\n→ " + MsgVendorPriceTier + "[Input=1.5,Output=2]",
+		"≤200k: " + MsgVendorPriceTier + "[Input=2,Output=10] · " + MsgVendorPriceCacheRead + "[Price=0.2]\n" +
+			">200k: " + MsgVendorPriceTier + "[Input=4,Output=15] · " + MsgVendorPriceCacheRead + "[Price=0.4]",
+	}
+	for i, field := range card.Fields {
+		if field.Name != wantNames[i] {
+			t.Errorf("field %d = %q, want %q", i, field.Name, wantNames[i])
+		}
+		if field.Value != wantValues[i] {
+			t.Errorf("value %d = %q, want %q", i, field.Value, wantValues[i])
+		}
+	}
+
+	// Without a held change the card is orange; a source that cannot be read makes it red.
+	calm := VendorPriceCard(VendorPriceReport{Changes: report.Changes[:3]}, fakeTr)
+	if calm.Color != "orange" {
+		t.Errorf("color = %q", calm.Color)
+	}
+	broken := VendorPriceCard(VendorPriceReport{Failures: []VendorPriceFailure{{Source: "openai", Message: "403 Forbidden"}}}, fakeTr)
+	if broken.Color != "red" || len(broken.Fields) != 1 || broken.Fields[0].Name != MsgVendorPriceFieldFailed || broken.Fields[0].Value != "openai: 403 Forbidden" {
+		t.Errorf("broken = %+v", broken)
+	}
+
+	// A long list is cut and counted.
+	var many []VendorPriceChange
+	for i := range MaxVendorPriceChanges + 3 {
+		many = append(many, VendorPriceChange{Kind: VendorPriceChanged, Model: fmt.Sprintf("m%02d", i), Source: "s", New: []VendorPriceTier{{Input: 1, Output: f(1)}}})
+	}
+	big := VendorPriceCard(VendorPriceReport{Changes: many}, fakeTr)
+	if len(big.Fields) != MaxVendorPriceChanges+1 || big.Fields[MaxVendorPriceChanges].Value != MsgVendorPriceMore+"[Count=3]" {
+		t.Errorf("fields = %d, last = %+v", len(big.Fields), big.Fields[len(big.Fields)-1])
+	}
+}
