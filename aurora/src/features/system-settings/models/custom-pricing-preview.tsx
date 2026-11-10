@@ -115,6 +115,8 @@ export function CustomPricingPreview() {
   const [upstream, setUpstream] = useState<{
     prices: PricingSyncModels
     differences: DifferencesMap
+    // Per upstream, why a model it lists got no price.
+    skipped: Record<string, Record<string, string>>
   } | null>(null)
   // What the vendor list price source offers each model, kept apart from the
   // upstream channels so it never counts as a price difference or a cost.
@@ -248,7 +250,11 @@ export function CustomPricingPreview() {
       return { ...response.data, vendorPrices, offers }
     },
     onSuccess: (data) => {
-      setUpstream({ prices: data.prices, differences: data.differences })
+      setUpstream({
+        prices: data.prices,
+        differences: data.differences,
+        skipped: data.skipped ?? {},
+      })
       setVendor(data.vendorPrices)
       setVendorOffers(data.offers)
       const failed = data.test_results.filter((r) => r.status === 'error')
@@ -500,38 +506,6 @@ export function CustomPricingPreview() {
     )
   }
 
-  // The price the selected upstream would give an unpriced model, in the
-  // upstream cost column.
-  const fillCell = (model: string) => {
-    const row = fillSource ? offers[model] : undefined
-    const blocked = row?.expr_errors?.[fillSource]
-    const candidate = fillable(model, fillSource)
-    if (!candidate) {
-      return (
-        <td
-          className='text-muted-foreground text-right'
-          title={
-            blocked
-              ? t('Skipped, this gateway cannot save it: {{reason}}', {
-                  reason: blocked,
-                })
-              : undefined
-          }
-        >
-          {blocked ? '—' : ''}
-        </td>
-      )
-    }
-    return (
-      <td
-        className='text-right tabular-nums'
-        title={describeSyncPrice(candidate, t)}
-      >
-        {getUnitPriceText(candidate) ?? t('Expression billing')}
-      </td>
-    )
-  }
-
   // Marks a price as the peak-hour one; the off-peak price is in the tooltip.
   const peakLabel = (offPeak: string) => (
     <span
@@ -541,6 +515,69 @@ export function CustomPricingPreview() {
       {t('Peak hours')}
     </span>
   )
+
+  // What a model costs upstream, in the upstream cost column: at the selected
+  // price source, or else at every channel serving the model. A price this
+  // gateway cannot save, or a model the upstream lists without a readable
+  // price, is a dash with the reason.
+  const costCell = (row: PreviewRow) => {
+    const offer = offers[row.model]
+    const sources = fillSource
+      ? [fillSource]
+      : row.channels.map((channel) => `${channel.name}(${channel.id})`)
+    const lines = sources.flatMap((source) => {
+      const candidate = offer?.upstreams[source]
+      const blocked = offer?.expr_errors?.[source]
+      const skipped = upstream?.skipped[source]?.[row.model]
+      if (candidate && !blocked) {
+        const bands = getTimeBandPrices(candidate)
+        const image = String(candidate.billing_expr ?? '').match(
+          /^tier\("image", (?:u\("image_count"\) \* ([\d.]+)\)|fixed\(([\d.]+)\)\) \* image_count)$/
+        )
+        let text = getUnitPriceText(candidate) ?? t('Expression billing')
+        if (bands) text = unitText(bands.peak)
+        if (image) {
+          text = `${formatUnit(Number(image[1] ?? image[2]))} · ${t('Per image')}`
+        }
+        return [
+          {
+            source,
+            text,
+            offPeak: bands ? unitText(bands.offPeak) : null,
+            title: describeSyncPrice(candidate, t),
+          },
+        ]
+      }
+      const reason = blocked
+        ? t('Skipped, this gateway cannot save it: {{reason}}', {
+            reason: blocked,
+          })
+        : skipped &&
+          t('No readable price from this upstream: {{reason}}', {
+            reason: skipped,
+          })
+      return reason ? [{ source, text: '—', offPeak: null, title: reason }] : []
+    })
+    return (
+      <td className='text-right tabular-nums'>
+        {lines.map((line) => (
+          <div
+            key={line.source}
+            title={line.title}
+            className={cn(line.text === '—' && 'text-muted-foreground')}
+          >
+            {lines.length > 1 && (
+              <span className='text-muted-foreground mr-2 text-xs'>
+                {getUpstreamDisplayName(line.source, t)}
+              </span>
+            )}
+            {line.text}
+            {line.offPeak && peakLabel(line.offPeak)}
+          </div>
+        ))}
+      </td>
+    )
+  }
 
   // A vendor price with tiers is shown for the tier covering each range; one
   // without covers the base range only.
@@ -879,7 +916,7 @@ export function CustomPricingPreview() {
                               </span>
                             </td>
                             <td />
-                            {fillCell(row.model)}
+                            {costCell(row)}
                             <td className='text-muted-foreground text-right tabular-nums'>
                               {row.sell ?? '—'}
                               {row.sellOffPeak && peakLabel(row.sellOffPeak)}

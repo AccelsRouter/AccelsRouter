@@ -1,5 +1,6 @@
 {
   "translation": {
+    "No readable price from this upstream: {{reason}}": "Aucun prix lisible chez ce fournisseur amont : {{reason}}",
     "Peak hours": "Peak hours",
     "Off-peak: {{price}}": "Off-peak: {{price}}",
     "Remove from channels": "Remove from channels",

@@ -48,6 +48,12 @@ func TestConvertCustomAlibabaModelsToBillingExpr(t *testing.T) {
 	for name := range exprs {
 		assert.Equal(t, "tiered_expr", modes[name])
 	}
+	assert.Equal(t, map[string]string{
+		"cache-item": "unsupported price item cached_token (per million tokens, standard)",
+		"odd-range":  `unreadable input range "Default"`,
+		"negative":   "unreadable price of input_token",
+		"no-prices":  "Model Studio lists no price",
+	}, got[customPricingSkippedField])
 	assert.Nil(t, convertCustomAlibabaModelsToBillingExpr(models[3:]))
 }
 
@@ -134,6 +140,20 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 {"model":"peaky","prices":[{"range_name":"Default","prices":[
 {"type":"input_token","price":"1","price_unit":"Per 1M tokens","time_band":"peak"},
 {"type":"output_token","price":"2","price_unit":"Per 1M tokens","time_band":"peak"}]}]},
+{"model":"deepseek-v4.1-flash","provider":"deepseek","prices":[{"range_name":"Default","prices":[
+{"type":"input_token","price":"0.44","price_unit":"Per 1M tokens","time_band":"peak"},
+{"type":"output_token","price":"1.32","price_unit":"Per 1M tokens","time_band":"peak"},
+{"type":"input_token_cache","price":"0.044","price_unit":"Per 1M tokens","time_band":"peak"},
+{"type":"input_token","price":"0.22","price_unit":"Per 1M tokens","time_band":"off_peak"},
+{"type":"output_token","price":"0.66","price_unit":"Per 1M tokens","time_band":"off_peak"},
+{"type":"input_token_cache","price":"0.022","price_unit":"Per 1M tokens","time_band":"off_peak"}]}]},
+{"model":"qwen-timed","provider":"qwen","prices":[{"range_name":"Default","prices":[
+{"type":"input_token","price":"1","price_unit":"Per 1M tokens","time_band":"peak"},
+{"type":"output_token","price":"2","price_unit":"Per 1M tokens","time_band":"peak"},
+{"type":"input_token","price":"0.5","price_unit":"Per 1M tokens","time_band":"off_peak"},
+{"type":"output_token","price":"1","price_unit":"Per 1M tokens","time_band":"off_peak"}]}]},
+{"model":"wan2.7-image","provider":"wan","prices":[{"range_name":"Default","prices":[
+{"type":"image_number","price":"0.03","price_unit":"Per image","time_band":"standard"}]}]},
 {"model":"free-input-only","prices":[{"range_name":"Default","prices":[
 {"type":"input_token","price":"0","price_unit":"Per 1M tokens","time_band":null}]}]}]}}`
 	var page customAlibabaModelsPage
@@ -141,8 +161,18 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 	got := convertCustomAlibabaModelsToBillingExpr(page.Output.Models)
 	exprs := got[billing_setting.BillingExprField].(map[string]string)
 	assert.Equal(t, `tier("base", p * 2 + c * 6 + cr * 0.25 + cc * 2.5)`, exprs["qwen3.8-max"])
-	assert.NotContains(t, exprs, "peaky")
-	assert.NotContains(t, exprs, "free-input-only")
+	// DeepSeek models priced by time of day charge the peak price 08:00-22:00 Beijing time.
+	timed := `hour("Asia/Shanghai") >= 8 && hour("Asia/Shanghai") < 22 ? tier("peak", p * 0.44 + c * 1.32 + cr * 0.044) : tier("off_peak", p * 0.22 + c * 0.66 + cr * 0.022)`
+	assert.Equal(t, timed, exprs["deepseek-v4.1-flash"])
+	assert.NoError(t, billing_setting.SmokeTestExpr(timed))
+	// The alibaba task plugin serves this model, so its price reads the plugin's image_count fact.
+	assert.Equal(t, `tier("image", u("image_count") * 0.03)`, exprs["wan2.7-image"])
+	assert.Empty(t, customBillingExprError("wan2.7-image", exprs["wan2.7-image"]))
+	assert.Equal(t, map[string]string{
+		"peaky":           "time-of-day prices without both a peak and an off-peak input and output price",
+		"qwen-timed":      "priced by time of day, and the peak hours are only known for DeepSeek models",
+		"free-input-only": "no input and output token price",
+	}, got[customPricingSkippedField])
 }
 
 func TestCustomRemoveChannelModels(t *testing.T) {

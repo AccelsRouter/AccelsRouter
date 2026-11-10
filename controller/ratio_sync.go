@@ -589,6 +589,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 		name string
 		data map[string]any
 	}
+	skipped := make(map[string]map[string]string) // Fork: per upstream, why a model it lists got no price
 
 	for r := range ch {
 		if r.Err != "" {
@@ -606,6 +607,9 @@ func FetchUpstreamRatios(c *gin.Context) {
 				name string
 				data map[string]any
 			}{name: r.Name, data: effectivePricingSyncData(r.Data)})
+			if reasons, ok := r.Data[customPricingSkippedField].(map[string]string); ok && len(reasons) > 0 { // Fork
+				skipped[r.Name] = reasons
+			}
 		}
 	}
 
@@ -665,6 +669,7 @@ func FetchUpstreamRatios(c *gin.Context) {
 			"differences":  differences,
 			"prices":       prices,
 			"test_results": testResults,
+			"skipped":      skipped, // Fork
 		},
 	})
 }
