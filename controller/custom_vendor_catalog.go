@@ -367,6 +367,8 @@ func resolveCustomVendorPrices() (map[string]customVendorPrice, map[string]bool,
 type customVendorPriceView struct {
 	customVendorPrice
 	Manual bool `json:"manual,omitempty"`
+	// Syncable is set when the price sync offers this price as a model price.
+	Syncable bool `json:"syncable,omitempty"`
 }
 
 func customVendorSourceMessages() (map[string]string, error) {
@@ -413,7 +415,8 @@ func GetCustomVendorPrices(c *gin.Context) {
 	}
 	data := make(map[string]customVendorPriceView, len(prices))
 	for name, price := range prices {
-		data[name] = customVendorPriceView{customVendorPrice: price, Manual: manual[name]}
+		_, syncable := customVendorSyncExpr(name, price)
+		data[name] = customVendorPriceView{customVendorPrice: price, Manual: manual[name], Syncable: syncable}
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": data, "sources": sources})
 }

@@ -1179,6 +1179,14 @@ func GetSyncableChannels(c *gin.Context) {
 		Status:  1,
 	})
 
+	// Fork: the stored vendor list prices, served by fetchCustomPricingSync.
+	syncableChannels = append(syncableChannels, dto.SyncableChannel{
+		ID:      customVendorPresetID,
+		Name:    customVendorPresetName,
+		BaseURL: customVendorPresetBaseURL,
+		Status:  1,
+	})
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

@@ -21,19 +21,24 @@ import {
   getChannelModelSummaries,
   getUpstreamChannels,
 } from '../api'
-import type { DifferencesMap, PricingSyncModels } from '../types'
+import type {
+  DifferencesMap,
+  PricingSyncModels,
+  PricingSyncValues,
+} from '../types'
 import {
   formatSegmentRange,
   formatUnit,
   getSourceLoss,
   getUnitPriceText,
+  matchesVendorPrice,
   type PriceSegment,
   type UnitPrice,
 } from './custom-price-risk'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
 import { getUpstreamDisplayName } from './upstream-ratio-sync-helpers'
 
-type Problem = 'unpriced' | 'difference' | 'loss'
+type Problem = 'unpriced' | 'difference' | 'loss' | 'vendor'
 type Filter = 'all' | Problem
 
 type LossSource = {
@@ -50,7 +55,23 @@ type LossSource = {
 // `upper` is the largest input length (tokens) a tier covers; 0 means no bound.
 type VendorTier = { upper: number; price: UnitPrice }
 
-type VendorPrice = { price: UnitPrice; source: string; tiers?: VendorTier[] }
+type VendorPrice = {
+  price: UnitPrice
+  source: string
+  tiers?: VendorTier[]
+  // The price sync offers this vendor price as the model's price.
+  syncable: boolean
+}
+
+const PROBLEM_BADGES: Record<
+  Problem,
+  { label: string; variant: 'danger' | 'warning' | 'info' }
+> = {
+  unpriced: { label: 'No price', variant: 'warning' },
+  difference: { label: 'Price difference', variant: 'info' },
+  loss: { label: 'Loss risk', variant: 'danger' },
+  vendor: { label: 'Differs from vendor price', variant: 'warning' },
+}
 
 type PreviewRow = {
   model: string
@@ -114,6 +135,7 @@ export function CustomPricingPreview() {
               provider: string
               input: number
               output: number | null
+              syncable?: boolean
               tiers?: Array<{
                 upper: number
                 input: number
@@ -143,6 +165,7 @@ export function CustomPricingPreview() {
             {
               price: { input: price.input, output: price.output },
               source: price.provider,
+              syncable: price.syncable === true,
               tiers: price.tiers?.map((tier) => ({
                 upper: tier.upper,
                 price: { input: tier.input, output: tier.output },
@@ -232,17 +255,35 @@ export function CustomPricingPreview() {
       }
     }
     const priced = new Set<string>()
+    const saved = new Map<string, PricingSyncValues>()
     for (const entry of pricingQuery.data.entries) {
       const values = entry.effective
       const expr = values['billing_setting.billing_expr']
+      const hasExpr =
+        values['billing_setting.billing_mode'] === 'tiered_expr' &&
+        typeof expr === 'string' &&
+        Boolean(expr.trim())
       if (
         values.ModelPrice !== undefined ||
         values.ModelRatio !== undefined ||
-        (values['billing_setting.billing_mode'] === 'tiered_expr' &&
-          typeof expr === 'string' &&
-          expr.trim())
+        hasExpr
       ) {
         priced.add(entry.model_name)
+      }
+      if (hasExpr) {
+        saved.set(entry.model_name, {
+          billing_mode: 'tiered_expr',
+          billing_expr: String(expr),
+        })
+      } else if (values.ModelPrice !== undefined) {
+        saved.set(entry.model_name, { model_price: Number(values.ModelPrice) })
+      } else if (values.ModelRatio !== undefined) {
+        saved.set(entry.model_name, {
+          model_ratio: Number(values.ModelRatio),
+          ...(values.CompletionRatio !== undefined && {
+            completion_ratio: Number(values.CompletionRatio),
+          }),
+        })
       }
     }
     const result: PreviewRow[] = []
@@ -252,6 +293,18 @@ export function CustomPricingPreview() {
       const losses: LossSource[] = []
       if (!priced.has(model)) problems.push('unpriced')
       const row = upstream?.prices[model]
+      const current = row?.current ?? saved.get(model)
+      const list = vendor[model]
+      // Prices follow the vendor's list price: flag a priced model that
+      // charges something else.
+      if (
+        list?.syncable &&
+        priced.has(model) &&
+        matchesVendorPrice(current, list) === false
+      ) {
+        problems.push('vendor')
+        sell = getUnitPriceText(current)
+      }
       if (row) {
         sell = getUnitPriceText(row.current)
         if (upstream?.differences[model]) problems.push('difference')
@@ -277,7 +330,7 @@ export function CustomPricingPreview() {
         b.problems.length - a.problems.length ||
         a.model.localeCompare(b.model)
     )
-  }, [channelsQuery.data, pricingQuery.data, upstream])
+  }, [channelsQuery.data, pricingQuery.data, upstream, vendor])
 
   const visible =
     filter === 'all' ? rows : rows.filter((r) => r.problems.includes(filter))
@@ -310,6 +363,7 @@ export function CustomPricingPreview() {
     ['unpriced', t('No price'), count('unpriced')],
     ['difference', t('Price difference'), count('difference')],
     ['loss', t('Loss risk'), count('loss')],
+    ['vendor', t('Differs from vendor price'), count('vendor')],
   ]
 
   if (channelsQuery.isLoading || pricingQuery.isLoading) {
@@ -427,6 +481,13 @@ export function CustomPricingPreview() {
             .join(' · ')}
         </p>
       )}
+      {count('vendor') > 0 && (
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'Prices follow the vendor list price. To reprice the models marked "Differs from vendor price", open Upstream price sync, select the "Vendor list prices" source and tick its column.'
+          )}
+        </p>
+      )}
       {!upstream && (
         <p className='text-muted-foreground text-sm'>
           {t(
@@ -521,20 +582,8 @@ export function CustomPricingPreview() {
                                 .map((problem) => (
                                   <StatusBadge
                                     key={problem}
-                                    label={
-                                      problem === 'unpriced'
-                                        ? t('No price')
-                                        : problem === 'difference'
-                                          ? t('Price difference')
-                                          : t('Loss risk')
-                                    }
-                                    variant={
-                                      problem === 'loss'
-                                        ? 'danger'
-                                        : problem === 'unpriced'
-                                          ? 'warning'
-                                          : 'info'
-                                    }
+                                    label={t(PROBLEM_BADGES[problem].label)}
+                                    variant={PROBLEM_BADGES[problem].variant}
                                     size='sm'
                                     copyable={false}
                                   />

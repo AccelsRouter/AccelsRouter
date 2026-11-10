@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -147,4 +149,47 @@ func TestResolveCustomVendorPricesPrefersManualThenVendorSources(t *testing.T) {
 	bad := map[string]any{"model_name": "glm-5.1", "input": 0}
 	modelManagementRequest(t, PutCustomVendorManualPrice, http.MethodPut, "/api/ratio_sync/vendor_prices/manual", bad, &response)
 	assert.False(t, response.Success, "a zero input price is rejected")
+}
+
+// The vendor list prices are a price-sync source: a manual entry wins over the
+// fetched one, input-length tiers become branches, Claude models carry
+// Anthropic's cache-write multiples, and prices that cannot be charged exactly
+// (no output price, DeepSeek's peak-only entry) are left out.
+func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
+	db := setupCustomVendorCatalogDB(t)
+	_, handled, err := fetchCustomPricingSync(t.Context(), nil, dto.UpstreamDTO{ID: customVendorPresetID, Name: customVendorPresetName, BaseURL: customVendorPresetBaseURL})
+	require.True(t, handled)
+	require.ErrorContains(t, err, "catalog is empty")
+
+	out := func(value float64) *float64 { return &value }
+	rows := map[string]customVendorPrice{
+		"glm-5.1":         {Provider: "z.ai pricing page", Input: 1.4, Output: out(4.4), CacheRead: out(0.26)},
+		"kimi-k3":         {Provider: "Kimi pricing page", Input: 3, Output: out(15)},
+		"claude-sonnet-5": {Provider: "Anthropic pricing page", Input: 3, Output: out(15), CacheRead: out(0.3)},
+		"grok-4.7": {Provider: "x.ai pricing page", Input: 2, Output: out(6), CacheRead: out(0.5), Tiers: []customVendorTier{
+			{Upper: 200000, Input: 2, Output: out(6), CacheRead: out(0.5)},
+			{Input: 4, Output: out(12), CacheRead: out(1)},
+		}},
+		"text-embedding-x": {Provider: "z.ai pricing page", Input: 0.1},
+		"deepseek-v4-pro":  {Provider: customVendorDeepSeekProvider, Input: 1.32, Output: out(3.96)},
+	}
+	for name, price := range rows {
+		row := customVendorRowFromPrice(name, "kimi", price, 100)
+		require.NoError(t, db.Create(&row).Error)
+	}
+	manual := customVendorRowFromPrice("kimi-k3", customVendorManualSource, customVendorPrice{Provider: "manual", Input: 2.5, Output: out(12)}, 100)
+	require.NoError(t, db.Create(&manual).Error)
+
+	data, handled, err := fetchCustomPricingSync(t.Context(), nil, dto.UpstreamDTO{ID: customVendorPresetID})
+	require.True(t, handled)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"glm-5.1":         `tier("base", p * 1.4 + c * 4.4 + cr * 0.26)`,
+		"kimi-k3":         `tier("base", p * 2.5 + c * 12)`,
+		"claude-sonnet-5": `tier("base", p * 3 + c * 15 + cr * 0.3 + cc * 3.75 + cc1h * 6)`,
+		"grok-4.7":        `len <= 200000 ? tier("base", p * 2 + c * 6 + cr * 0.5) : tier("tier_2", p * 4 + c * 12 + cr * 1)`,
+	}, data[billing_setting.BillingExprField])
+	modes := data[billing_setting.BillingModeField].(map[string]string)
+	assert.Len(t, modes, 4)
+	assert.Equal(t, billing_setting.BillingModeTieredExpr, modes["grok-4.7"])
 }

@@ -222,6 +222,40 @@ function findOverage(
   }
 }
 
+// A vendor list price; `upper` is the largest input length (tokens) a tier
+// covers, 0 for the open-ended top tier.
+export type VendorListPrice = {
+  price: UnitPrice
+  tiers?: Array<{ upper: number; price: UnitPrice }>
+}
+
+function sameUnit(a: number | null, b: number | null): boolean {
+  if (a === null || b === null) return true
+  return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b))
+}
+
+// Whether the current price charges the vendor's list price for input and
+// output in every input-length range. null when the current price cannot be
+// read as per-token tiers (per-request prices, conditions other than length).
+export function matchesVendorPrice(
+  current: PricingSyncValues | undefined,
+  vendor: VendorListPrice
+): boolean | null {
+  const sell = getPriceTiers(current)
+  if (!sell) return null
+  const list: PriceTier[] = vendor.tiers?.length
+    ? vendor.tiers.map((tier) => ({
+        upper: tier.upper > 0 ? tier.upper : Infinity,
+        price: tier.price,
+      }))
+    : [{ upper: Infinity, price: vendor.price }]
+  return alignSegments(sell, list).every(
+    (segment) =>
+      sameUnit(segment.sell.input, segment.cost.input) &&
+      sameUnit(segment.sell.output, segment.cost.output)
+  )
+}
+
 // 32768 -> "32k" (context sizes), 200000 -> "200k", 1048576 -> "1M".
 export function formatTokenCount(n: number): string {
   if (n % 1_000_000 === 0) return `${n / 1_000_000}M`

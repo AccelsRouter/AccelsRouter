@@ -1,5 +1,8 @@
 {
   "translation": {
+    "Vendor list prices": "厂商标价",
+    "Differs from vendor price": "与厂商标价不一致",
+    "Prices follow the vendor list price. To reprice the models marked \"Differs from vendor price\", open Upstream price sync, select the \"Vendor list prices\" source and tick its column.": "定价以厂商标价为准。要把标记为「与厂商标价不一致」的模型改回厂商价，请到「上游价格同步」选择「厂商标价」来源并勾选该列。",
     "Converted from the upstream usage expression: {{expr}}": "由上游的用量表达式换算而来：{{expr}}",
     "Skipped, this gateway cannot save it: {{reason}}": "已跳过，本站无法保存：{{reason}}",
     "All selected prices were skipped: this gateway cannot save them.": "所选价格全部被跳过：本站无法保存这些表达式。",

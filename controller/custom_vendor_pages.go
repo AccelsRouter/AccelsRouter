@@ -18,6 +18,9 @@ type customVendorPageSource struct {
 
 const customVendorPageUserAgent = "Mozilla/5.0 (compatible; price-sync)"
 
+// The DeepSeek entry is its peak-hour price only.
+const customVendorDeepSeekProvider = "DeepSeek pricing page (peak)"
+
 var customVendorPageSources = []customVendorPageSource{
 	{Name: "z.ai", URL: "https://docs.z.ai/guides/overview/pricing.md", Parse: parseCustomZaiPricing},
 	{Name: "deepseek", URL: "https://api-docs.deepseek.com/quick_start/pricing.md", Parse: parseCustomDeepSeekPricing},
@@ -252,7 +255,7 @@ func parseCustomClaudePricing(page []byte) (map[string]customVendorPrice, error)
 // peak and off-peak hours differently; the peak price is used, which is the
 // higher one. Model versions listed in the table are registered as aliases.
 func parseCustomDeepSeekPricing(page []byte) (map[string]customVendorPrice, error) {
-	const provider = "DeepSeek pricing page (peak)"
+	const provider = customVendorDeepSeekProvider
 	prices := make(map[string]customVendorPrice)
 	for _, table := range parseCustomMarkdownTables(string(page)) {
 		if len(table.Header) == 0 || !strings.EqualFold(table.Header[0], "model") {

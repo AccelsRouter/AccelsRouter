@@ -12,14 +12,18 @@ import (
 )
 
 // fetchCustomPricingSync serves the price-sync sources that have their own
-// vendor API instead of a new-api style /api/pricing: BytePlus ModelArk and
-// the international Alibaba Model Studio. handled is false for every other
-// channel, which then follows the stock sync path.
+// vendor API instead of a new-api style /api/pricing: the stored vendor list
+// prices, BytePlus ModelArk and the international Alibaba Model Studio.
+// handled is false for every other channel, which then follows the stock sync
+// path.
 func fetchCustomPricingSync(ctx context.Context, client *http.Client, upstream dto.UpstreamDTO) (data map[string]any, handled bool, err error) {
 	if upstream.ID == 0 {
 		return nil, false, nil
 	}
 	switch {
+	case upstream.ID == customVendorPresetID:
+		data, err := customVendorPricingSyncData()
+		return data, true, err
 	case isCustomBytePlusBaseURL(upstream.BaseURL):
 		common.OptionMapRWMutex.RLock()
 		accessKey := strings.TrimSpace(common.OptionMap[customBytePlusAccessKeyOption])
