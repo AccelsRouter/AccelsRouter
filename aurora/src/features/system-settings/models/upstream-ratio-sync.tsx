@@ -67,6 +67,7 @@ import {
   OFFICIAL_CHANNEL_ID,
   OPENROUTER_CHANNEL_TYPE,
   OPENROUTER_ENDPOINT,
+  VENDOR_PRICE_PRESET_ID,
 } from './constants'
 import { PriceAdjustmentSelect } from './price-adjustment-select'
 import {
@@ -440,14 +441,28 @@ export function UpstreamRatioSync() {
         ) : (
           <UpstreamRatioSyncTable
             toolbar={
-              <Button
-                variant='outline'
-                onClick={() => setChannelDialogOpen(true)}
-                disabled={isLoading}
-              >
-                <RefreshCcw className='size-4' aria-hidden />
-                {t('Select price sources')}
-              </Button>
+              <>
+                <Button
+                  variant='outline'
+                  onClick={() => setChannelDialogOpen(true)}
+                  disabled={isLoading}
+                >
+                  <RefreshCcw className='size-4' aria-hidden />
+                  {t('Select price sources')}
+                </Button>
+                {/* Fork: prices follow the vendor list price, so that source
+                    is one click away instead of inside the selector. */}
+                <Button
+                  variant='outline'
+                  disabled={isLoading}
+                  onClick={() => {
+                    setSelectedChannelIds([VENDOR_PRICE_PRESET_ID])
+                    void handleConfirmChannelSelection([VENDOR_PRICE_PRESET_ID])
+                  }}
+                >
+                  {t('Load vendor list prices')}
+                </Button>
+              </>
             }
             prices={prices}
             differences={differences}

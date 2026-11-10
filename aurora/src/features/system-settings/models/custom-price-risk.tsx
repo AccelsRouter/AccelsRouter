@@ -3,10 +3,15 @@ import { StatusBadge } from '@/components/status-badge'
 import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
 import { tryParseVisualConfig } from '@/features/pricing/lib/tier-expr'
 import type { PricingSyncModels, PricingSyncValues } from '../types'
+import { VENDOR_PRICE_PRESET_ID, VENDOR_PRICE_PRESET_NAME } from './constants'
 import {
   getSyncPriceKind,
   getUpstreamDisplayName,
 } from './upstream-ratio-sync-helpers'
+
+// The vendor list prices are what we sell at, not what an upstream charges us,
+// so that source never counts as a cost.
+const VENDOR_LIST_SOURCE = `${VENDOR_PRICE_PRESET_NAME}(${VENDOR_PRICE_PRESET_ID})`
 
 // USD per 1M tokens, before group or recharge adjustments. A null output means
 // the completion ratio is unknown, so only the input side can be compared.
@@ -288,14 +293,17 @@ function scalar(tiers: UnitPrice[]): number {
 }
 
 export function getSourceLoss(row: PriceRow, source: string): Overage | null {
+  if (source === VENDOR_LIST_SOURCE) return null
   return findOverage(row.current, row.upstreams[source])
 }
 
 export type SourceRisk = 'loss' | 'highest' | null
 
 export function getSourceRisk(row: PriceRow, source: string): SourceRisk {
+  if (source === VENDOR_LIST_SOURCE) return null
   if (getSourceLoss(row, source)) return 'loss'
   const scalars = Object.entries(row.upstreams).flatMap(([name, values]) => {
+    if (name === VENDOR_LIST_SOURCE) return []
     const tiers = getTierUnitPrices(values)
     return tiers ? [[name, scalar(tiers)] as const] : []
   })

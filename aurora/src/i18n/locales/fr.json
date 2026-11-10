@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Load vendor list prices": "Load vendor list prices",
     "Vendor list prices": "Vendor list prices",
     "Differs from vendor price": "Differs from vendor price",
     "Prices follow the vendor list price. To reprice the models marked \"Differs from vendor price\", open Upstream price sync, select the \"Vendor list prices\" source and tick its column.": "Prices follow the vendor list price. To reprice the models marked \"Differs from vendor price\", open Upstream price sync, select the \"Vendor list prices\" source and tick its column.",
