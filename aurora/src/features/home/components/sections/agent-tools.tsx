@@ -18,10 +18,10 @@ const AGENT_TOOLS: { icon: string; name: string }[] = [
   { icon: 'Codex.Color', name: 'Codex' },
   { icon: 'KiloCode', name: 'Kilo CLI' },
   { icon: 'OpenClaw.Color', name: 'OpenClaw' },
-  // WorkBuddy is a local asset (see CUSTOM_ICONS in lib/lobe-icon); Coze
-  // ships no Color variant.
+  // WorkBuddy and Coze's current mark are local assets (see CUSTOM_ICONS in
+  // lib/lobe-icon).
   { icon: 'WorkBuddy', name: 'WorkBuddy' },
-  { icon: 'Coze', name: 'Coze' },
+  { icon: 'CozeMark', name: 'Coze' },
 ]
 
 export function AgentTools() {
