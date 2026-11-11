@@ -29,11 +29,13 @@ import type {
 import { VENDOR_PRICE_PRESET_ID, VENDOR_PRICE_PRESET_NAME } from './constants'
 import {
   chargesNothing,
+  chargesSameUsage,
   comparePriceParts,
   formatSegmentRange,
   formatUnit,
   getSourceLoss,
   getTimeBandPrices,
+  getUsagePriceRange,
   getUnitPriceText,
   matchesVendorPrice,
   type PriceSegment,
@@ -45,10 +47,11 @@ import {
   CustomUnpricedFill,
   type PriceSelection,
 } from './custom-unpriced-fill'
-import { useModelPricingIssues } from './pricing-issues'
+import { PRICING_ISSUE_REASONS, useModelPricingIssues } from './pricing-issues'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
 import {
   describeSyncPrice,
+  getSyncPriceKind,
   getUpstreamDisplayName,
 } from './upstream-ratio-sync-helpers'
 
@@ -80,6 +83,11 @@ type VendorPrice = {
   // Set for a task model, priced per image or per 1M video tokens instead
   // of per input and output token; price.input is its first usage price.
   usage?: 'image' | 'token'
+  // The usage prices themselves, to compare what the model charges with.
+  usageTiers?: Array<{
+    when?: Record<string, string>
+    usage: Record<string, number>
+  }>
 }
 
 // The vendor list prices as a price source, as the price sync names it.
@@ -103,6 +111,9 @@ type PreviewRow = {
   // Set when the current price is by time of day: sell is the peak price.
   sellOffPeak: string | null
   current: PricingSyncValues
+  // Why a model that shows a current price still counts as unpriced: the
+  // price charges nothing, or the named plugin cannot charge it.
+  unpriced?: { plugin?: string; reason: string }
   losses: LossSource[]
 }
 
@@ -183,6 +194,7 @@ export function CustomPricingPreview() {
                 output: number | null
                 band?: string
                 usage?: Record<string, number>
+                when?: Record<string, string>
               }>
             }
           >
@@ -218,7 +230,12 @@ export function CustomPricingPreview() {
                 price: { input: price.input, output: price.output },
                 source: price.provider,
                 syncable: price.syncable === true,
-                ...(usage && { usage: 'tokens' in usage ? 'token' : 'image' }),
+                ...(usage && {
+                  usage: 'tokens' in usage ? 'token' : 'image',
+                  usageTiers: price.tiers?.flatMap((tier) =>
+                    tier.usage ? [{ when: tier.when, usage: tier.usage }] : []
+                  ),
+                }),
                 tiers: lengthTiers?.length
                   ? lengthTiers.map((tier) => ({
                       upper: tier.upper,
@@ -383,11 +400,21 @@ export function CustomPricingPreview() {
     }
     // A price that charges nothing, or that the plugin serving the model
     // cannot charge, is no price.
+    const unpricedReasons = new Map<string, PreviewRow['unpriced']>()
     for (const [model, values] of saved) {
-      if (chargesNothing(values)) priced.delete(model)
+      if (!chargesNothing(values)) continue
+      priced.delete(model)
+      unpricedReasons.set(model, {
+        reason: 'The current price charges nothing',
+      })
     }
     for (const issue of issuesQuery.data ?? []) {
-      if (issue.reason !== 'stale') priced.delete(issue.model_name)
+      if (issue.reason === 'stale') continue
+      priced.delete(issue.model_name)
+      unpricedReasons.set(issue.model_name, {
+        plugin: issue.plugin_name,
+        reason: PRICING_ISSUE_REASONS[issue.reason],
+      })
     }
     const result: PreviewRow[] = []
     for (const [model, channels] of channelsByModel) {
@@ -404,13 +431,17 @@ export function CustomPricingPreview() {
       const list = vendor[model]
       // Prices follow the vendor's list price: flag a priced model that
       // charges something else.
-      // A task model follows the vendor price when it is charged exactly the
-      // expression the vendor price source offers.
+      // A task model follows the vendor price when it charges what the
+      // expression the vendor price source offers does, however it is written.
       const offered =
         vendorOffers[model]?.upstreams[VENDOR_SOURCE]?.billing_expr
       const followsVendor = list?.usage
         ? offered === undefined ||
-          String(current?.billing_expr ?? '').trim() === String(offered).trim()
+          chargesSameUsage(
+            String(current?.billing_expr ?? ''),
+            String(offered),
+            list.usageTiers ?? []
+          )
         : !list || matchesVendorPrice(current, list) !== false
       if (list?.syncable && priced.has(model) && !followsVendor) {
         problems.push('vendor')
@@ -449,6 +480,7 @@ export function CustomPricingPreview() {
           sell,
           sellOffPeak,
           current: current ?? {},
+          unpriced: unpricedReasons.get(model),
           losses,
         })
     }
@@ -521,8 +553,12 @@ export function CustomPricingPreview() {
   // Unpriced models a source has a price for that can be saved here.
   const fillable = (model: string, source: string) => {
     const row = offers[model]
-    return row?.upstreams[source] && !row.expr_errors?.[source]
-      ? row.upstreams[source]
+    const candidate = row?.upstreams[source]
+    // A price that charges nothing would leave the model without a price.
+    return candidate &&
+      !row?.expr_errors?.[source] &&
+      !chargesNothing(candidate)
+      ? candidate
       : undefined
   }
   // Selected loss risks whose channel price can replace the current price;
@@ -594,6 +630,26 @@ export function CustomPricingPreview() {
     </span>
   )
 
+  // A price that is not per input and output token: per request, or a task
+  // model's price as one number or a range per 1M tokens, per second or per
+  // image, over the conditions its expression distinguishes.
+  const usageText = (values?: PricingSyncValues): string | null => {
+    if (getSyncPriceKind(values) === 'request') {
+      return `${formatUnit(Number(values?.model_price))} · ${t('Per-request')}`
+    }
+    if (chargesNothing(values)) return formatUnit(0)
+    const range = getUsagePriceRange(values)
+    if (!range) return null
+    const price =
+      range.max > range.min * (1 + 1e-9)
+        ? `${formatUnit(range.min)}–${formatUnit(range.max)}`
+        : formatUnit(range.min)
+    if (range.fact === 'tokens') return `${price} / ${t('1M token')}`
+    if (range.fact === 'seconds') return `${price} / ${t('second')}`
+    if (range.fact.startsWith('image')) return `${price} · ${t('Per image')}`
+    return `${price} / ${range.fact}`
+  }
+
   // What a model costs upstream, in the upstream cost column: at the selected
   // price source, or else at every channel serving the model. A price this
   // gateway cannot save, or a model the upstream lists without a readable
@@ -623,7 +679,10 @@ export function CustomPricingPreview() {
         const image = String(candidate.billing_expr ?? '').match(
           /^tier\("image", (?:u\("image_count"\) \* ([\d.]+)\)|fixed\(([\d.]+)\)\) \* image_count)$/
         )
-        let text = getUnitPriceText(candidate) ?? t('Expression billing')
+        let text =
+          getUnitPriceText(candidate) ??
+          usageText(candidate) ??
+          t('Expression billing')
         if (bands) text = unitText(bands.peak)
         if (image) {
           text = `${formatUnit(Number(image[1] ?? image[2]))} · ${t('Per image')}`
@@ -640,9 +699,8 @@ export function CustomPricingPreview() {
         }
         const others = (comparePriceParts(row.current, candidate) ?? [])
           .filter((difference) => !['p', 'c'].includes(difference.part))
-          .map(
-            (difference) =>
-              `${partLabels[difference.part] ?? difference.part} ${formatUnit(difference.upstream)} (${t('Current')} ${formatUnit(difference.current)})`
+          .map((difference) =>
+            `${difference.range} ${partLabels[difference.part] ?? difference.part} ${formatUnit(difference.upstream)} (${t('Current')} ${formatUnit(difference.current)})`.trim()
           )
         return [
           {
@@ -957,13 +1015,26 @@ export function CustomPricingPreview() {
                                     )
                                 )
                                 .map((problem) => (
-                                  <StatusBadge
+                                  <span
                                     key={problem}
-                                    label={t(PROBLEM_BADGES[problem].label)}
-                                    variant={PROBLEM_BADGES[problem].variant}
-                                    size='sm'
-                                    copyable={false}
-                                  />
+                                    title={
+                                      problem === 'unpriced' && row.unpriced
+                                        ? [
+                                            row.unpriced.plugin,
+                                            t(row.unpriced.reason),
+                                          ]
+                                            .filter(Boolean)
+                                            .join(': ')
+                                        : undefined
+                                    }
+                                  >
+                                    <StatusBadge
+                                      label={t(PROBLEM_BADGES[problem].label)}
+                                      variant={PROBLEM_BADGES[problem].variant}
+                                      size='sm'
+                                      copyable={false}
+                                    />
+                                  </span>
                                 ))}
                             </span>
                           )}
@@ -1051,7 +1122,7 @@ export function CustomPricingPreview() {
                             <td />
                             {costCell(row)}
                             <td className='text-muted-foreground text-right tabular-nums'>
-                              {row.sell ?? '—'}
+                              {row.sell ?? usageText(row.current) ?? '—'}
                               {row.sellOffPeak && peakLabel(row.sellOffPeak)}
                             </td>
                             {vendorCell(row.model)}

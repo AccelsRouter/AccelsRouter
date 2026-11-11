@@ -424,11 +424,18 @@ func TestCustomAlibabaVendorPrices(t *testing.T) {
 {"range_name":"Input<=32k","prices":[{"type":"input_token","price":"0.03","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"0.13","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"input_token_cache","price":"0.006","price_unit":"Per 1M tokens","time_band":"standard"}]},
 {"range_name":"32k<Input<=256k","prices":[{"type":"input_token","price":"0.1","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"0.4","price_unit":"Per 1M tokens","time_band":"standard"}]}]},
 {"model":"qwen-max","provider":"qwen","prices":[{"range_name":"Default","prices":[{"type":"input_token","price":"1.6","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"6.4","price_unit":"Per 1M tokens","time_band":"standard"}]}]},
+{"model":"qwen3.8-max","provider":"qwen","prices":[{"range_name":"Default","prices":[{"type":"input_token","price":"2","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"6","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"input_token_cache","price":"0.4","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"input_token_cache_creation_5m","price":"2.5","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"input_token_cache_read","price":"0.2","price_unit":"Per 1M tokens","time_band":"standard"}]}]},
 {"model":"deepseek-v4-pro","provider":"deepseek","prices":[{"range_name":"Default","prices":[{"type":"input_token","price":"2.4","price_unit":"Per 1M tokens","time_band":"standard"},{"type":"output_token","price":"4.8","price_unit":"Per 1M tokens","time_band":"standard"}]}]},
 {"model":"qwen-peaky","provider":"qwen","prices":[{"range_name":"Default","prices":[{"type":"input_token","price":"1","price_unit":"Per 1M tokens","time_band":"peak"},{"type":"output_token","price":"2","price_unit":"Per 1M tokens","time_band":"peak"}]}]}]}}`
 	var page customAlibabaModelsPage
 	require.NoError(t, common.Unmarshal([]byte(body), &page))
 	prices := customAlibabaVendorPrices(page.Output.Models)
+
+	// Creating an explicit cache entry costs more than plain input, so the
+	// list price carries it and the price sync charges it as cc.
+	expr, ok := customVendorSyncExpr("qwen3.8-max", prices["qwen3.8-max"])
+	require.True(t, ok)
+	assert.Equal(t, `tier("base", p * 2 + c * 6 + cr * 0.4 + cc * 2.5)`, expr)
 
 	flash := prices["qwen3.7-flash"]
 	require.Len(t, flash.Tiers, 3, "tiers are sorted by input length")

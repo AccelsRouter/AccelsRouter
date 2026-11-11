@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/status-badge'
 import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
+import { evaluateBillingExpression } from '@/features/pricing/lib/billing-expression/runtime'
 import { tryParseVisualConfig } from '@/features/pricing/lib/tier-expr'
 import type { PricingSyncModels, PricingSyncValues } from '../types'
 import { VENDOR_PRICE_PRESET_ID, VENDOR_PRICE_PRESET_NAME } from './constants'
@@ -314,6 +315,122 @@ export function chargesNothing(values?: PricingSyncValues): boolean {
   return numbers.length > 0 && numbers.every((number) => number === 0)
 }
 
+function usageCost(
+  expr: string,
+  usage: Record<string, unknown>
+): number | null {
+  const result = evaluateBillingExpression(expr, { usage })
+  return result.status === 'success' ? result.cost : null
+}
+
+// The usage facts a task expression reads: those it compares to a value, with
+// the values, and those it multiplies by a price.
+function readUsageFacts(expr: string): {
+  compared: Map<string, unknown[]>
+  counted: string[]
+} {
+  const compared = new Map<string, unknown[]>()
+  for (const match of expr.matchAll(
+    /u\("([^"]+)"\)\s*[=!]=\s*(?:"([^"]*)"|(true|false))/g
+  )) {
+    const value = match[3] ? match[3] === 'true' : match[2]
+    const values = compared.get(match[1]) ?? []
+    if (!values.includes(value)) values.push(value)
+    compared.set(match[1], values)
+  }
+  const counted = [
+    ...new Set([...expr.matchAll(/u\("([^"]+)"\)/g)].map((match) => match[1])),
+  ].filter((fact) => !compared.has(fact))
+  return { compared, counted }
+}
+
+// The lowest and highest price a task expression charges for one unit of its
+// main usage fact (1M of a token fact), over the conditions it distinguishes.
+// null for a price that is no task expression.
+export function getUsagePriceRange(
+  values?: PricingSyncValues
+): { fact: string; min: number; max: number } | null {
+  if (getSyncPriceKind(values) !== 'expression') return null
+  const expr = String(values?.billing_expr)
+  const facts = readUsageFacts(expr)
+  const fact =
+    [
+      'tokens',
+      'seconds',
+      'image_count',
+      'images_above_1_5k',
+      'images_up_to_1_5k',
+    ].find((name) => facts.counted.includes(name)) ?? facts.counted[0]
+  if (!fact) return null
+  // Every combination of the compared values, plus one no branch names.
+  let combinations: Array<Record<string, unknown>> = [{}]
+  for (const [name, seen] of facts.compared) {
+    const options = typeof seen[0] === 'boolean' ? [true, false] : [...seen, '']
+    combinations = combinations
+      .flatMap((combination) =>
+        options.map((option) => ({ ...combination, [name]: option }))
+      )
+      .slice(0, 256)
+  }
+  const costs = combinations.flatMap((combination) => {
+    const usage: Record<string, unknown> = { ...combination }
+    for (const name of facts.counted) usage[name] = 0
+    usage[fact] = fact === 'tokens' ? 1_000_000 : 1
+    const cost = usageCost(expr, usage)
+    return cost !== null && cost > 0 ? [cost] : []
+  })
+  if (!costs.length) return null
+  return { fact, min: Math.min(...costs), max: Math.max(...costs) }
+}
+
+// Whether two task expressions charge the same for the usage a vendor prices:
+// each of its tiers is tried with nothing used, with one unit of every priced
+// fact in turn and with all of them at once. How either is written, the order
+// of its branches and the names of its tiers make no difference.
+export function chargesSameUsage(
+  ours: string,
+  theirs: string,
+  tiers: Array<{ when?: Record<string, string>; usage: Record<string, number> }>
+): boolean {
+  const counted = new Set([
+    ...readUsageFacts(ours).counted,
+    ...readUsageFacts(theirs).counted,
+  ])
+  for (const tier of tiers) {
+    const base: Record<string, unknown> = {}
+    for (const name of counted) base[name] = 0
+    for (const [name, value] of Object.entries(tier.when ?? {})) {
+      base[name] =
+        value === 'true' || value === 'false' ? value === 'true' : value
+    }
+    const priced = Object.keys(tier.usage).map((name) =>
+      name === 'input_images_after_first' ? 'input_images' : name
+    )
+    const amount = (name: string, index: number) =>
+      name === 'tokens' ? 1_000_000 : index + 3
+    const probes = [
+      base,
+      ...priced.map((name, index) => ({
+        ...base,
+        [name]: amount(name, index),
+      })),
+      {
+        ...base,
+        ...Object.fromEntries(
+          priced.map((name, index) => [name, amount(name, index)])
+        ),
+      },
+    ]
+    for (const usage of probes) {
+      const mine = usageCost(ours, usage)
+      const their = usageCost(theirs, usage)
+      if (mine === null || their === null || !sameUnit(mine, their))
+        return false
+    }
+  }
+  return true
+}
+
 const PRICE_TERM =
   /\b(p|c|cr|cc|cc1h|cc12h|img|img_cr|img_o|ai|ao)\s*\*\s*(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g
 
@@ -350,12 +467,31 @@ function readPriceParts(values?: PricingSyncValues): {
   }
 }
 
-// One price that an upstream charges differently; null where a side does not
-// price that part separately.
+// One price that an upstream charges differently. A side that does not price
+// the part separately charges it at its fallback (cache and media input at the
+// input price, media output at the output price, longer cache writes at their
+// multiple of the short one), which is the value given. range names the
+// input-length tier when the price has several.
 export type PricePartDifference = {
   part: string
+  range: string
   current: number | null
   upstream: number | null
+}
+
+// What a tier charges for a part: its own price, or the price the billing
+// engine falls back to when the expression leaves the part out.
+function effectivePartPrice(
+  leaf: Record<string, number>,
+  part: string
+): number | null {
+  if (leaf[part] !== undefined) return leaf[part]
+  const input = leaf.p ?? null
+  const shortWrite = leaf.cc ?? input
+  if (part === 'cc1h') return shortWrite === null ? null : shortWrite * 1.6
+  if (part === 'cc12h') return shortWrite === null ? null : shortWrite * 2
+  if (part === 'ao' || part === 'img_o') return leaf.c ?? null
+  return part === 'c' ? null : input
 }
 
 // The parts an upstream prices differently from the current price: none when
@@ -373,11 +509,17 @@ export function comparePriceParts(
   const differences: PricePartDifference[] = []
   for (const [tier, leaf] of ours.leaves.entries()) {
     const other = theirs.leaves[tier]
+    let range = ''
+    if (tier < ours.bounds.length) {
+      range = `≤ ${formatTokenCount(ours.bounds[tier])}`
+    } else if (tier > 0) {
+      range = `> ${formatTokenCount(ours.bounds[tier - 1])}`
+    }
     for (const part of new Set([...Object.keys(leaf), ...Object.keys(other)])) {
-      const mine = leaf[part] ?? null
-      const their = other[part] ?? null
+      const mine = effectivePartPrice(leaf, part)
+      const their = effectivePartPrice(other, part)
       if (mine === null || their === null || !sameUnit(mine, their)) {
-        differences.push({ part, current: mine, upstream: their })
+        differences.push({ part, range, current: mine, upstream: their })
       }
     }
   }
