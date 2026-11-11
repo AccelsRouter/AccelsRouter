@@ -4,12 +4,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -204,6 +206,55 @@ func TestCustomRemoveChannelModels(t *testing.T) {
 	body["items"] = []map[string]any{{"channel_id": 0, "models": []string{"a"}}}
 	modelManagementRequest(t, CustomRemoveChannelModels, http.MethodPost, "/api/channel/remove_models", body, &response)
 	assert.False(t, response.Success)
+}
+
+// ByteDance's two pricing pages: the international one in USD under dated
+// model IDs, the mainland China one in CNY under family names. Only the
+// standard online inference table counts, only ByteDance's own models, and a
+// model priced by time of day is left out.
+func TestParseCustomByteDancePricing(t *testing.T) {
+	value := func(v float64) *float64 { return &v }
+
+	byteplus, err := parseCustomBytePlusVendorPricing(customVendorFixture(t, "byteplus.md"))
+	require.NoError(t, err)
+	assert.Equal(t, customVendorPrice{Provider: customVendorBytePlusProvider, Input: 0.5, Output: value(2.5), CacheRead: value(0.1)}, byteplus["dola-seed-2-1-turbo"])
+	pro := customVendorPrice{Provider: customVendorBytePlusProvider, Input: 0.5, Output: value(3), CacheRead: value(0.1), Tiers: []customVendorTier{
+		{Upper: 128000, Input: 0.5, Output: value(3), CacheRead: value(0.1)},
+		{Input: 1, Output: value(6), CacheRead: value(0.2)},
+	}}
+	assert.Equal(t, pro, byteplus["seed-2-0-pro-260328"])
+	assert.Equal(t, pro, byteplus["seed-2-0-pro"], "a model ID also answers without its snapshot date")
+	// Audio input is priced in a table of its own.
+	expr, ok := customVendorSyncExpr("seed-2-0-lite-260428", byteplus["seed-2-0-lite-260428"])
+	require.True(t, ok)
+	assert.Equal(t, `len <= 128000 ? tier("base", p * 0.25 + c * 2 + cr * 0.05 + ai * 3.75) : tier("tier_2", p * 0.5 + c * 4 + cr * 0.1 + ai * 7.5)`, expr)
+	assert.NotContains(t, byteplus, "deepseek-v4-pro-ga-260813")
+	assert.NotContains(t, byteplus, "glm-5-2-260617")
+
+	rate := operation_setting.USDExchangeRate
+	operation_setting.USDExchangeRate = 8
+	t.Cleanup(func() { operation_setting.USDExchangeRate = rate })
+	volcengine, err := parseCustomVolcenginePricing(customVendorFixture(t, "volcengine.md"))
+	require.NoError(t, err)
+	provider := customVendorVolcengineProvider + " (CNY at 8 per USD)"
+	assert.Equal(t, customVendorPrice{Provider: provider, Input: 0.75, Output: value(3.75), CacheRead: value(0.15)}, volcengine["doubao-seed-2.1-pro"])
+	assert.Equal(t, volcengine["doubao-seed-2.1-pro"], volcengine["doubao-seed-2-1-pro"], "model IDs write the version with dashes")
+	assert.Equal(t, customVendorPrice{Provider: provider, Input: 0.4, Output: value(2), CacheRead: value(0.08), Tiers: []customVendorTier{
+		{Upper: 32000, Input: 0.4, Output: value(2), CacheRead: value(0.08)},
+		{Upper: 128000, Input: 0.6, Output: value(3), CacheRead: value(0.12)},
+		{Input: 1.2, Output: value(6), CacheRead: value(0.24)},
+	}}, volcengine["doubao-seed-2.0-pro"])
+	assert.Equal(t, customVendorPrice{Provider: provider, Input: 0.1, Output: value(0.3375), CacheRead: value(0.02), Tiers: []customVendorTier{
+		{Input: 0.1, Output: value(0.3375), CacheRead: value(0.02), AudioInput: value(1.5)},
+	}}, volcengine["doubao-seed-2.1-lite"], "the low-latency table below does not replace the standard price")
+	assert.Equal(t, customVendorPrice{Provider: provider, Input: 0.15, Output: value(0.45)}, volcengine["doubao-seed-translation"])
+	for name := range volcengine {
+		assert.True(t, strings.HasPrefix(name, "doubao-"), name)
+	}
+
+	operation_setting.USDExchangeRate = 0
+	_, err = parseCustomVolcenginePricing(customVendorFixture(t, "volcengine.md"))
+	assert.ErrorContains(t, err, "exchange rate")
 }
 
 func customVendorFixture(t *testing.T, name string) []byte {
