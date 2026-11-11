@@ -28,6 +28,7 @@ import type {
 } from '../types'
 import { VENDOR_PRICE_PRESET_ID, VENDOR_PRICE_PRESET_NAME } from './constants'
 import {
+  comparePriceParts,
   formatSegmentRange,
   formatUnit,
   getSourceLoss,
@@ -388,7 +389,16 @@ export function CustomPricingPreview() {
         problems.push('vendor')
       }
       if (row) {
-        if (upstream?.differences[model]) problems.push('difference')
+        // Upstream expressions that are only written differently charge the
+        // same and are not a price difference.
+        const sameEverywhere =
+          Object.keys(row.upstreams).length > 0 &&
+          Object.values(row.upstreams).every(
+            (candidate) => comparePriceParts(current, candidate)?.length === 0
+          )
+        if (upstream?.differences[model] && !sameEverywhere) {
+          problems.push('difference')
+        }
         for (const source of Object.keys(row.upstreams)) {
           const channelId = parseChannelId(source)
           const key = `${channelId}\n${model}`
@@ -584,12 +594,29 @@ export function CustomPricingPreview() {
         if (image) {
           text = `${formatUnit(Number(image[1] ?? image[2]))} · ${t('Per image')}`
         }
+        // What differs besides the input and output prices shown above.
+        const partLabels: Record<string, string> = {
+          cr: t('Cache Read'),
+          cc: t('Cache write'),
+          cc1h: `${t('Cache write')} 1h`,
+          cc12h: `${t('Cache write')} 12h`,
+          img: t('Image input'),
+          ai: t('Audio input'),
+          ao: t('Audio output'),
+        }
+        const others = (comparePriceParts(row.current, candidate) ?? [])
+          .filter((difference) => !['p', 'c'].includes(difference.part))
+          .map(
+            (difference) =>
+              `${partLabels[difference.part] ?? difference.part} ${formatUnit(difference.upstream)} (${t('Current')} ${formatUnit(difference.current)})`
+          )
         return [
           {
             source,
             text,
             offPeak: bands ? unitText(bands.offPeak) : null,
             title: describeSyncPrice(candidate, t),
+            others: [...new Set(others)],
           },
         ]
       }
@@ -609,7 +636,7 @@ export function CustomPricingPreview() {
           reason: blocked,
         })
       }
-      return [{ source, text: '—', offPeak: null, title: reason }]
+      return [{ source, text: '—', offPeak: null, title: reason, others: [] }]
     })
     return (
       <td className='text-right tabular-nums'>
@@ -626,6 +653,11 @@ export function CustomPricingPreview() {
             )}
             {line.text}
             {line.offPeak && peakLabel(line.offPeak)}
+            {line.others.map((other) => (
+              <div key={other} className='text-muted-foreground text-xs'>
+                {other}
+              </div>
+            ))}
           </div>
         ))}
       </td>
