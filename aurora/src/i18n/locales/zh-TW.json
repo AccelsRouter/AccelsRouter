@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Vendor prices listed in CNY": "以人民幣標價的廠商價格",
+    "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "火山方舟以人民幣標價。填寫 1 美元可兌換多少人民幣用於換算；未填寫時不讀取這些價格。修改後請在下方重新整理廠商價格。",
     "They also join each channel's ignored upstream models, so the upstream model sync does not add them back.": "這些模型同時會加入各渠道的上游模型忽略列表，上游模型同步不會再把它們加回來。",
     "This source does not list the model": "該來源沒有列出這個模型",
     "Use the channel price": "改用該渠道的價格",

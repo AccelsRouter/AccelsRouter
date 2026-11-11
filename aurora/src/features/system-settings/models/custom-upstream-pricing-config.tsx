@@ -1,5 +1,6 @@
 import { CustomAlibabaCloudCard } from './custom-alibaba-cloud-card'
 import { CustomBytePlusPricingCard } from './custom-byteplus-pricing-card'
+import { CustomVendorCurrencyCard } from './custom-vendor-currency-card'
 import { CustomVendorPriceCatalog } from './custom-vendor-price-catalog'
 
 // Credentials for upstreams whose prices cannot be read with a channel key, and
@@ -9,6 +10,7 @@ export function CustomUpstreamPricingConfig() {
     <div className='max-w-3xl space-y-8'>
       <CustomBytePlusPricingCard />
       <CustomAlibabaCloudCard />
+      <CustomVendorCurrencyCard />
       <CustomVendorPriceCatalog />
     </div>
   )

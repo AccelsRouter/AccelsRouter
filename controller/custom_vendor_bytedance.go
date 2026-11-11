@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/common"
 )
 
 // ByteDance publishes its list prices twice: BytePlus ModelArk for the
@@ -23,6 +23,10 @@ import (
 const (
 	customVendorBytePlusProvider   = "BytePlus ModelArk pricing page"
 	customVendorVolcengineProvider = "Volcengine Ark pricing page"
+	// How many CNY one USD buys when a vendor lists its prices in CNY. It is a
+	// setting of its own: the gateway's payment exchange rate is 1 where
+	// payments are taken in USD.
+	customVendorCNYPerUSDOption = "VendorPriceCNYPerUSD"
 )
 
 var (
@@ -367,13 +371,15 @@ func parseCustomBytePlusVendorPricing(page []byte) (map[string]customVendorPrice
 
 // parseCustomVolcenginePricing reads the standard online inference table (the
 // first one of the page), the online video token prices, the image prices and
-// the embedding price, and converts their CNY at the gateway's exchange rate
+// the embedding price, and converts their CNY at the rate set for vendor prices
 // (CNY per USD). Only doubao models are kept. The page writes a version as
 // "2.1" while model IDs write "2-1", so each model answers to both.
 func parseCustomVolcenginePricing(page []byte) (map[string]customVendorPrice, error) {
-	rate := operation_setting.USDExchangeRate
-	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
-		return nil, errors.New("the USD exchange rate is not set, so CNY prices cannot be converted")
+	common.OptionMapRWMutex.RLock()
+	rate, err := strconv.ParseFloat(strings.TrimSpace(common.OptionMap[customVendorCNYPerUSDOption]), 64)
+	common.OptionMapRWMutex.RUnlock()
+	if err != nil || rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return nil, errors.New("Volcengine lists prices in CNY: set the CNY per USD rate for vendor prices under Billing > Upstream pricing config")
 	}
 	provider := fmt.Sprintf("%s (CNY at %s per USD)", customVendorVolcengineProvider, strconv.FormatFloat(rate, 'f', -1, 64))
 	found := make(map[string]customVendorPrice)

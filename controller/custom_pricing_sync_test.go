@@ -11,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -255,9 +254,16 @@ func TestParseCustomByteDancePricing(t *testing.T) {
 	assert.NotContains(t, byteplus, "1080p")
 	assert.NotContains(t, byteplus, "dreamina")
 
-	rate := operation_setting.USDExchangeRate
-	operation_setting.USDExchangeRate = 8
-	t.Cleanup(func() { operation_setting.USDExchangeRate = rate })
+	setRate := func(value string) {
+		common.OptionMapRWMutex.Lock()
+		defer common.OptionMapRWMutex.Unlock()
+		if common.OptionMap == nil {
+			common.OptionMap = make(map[string]string)
+		}
+		common.OptionMap[customVendorCNYPerUSDOption] = value
+	}
+	t.Cleanup(func() { setRate("") })
+	setRate("8")
 	volcengine, err := parseCustomVolcenginePricing(customVendorFixture(t, "volcengine.md"))
 	require.NoError(t, err)
 	provider := customVendorVolcengineProvider + " (CNY at 8 per USD)"
@@ -290,9 +296,10 @@ func TestParseCustomByteDancePricing(t *testing.T) {
 	_, ok = customVendorSyncExpr("doubao-seedance-2-0-fast", volcengine["doubao-seedance-2-0-fast"])
 	assert.False(t, ok)
 
-	operation_setting.USDExchangeRate = 0
+	// Without the rate nothing is read: the payment exchange rate is no substitute.
+	setRate("")
 	_, err = parseCustomVolcenginePricing(customVendorFixture(t, "volcengine.md"))
-	assert.ErrorContains(t, err, "exchange rate")
+	assert.ErrorContains(t, err, "CNY per USD")
 }
 
 func customVendorFixture(t *testing.T, name string) []byte {
