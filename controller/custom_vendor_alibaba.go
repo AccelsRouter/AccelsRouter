@@ -41,7 +41,7 @@ func fetchCustomAlibabaVendorPrices(ctx context.Context, client *http.Client) (m
 }
 
 // customAlibabaVendorPrices keeps Alibaba's own (qwen) models with every input-length
-// tier. Models whose tiers cannot be read exactly, including those priced by time
+// tier, the implicit cache hit price and the explicit cache creation price. Models whose tiers cannot be read exactly, including those priced by time
 // band, are left out rather than guessed.
 func customAlibabaVendorPrices(models []customAlibabaModel) map[string]customVendorPrice {
 	prices := make(map[string]customVendorPrice)
@@ -61,7 +61,7 @@ func customAlibabaVendorPrices(models []customAlibabaModel) map[string]customVen
 			Output:    first.Output,
 			CacheRead: first.CacheRead,
 		}
-		if len(tiers) > 1 {
+		if len(tiers) > 1 || first.CacheWrite != nil {
 			price.Tiers = tiers
 		}
 		prices[name] = price
@@ -111,7 +111,7 @@ func customAlibabaVendorTiers(tiers []customAlibabaPriceTier) ([]customVendorTie
 	}
 	bounded := make([]boundedTier, 0, len(tiers))
 	for _, tier := range tiers {
-		var input, output, cache *float64
+		var input, output, cache, cacheWrite *float64
 		for _, price := range tier.Prices {
 			if band := strings.ToLower(strings.TrimSpace(price.TimeBand)); band != "" && band != "standard" {
 				return nil, false
@@ -134,6 +134,8 @@ func customAlibabaVendorTiers(tiers []customAlibabaPriceTier) ([]customVendorTie
 				output = &value
 			case "input_token_cache":
 				cache = &value
+			case "input_token_cache_creation_5m":
+				cacheWrite = &value
 			}
 		}
 		if input == nil || output == nil || *input <= 0 {
@@ -143,7 +145,7 @@ func customAlibabaVendorTiers(tiers []customAlibabaPriceTier) ([]customVendorTie
 		if !ok {
 			return nil, false
 		}
-		bounded = append(bounded, boundedTier{limit, customVendorTier{Input: *input, Output: output, CacheRead: cache}})
+		bounded = append(bounded, boundedTier{limit, customVendorTier{Input: *input, Output: output, CacheRead: cache, CacheWrite: cacheWrite}})
 	}
 	sort.Slice(bounded, func(i, j int) bool { return bounded[i].limit < bounded[j].limit })
 	result := make([]customVendorTier, len(bounded))
