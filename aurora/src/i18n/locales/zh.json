@@ -1,6 +1,5 @@
 {
   "translation": {
-    "Top tier": "最高档",
     "The current price charges nothing": "当前价格的收费为 0",
     "Vendor prices listed in CNY": "以人民币标价的厂商价格",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "火山方舟以人民币标价。填写 1 美元可兑换多少人民币用于换算；未填写时不读取这些价格。修改后请在下方刷新厂商价格。",

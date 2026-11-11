@@ -119,17 +119,22 @@ function getPriceTiers(values?: PricingSyncValues): PriceTier[] | null {
   return result
 }
 
-// A price with several input-length tiers, one line per tier ("≤ 32k: $0.09 /
-// $0.54"). null for a price with one tier or tiers of another kind.
-export function getTierPriceLines(values?: PricingSyncValues): string[] | null {
+// A price with several input-length tiers, tier by tier: the range each
+// covers ("≤ 32k") and its unit price. null for a price with one tier or
+// tiers of another kind.
+export type TierPriceLine = { range: string; price: UnitPrice }
+
+export function getTierPriceLines(
+  values?: PricingSyncValues
+): TierPriceLine[] | null {
   const tiers = getPriceTiers(values)
   if (!tiers || tiers.length < 2) return null
-  return tiers.map((tier, index) => {
-    const range = Number.isFinite(tier.upper)
+  return tiers.map((tier, index) => ({
+    range: Number.isFinite(tier.upper)
       ? `≤ ${formatTokenCount(tier.upper)}`
-      : `> ${formatTokenCount(tiers[index - 1].upper)}`
-    return `${range}: ${formatUnit(tier.price.input)} / ${formatUnit(tier.price.output)}`
-  })
+      : `> ${formatTokenCount(tiers[index - 1].upper)}`,
+    price: tier.price,
+  }))
 }
 
 // One stretch of input lengths in which both sides charge a single price.
