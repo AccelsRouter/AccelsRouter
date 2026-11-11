@@ -34,6 +34,8 @@ import {
   formatSegmentRange,
   formatUnit,
   getSourceLoss,
+  formatTokenCount,
+  getTierPriceLines,
   getTimeBandPrices,
   getUsagePriceRange,
   getUnitPriceText,
@@ -630,6 +632,15 @@ export function CustomPricingPreview() {
     </span>
   )
 
+  // Marks a price as that of the most expensive input-length tier; every
+  // tier is in the tooltip.
+  const topTierLabel = (lines: string[] | null) =>
+    lines && (
+      <span className='ml-1 text-xs' title={lines.join('\n')}>
+        {t('Top tier')}
+      </span>
+    )
+
   // A price that is not per input and output token: per request, or a task
   // model's price as one number or a range per 1M tokens, per second or per
   // image, over the conditions its expression distinguishes.
@@ -708,6 +719,7 @@ export function CustomPricingPreview() {
             text,
             offPeak: bands ? unitText(bands.offPeak) : null,
             title: describeSyncPrice(candidate, t),
+            tierLines: getTierPriceLines(candidate),
             others: [...new Set(others)],
           },
         ]
@@ -728,7 +740,16 @@ export function CustomPricingPreview() {
           reason: blocked,
         })
       }
-      return [{ source, text: '—', offPeak: null, title: reason, others: [] }]
+      return [
+        {
+          source,
+          text: '—',
+          offPeak: null,
+          title: reason,
+          tierLines: null,
+          others: [],
+        },
+      ]
     })
     return (
       <td className='text-right tabular-nums'>
@@ -745,6 +766,7 @@ export function CustomPricingPreview() {
             )}
             {line.text}
             {line.offPeak && peakLabel(line.offPeak)}
+            {topTierLabel(line.tierLines)}
             {line.others.map((other) => (
               <div key={other} className='text-muted-foreground text-xs'>
                 {other}
@@ -768,7 +790,27 @@ export function CustomPricingPreview() {
               candidate.upper <= 0 || candidate.upper * 1.05 >= segment.upper
           ) ?? entry.tiers[entry.tiers.length - 1])
         : undefined
-    const price = tier?.price ?? entry?.price
+    // Without a range to match, the most expensive tier, as the other
+    // columns show.
+    const top =
+      !segment && entry?.tiers && entry.tiers.length > 1
+        ? entry.tiers.reduce((best, candidate) =>
+            candidate.price.input + (candidate.price.output ?? 0) >
+            best.price.input + (best.price.output ?? 0)
+              ? candidate
+              : best
+          )
+        : undefined
+    const tierLines = top
+      ? (entry?.tiers ?? []).map((candidate, index, all) => {
+          const range =
+            candidate.upper > 0
+              ? `≤ ${formatTokenCount(candidate.upper)}`
+              : `> ${formatTokenCount(all[index - 1].upper)}`
+          return `${range}: ${unitText(candidate.price)}`
+        })
+      : null
+    const price = top?.price ?? tier?.price ?? entry?.price
     const hidden = segment && !entry?.tiers && segment.lower > 0
     let text = '—'
     if (hidden) text = ''
@@ -784,6 +826,7 @@ export function CustomPricingPreview() {
       >
         {text}
         {entry?.bands && !hidden && peakLabel(unitText(entry.bands.offPeak))}
+        {topTierLabel(tierLines)}
       </td>
     )
   }
@@ -1124,6 +1167,7 @@ export function CustomPricingPreview() {
                             <td className='text-muted-foreground text-right tabular-nums'>
                               {row.sell ?? usageText(row.current) ?? '—'}
                               {row.sellOffPeak && peakLabel(row.sellOffPeak)}
+                              {topTierLabel(getTierPriceLines(row.current))}
                             </td>
                             {vendorCell(row.model)}
                             <td />

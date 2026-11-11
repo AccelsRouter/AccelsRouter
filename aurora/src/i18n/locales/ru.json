@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Top tier": "Верхний уровень",
     "The current price charges nothing": "Текущая цена ничего не взимает",
     "Vendor prices listed in CNY": "Цены поставщиков в CNY",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark указывает цены в CNY. Введите, сколько CNY стоит один USD, для пересчёта; без этого цены не читаются. После изменения обновите цены поставщиков ниже.",

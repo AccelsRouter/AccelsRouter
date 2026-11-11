@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Top tier": "Palier le plus cher",
     "The current price charges nothing": "Le prix actuel ne facture rien",
     "Vendor prices listed in CNY": "Prix fournisseurs affichés en CNY",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark affiche ses prix en CNY. Indiquez combien de CNY vaut un USD pour les convertir ; sans cela ces prix ne sont pas lus. Actualisez les prix fournisseurs ci-dessous après modification.",

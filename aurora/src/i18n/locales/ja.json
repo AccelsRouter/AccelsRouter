@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Top tier": "最高ティア",
     "The current price charges nothing": "現在の価格では課金されません",
     "Vendor prices listed in CNY": "人民元建ての公式価格",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark の価格は人民元建てです。換算のため 1 米ドルが何人民元かを入力してください。未入力の場合これらの価格は読み込まれません。変更後は下の公式価格を更新してください。",

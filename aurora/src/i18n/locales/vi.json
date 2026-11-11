@@ -1,5 +1,6 @@
 {
   "translation": {
+    "Top tier": "Bậc cao nhất",
     "The current price charges nothing": "Giá hiện tại không tính phí",
     "Vendor prices listed in CNY": "Giá nhà cung cấp niêm yết bằng CNY",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark niêm yết giá bằng CNY. Nhập số CNY đổi được từ 1 USD để quy đổi; nếu để trống các giá này sẽ không được đọc. Hãy làm mới giá nhà cung cấp bên dưới sau khi thay đổi.",
