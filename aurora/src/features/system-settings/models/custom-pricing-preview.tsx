@@ -51,6 +51,7 @@ import { PRICING_ISSUE_REASONS, useModelPricingIssues } from './pricing-issues'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
 import {
   describeSyncPrice,
+  getSyncPriceKind,
   getUpstreamDisplayName,
 } from './upstream-ratio-sync-helpers'
 
@@ -552,8 +553,12 @@ export function CustomPricingPreview() {
   // Unpriced models a source has a price for that can be saved here.
   const fillable = (model: string, source: string) => {
     const row = offers[model]
-    return row?.upstreams[source] && !row.expr_errors?.[source]
-      ? row.upstreams[source]
+    const candidate = row?.upstreams[source]
+    // A price that charges nothing would leave the model without a price.
+    return candidate &&
+      !row?.expr_errors?.[source] &&
+      !chargesNothing(candidate)
+      ? candidate
       : undefined
   }
   // Selected loss risks whose channel price can replace the current price;
@@ -625,9 +630,14 @@ export function CustomPricingPreview() {
     </span>
   )
 
-  // A task model's price as one number or a range: per 1M tokens, per second
-  // or per image, over the conditions its expression distinguishes.
+  // A price that is not per input and output token: per request, or a task
+  // model's price as one number or a range per 1M tokens, per second or per
+  // image, over the conditions its expression distinguishes.
   const usageText = (values?: PricingSyncValues): string | null => {
+    if (getSyncPriceKind(values) === 'request') {
+      return `${formatUnit(Number(values?.model_price))} · ${t('Per-request')}`
+    }
+    if (chargesNothing(values)) return formatUnit(0)
     const range = getUsagePriceRange(values)
     if (!range) return null
     const price =
