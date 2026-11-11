@@ -45,6 +45,23 @@ func customBillingExprError(name, expression string) string {
 	return ""
 }
 
+// customTaskUsageSchema is the usage schema of the task plugin that serves name
+// on this gateway, under that name or as an alias of a model it declares.
+func customTaskUsageSchema(name string) (map[string]jsplugin.UsageFieldSchema, bool) {
+	generation := jsplugin.DefaultRegistry.Generation()
+	if plugins := generation.PluginsByModel(name); len(plugins) > 0 {
+		schema, _ := plugins[0].Meta.UsageForModel(name)
+		return schema, true
+	}
+	if target, resolved := model.ResolveTaskModelAlias(generation, name); resolved {
+		if plugin, ok := generation.Get(target.PluginKey); ok {
+			schema, _ := plugin.Meta.UsageForModel(target.Declared)
+			return schema, true
+		}
+	}
+	return nil, false
+}
+
 // customConvertCharacterExpr rewrites an upstream task expression that prices
 // nothing but u("characters") into the ordinary expression this gateway bills
 // a speech request with. The relay counts the input text's characters as the

@@ -181,6 +181,14 @@ func customVendorCardTiers(row model.CustomVendorPrice) []larknotify.VendorPrice
 	if len(tiers) == 0 {
 		tiers = []customVendorTier{{Input: price.Input, Output: price.Output, CacheRead: price.CacheRead}}
 	}
+	// A task model shows its first usage price, with what it is charged per.
+	if tiers[0].Usage != nil {
+		unit := "per image"
+		if _, tokens := tiers[0].Usage["tokens"]; tokens {
+			unit = "per 1M video tokens"
+		}
+		return []larknotify.VendorPriceTier{{Range: unit, Input: price.Input}}
+	}
 	lines := make([]larknotify.VendorPriceTier, 0, len(tiers))
 	for i, tier := range tiers {
 		line := larknotify.VendorPriceTier{

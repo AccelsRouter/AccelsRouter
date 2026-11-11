@@ -230,6 +230,30 @@ func TestParseCustomByteDancePricing(t *testing.T) {
 	assert.Equal(t, `len <= 128000 ? tier("base", p * 0.25 + c * 2 + cr * 0.05 + ai * 3.75) : tier("tier_2", p * 0.5 + c * 4 + cr * 0.1 + ai * 7.5)`, expr)
 	assert.NotContains(t, byteplus, "deepseek-v4-pro-ga-260813")
 	assert.NotContains(t, byteplus, "glm-5-2-260617")
+	// Video, image and embedding models: the price sync offers each as the
+	// expression the task plugin serving that name can charge.
+	syncExpr := func(prices map[string]customVendorPrice, listed, served string) string {
+		t.Helper()
+		require.Contains(t, prices, listed)
+		expr, ok := customVendorSyncExpr(served, prices[listed])
+		require.True(t, ok, served)
+		return expr
+	}
+	assert.Equal(t, `tier("base", u("tokens") * 2.5 / 1000000)`, syncExpr(byteplus, "seedance-1-0-pro-250528", "seedance-1-0-pro-250528"))
+	assert.Equal(t, `u("resolution") == "480p" && u("video_input") == "none" ? tier("480p·none", u("tokens") * 5.6 / 1000000) : `+
+		`u("resolution") == "480p" && u("video_input") == "video" ? tier("480p·video", u("tokens") * 3.3 / 1000000) : `+
+		`u("resolution") == "720p" && u("video_input") == "none" ? tier("720p·none", u("tokens") * 5.6 / 1000000) : `+
+		`tier("720p·video", u("tokens") * 3.3 / 1000000)`, syncExpr(byteplus, "dreamina-seedance-2-0-fast-260128", "dreamina-seedance-2-0-fast-260128"))
+	assert.Equal(t, `u("layer_decomposition") == true ? `+
+		`tier("layer_decomposition", u("images_above_1_5k") * 0.045 + u("images_up_to_1_5k") * 0.0225 + max(u("input_images") - 1, 0) * 0.003) : `+
+		`tier("base", u("images_above_1_5k") * 0.09 + u("images_up_to_1_5k") * 0.045 + max(u("input_images") - 1, 0) * 0.003)`,
+		syncExpr(byteplus, "dola-seedream-5-0-pro-260628", "dola-seedream-5-0-pro-260628"))
+	// This model only outputs images above 1.5K, so its plugin has no lower tier.
+	assert.Equal(t, `tier("base", u("images_above_1_5k") * 0.04)`, syncExpr(byteplus, "seedream-4-5-251128", "seedream-4-5-251128"))
+	assert.Equal(t, `tier("base", p * 0.125 + c * 0 + img * 0.325)`, syncExpr(byteplus, "skylark-embedding-vision", "skylark-embedding-vision"))
+	// The billing examples further down the page are not prices.
+	assert.NotContains(t, byteplus, "1080p")
+	assert.NotContains(t, byteplus, "dreamina")
 
 	rate := operation_setting.USDExchangeRate
 	operation_setting.USDExchangeRate = 8
@@ -251,6 +275,20 @@ func TestParseCustomByteDancePricing(t *testing.T) {
 	for name := range volcengine {
 		assert.True(t, strings.HasPrefix(name, "doubao-"), name)
 	}
+	// A family price is charged under the dated name this gateway serves.
+	assert.Equal(t, `tier("base", u("tokens") * 1.875 / 1000000)`, syncExpr(volcengine, "doubao-seedance-1-0-pro", "doubao-seedance-1-0-pro-250528"))
+	assert.Equal(t, `u("resolution") == "480p" && u("video_input") == "none" ? tier("480p·none", u("tokens") * 4.625 / 1000000) : `+
+		`u("resolution") == "480p" && u("video_input") == "video" ? tier("480p·video", u("tokens") * 2.75 / 1000000) : `+
+		`u("resolution") == "720p" && u("video_input") == "none" ? tier("720p·none", u("tokens") * 4.625 / 1000000) : `+
+		`tier("720p·video", u("tokens") * 2.75 / 1000000)`, syncExpr(volcengine, "doubao-seedance-2-0-fast", "doubao-seedance-2-0-fast-260128"))
+	assert.Equal(t, `u("layer_decomposition") == true ? `+
+		`tier("layer_decomposition", u("images_above_1_5k") * 0.0375 + u("images_up_to_1_5k") * 0.01875 + max(u("input_images") - 1, 0) * 0.0025) : `+
+		`tier("base", u("images_above_1_5k") * 0.075 + u("images_up_to_1_5k") * 0.0375 + max(u("input_images") - 1, 0) * 0.0025)`,
+		syncExpr(volcengine, "doubao-seedream-5-0-pro", "doubao-seedream-5-0-pro-260628"))
+	assert.Equal(t, `tier("base", p * 0.0875 + c * 0 + img * 0.225)`, syncExpr(volcengine, "doubao-embedding-vision", "doubao-embedding-vision"))
+	// The family name itself is no model a plugin serves.
+	_, ok = customVendorSyncExpr("doubao-seedance-2-0-fast", volcengine["doubao-seedance-2-0-fast"])
+	assert.False(t, ok)
 
 	operation_setting.USDExchangeRate = 0
 	_, err = parseCustomVolcenginePricing(customVendorFixture(t, "volcengine.md"))

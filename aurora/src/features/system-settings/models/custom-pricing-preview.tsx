@@ -77,7 +77,13 @@ type VendorPrice = {
   bands?: TimeBandPrices
   // The price sync offers this vendor price as the model's price.
   syncable: boolean
+  // Set for a task model, priced per image or per 1M video tokens instead
+  // of per input and output token; price.input is its first usage price.
+  usage?: 'image' | 'token'
 }
+
+// The vendor list prices as a price source, as the price sync names it.
+const VENDOR_SOURCE = `${VENDOR_PRICE_PRESET_NAME}(${VENDOR_PRICE_PRESET_ID})`
 
 const PROBLEM_BADGES: Record<
   Problem,
@@ -176,6 +182,7 @@ export function CustomPricingPreview() {
                 input: number
                 output: number | null
                 band?: string
+                usage?: Record<string, number>
               }>
             }
           >
@@ -201,13 +208,17 @@ export function CustomPricingPreview() {
               price.tiers?.find((tier) => tier.band === name)
             const peak = band('peak')
             const offPeak = band('off_peak')
-            const lengthTiers = price.tiers?.filter((tier) => !tier.band)
+            const usage = price.tiers?.find((tier) => tier.usage)?.usage
+            const lengthTiers = price.tiers?.filter(
+              (tier) => !tier.band && !tier.usage
+            )
             return [
               model,
               {
                 price: { input: price.input, output: price.output },
                 source: price.provider,
                 syncable: price.syncable === true,
+                ...(usage && { usage: 'tokens' in usage ? 'token' : 'image' }),
                 tiers: lengthTiers?.length
                   ? lengthTiers.map((tier) => ({
                       upper: tier.upper,
@@ -393,11 +404,15 @@ export function CustomPricingPreview() {
       const list = vendor[model]
       // Prices follow the vendor's list price: flag a priced model that
       // charges something else.
-      if (
-        list?.syncable &&
-        priced.has(model) &&
-        matchesVendorPrice(current, list) === false
-      ) {
+      // A task model follows the vendor price when it is charged exactly the
+      // expression the vendor price source offers.
+      const offered =
+        vendorOffers[model]?.upstreams[VENDOR_SOURCE]?.billing_expr
+      const followsVendor = list?.usage
+        ? offered === undefined ||
+          String(current?.billing_expr ?? '').trim() === String(offered).trim()
+        : !list || matchesVendorPrice(current, list) !== false
+      if (list?.syncable && priced.has(model) && !followsVendor) {
         problems.push('vendor')
       }
       if (row) {
@@ -450,6 +465,7 @@ export function CustomPricingPreview() {
     issuesQuery.data,
     upstream,
     vendor,
+    vendorOffers,
   ])
 
   const visible =
@@ -530,7 +546,7 @@ export function CustomPricingPreview() {
     }
   }
   // Prices follow the vendor list price, so that source is listed first.
-  const vendorSource = `${VENDOR_PRICE_PRESET_NAME}(${VENDOR_PRICE_PRESET_ID})`
+  const vendorSource = VENDOR_SOURCE
   const fillSources = [...fillCounts]
     .map(([name, count]) => ({ name, count }))
     .sort(
@@ -698,7 +714,11 @@ export function CustomPricingPreview() {
     const hidden = segment && !entry?.tiers && segment.lower > 0
     let text = '—'
     if (hidden) text = ''
-    else if (entry && price) text = unitText(price)
+    else if (entry?.usage === 'image') {
+      text = `${formatUnit(entry.price.input)} · ${t('Per image')}`
+    } else if (entry?.usage === 'token') {
+      text = `${formatUnit(entry.price.input)} / ${t('1M token')}`
+    } else if (entry && price) text = unitText(price)
     return (
       <td
         className='text-muted-foreground text-right tabular-nums'
