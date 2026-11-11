@@ -192,6 +192,11 @@ func TestCustomRemoveChannelModels(t *testing.T) {
 	var stored model.Channel
 	require.NoError(t, db.First(&stored, channel.Id).Error)
 	assert.Equal(t, "a,c", stored.Models)
+	// The removed model is ignored by the upstream model sync, which would add it back.
+	ignored := stored.GetOtherSettings().UpstreamModelUpdateIgnoredModels
+	assert.Equal(t, []string{"b"}, ignored)
+	pendingAdd, _ := collectPendingUpstreamModelChangesFromModels(stored.GetModels(), []string{"a", "b", "c", "d"}, ignored, nil)
+	assert.Equal(t, []string{"d"}, pendingAdd)
 	var abilities int64
 	require.NoError(t, db.Model(&model.Ability{}).Where("channel_id = ? AND model = ?", channel.Id, "b").Count(&abilities).Error)
 	assert.Zero(t, abilities)
