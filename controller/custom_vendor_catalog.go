@@ -34,7 +34,7 @@ const (
 
 // customVendorSourcePriority decides which source wins when several price a model.
 var customVendorSourcePriority = []string{
-	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai", "google", "openai",
+	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai", "google", "openai", "byteplus", "volcengine",
 }
 
 type customVendorSourceResult struct {
@@ -180,6 +180,14 @@ func customVendorCardTiers(row model.CustomVendorPrice) []larknotify.VendorPrice
 	tiers := price.Tiers
 	if len(tiers) == 0 {
 		tiers = []customVendorTier{{Input: price.Input, Output: price.Output, CacheRead: price.CacheRead}}
+	}
+	// A task model shows its first usage price, with what it is charged per.
+	if tiers[0].Usage != nil {
+		unit := "per image"
+		if _, tokens := tiers[0].Usage["tokens"]; tokens {
+			unit = "per 1M video tokens"
+		}
+		return []larknotify.VendorPriceTier{{Range: unit, Input: price.Input}}
 	}
 	lines := make([]larknotify.VendorPriceTier, 0, len(tiers))
 	for i, tier := range tiers {
@@ -408,6 +416,18 @@ func resolveCustomVendorPrices() (map[string]customVendorPrice, map[string]bool,
 		prices[name] = customVendorPriceFromRow(row)
 		if row.Source == customVendorManualSource {
 			manual[name] = true
+		}
+	}
+	// ByteDance prices a model family once; a snapshot this gateway serves
+	// (doubao-seed-2-1-pro-260715) carries its family's price.
+	for _, name := range model.GetEnabledModels() {
+		family := customArkSnapshotDate.ReplaceAllString(name, "")
+		price, listed := prices[family]
+		if _, own := prices[name]; own || !listed {
+			continue
+		}
+		if strings.HasPrefix(price.Provider, customVendorBytePlusProvider) || strings.HasPrefix(price.Provider, customVendorVolcengineProvider) {
+			prices[name] = price
 		}
 	}
 	return prices, manual, nil

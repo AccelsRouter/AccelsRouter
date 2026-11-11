@@ -295,6 +295,95 @@ export type VendorListPrice = {
   bands?: TimeBandPrices
 }
 
+// Whether a price charges nothing whatever the usage: every price number of
+// its expression is 0, or its legacy price or ratio is 0. Such a model is
+// served for free, which is how a forgotten price looks.
+export function chargesNothing(values?: PricingSyncValues): boolean {
+  const kind = getSyncPriceKind(values)
+  if (kind === 'request') return Number(values?.model_price) === 0
+  if (kind === 'token') return Number(values?.model_ratio) === 0
+  if (kind !== 'expression') return false
+  const expr = splitBillingExprAndRequestRules(
+    String(values?.billing_expr)
+  ).billingExpr.replace(/"[^"]*"/g, '')
+  const numbers = [
+    ...expr.matchAll(
+      /(?:\*\s*|fixed\(\s*|tier\(\s*,\s*)(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g
+    ),
+  ].map((match) => Number(match[1]))
+  return numbers.length > 0 && numbers.every((number) => number === 0)
+}
+
+const PRICE_TERM =
+  /\b(p|c|cr|cc|cc1h|cc12h|img|img_cr|img_o|ai|ao)\s*\*\s*(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g
+
+// Every per-token price of an expression, tier by tier, with the input-length
+// bounds between the tiers and the request rules. null for any other shape.
+function readPriceParts(values?: PricingSyncValues): {
+  leaves: Array<Record<string, number>>
+  bounds: number[]
+  rules: string
+} | null {
+  if (getSyncPriceKind(values) !== 'expression') return null
+  const split = splitBillingExprAndRequestRules(String(values?.billing_expr))
+  const leaf = /tier\("[^"]*",\s*([^()]*)\)/g
+  const condition = /\b(?:len|p)\s*<=?\s*([\d.eE+]+)/g
+  const leaves: Array<Record<string, number>> = []
+  for (const match of split.billingExpr.matchAll(leaf)) {
+    if (match[1].replace(PRICE_TERM, '').replace(/[\s+]/g, '')) return null
+    leaves.push(
+      Object.fromEntries(
+        [...match[1].matchAll(PRICE_TERM)].map((term) => [
+          term[1],
+          Number(term[2]),
+        ])
+      )
+    )
+  }
+  const outside = split.billingExpr.replace(leaf, '')
+  if (!leaves.length) return null
+  if (/[^\s()?:]/.test(outside.replace(condition, ''))) return null
+  return {
+    leaves,
+    bounds: [...outside.matchAll(condition)].map((match) => Number(match[1])),
+    rules: (split.requestRuleExpr ?? '').replace(/\s+/g, ''),
+  }
+}
+
+// One price that an upstream charges differently; null where a side does not
+// price that part separately.
+export type PricePartDifference = {
+  part: string
+  current: number | null
+  upstream: number | null
+}
+
+// The parts an upstream prices differently from the current price: none when
+// the two only differ in how the expression is written. null when they cannot
+// be compared part by part (other tiers, rules or price shapes).
+export function comparePriceParts(
+  current?: PricingSyncValues,
+  upstream?: PricingSyncValues
+): PricePartDifference[] | null {
+  const ours = readPriceParts(current)
+  const theirs = readPriceParts(upstream)
+  if (!ours || !theirs || ours.rules !== theirs.rules) return null
+  if (ours.leaves.length !== theirs.leaves.length) return null
+  if (ours.bounds.join() !== theirs.bounds.join()) return null
+  const differences: PricePartDifference[] = []
+  for (const [tier, leaf] of ours.leaves.entries()) {
+    const other = theirs.leaves[tier]
+    for (const part of new Set([...Object.keys(leaf), ...Object.keys(other)])) {
+      const mine = leaf[part] ?? null
+      const their = other[part] ?? null
+      if (mine === null || their === null || !sameUnit(mine, their)) {
+        differences.push({ part, current: mine, upstream: their })
+      }
+    }
+  }
+  return differences
+}
+
 function sameUnit(a: number | null, b: number | null): boolean {
   if (a === null || b === null) return true
   return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b))

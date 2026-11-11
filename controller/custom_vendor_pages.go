@@ -41,11 +41,16 @@ var customVendorPageSources = []customVendorPageSource{
 	// are read from OpenRouter's public model list, which carries each
 	// provider's own price.
 	{Name: "openai", URL: "https://openrouter.ai/api/v1/models", Parse: parseCustomOpenAIPricing},
+	// ByteDance: the international site in USD, the mainland China site in CNY.
+	{Name: "byteplus", URL: "https://docs.byteplus.com/docs/en/modelark/model-pricing.md", Parse: parseCustomBytePlusVendorPricing},
+	{Name: "volcengine", URL: "https://docs.volcengine.com/docs/zh/ark/model-pricing.md", Parse: parseCustomVolcenginePricing},
 }
 
+// Caption is the last line of text above the table, such as its heading.
 type customMarkdownTable struct {
-	Header []string
-	Rows   [][]string
+	Caption string
+	Header  []string
+	Rows    [][]string
 }
 
 var (
@@ -60,9 +65,10 @@ var (
 func parseCustomMarkdownTables(md string) []customMarkdownTable {
 	var tables []customMarkdownTable
 	var block [][]string
+	var text, caption string
 	flush := func() {
 		if len(block) >= 3 && isCustomMarkdownSeparatorRow(block[1]) {
-			tables = append(tables, customMarkdownTable{Header: block[0], Rows: block[2:]})
+			tables = append(tables, customMarkdownTable{Caption: caption, Header: block[0], Rows: block[2:]})
 		}
 		block = nil
 	}
@@ -70,7 +76,13 @@ func parseCustomMarkdownTables(md string) []customMarkdownTable {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "|") {
 			flush()
+			if line != "" {
+				text = line
+			}
 			continue
+		}
+		if block == nil {
+			caption = text
 		}
 		line = strings.TrimSuffix(strings.TrimPrefix(line, "|"), "|")
 		cells := strings.Split(line, "|")

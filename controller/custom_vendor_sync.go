@@ -3,10 +3,13 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 )
 
@@ -51,7 +54,102 @@ func customVendorTierBody(name string, tier customVendorTier) (string, bool) {
 	if tier.AudioInput != nil && validCustomVendorNumber(*tier.AudioInput) {
 		body += " + ai * " + customVendorPriceText(*tier.AudioInput)
 	}
+	if tier.ImageInput != nil && validCustomVendorNumber(*tier.ImageInput) {
+		body += " + img * " + customVendorPriceText(*tier.ImageInput)
+	}
 	return body, true
+}
+
+// customVendorUsageExpr renders a task model's list price in the canonical
+// task shape: one tier per combination of the conditions the vendor prices by,
+// over the values the model's plugin declares for them. It yields nothing when
+// the plugin lacks a condition or the vendor leaves a combination unpriced.
+func customVendorUsageExpr(schema map[string]jsplugin.UsageFieldSchema, tiers []customVendorTier) (string, bool) {
+	conditions := make(map[string]bool)
+	for _, tier := range tiers {
+		for key := range tier.When {
+			conditions[key] = true
+		}
+	}
+	keys := slices.Sorted(maps.Keys(conditions))
+	combinations := [][]string{{}}
+	for _, key := range keys {
+		field, declared := schema[key]
+		values := field.Enum
+		if field.Type == "boolean" {
+			values = []string{"true", "false"}
+		}
+		if !declared || len(values) == 0 {
+			return "", false
+		}
+		var next [][]string
+		for _, combination := range combinations {
+			for _, value := range values {
+				next = append(next, append(slices.Clone(combination), value))
+			}
+		}
+		combinations = next
+	}
+	var expr strings.Builder
+	for index, combination := range combinations {
+		var usage map[string]float64
+		for _, tier := range tiers {
+			matches := len(tier.When) == len(keys)
+			for i, key := range keys {
+				matches = matches && tier.When[key] == combination[i]
+			}
+			if matches {
+				usage = tier.Usage
+			}
+		}
+		var terms, tests, names []string
+		for _, key := range slices.Sorted(maps.Keys(usage)) {
+			if !validCustomVendorNumber(usage[key]) {
+				return "", false
+			}
+			price := customVendorPriceText(usage[key])
+			field, declared := schema[key]
+			switch {
+			case key == "input_images_after_first":
+				if _, counted := schema["input_images"]; counted {
+					terms = append(terms, `max(u("input_images") - 1, 0) * `+price)
+				}
+			case !declared:
+				// A fact the model never reports, such as a size it cannot output.
+			case field.Unit == "token":
+				terms = append(terms, fmt.Sprintf(`u("%s") * %s / 1000000`, key, price))
+			default:
+				terms = append(terms, fmt.Sprintf(`u("%s") * %s`, key, price))
+			}
+		}
+		if len(terms) == 0 {
+			return "", false
+		}
+		for i, key := range keys {
+			switch {
+			case schema[key].Type != "boolean":
+				tests = append(tests, fmt.Sprintf(`u("%s") == "%s"`, key, combination[i]))
+				names = append(names, combination[i])
+			case combination[i] == "true":
+				tests = append(tests, fmt.Sprintf(`u("%s") == true`, key))
+				names = append(names, key)
+			default:
+				tests = append(tests, fmt.Sprintf(`u("%s") == false`, key))
+			}
+		}
+		name := strings.Join(names, "·")
+		if name == "" {
+			name = "base"
+		}
+		if index < len(combinations)-1 {
+			expr.WriteString(strings.Join(tests, " && ") + " ? ")
+		}
+		fmt.Fprintf(&expr, `tier("%s", %s)`, name, strings.Join(terms, " + "))
+		if index < len(combinations)-1 {
+			expr.WriteString(" : ")
+		}
+	}
+	return expr.String(), true
 }
 
 // customVendorTimeBandExpr renders DeepSeek's peak and off-peak prices in the
@@ -120,6 +218,14 @@ func customVendorBillingExpr(name string, price customVendorPrice) (string, bool
 func customVendorSyncExpr(name string, price customVendorPrice) (string, bool) {
 	if strings.HasPrefix(price.Provider, customVendorDeepSeekProvider) && len(price.Tiers) == 0 {
 		return "", false
+	}
+	if len(price.Tiers) > 0 && price.Tiers[0].Usage != nil {
+		schema, served := customTaskUsageSchema(name)
+		if !served {
+			return "", false
+		}
+		expr, ok := customVendorUsageExpr(schema, price.Tiers)
+		return expr, ok && customBillingExprError(name, expr) == ""
 	}
 	expr, ok := customVendorBillingExpr(name, price)
 	if !ok || billing_setting.SmokeTestExpr(expr) != nil {

@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Vendor prices listed in CNY": "人民元建ての公式価格",
+    "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark の価格は人民元建てです。換算のため 1 米ドルが何人民元かを入力してください。未入力の場合これらの価格は読み込まれません。変更後は下の公式価格を更新してください。",
     "They also join each channel's ignored upstream models, so the upstream model sync does not add them back.": "これらのモデルは各チャネルの無視するアップストリームモデルにも追加され、アップストリームのモデル同期で再追加されません。",
     "This source does not list the model": "このソースにはこのモデルがありません",
     "Use the channel price": "このチャネルの価格を使う",

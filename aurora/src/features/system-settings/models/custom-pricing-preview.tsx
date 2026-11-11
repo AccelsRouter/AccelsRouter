@@ -28,6 +28,8 @@ import type {
 } from '../types'
 import { VENDOR_PRICE_PRESET_ID, VENDOR_PRICE_PRESET_NAME } from './constants'
 import {
+  chargesNothing,
+  comparePriceParts,
   formatSegmentRange,
   formatUnit,
   getSourceLoss,
@@ -43,6 +45,7 @@ import {
   CustomUnpricedFill,
   type PriceSelection,
 } from './custom-unpriced-fill'
+import { useModelPricingIssues } from './pricing-issues'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
 import {
   describeSyncPrice,
@@ -74,7 +77,13 @@ type VendorPrice = {
   bands?: TimeBandPrices
   // The price sync offers this vendor price as the model's price.
   syncable: boolean
+  // Set for a task model, priced per image or per 1M video tokens instead
+  // of per input and output token; price.input is its first usage price.
+  usage?: 'image' | 'token'
 }
+
+// The vendor list prices as a price source, as the price sync names it.
+const VENDOR_SOURCE = `${VENDOR_PRICE_PRESET_NAME}(${VENDOR_PRICE_PRESET_ID})`
 
 const PROBLEM_BADGES: Record<
   Problem,
@@ -142,6 +151,8 @@ export function CustomPricingPreview() {
     queryFn: () => getModelPricing(),
     refetchOnWindowFocus: false,
   })
+  // Task models whose price the plugin serving them cannot charge.
+  const issuesQuery = useModelPricingIssues()
 
   const checkMutation = useMutation({
     mutationFn: async () => {
@@ -171,6 +182,7 @@ export function CustomPricingPreview() {
                 input: number
                 output: number | null
                 band?: string
+                usage?: Record<string, number>
               }>
             }
           >
@@ -196,13 +208,17 @@ export function CustomPricingPreview() {
               price.tiers?.find((tier) => tier.band === name)
             const peak = band('peak')
             const offPeak = band('off_peak')
-            const lengthTiers = price.tiers?.filter((tier) => !tier.band)
+            const usage = price.tiers?.find((tier) => tier.usage)?.usage
+            const lengthTiers = price.tiers?.filter(
+              (tier) => !tier.band && !tier.usage
+            )
             return [
               model,
               {
                 price: { input: price.input, output: price.output },
                 source: price.provider,
                 syncable: price.syncable === true,
+                ...(usage && { usage: 'tokens' in usage ? 'token' : 'image' }),
                 tiers: lengthTiers?.length
                   ? lengthTiers.map((tier) => ({
                       upper: tier.upper,
@@ -365,6 +381,14 @@ export function CustomPricingPreview() {
         })
       }
     }
+    // A price that charges nothing, or that the plugin serving the model
+    // cannot charge, is no price.
+    for (const [model, values] of saved) {
+      if (chargesNothing(values)) priced.delete(model)
+    }
+    for (const issue of issuesQuery.data ?? []) {
+      if (issue.reason !== 'stale') priced.delete(issue.model_name)
+    }
     const result: PreviewRow[] = []
     for (const [model, channels] of channelsByModel) {
       const problems: Problem[] = []
@@ -380,15 +404,28 @@ export function CustomPricingPreview() {
       const list = vendor[model]
       // Prices follow the vendor's list price: flag a priced model that
       // charges something else.
-      if (
-        list?.syncable &&
-        priced.has(model) &&
-        matchesVendorPrice(current, list) === false
-      ) {
+      // A task model follows the vendor price when it is charged exactly the
+      // expression the vendor price source offers.
+      const offered =
+        vendorOffers[model]?.upstreams[VENDOR_SOURCE]?.billing_expr
+      const followsVendor = list?.usage
+        ? offered === undefined ||
+          String(current?.billing_expr ?? '').trim() === String(offered).trim()
+        : !list || matchesVendorPrice(current, list) !== false
+      if (list?.syncable && priced.has(model) && !followsVendor) {
         problems.push('vendor')
       }
       if (row) {
-        if (upstream?.differences[model]) problems.push('difference')
+        // Upstream expressions that are only written differently charge the
+        // same and are not a price difference.
+        const sameEverywhere =
+          Object.keys(row.upstreams).length > 0 &&
+          Object.values(row.upstreams).every(
+            (candidate) => comparePriceParts(current, candidate)?.length === 0
+          )
+        if (upstream?.differences[model] && !sameEverywhere) {
+          problems.push('difference')
+        }
         for (const source of Object.keys(row.upstreams)) {
           const channelId = parseChannelId(source)
           const key = `${channelId}\n${model}`
@@ -422,7 +459,14 @@ export function CustomPricingPreview() {
         b.problems.length - a.problems.length ||
         a.model.localeCompare(b.model)
     )
-  }, [channelsQuery.data, pricingQuery.data, upstream, vendor])
+  }, [
+    channelsQuery.data,
+    pricingQuery.data,
+    issuesQuery.data,
+    upstream,
+    vendor,
+    vendorOffers,
+  ])
 
   const visible =
     filter === 'all' ? rows : rows.filter((r) => r.problems.includes(filter))
@@ -502,7 +546,7 @@ export function CustomPricingPreview() {
     }
   }
   // Prices follow the vendor list price, so that source is listed first.
-  const vendorSource = `${VENDOR_PRICE_PRESET_NAME}(${VENDOR_PRICE_PRESET_ID})`
+  const vendorSource = VENDOR_SOURCE
   const fillSources = [...fillCounts]
     .map(([name, count]) => ({ name, count }))
     .sort(
@@ -584,12 +628,29 @@ export function CustomPricingPreview() {
         if (image) {
           text = `${formatUnit(Number(image[1] ?? image[2]))} · ${t('Per image')}`
         }
+        // What differs besides the input and output prices shown above.
+        const partLabels: Record<string, string> = {
+          cr: t('Cache Read'),
+          cc: t('Cache write'),
+          cc1h: `${t('Cache write')} 1h`,
+          cc12h: `${t('Cache write')} 12h`,
+          img: t('Image input'),
+          ai: t('Audio input'),
+          ao: t('Audio output'),
+        }
+        const others = (comparePriceParts(row.current, candidate) ?? [])
+          .filter((difference) => !['p', 'c'].includes(difference.part))
+          .map(
+            (difference) =>
+              `${partLabels[difference.part] ?? difference.part} ${formatUnit(difference.upstream)} (${t('Current')} ${formatUnit(difference.current)})`
+          )
         return [
           {
             source,
             text,
             offPeak: bands ? unitText(bands.offPeak) : null,
             title: describeSyncPrice(candidate, t),
+            others: [...new Set(others)],
           },
         ]
       }
@@ -609,7 +670,7 @@ export function CustomPricingPreview() {
           reason: blocked,
         })
       }
-      return [{ source, text: '—', offPeak: null, title: reason }]
+      return [{ source, text: '—', offPeak: null, title: reason, others: [] }]
     })
     return (
       <td className='text-right tabular-nums'>
@@ -626,6 +687,11 @@ export function CustomPricingPreview() {
             )}
             {line.text}
             {line.offPeak && peakLabel(line.offPeak)}
+            {line.others.map((other) => (
+              <div key={other} className='text-muted-foreground text-xs'>
+                {other}
+              </div>
+            ))}
           </div>
         ))}
       </td>
@@ -648,7 +714,11 @@ export function CustomPricingPreview() {
     const hidden = segment && !entry?.tiers && segment.lower > 0
     let text = '—'
     if (hidden) text = ''
-    else if (entry && price) text = unitText(price)
+    else if (entry?.usage === 'image') {
+      text = `${formatUnit(entry.price.input)} · ${t('Per image')}`
+    } else if (entry?.usage === 'token') {
+      text = `${formatUnit(entry.price.input)} / ${t('1M token')}`
+    } else if (entry && price) text = unitText(price)
     return (
       <td
         className='text-muted-foreground text-right tabular-nums'

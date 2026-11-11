@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Vendor prices listed in CNY": "Giá nhà cung cấp niêm yết bằng CNY",
+    "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark niêm yết giá bằng CNY. Nhập số CNY đổi được từ 1 USD để quy đổi; nếu để trống các giá này sẽ không được đọc. Hãy làm mới giá nhà cung cấp bên dưới sau khi thay đổi.",
     "They also join each channel's ignored upstream models, so the upstream model sync does not add them back.": "Chúng cũng được thêm vào danh sách mô hình upstream bị bỏ qua của từng kênh, nên việc đồng bộ mô hình upstream sẽ không thêm lại.",
     "This source does not list the model": "Nguồn này không liệt kê mô hình",
     "Use the channel price": "Dùng giá của kênh",

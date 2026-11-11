@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,6 +205,101 @@ func TestCustomRemoveChannelModels(t *testing.T) {
 	body["items"] = []map[string]any{{"channel_id": 0, "models": []string{"a"}}}
 	modelManagementRequest(t, CustomRemoveChannelModels, http.MethodPost, "/api/channel/remove_models", body, &response)
 	assert.False(t, response.Success)
+}
+
+// ByteDance's two pricing pages: the international one in USD under dated
+// model IDs, the mainland China one in CNY under family names. Only the
+// standard online inference table counts, only ByteDance's own models, and a
+// model priced by time of day is left out.
+func TestParseCustomByteDancePricing(t *testing.T) {
+	value := func(v float64) *float64 { return &v }
+
+	byteplus, err := parseCustomBytePlusVendorPricing(customVendorFixture(t, "byteplus.md"))
+	require.NoError(t, err)
+	assert.Equal(t, customVendorPrice{Provider: customVendorBytePlusProvider, Input: 0.5, Output: value(2.5), CacheRead: value(0.1)}, byteplus["dola-seed-2-1-turbo"])
+	pro := customVendorPrice{Provider: customVendorBytePlusProvider, Input: 0.5, Output: value(3), CacheRead: value(0.1), Tiers: []customVendorTier{
+		{Upper: 128000, Input: 0.5, Output: value(3), CacheRead: value(0.1)},
+		{Input: 1, Output: value(6), CacheRead: value(0.2)},
+	}}
+	assert.Equal(t, pro, byteplus["seed-2-0-pro-260328"])
+	assert.Equal(t, pro, byteplus["seed-2-0-pro"], "a model ID also answers without its snapshot date")
+	// Audio input is priced in a table of its own.
+	expr, ok := customVendorSyncExpr("seed-2-0-lite-260428", byteplus["seed-2-0-lite-260428"])
+	require.True(t, ok)
+	assert.Equal(t, `len <= 128000 ? tier("base", p * 0.25 + c * 2 + cr * 0.05 + ai * 3.75) : tier("tier_2", p * 0.5 + c * 4 + cr * 0.1 + ai * 7.5)`, expr)
+	assert.NotContains(t, byteplus, "deepseek-v4-pro-ga-260813")
+	assert.NotContains(t, byteplus, "glm-5-2-260617")
+	// Video, image and embedding models: the price sync offers each as the
+	// expression the task plugin serving that name can charge.
+	syncExpr := func(prices map[string]customVendorPrice, listed, served string) string {
+		t.Helper()
+		require.Contains(t, prices, listed)
+		expr, ok := customVendorSyncExpr(served, prices[listed])
+		require.True(t, ok, served)
+		return expr
+	}
+	assert.Equal(t, `tier("base", u("tokens") * 2.5 / 1000000)`, syncExpr(byteplus, "seedance-1-0-pro-250528", "seedance-1-0-pro-250528"))
+	assert.Equal(t, `u("resolution") == "480p" && u("video_input") == "none" ? tier("480p·none", u("tokens") * 5.6 / 1000000) : `+
+		`u("resolution") == "480p" && u("video_input") == "video" ? tier("480p·video", u("tokens") * 3.3 / 1000000) : `+
+		`u("resolution") == "720p" && u("video_input") == "none" ? tier("720p·none", u("tokens") * 5.6 / 1000000) : `+
+		`tier("720p·video", u("tokens") * 3.3 / 1000000)`, syncExpr(byteplus, "dreamina-seedance-2-0-fast-260128", "dreamina-seedance-2-0-fast-260128"))
+	assert.Equal(t, `u("layer_decomposition") == true ? `+
+		`tier("layer_decomposition", u("images_above_1_5k") * 0.045 + u("images_up_to_1_5k") * 0.0225 + max(u("input_images") - 1, 0) * 0.003) : `+
+		`tier("base", u("images_above_1_5k") * 0.09 + u("images_up_to_1_5k") * 0.045 + max(u("input_images") - 1, 0) * 0.003)`,
+		syncExpr(byteplus, "dola-seedream-5-0-pro-260628", "dola-seedream-5-0-pro-260628"))
+	// This model only outputs images above 1.5K, so its plugin has no lower tier.
+	assert.Equal(t, `tier("base", u("images_above_1_5k") * 0.04)`, syncExpr(byteplus, "seedream-4-5-251128", "seedream-4-5-251128"))
+	assert.Equal(t, `tier("base", p * 0.125 + c * 0 + img * 0.325)`, syncExpr(byteplus, "skylark-embedding-vision", "skylark-embedding-vision"))
+	// The billing examples further down the page are not prices.
+	assert.NotContains(t, byteplus, "1080p")
+	assert.NotContains(t, byteplus, "dreamina")
+
+	setRate := func(value string) {
+		common.OptionMapRWMutex.Lock()
+		defer common.OptionMapRWMutex.Unlock()
+		if common.OptionMap == nil {
+			common.OptionMap = make(map[string]string)
+		}
+		common.OptionMap[customVendorCNYPerUSDOption] = value
+	}
+	t.Cleanup(func() { setRate("") })
+	setRate("8")
+	volcengine, err := parseCustomVolcenginePricing(customVendorFixture(t, "volcengine.md"))
+	require.NoError(t, err)
+	provider := customVendorVolcengineProvider + " (CNY at 8 per USD)"
+	assert.Equal(t, customVendorPrice{Provider: provider, Input: 0.75, Output: value(3.75), CacheRead: value(0.15)}, volcengine["doubao-seed-2.1-pro"])
+	assert.Equal(t, volcengine["doubao-seed-2.1-pro"], volcengine["doubao-seed-2-1-pro"], "model IDs write the version with dashes")
+	assert.Equal(t, customVendorPrice{Provider: provider, Input: 0.4, Output: value(2), CacheRead: value(0.08), Tiers: []customVendorTier{
+		{Upper: 32000, Input: 0.4, Output: value(2), CacheRead: value(0.08)},
+		{Upper: 128000, Input: 0.6, Output: value(3), CacheRead: value(0.12)},
+		{Input: 1.2, Output: value(6), CacheRead: value(0.24)},
+	}}, volcengine["doubao-seed-2.0-pro"])
+	assert.Equal(t, customVendorPrice{Provider: provider, Input: 0.1, Output: value(0.3375), CacheRead: value(0.02), Tiers: []customVendorTier{
+		{Input: 0.1, Output: value(0.3375), CacheRead: value(0.02), AudioInput: value(1.5)},
+	}}, volcengine["doubao-seed-2.1-lite"], "the low-latency table below does not replace the standard price")
+	assert.Equal(t, customVendorPrice{Provider: provider, Input: 0.15, Output: value(0.45)}, volcengine["doubao-seed-translation"])
+	for name := range volcengine {
+		assert.True(t, strings.HasPrefix(name, "doubao-"), name)
+	}
+	// A family price is charged under the dated name this gateway serves.
+	assert.Equal(t, `tier("base", u("tokens") * 1.875 / 1000000)`, syncExpr(volcengine, "doubao-seedance-1-0-pro", "doubao-seedance-1-0-pro-250528"))
+	assert.Equal(t, `u("resolution") == "480p" && u("video_input") == "none" ? tier("480p·none", u("tokens") * 4.625 / 1000000) : `+
+		`u("resolution") == "480p" && u("video_input") == "video" ? tier("480p·video", u("tokens") * 2.75 / 1000000) : `+
+		`u("resolution") == "720p" && u("video_input") == "none" ? tier("720p·none", u("tokens") * 4.625 / 1000000) : `+
+		`tier("720p·video", u("tokens") * 2.75 / 1000000)`, syncExpr(volcengine, "doubao-seedance-2-0-fast", "doubao-seedance-2-0-fast-260128"))
+	assert.Equal(t, `u("layer_decomposition") == true ? `+
+		`tier("layer_decomposition", u("images_above_1_5k") * 0.0375 + u("images_up_to_1_5k") * 0.01875 + max(u("input_images") - 1, 0) * 0.0025) : `+
+		`tier("base", u("images_above_1_5k") * 0.075 + u("images_up_to_1_5k") * 0.0375 + max(u("input_images") - 1, 0) * 0.0025)`,
+		syncExpr(volcengine, "doubao-seedream-5-0-pro", "doubao-seedream-5-0-pro-260628"))
+	assert.Equal(t, `tier("base", p * 0.0875 + c * 0 + img * 0.225)`, syncExpr(volcengine, "doubao-embedding-vision", "doubao-embedding-vision"))
+	// The family name itself is no model a plugin serves.
+	_, ok = customVendorSyncExpr("doubao-seedance-2-0-fast", volcengine["doubao-seedance-2-0-fast"])
+	assert.False(t, ok)
+
+	// Without the rate nothing is read: the payment exchange rate is no substitute.
+	setRate("")
+	_, err = parseCustomVolcenginePricing(customVendorFixture(t, "volcengine.md"))
+	assert.ErrorContains(t, err, "CNY per USD")
 }
 
 func customVendorFixture(t *testing.T, name string) []byte {
