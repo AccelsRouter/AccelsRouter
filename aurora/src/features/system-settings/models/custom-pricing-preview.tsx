@@ -28,6 +28,7 @@ import type {
 } from '../types'
 import { VENDOR_PRICE_PRESET_ID, VENDOR_PRICE_PRESET_NAME } from './constants'
 import {
+  chargesNothing,
   comparePriceParts,
   formatSegmentRange,
   formatUnit,
@@ -44,6 +45,7 @@ import {
   CustomUnpricedFill,
   type PriceSelection,
 } from './custom-unpriced-fill'
+import { useModelPricingIssues } from './pricing-issues'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
 import {
   describeSyncPrice,
@@ -143,6 +145,8 @@ export function CustomPricingPreview() {
     queryFn: () => getModelPricing(),
     refetchOnWindowFocus: false,
   })
+  // Task models whose price the plugin serving them cannot charge.
+  const issuesQuery = useModelPricingIssues()
 
   const checkMutation = useMutation({
     mutationFn: async () => {
@@ -366,6 +370,14 @@ export function CustomPricingPreview() {
         })
       }
     }
+    // A price that charges nothing, or that the plugin serving the model
+    // cannot charge, is no price.
+    for (const [model, values] of saved) {
+      if (chargesNothing(values)) priced.delete(model)
+    }
+    for (const issue of issuesQuery.data ?? []) {
+      if (issue.reason !== 'stale') priced.delete(issue.model_name)
+    }
     const result: PreviewRow[] = []
     for (const [model, channels] of channelsByModel) {
       const problems: Problem[] = []
@@ -432,7 +444,13 @@ export function CustomPricingPreview() {
         b.problems.length - a.problems.length ||
         a.model.localeCompare(b.model)
     )
-  }, [channelsQuery.data, pricingQuery.data, upstream, vendor])
+  }, [
+    channelsQuery.data,
+    pricingQuery.data,
+    issuesQuery.data,
+    upstream,
+    vendor,
+  ])
 
   const visible =
     filter === 'all' ? rows : rows.filter((r) => r.problems.includes(filter))

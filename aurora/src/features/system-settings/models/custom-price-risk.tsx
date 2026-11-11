@@ -295,6 +295,25 @@ export type VendorListPrice = {
   bands?: TimeBandPrices
 }
 
+// Whether a price charges nothing whatever the usage: every price number of
+// its expression is 0, or its legacy price or ratio is 0. Such a model is
+// served for free, which is how a forgotten price looks.
+export function chargesNothing(values?: PricingSyncValues): boolean {
+  const kind = getSyncPriceKind(values)
+  if (kind === 'request') return Number(values?.model_price) === 0
+  if (kind === 'token') return Number(values?.model_ratio) === 0
+  if (kind !== 'expression') return false
+  const expr = splitBillingExprAndRequestRules(
+    String(values?.billing_expr)
+  ).billingExpr.replace(/"[^"]*"/g, '')
+  const numbers = [
+    ...expr.matchAll(
+      /(?:\*\s*|fixed\(\s*|tier\(\s*,\s*)(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g
+    ),
+  ].map((match) => Number(match[1]))
+  return numbers.length > 0 && numbers.every((number) => number === 0)
+}
+
 const PRICE_TERM =
   /\b(p|c|cr|cc|cc1h|cc12h|img|img_cr|img_o|ai|ao)\s*\*\s*(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g
 
