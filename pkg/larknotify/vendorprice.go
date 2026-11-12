@@ -1,6 +1,7 @@
 package larknotify
 
 import (
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -47,10 +48,31 @@ type VendorPriceFailure struct {
 	Message string
 }
 
+// VendorPriceBelow is a model the gateway serves for less than its vendor
+// lists: What names the unit that falls short the most, Charged and Listed are
+// the two prices of that unit in USD.
+type VendorPriceBelow struct {
+	Model   string
+	What    string
+	Charged float64
+	Listed  float64
+}
+
+// VendorRateDrift is the CNY per USD rate vendor prices are converted at (Set)
+// against the market rate of Date, when the market rate buys less CNY: prices
+// listed in CNY then cost more USD than they were converted to.
+type VendorRateDrift struct {
+	Set    float64
+	Market float64
+	Date   string
+}
+
 // VendorPriceReport is what one refresh of the vendor list prices found.
 type VendorPriceReport struct {
 	Changes  []VendorPriceChange
 	Failures []VendorPriceFailure
+	Below    []VendorPriceBelow
+	Rate     *VendorRateDrift
 }
 
 // Message keys of the vendor price card. They are declared again in
@@ -70,6 +92,11 @@ const (
 	MsgVendorPriceFieldFailed = "lark.vendor_price_field_failed"
 	MsgVendorPriceMore        = "lark.vendor_price_more"
 	MsgVendorPriceNote        = "lark.vendor_price_note"
+	MsgVendorPriceTitleBelow  = "lark.vendor_price_title_below"
+	MsgVendorPriceFieldBelow  = "lark.vendor_price_field_below"
+	MsgVendorPriceBelow       = "lark.vendor_price_below"
+	MsgVendorPriceFieldRate   = "lark.vendor_price_field_rate"
+	MsgVendorPriceRateDrift   = "lark.vendor_price_rate_drift"
 )
 
 // MaxVendorPriceChanges is how many models one card lists; the rest are counted.
@@ -107,10 +134,12 @@ func vendorPriceText(tiers []VendorPriceTier, tr Translator) string {
 }
 
 // VendorPriceCard is the message for one refresh of the vendor list prices:
-// the models whose price changed or that are newly listed, and the sources
-// that stopped being readable. Changes held for review come first, then the
-// models the gateway serves, then the rest by name. It is red when something
-// needs a person (a held change, a failed source), orange otherwise.
+// the models whose price changed or that are newly listed, the sources that
+// stopped being readable, the models the gateway serves for less than their
+// vendor lists and a CNY rate the market has moved away from. Changes held for
+// review come first, then the models the gateway serves, then the rest by
+// name. It is red when something needs a person (a held change, a failed
+// source, a price below the vendor's, a drifted rate), orange otherwise.
 func VendorPriceCard(report VendorPriceReport, tr Translator) Card {
 	order := map[VendorPriceKind]int{VendorPricePending: 0, VendorPriceChanged: 1, VendorPriceNew: 2}
 	sorted := slices.Clone(report.Changes)
@@ -158,5 +187,34 @@ func VendorPriceCard(report VendorPriceReport, tr Translator) Card {
 		fields = append(fields, Field{Name: tr(MsgVendorPriceFieldFailed, nil), Value: strings.Join(lines, "\n")})
 		color = "red"
 	}
-	return Card{Title: tr(MsgVendorPriceTitle, nil), Color: color, Fields: fields, Note: tr(MsgVendorPriceNote, nil)}
+	percent := func(share float64) string { return strconv.FormatFloat(math.Round(share*1000)/10, 'f', -1, 64) }
+	if len(report.Below) > 0 {
+		below := slices.Clone(report.Below)
+		slices.SortFunc(below, func(a, b VendorPriceBelow) int { return strings.Compare(a.Model, b.Model) })
+		lines := make([]string, 0, min(len(below), MaxVendorPriceChanges)+1)
+		for _, item := range below[:min(len(below), MaxVendorPriceChanges)] {
+			lines = append(lines, tr(MsgVendorPriceBelow, map[string]any{
+				"Model": item.Model, "What": item.What,
+				"Charged": strconv.FormatFloat(item.Charged, 'f', -1, 64), "Listed": strconv.FormatFloat(item.Listed, 'f', -1, 64),
+				"Percent": percent(1 - item.Charged/item.Listed),
+			}))
+		}
+		if extra := len(below) - MaxVendorPriceChanges; extra > 0 {
+			lines = append(lines, tr(MsgVendorPriceMore, map[string]any{"Count": extra}))
+		}
+		fields = append(fields, Field{Name: tr(MsgVendorPriceFieldBelow, nil), Value: strings.Join(lines, "\n")})
+		color = "red"
+	}
+	if report.Rate != nil {
+		fields = append(fields, Field{Name: tr(MsgVendorPriceFieldRate, nil), Value: tr(MsgVendorPriceRateDrift, map[string]any{
+			"Set": strconv.FormatFloat(report.Rate.Set, 'f', -1, 64), "Market": strconv.FormatFloat(report.Rate.Market, 'f', -1, 64),
+			"Date": report.Rate.Date, "Percent": percent(report.Rate.Set/report.Rate.Market - 1),
+		})})
+		color = "red"
+	}
+	title := MsgVendorPriceTitle
+	if len(report.Changes)+len(report.Failures) == 0 {
+		title = MsgVendorPriceTitleBelow
+	}
+	return Card{Title: tr(title, nil), Color: color, Fields: fields, Note: tr(MsgVendorPriceNote, nil)}
 }
