@@ -138,7 +138,14 @@ func ProcessStreamResponse(streamResponse dto.ChatCompletionsStreamResponse, res
 }
 
 func processTokenData(info *relaycommon.RelayInfo, data string, responseTextBuilder *strings.Builder, toolCount *int) error {
-	switch info.RelayMode {
+	relayMode := info.RelayMode
+	// Fork: a Claude or Gemini format request converted to chat completions has
+	// no chat relay mode, yet its upstream stream is chat chunks. Their text is
+	// what the output is counted from when the upstream reports no usage.
+	if info.RelayFormat == types.RelayFormatClaude || info.RelayFormat == types.RelayFormatGemini {
+		relayMode = relayconstant.RelayModeChatCompletions
+	}
+	switch relayMode {
 	case relayconstant.RelayModeChatCompletions:
 		var streamResponse dto.ChatCompletionsStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
