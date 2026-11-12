@@ -167,19 +167,19 @@ export function CustomChannelPriceHistory() {
           <table className='w-full text-sm'>
             <thead className='bg-muted/40 text-muted-foreground sticky top-0 text-xs'>
               <tr>
-                <th className='px-3 py-2 text-left font-medium'>
+                <th className='px-3 py-2 text-left font-medium whitespace-nowrap'>
                   {t('In effect from')}
                 </th>
-                <th className='px-3 py-2 text-left font-medium'>
+                <th className='px-3 py-2 text-left font-medium whitespace-nowrap'>
                   {t('Channel')}
                 </th>
-                <th className='px-3 py-2 text-left font-medium'>
+                <th className='px-3 py-2 text-left font-medium whitespace-nowrap'>
                   {t('Model')}
                 </th>
-                <th className='px-3 py-2 text-left font-medium'>
+                <th className='px-3 py-2 text-left font-medium whitespace-nowrap'>
                   {t('Price')}
                 </th>
-                <th className='px-3 py-2 text-left font-medium'>
+                <th className='px-3 py-2 text-left font-medium whitespace-nowrap'>
                   {t('Previous price')}
                 </th>
               </tr>
