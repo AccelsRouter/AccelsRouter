@@ -38,9 +38,9 @@ var customVendorPageSources = []customVendorPageSource{
 		return parseCustomGooglePricing(page, time.Now())
 	}},
 	// OpenAI's own pricing pages refuse automated clients, so its list prices
-	// are read from OpenRouter's public model list, which carries each
-	// provider's own price.
-	{Name: "openai", URL: "https://openrouter.ai/api/v1/models", Parse: parseCustomOpenAIPricing},
+	// are read from OpenRouter: the public model list, then OpenAI's own
+	// endpoint of each model (fetchCustomOpenAIVendorPrices).
+	{Name: "openai", URL: customOpenRouterModelsURL, Parse: parseCustomOpenAIPricing},
 	// ByteDance: the international site in USD, the mainland China site in CNY.
 	{Name: "byteplus", URL: "https://docs.byteplus.com/docs/en/modelark/model-pricing.md", Parse: parseCustomBytePlusVendorPricing},
 	{Name: "volcengine", URL: "https://docs.volcengine.com/docs/zh/ark/model-pricing.md", Parse: parseCustomVolcenginePricing},

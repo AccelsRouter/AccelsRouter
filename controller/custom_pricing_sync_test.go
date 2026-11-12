@@ -434,6 +434,38 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	assert.Equal(t, 15.0, *openai["gpt-6.1-sol"].Tiers[1].Output)
 	assert.Contains(t, openai, "gpt-5.4")
 
+	// The model list carries one price per model, which can be another host's
+	// regional endpoint. Each model takes the price of OpenAI's own standard
+	// endpoint: not flex or priority processing, not a regional reseller. A
+	// model OpenAI does not serve keeps the listed price, and one whose
+	// endpoints cannot be read is left out.
+	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		regional := `{"prompt":"0.0000044","completion":"0.000022","input_cache_read":"0.00000044","overrides":[{"min_prompt_tokens":272000,"prompt":"0.0000088","completion":"0.000033"}]}`
+		standard := `{"prompt":"0.000004","completion":"0.00002","input_cache_read":"0.0000004","overrides":[{"min_prompt_tokens":272000,"prompt":"0.000008","completion":"0.00003"}]}`
+		switch r.URL.Path {
+		case "/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"openai/gpt-x","pricing":` + regional + `},{"id":"openai/gpt-azure-only","pricing":` + regional + `},{"id":"openai/gpt-unread","pricing":` + regional + `}]}`))
+		case "/models/openai/gpt-x/endpoints":
+			_, _ = w.Write([]byte(`{"data":{"endpoints":[
+{"provider_name":"Azure","service_tier":null,"pricing":` + regional + `},
+{"provider_name":"OpenAI","service_tier":"flex","pricing":{"prompt":"0.000002","completion":"0.00001"}},
+{"provider_name":"OpenAI","service_tier":null,"pricing":` + standard + `},
+{"provider_name":"OpenAI","service_tier":"priority","pricing":{"prompt":"0.000008","completion":"0.00004"}}]}}`))
+		case "/models/openai/gpt-azure-only/endpoints":
+			_, _ = w.Write([]byte(`{"data":{"endpoints":[{"provider_name":"Azure","service_tier":null,"pricing":` + standard + `}]}}`))
+		default:
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		}
+	}))
+	defer router.Close()
+	own, err := fetchCustomOpenAIVendorPrices(t.Context(), router.Client(), router.URL+"/models")
+	require.NoError(t, err)
+	assert.Len(t, own, 2)
+	assertCustomVendorPrice(t, own, "gpt-x", 4, 20)
+	require.Len(t, own["gpt-x"].Tiers, 2)
+	assert.Equal(t, 8.0, own["gpt-x"].Tiers[1].Input)
+	assertCustomVendorPrice(t, own, "gpt-azure-only", 4.4, 22)
+
 	_, err = parseCustomZaiPricing([]byte("nothing here"))
 	assert.Error(t, err)
 }
