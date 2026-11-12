@@ -701,4 +701,5 @@ func RegisterCustomVendorPriceRoutes(group *gin.RouterGroup) {
 	group.GET("/vendor_price_changes", ListCustomVendorPriceChanges)
 	group.POST("/vendor_price_changes/:id/accept", AcceptCustomVendorPriceChange)
 	group.POST("/vendor_price_changes/:id/reject", RejectCustomVendorPriceChange)
+	group.GET("/channel_prices", ListCustomChannelPrices)
 }

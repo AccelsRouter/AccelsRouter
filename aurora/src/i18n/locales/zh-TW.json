@@ -1,5 +1,14 @@
 {
   "translation": {
+    "No longer listed": "已不在價目表中",
+    "Channel price history": "渠道進價歷史",
+    "What each channel charged for the models it serves, recorded daily from the channel's own price list. A row is added only when a price changes; the upstream bill comparison prices our usage with these.": "各渠道對其在售模型的收費，每天從渠道自己的價目表記錄。價格變了才新增一列；上游帳單核對用這些價格為我方用量定價。",
+    "All channels": "全部渠道",
+    "No channel price has been recorded yet.": "還沒有記錄到渠道進價。",
+    "In effect from": "生效時間",
+    "Previous price": "變動前價格",
+    "Showing the newest {{shown}} of {{total}} records.": "顯示最新的 {{shown}} 筆，共 {{total}} 筆記錄。",
+    "Failed to load the channel price history": "載入渠道進價歷史失敗",
     "No upstream price is recorded for this channel and model.": "這個渠道和模型沒有記錄上游價格。",
     "Usage older than the first recorded price was priced at that price.": "早於首次記錄價格的用量，按首次記錄的價格計算。",
     "{{n}} requests fell in hours without a recorded price.": "{{n}} 次請求所在的小時沒有記錄到價格。",

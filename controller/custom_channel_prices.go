@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -138,4 +139,20 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 		changed += added
 	}
 	return changed, nil
+}
+
+// ListCustomChannelPrices returns the recorded prices of the channels, newest
+// first: every price a channel charged for a model and when it took effect.
+// channel_id narrows it to one channel.
+func ListCustomChannelPrices(c *gin.Context) {
+	query := model.DB.Model(&model.CustomChannelPrice{}).Order("effective_at desc, id desc").Limit(2000)
+	if id, err := strconv.Atoi(c.Query("channel_id")); err == nil && id > 0 {
+		query = query.Where("channel_id = ?", id)
+	}
+	var rows []model.CustomChannelPrice
+	if err := query.Find(&rows).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": rows})
 }

@@ -1,5 +1,14 @@
 {
   "translation": {
+    "No longer listed": "N'est plus listé",
+    "Channel price history": "Historique des prix des canaux",
+    "What each channel charged for the models it serves, recorded daily from the channel's own price list. A row is added only when a price changes; the upstream bill comparison prices our usage with these.": "Ce que chaque canal a facturé pour les modèles qu'il sert, enregistré chaque jour depuis la liste de prix du canal. Une ligne n'est ajoutée que lorsqu'un prix change ; la comparaison des factures amont valorise notre usage avec ces prix.",
+    "All channels": "Tous les canaux",
+    "No channel price has been recorded yet.": "Aucun prix de canal n'a encore été enregistré.",
+    "In effect from": "En vigueur depuis",
+    "Previous price": "Prix précédent",
+    "Showing the newest {{shown}} of {{total}} records.": "Affichage des {{shown}} enregistrements les plus récents sur {{total}}.",
+    "Failed to load the channel price history": "Échec du chargement de l'historique des prix des canaux",
     "No upstream price is recorded for this channel and model.": "Aucun prix amont n'est enregistré pour ce canal et ce modèle.",
     "Usage older than the first recorded price was priced at that price.": "L'usage antérieur au premier prix enregistré a été valorisé à ce prix.",
     "{{n}} requests fell in hours without a recorded price.": "{{n}} requêtes tombent dans des heures sans prix enregistré.",

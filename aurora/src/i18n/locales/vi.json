@@ -1,5 +1,14 @@
 {
   "translation": {
+    "No longer listed": "Không còn được niêm yết",
+    "Channel price history": "Lịch sử giá nhập của kênh",
+    "What each channel charged for the models it serves, recorded daily from the channel's own price list. A row is added only when a price changes; the upstream bill comparison prices our usage with these.": "Mức giá mỗi kênh tính cho các mô hình mà kênh phục vụ, được ghi nhận hằng ngày từ bảng giá của chính kênh. Chỉ thêm một dòng khi giá thay đổi; việc đối chiếu hóa đơn thượng nguồn tính lượng dùng của chúng tôi theo các giá này.",
+    "All channels": "Tất cả kênh",
+    "No channel price has been recorded yet.": "Chưa ghi nhận giá kênh nào.",
+    "In effect from": "Có hiệu lực từ",
+    "Previous price": "Giá trước đó",
+    "Showing the newest {{shown}} of {{total}} records.": "Hiển thị {{shown}} bản ghi mới nhất trong tổng số {{total}}.",
+    "Failed to load the channel price history": "Không tải được lịch sử giá nhập của kênh",
     "No upstream price is recorded for this channel and model.": "Chưa ghi nhận giá thượng nguồn cho kênh và mô hình này.",
     "Usage older than the first recorded price was priced at that price.": "Lượng dùng trước mức giá đầu tiên được ghi nhận được tính theo mức giá đó.",
     "{{n}} requests fell in hours without a recorded price.": "{{n}} yêu cầu rơi vào các giờ chưa ghi nhận giá.",

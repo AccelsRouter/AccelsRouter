@@ -1,5 +1,14 @@
 {
   "translation": {
+    "No longer listed": "Больше не указан",
+    "Channel price history": "История цен каналов",
+    "What each channel charged for the models it serves, recorded daily from the channel's own price list. A row is added only when a price changes; the upstream bill comparison prices our usage with these.": "Сколько каждый канал брал за обслуживаемые модели; записывается ежедневно из прайс-листа самого канала. Строка добавляется только при изменении цены; сверка счетов поставщика оценивает наше использование по этим ценам.",
+    "All channels": "Все каналы",
+    "No channel price has been recorded yet.": "Цены каналов ещё не записаны.",
+    "In effect from": "Действует с",
+    "Previous price": "Предыдущая цена",
+    "Showing the newest {{shown}} of {{total}} records.": "Показаны последние {{shown}} из {{total}} записей.",
+    "Failed to load the channel price history": "Не удалось загрузить историю цен каналов",
     "No upstream price is recorded for this channel and model.": "Для этого канала и модели цена поставщика не записана.",
     "Usage older than the first recorded price was priced at that price.": "Использование до первой записанной цены рассчитано по этой цене.",
     "{{n}} requests fell in hours without a recorded price.": "{{n}} запросов пришлись на часы без записанной цены.",

@@ -1,5 +1,14 @@
 {
   "translation": {
+    "No longer listed": "No longer listed",
+    "Channel price history": "Channel price history",
+    "What each channel charged for the models it serves, recorded daily from the channel's own price list. A row is added only when a price changes; the upstream bill comparison prices our usage with these.": "What each channel charged for the models it serves, recorded daily from the channel's own price list. A row is added only when a price changes; the upstream bill comparison prices our usage with these.",
+    "All channels": "All channels",
+    "No channel price has been recorded yet.": "No channel price has been recorded yet.",
+    "In effect from": "In effect from",
+    "Previous price": "Previous price",
+    "Showing the newest {{shown}} of {{total}} records.": "Showing the newest {{shown}} of {{total}} records.",
+    "Failed to load the channel price history": "Failed to load the channel price history",
     "No upstream price is recorded for this channel and model.": "No upstream price is recorded for this channel and model.",
     "Usage older than the first recorded price was priced at that price.": "Usage older than the first recorded price was priced at that price.",
     "{{n}} requests fell in hours without a recorded price.": "{{n}} requests fell in hours without a recorded price.",

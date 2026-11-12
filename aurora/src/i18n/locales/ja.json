@@ -1,5 +1,14 @@
 {
   "translation": {
+    "No longer listed": "価格表から削除されました",
+    "Channel price history": "チャネル仕入価格の履歴",
+    "What each channel charged for the models it serves, recorded daily from the channel's own price list. A row is added only when a price changes; the upstream bill comparison prices our usage with these.": "各チャネルが提供中のモデルに課した価格を、チャネル自身の価格表から毎日記録します。価格が変わったときだけ行を追加し、上流請求の照合ではこの価格で当方の使用量を計算します。",
+    "All channels": "すべてのチャネル",
+    "No channel price has been recorded yet.": "チャネルの仕入価格はまだ記録されていません。",
+    "In effect from": "適用開始",
+    "Previous price": "変更前の価格",
+    "Showing the newest {{shown}} of {{total}} records.": "全 {{total}} 件のうち最新の {{shown}} 件を表示しています。",
+    "Failed to load the channel price history": "チャネル仕入価格の履歴を読み込めませんでした",
     "No upstream price is recorded for this channel and model.": "このチャネルとモデルには上流価格が記録されていません。",
     "Usage older than the first recorded price was priced at that price.": "最初に記録された価格より前の使用量は、その価格で計算しました。",
     "{{n}} requests fell in hours without a recorded price.": "{{n}} 件のリクエストは価格が記録されていない時間帯のものです。",

@@ -60,6 +60,19 @@ func TestCustomChannelPricesAreRecordedAndPriceTheBill(t *testing.T) {
 	assert.Equal(t, []string{"up-chat", "wan3.0-video", "up-chat"}, []string{rows[0].ModelName, rows[1].ModelName, rows[2].ModelName})
 	assert.Contains(t, rows[1].Pricing, `seconds\") * 0.2`, "the plugin's price, not the model's")
 
+	// The history is served newest first, for one channel or all of them.
+	var listed struct {
+		Success bool
+		Data    []model.CustomChannelPrice
+	}
+	modelManagementRequest(t, ListCustomChannelPrices, http.MethodGet, "/api/ratio_sync/channel_prices?channel_id=7", nil, &listed)
+	require.True(t, listed.Success)
+	require.Len(t, listed.Data, 3)
+	assert.Equal(t, "up-chat", listed.Data[0].ModelName)
+	assert.Equal(t, day+7*3600, listed.Data[0].EffectiveAt)
+	modelManagementRequest(t, ListCustomChannelPrices, http.MethodGet, "/api/ratio_sync/channel_prices?channel_id=8", nil, &listed)
+	assert.Empty(t, listed.Data)
+
 	require.NoError(t, db.Create(&[]model.QuotaData{
 		// Before any price was recorded: priced at the first record, and said so.
 		{ModelName: "our-chat", CreatedAt: day + 4*3600, ChannelID: 7, Count: 1, Quota: 500, TokenUsed: 1000000, PromptTokens: 1000000},

@@ -380,6 +380,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/personal_byok/channels":                              accessTokenAnyRule,
 	"GET /api/personal_byok/fallback":                              accessTokenAnyRule,
 	"GET /api/personal_byok/keys":                                  accessTokenAnyRule,
+	"GET /api/ratio_sync/channel_prices":                           accessTokenScopeRule("option:read"),
 	"GET /api/ratio_sync/vendor_price_catalog":                     accessTokenScopeRule("option:read"),
 	"GET /api/ratio_sync/vendor_price_changes":                     accessTokenScopeRule("option:read"),
 	"GET /api/ratio_sync/vendor_prices":                            accessTokenScopeRule("option:read"),
