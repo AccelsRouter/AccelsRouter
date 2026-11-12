@@ -1,12 +1,17 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -260,37 +265,105 @@ func parseCustomOpenAIPricing(body []byte) (map[string]customVendorPrice, error)
 		if err := common.Unmarshal(item.Pricing, &pricing); err != nil {
 			continue
 		}
-		other := false
-		for _, value := range []string{pricing.Audio, pricing.AudioOutput, pricing.Image, pricing.ImageOutput, pricing.Request} {
-			if amount := customOpenRouterPerMillion(value); amount != nil && *amount > 0 {
-				other = true
+		if price, ok := pricing.vendorPrice(); ok {
+			prices[name] = price
+		}
+	}
+	return customPageResult(prices)
+}
+
+// vendorPrice is an OpenRouter price as a token list price with its
+// long-prompt tiers. A price with audio, image or per-request amounts, or with
+// overrides that do not rise, yields nothing.
+func (p customOpenRouterPricing) vendorPrice() (customVendorPrice, bool) {
+	for _, value := range []string{p.Audio, p.AudioOutput, p.Image, p.ImageOutput, p.Request} {
+		if amount := customOpenRouterPerMillion(value); amount != nil && *amount > 0 {
+			return customVendorPrice{}, false
+		}
+	}
+	base, ok := p.tier()
+	if !ok {
+		return customVendorPrice{}, false
+	}
+	tiers := []customVendorTier{base}
+	overrides := slices.Clone(p.Overrides)
+	sort.Slice(overrides, func(i, j int) bool { return overrides[i].MinPromptTokens < overrides[j].MinPromptTokens })
+	for _, override := range overrides {
+		tier, valid := override.tier()
+		if !valid || override.MinPromptTokens <= tiers[len(tiers)-1].Upper {
+			return customVendorPrice{}, false
+		}
+		tiers[len(tiers)-1].Upper = override.MinPromptTokens
+		tiers = append(tiers, tier)
+	}
+	price := customVendorPrice{Provider: customVendorOpenAIProvider, Input: base.Input, Output: base.Output, CacheRead: base.CacheRead}
+	if len(tiers) > 1 || base.CacheWrite != nil {
+		price.Tiers = tiers
+	}
+	return price, true
+}
+
+// customOpenRouterModelsURL is OpenRouter's public model list; a model's
+// endpoints are listed under it at /<id>/endpoints.
+const customOpenRouterModelsURL = "https://openrouter.ai/api/v1/models"
+
+// fetchCustomOpenAIVendorPrices reads OpenAI's list prices from OpenRouter:
+// the models of its model list, each at the price of OpenAI's own standard
+// endpoint. The list carries one price per model, and that can be another
+// host's regional endpoint, a tenth dearer. A model OpenAI itself does not
+// serve there keeps the listed price; one whose endpoints cannot be read is
+// left out, so the price stored for it stays.
+func fetchCustomOpenAIVendorPrices(ctx context.Context, client *http.Client, modelsURL string) (map[string]customVendorPrice, error) {
+	body, err := fetchCustomVendorBody(ctx, client, modelsURL)
+	if err != nil {
+		return nil, err
+	}
+	prices, err := parseCustomOpenAIPricing(body)
+	if err != nil {
+		return nil, err
+	}
+	names := slices.Sorted(maps.Keys(prices))
+	own := make([]*customVendorPrice, len(names))
+	unread := make([]bool, len(names))
+	slots := make(chan struct{}, 6)
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Go(func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			var reply struct {
+				Data struct {
+					Endpoints []struct {
+						ProviderName string                  `json:"provider_name"`
+						ServiceTier  *string                 `json:"service_tier"`
+						Pricing      customOpenRouterPricing `json:"pricing"`
+					} `json:"endpoints"`
+				} `json:"data"`
 			}
-		}
-		base, ok := pricing.tier()
-		if other || !ok {
-			continue
-		}
-		tiers := []customVendorTier{base}
-		sort.Slice(pricing.Overrides, func(i, j int) bool {
-			return pricing.Overrides[i].MinPromptTokens < pricing.Overrides[j].MinPromptTokens
+			body, err := fetchCustomVendorBody(ctx, client, modelsURL+"/openai/"+name+"/endpoints")
+			if err != nil || common.Unmarshal(body, &reply) != nil {
+				unread[i] = true
+				return
+			}
+			for _, endpoint := range reply.Data.Endpoints {
+				// Flex and priority processing are service tiers at other prices.
+				if endpoint.ProviderName != "OpenAI" || (endpoint.ServiceTier != nil && *endpoint.ServiceTier != "") {
+					continue
+				}
+				if price, ok := endpoint.Pricing.vendorPrice(); ok {
+					own[i] = &price
+				}
+			}
 		})
-		for _, override := range pricing.Overrides {
-			tier, valid := override.tier()
-			if !valid || override.MinPromptTokens <= tiers[len(tiers)-1].Upper {
-				ok = false
-				break
-			}
-			tiers[len(tiers)-1].Upper = override.MinPromptTokens
-			tiers = append(tiers, tier)
+	}
+	wg.Wait()
+	for i, name := range names {
+		switch {
+		case unread[i]:
+			delete(prices, name)
+		case own[i] != nil:
+			prices[name] = *own[i]
 		}
-		if !ok {
-			continue
-		}
-		price := customVendorPrice{Provider: customVendorOpenAIProvider, Input: base.Input, Output: base.Output, CacheRead: base.CacheRead}
-		if len(tiers) > 1 || base.CacheWrite != nil {
-			price.Tiers = tiers
-		}
-		prices[name] = price
 	}
 	return customPageResult(prices)
 }

@@ -61,6 +61,8 @@ func fetchCustomVendorSources(ctx context.Context) []customVendorSourceResult {
 			switch result.Name {
 			case "alibaba":
 				result.Prices, result.Note, result.Err = fetchCustomAlibabaVendorPrices(ctx, client)
+			case "openai":
+				result.Prices, result.Err = fetchCustomOpenAIVendorPrices(ctx, client, customOpenRouterModelsURL)
 			default:
 				for _, source := range customVendorPageSources {
 					if source.Name != result.Name {
