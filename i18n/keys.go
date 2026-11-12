@@ -172,4 +172,9 @@ const (
 	MsgLarkVendorPriceFieldFailed = "lark.vendor_price_field_failed"
 	MsgLarkVendorPriceMore        = "lark.vendor_price_more"
 	MsgLarkVendorPriceNote        = "lark.vendor_price_note"
+	MsgLarkVendorPriceTitleBelow  = "lark.vendor_price_title_below"
+	MsgLarkVendorPriceFieldBelow  = "lark.vendor_price_field_below"
+	MsgLarkVendorPriceBelow       = "lark.vendor_price_below"
+	MsgLarkVendorPriceFieldRate   = "lark.vendor_price_field_rate"
+	MsgLarkVendorPriceRateDrift   = "lark.vendor_price_rate_drift"
 )

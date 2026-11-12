@@ -256,7 +256,9 @@ func applyCustomVendorSource(source string, fetched map[string]customVendorPrice
 			continue
 		}
 		next.ID = old.ID
-		if !initial && !force && customVendorIsLargeJump(old, next) {
+		// A provider label that changed carries a new conversion rate: the
+		// administrator moved the price, not the vendor.
+		if !initial && !force && old.Provider == next.Provider && customVendorIsLargeJump(old, next) {
 			if err := recordCustomVendorPendingChange(name, source, old, next, now); err != nil {
 				return err
 			}
@@ -297,16 +299,44 @@ func recordCustomVendorPendingChange(name, source string, old, next model.Custom
 	}).Error
 }
 
-var customVendorRefreshMu sync.Mutex
+var (
+	customVendorRefreshMu sync.Mutex
+	// What the last alert said needs attention, so the daily refresh raises it
+	// once and again only when it changes. Guarded by customVendorRefreshMu.
+	customVendorAttentionSent string
+)
 
-// RefreshCustomVendorPrices reads all sources, stores them and reports changes.
+// RefreshCustomVendorPrices reads all sources, stores them and reports
+// changes, the models that charge less than their vendor lists and a CNY rate
+// the market has moved away from.
 func RefreshCustomVendorPrices(ctx context.Context, force bool) error {
 	customVendorRefreshMu.Lock()
 	defer customVendorRefreshMu.Unlock()
 	dropRetiredCustomVendorSources()
-	summary, err := storeCustomVendorResults(fetchCustomVendorSources(ctx), force, common.GetTimestamp())
+	results := fetchCustomVendorSources(ctx)
+	var drift *larknotify.VendorRateDrift
+	common.OptionMapRWMutex.RLock()
+	rate, _ := strconv.ParseFloat(strings.TrimSpace(common.OptionMap[customVendorCNYPerUSDOption]), 64)
+	common.OptionMapRWMutex.RUnlock()
+	if rate > 0 {
+		if market, date, err := fetchCustomMarketCNYPerUSD(ctx, &http.Client{Timeout: 30 * time.Second}); err != nil {
+			common.SysLog(common.LogText("market CNY rate not read: %s", err.Error()))
+		} else {
+			drift = customVendorRateDrift(rate, market, date)
+			for i := range results {
+				if results[i].Name == "volcengine" {
+					results[i].Note = fmt.Sprintf("market rate %s CNY per USD on %s", strconv.FormatFloat(market, 'f', -1, 64), date)
+				}
+			}
+		}
+	}
+	summary, err := storeCustomVendorResults(results, force, common.GetTimestamp())
 	if err != nil {
 		return err
+	}
+	summary.Report.Rate = drift
+	if summary.Report.Below, err = customVendorUnderpriced(); err != nil {
+		common.SysLog(common.LogText("prices below vendor list prices not checked: %s", err.Error()))
 	}
 	notifyCustomVendorChanges(ctx, summary)
 	return nil
@@ -359,11 +389,25 @@ func dropRetiredCustomVendorSources() {
 }
 
 // notifyCustomVendorChanges sends the refresh's findings to the Lark alert
-// group: prices that changed or are held for review, newly listed models, and
-// sources that stopped being readable. Models the gateway serves are marked.
+// group: prices that changed or are held for review, newly listed models,
+// sources that stopped being readable, models charging less than their vendor
+// lists and a drifted CNY rate. Models the gateway serves are marked. Without
+// a change or a failed source, the card is sent only when what needs attention
+// differs from what the last card said.
 func notifyCustomVendorChanges(ctx context.Context, summary *customVendorChangeSummary) {
 	report := summary.Report
-	if len(report.Changes)+len(report.Failures) == 0 {
+	attention := make([]string, 0, len(report.Below)+1)
+	for _, below := range report.Below {
+		attention = append(attention, below.Model)
+	}
+	slices.Sort(attention)
+	if report.Rate != nil {
+		attention = append(attention, "CNY rate")
+	}
+	state := strings.Join(attention, "\n")
+	raised := state != "" && state != customVendorAttentionSent
+	customVendorAttentionSent = state
+	if len(report.Changes)+len(report.Failures) == 0 && !raised {
 		return
 	}
 	served := model.GetEnabledModels()

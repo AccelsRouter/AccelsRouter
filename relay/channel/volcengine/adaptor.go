@@ -43,7 +43,13 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 		return adaptor.ConvertClaudeRequest(c, info, req)
 	}
 	adaptor := openai.Adaptor{}
-	return adaptor.ConvertClaudeRequest(c, info, req)
+	converted, err := adaptor.ConvertClaudeRequest(c, info, req)
+	// Fork: the OpenAI adaptor drops stream_options for other channel types,
+	// and Ark reports the usage of a stream only when asked to.
+	if request, ok := converted.(*dto.GeneralOpenAIRequest); ok && info.SupportStreamOptions && info.IsStream {
+		request.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
+	}
+	return converted, err
 }
 
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {

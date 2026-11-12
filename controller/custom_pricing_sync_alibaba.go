@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +26,12 @@ const (
 	customAlibabaTokensPerK     = 1024
 	customAlibabaPerMillionUnit = "per 1m tokens"
 	customAlibabaPerImageUnit   = "per image"
+	customAlibabaPerSecondUnit  = "per second"
 )
+
+// customAlibabaVideoItem is the price of one second of video: video_ratio for
+// every resolution, or video_ratio_720p and its like for one resolution.
+var customAlibabaVideoItem = regexp.MustCompile(`^video_ratio(?:_(\d+p))?$`)
 
 var customAlibabaRangeBound = regexp.MustCompile(`^(?:\d+(?:\.\d+)?[kK]?\s*<\s*)?(?:Input|Token|Tokens)\s*<=\s*(\d+(?:\.\d+)?)\s*([kKmM]?)$`)
 
@@ -148,7 +155,7 @@ func convertCustomAlibabaModelsToBillingExpr(models []customAlibabaModel) map[st
 
 // customAlibabaBillingExpr renders the price list of one model, or says why it
 // cannot: token prices by input length, DeepSeek token prices by time of day,
-// or one price per image.
+// one price per image, or prices per second of video.
 func customAlibabaBillingExpr(name string, item customAlibabaModel) (expr string, reason string) {
 	tiers := item.Prices
 	if len(tiers) == 0 {
@@ -163,6 +170,12 @@ func customAlibabaBillingExpr(name string, item customAlibabaModel) (expr string
 		prices, reason := customAlibabaTierPrices(tier.Prices)
 		if reason != "" {
 			return "", reason
+		}
+		if len(prices.video) > 0 {
+			if len(tiers) != 1 {
+				return "", "per-second video prices with input-length tiers"
+			}
+			return customAlibabaVideoExpr(name, prices.video)
 		}
 		if prices.image != "" {
 			if len(tiers) != 1 {
@@ -199,24 +212,72 @@ func customAlibabaBillingExpr(name string, item customAlibabaModel) (expr string
 	return expr, ""
 }
 
+// customAlibabaVideoExpr bills a video model on the seconds and resolution its
+// task plugin reports: one tier per resolution the plugin declares for the
+// model, each at Model Studio's price per second. A model no plugin meters, a
+// declared resolution without a price, or a plugin fact Model Studio does not
+// price by leaves the model without a price.
+func customAlibabaVideoExpr(name string, video map[string]string) (expr string, reason string) {
+	schema, served := customTaskUsageSchema(name)
+	if _, metered := schema["seconds"]; !served || !metered {
+		return "", "priced per second of video, and no task plugin on this gateway meters the seconds of this model"
+	}
+	for _, key := range slices.Sorted(maps.Keys(schema)) {
+		if field := schema[key]; key != "resolution" && (len(field.Enum) > 0 || field.Type == "boolean") {
+			return "", fmt.Sprintf("the plugin also prices this model by %s, and Model Studio lists per-second prices by resolution only", key)
+		}
+	}
+	tiers := []customVendorTier{{}}
+	if _, flat := video[""]; !flat {
+		resolutions := schema["resolution"].Enum
+		if len(resolutions) == 0 {
+			return "", "priced per second by resolution, and the plugin serving this model reports no resolution"
+		}
+		tiers = make([]customVendorTier, len(resolutions))
+		for i, resolution := range resolutions {
+			if _, listed := video[resolution]; !listed {
+				return "", fmt.Sprintf("Model Studio lists no per-second price for %s", resolution)
+			}
+			tiers[i].When = map[string]string{"resolution": resolution}
+		}
+	} else if len(video) != 1 {
+		return "", "one per-second price for every resolution mixed with prices by resolution"
+	}
+	for i := range tiers {
+		price, err := strconv.ParseFloat(video[tiers[i].When["resolution"]], 64)
+		if err != nil {
+			return "", "unreadable per-second price"
+		}
+		tiers[i].Usage = map[string]float64{"seconds": price}
+	}
+	expr, ok := customVendorUsageExpr(schema, tiers)
+	if !ok {
+		return "", "unreadable per-second price"
+	}
+	return expr, customBillingExprError(name, expr)
+}
+
 // customAlibabaTierPrice is one tier of a Model Studio price list: the token
-// price body (the peak one when offPeak is set), or the price of one image.
+// price body (the peak one when offPeak is set), the price of one image, or
+// the price of one second of video by resolution ("" when it has one price).
 type customAlibabaTierPrice struct {
 	tokens  string
 	offPeak string
 	image   string
+	video   map[string]string
 }
 
 // customAlibabaTierPrices reads one tier from real-time prices per 1M tokens:
 // input, output, optional implicit cache hit (explicit cache read is the
 // fallback) and optional explicit cache creation, either at one standard price
 // or at a peak and an off-peak price, or exactly one image_number price per
-// image. Batch prices are ignored; any other item makes the whole model
-// unsupported, with the reason.
+// image, or video_ratio prices per second. Batch prices are ignored; any other
+// item makes the whole model unsupported, with the reason.
 func customAlibabaTierPrices(items []customAlibabaPriceItem) (customAlibabaTierPrice, string) {
 	type bandPrices struct{ input, output, cacheImplicit, cacheRead, cacheCreate string }
 	bands := map[string]*bandPrices{"standard": {}, "peak": {}, "off_peak": {}}
 	var image string
+	video := make(map[string]string)
 	for _, item := range items {
 		var band string
 		switch strings.NewReplacer("_", "", "-", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(item.TimeBand))) {
@@ -236,7 +297,10 @@ func customAlibabaTierPrices(items []customAlibabaPriceItem) (customAlibabaTierP
 		unit := strings.ToLower(strings.TrimSpace(item.PriceUnit))
 		perM := unit == customAlibabaPerMillionUnit || unit == "per million tokens"
 		prices := bands[band]
+		videoItem := customAlibabaVideoItem.FindStringSubmatch(item.Type)
 		switch {
+		case videoItem != nil && unit == customAlibabaPerSecondUnit && band == "standard" && video[strings.ToUpper(videoItem[1])] == "":
+			video[strings.ToUpper(videoItem[1])] = price
 		case item.Type == "input_token" && perM && prices.input == "":
 			prices.input = price
 		case item.Type == "output_token" && perM && prices.output == "":
@@ -274,6 +338,10 @@ func customAlibabaTierPrices(items []customAlibabaPriceItem) (customAlibabaTierP
 	standard, peak, offPeak := body(bands["standard"]), body(bands["peak"]), body(bands["off_peak"])
 	timed := *bands["peak"] != bandPrices{} || *bands["off_peak"] != bandPrices{}
 	switch {
+	case len(video) > 0 && (image != "" || *bands["standard"] != bandPrices{} || timed):
+		return customAlibabaTierPrice{}, "per-second video price mixed with other prices"
+	case len(video) > 0:
+		return customAlibabaTierPrice{video: video}, ""
 	case image != "" && *bands["standard"] == bandPrices{} && !timed:
 		return customAlibabaTierPrice{image: image}, ""
 	case image != "":

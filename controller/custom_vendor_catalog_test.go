@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/pkg/larknotify"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
@@ -73,6 +74,15 @@ func TestApplyCustomVendorSourceHoldsLargeJumpsForReview(t *testing.T) {
 	var row model.CustomVendorPrice
 	require.NoError(t, db.Where("model_name = ?", "kimi-k3").First(&row).Error)
 	assert.InDelta(t, 3, row.InputPrice, 1e-9, "the stored price is untouched")
+
+	// A price converted at a new rate carries a new provider label and is the
+	// administrator's own move, however far it goes.
+	require.NoError(t, applyCustomVendorSource("volcengine", map[string]customVendorPrice{"doubao-x": {Provider: "Ark (CNY at 1 per USD)", Input: 70, Output: row.OutputPrice}}, false, 200, summary))
+	require.NoError(t, applyCustomVendorSource("volcengine", map[string]customVendorPrice{"doubao-x": {Provider: "Ark (CNY at 6.67 per USD)", Input: 10.494753, Output: row.OutputPrice}}, false, 250, summary))
+	var converted model.CustomVendorPrice
+	require.NoError(t, db.Where("model_name = ?", "doubao-x").First(&converted).Error)
+	assert.InDelta(t, 10.494753, converted.InputPrice, 1e-9)
+	assert.Equal(t, 1, summary.Pending)
 
 	// The same suspicious value does not queue a second review.
 	require.NoError(t, applyCustomVendorSource("kimi", jump, false, 300, summary))
@@ -235,6 +245,27 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 	modes := data[billing_setting.BillingModeField].(map[string]string)
 	assert.Len(t, modes, 9)
 	assert.Equal(t, billing_setting.BillingModeTieredExpr, modes["grok-4.7"])
+
+	// The daily check names the served models that charge less than listed:
+	// an expression short on input, and a ratio price short on output.
+	require.NoError(t, db.AutoMigrate(&model.Option{}))
+	for key, value := range map[string]string{
+		"billing_setting.billing_mode": `{"kimi-k3":"tiered_expr","grok-4.7":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"kimi-k3":"tier(\"base\", p * 2 + c * 12)","grok-4.7":"len <= 200000 ? tier(\"a\", p * 2 + c * 6 + cr * 0.5) : tier(\"b\", p * 4 + c * 12 + cr * 1)"}`,
+		"ModelRatio":                   `{"glm-5.1":0.5}`,
+		"CompletionRatio":              `{"glm-5.1":3}`,
+	} {
+		require.NoError(t, db.Create(&model.Option{Key: key, Value: value}).Error)
+	}
+	for _, served := range []string{"kimi-k3", "grok-4.7", "glm-5.1"} {
+		require.NoError(t, db.Create(&model.Ability{Group: "default", Model: served, ChannelId: 1, Enabled: true}).Error)
+	}
+	below, err := customVendorUnderpriced()
+	require.NoError(t, err)
+	assert.Equal(t, []larknotify.VendorPriceBelow{
+		{Model: "glm-5.1", What: "output", Charged: 3, Listed: 4.4},
+		{Model: "kimi-k3", What: "input", Charged: 2, Listed: 2.5},
+	}, below)
 }
 
 // One refresh reports to Lark what a person has to know: a model the vendor
@@ -280,4 +311,50 @@ func TestCustomVendorRefreshReportsNewModelsAndBrokenSources(t *testing.T) {
 	}, false, 300)
 	require.NoError(t, err)
 	assert.Empty(t, third.Report.Failures, "a source that stays broken is not reported again")
+}
+
+func TestCustomChargesBelowVendorListPrice(t *testing.T) {
+	seedance, served := customTaskUsageSchema("doubao-seedance-2-5-260628")
+	require.True(t, served)
+	listed := `u("resolution") == "480p" && u("video_input") == "none" ? tier("480p·none", u("tokens") * 10.7 / 1000000) : ` +
+		`u("resolution") == "480p" && u("video_input") == "video" ? tier("480p·video", u("tokens") * 6.4 / 1000000) : ` +
+		`u("resolution") == "720p" && u("video_input") == "none" ? tier("720p·none", u("tokens") * 10.7 / 1000000) : ` +
+		`u("resolution") == "720p" && u("video_input") == "video" ? tier("720p·video", u("tokens") * 6.4 / 1000000) : ` +
+		`u("resolution") == "1080p" && u("video_input") == "none" ? tier("1080p·none", u("tokens") * 11.7 / 1000000) : tier("1080p·video", u("tokens") * 7 / 1000000)`
+	// The same prices written by hand, with the cheapest tier as the fallback.
+	byHand := `u("video_input") == "video" && u("resolution") == "1080p" ? tier("v2v_1080p", u("tokens") * 7 / 1000000) : ` +
+		`u("video_input") == "video" ? tier("v2v", u("tokens") * 6.4 / 1000000) : ` +
+		`u("resolution") == "1080p" ? tier("1080p", u("tokens") * 11.7 / 1000000) : tier("base", u("tokens") * 10.7 / 1000000)`
+	tieredQwen := `len <= 32000 ? tier("base", p * 0.03 + c * 0.13) : tier("tier_2", p * 0.1 + c * 0.4)`
+	cases := []struct {
+		name            string
+		current, vendor string
+		what            string
+		charged, listed float64
+	}{
+		{name: "the same task prices in another shape", current: byHand, vendor: listed},
+		{name: "one task tier short", current: strings.Replace(byHand, "* 7 /", "* 6.4 /", 1), vendor: listed, what: "1080p · video · tokens", charged: 6.4, listed: 7},
+		{name: "a rounded conversion", current: `tier("base", p * 10.494753 + c * 20)`, vendor: `tier("base", p * 10.4948 + c * 20)`},
+		{name: "cache writes charged as input", current: `tier("base", p * 2 + c * 6)`, vendor: `tier("base", p * 2 + c * 6 + cr * 0.4 + cc * 2.5)`, what: "cache write", charged: 2, listed: 2.5},
+		{name: "one price where the vendor has two", current: `tier("base", p * 0.03 + c * 0.13)`, vendor: tieredQwen, what: "input at 32001 input tokens", charged: 0.03, listed: 0.1},
+		{name: "a price per request against a token price", current: `tier("request", fixed(0.001))`, vendor: tieredQwen},
+		{name: "a token price against a task price", current: `tier("base", p * 1 + c * 1)`, vendor: listed},
+	}
+	for _, c := range cases {
+		schema := map[string]jsplugin.UsageFieldSchema(nil)
+		if strings.Contains(c.vendor, `u("`) {
+			schema = seedance
+		}
+		what, charged, vendor, below := customChargesBelow(c.current, c.vendor, schema)
+		assert.Equal(t, c.what != "", below, c.name)
+		assert.Equal(t, c.what, what, c.name)
+		assert.InDelta(t, c.charged, charged, 1e-9, c.name)
+		assert.InDelta(t, c.listed, vendor, 1e-9, c.name)
+	}
+
+	// The CNY rate is raised once the market buys 1% less CNY per USD than it.
+	assert.Nil(t, customVendorRateDrift(6.67, 6.6707, "2026-11-11"))
+	assert.Nil(t, customVendorRateDrift(6.67, 6.62, "2026-11-11"))
+	assert.Nil(t, customVendorRateDrift(0, 6.5, "2026-11-11"))
+	assert.Equal(t, &larknotify.VendorRateDrift{Set: 6.67, Market: 6.5, Date: "2026-11-11"}, customVendorRateDrift(6.67, 6.5, "2026-11-11"))
 }
