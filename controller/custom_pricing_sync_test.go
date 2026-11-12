@@ -155,6 +155,19 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 {"type":"output_token","price":"1","price_unit":"Per 1M tokens","time_band":"off_peak"}]}]},
 {"model":"wan2.7-image","provider":"wan","prices":[{"range_name":"Default","prices":[
 {"type":"image_number","price":"0.03","price_unit":"Per image","time_band":"standard"}]}]},
+{"model":"wan3.0-video","provider":"wan","prices":[{"range_name":"Default","prices":[
+{"type":"video_ratio_480p","price":"0.05","price_unit":"Per second","time_band":"standard"},
+{"type":"video_ratio_720p","price":"0.1","price_unit":"Per second","time_band":"standard"},
+{"type":"video_ratio_1080p","price":"0.2","price_unit":"Per second","time_band":"standard"}]}]},
+{"model":"wanx2.1-t2v-plus","provider":"wan","prices":[{"range_name":"Default","prices":[
+{"type":"video_ratio","price":"0.1","price_unit":"Per second","time_band":"standard"}]}]},
+{"model":"wan2.7-t2v","provider":"wan","prices":[{"range_name":"Default","prices":[
+{"type":"video_ratio_720p","price":"0.1","price_unit":"Per second","time_band":"standard"}]}]},
+{"model":"wan2.6-i2v-flash","provider":"wan","prices":[{"range_name":"Default","prices":[
+{"type":"video_ratio_720p","price":"0.05","price_unit":"Per second","time_band":"standard"},
+{"type":"video_ratio_1080p","price":"0.075","price_unit":"Per second","time_band":"standard"}]}]},
+{"model":"happyhorse-1.0-t2v","provider":"happyhorse","prices":[{"range_name":"Default","prices":[
+{"type":"video_ratio_720p","price":"0.14","price_unit":"Per second","time_band":"standard"}]}]},
 {"model":"free-input-only","prices":[{"range_name":"Default","prices":[
 {"type":"input_token","price":"0","price_unit":"Per 1M tokens","time_band":null}]}]}]}}`
 	var page customAlibabaModelsPage
@@ -169,10 +182,18 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 	// The alibaba task plugin serves this model, so its price reads the plugin's image_count fact.
 	assert.Equal(t, `tier("image", u("image_count") * 0.03)`, exprs["wan2.7-image"])
 	assert.Empty(t, customBillingExprError("wan2.7-image", exprs["wan2.7-image"]))
+	// A video model is billed per second at the price of each resolution its plugin declares.
+	video := `u("resolution") == "480P" ? tier("480P", u("seconds") * 0.05) : u("resolution") == "720P" ? tier("720P", u("seconds") * 0.1) : tier("1080P", u("seconds") * 0.2)`
+	assert.Equal(t, video, exprs["wan3.0-video"])
+	assert.Empty(t, customBillingExprError("wan3.0-video", video))
+	assert.Equal(t, `tier("base", u("seconds") * 0.1)`, exprs["wanx2.1-t2v-plus"])
 	assert.Equal(t, map[string]string{
-		"peaky":           "time-of-day prices without both a peak and an off-peak input and output price",
-		"qwen-timed":      "priced by time of day, and the peak hours are only known for DeepSeek models",
-		"free-input-only": "no input and output token price",
+		"peaky":              "time-of-day prices without both a peak and an off-peak input and output price",
+		"qwen-timed":         "priced by time of day, and the peak hours are only known for DeepSeek models",
+		"free-input-only":    "no input and output token price",
+		"wan2.7-t2v":         "Model Studio lists no per-second price for 1080P",
+		"wan2.6-i2v-flash":   "the plugin also prices this model by audio, and Model Studio lists per-second prices by resolution only",
+		"happyhorse-1.0-t2v": "priced per second of video, and no task plugin on this gateway meters the seconds of this model",
 	}, got[customPricingSkippedField])
 }
 
