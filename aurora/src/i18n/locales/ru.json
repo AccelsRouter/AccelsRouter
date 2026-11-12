@@ -1,5 +1,11 @@
 {
   "translation": {
+    "No upstream price is recorded for this channel and model.": "Для этого канала и модели цена поставщика не записана.",
+    "Usage older than the first recorded price was priced at that price.": "Использование до первой записанной цены рассчитано по этой цене.",
+    "{{n}} requests fell in hours without a recorded price.": "{{n}} запросов пришлись на часы без записанной цены.",
+    "margin": "маржа",
+    "Expected cost": "Ожидаемая стоимость",
+    "Expected cost is our usage at the prices recorded daily for this channel, with our margin over it; it is a range where a price depends on what the hourly usage does not keep, and red where the bill falls outside it.": "Ожидаемая стоимость — наше использование по ценам, ежедневно записываемым для этого канала, с нашей маржой под ней; это диапазон, когда цена зависит от того, чего нет в почасовом учёте, и она выделена красным, когда счёт выходит за его пределы.",
     "The current price charges nothing": "Текущая цена ничего не взимает",
     "Vendor prices listed in CNY": "Цены поставщиков в CNY",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark указывает цены в CNY. Введите, сколько CNY стоит один USD, для пересчёта; без этого цены не читаются. После изменения обновите цены поставщиков ниже.",

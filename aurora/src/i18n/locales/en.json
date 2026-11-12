@@ -1,5 +1,11 @@
 {
   "translation": {
+    "No upstream price is recorded for this channel and model.": "No upstream price is recorded for this channel and model.",
+    "Usage older than the first recorded price was priced at that price.": "Usage older than the first recorded price was priced at that price.",
+    "{{n}} requests fell in hours without a recorded price.": "{{n}} requests fell in hours without a recorded price.",
+    "margin": "margin",
+    "Expected cost": "Expected cost",
+    "Expected cost is our usage at the prices recorded daily for this channel, with our margin over it; it is a range where a price depends on what the hourly usage does not keep, and red where the bill falls outside it.": "Expected cost is our usage at the prices recorded daily for this channel, with our margin over it; it is a range where a price depends on what the hourly usage does not keep, and red where the bill falls outside it.",
     "The current price charges nothing": "The current price charges nothing",
     "Vendor prices listed in CNY": "Vendor prices listed in CNY",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.",

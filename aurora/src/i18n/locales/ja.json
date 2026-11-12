@@ -1,5 +1,11 @@
 {
   "translation": {
+    "No upstream price is recorded for this channel and model.": "このチャネルとモデルには上流価格が記録されていません。",
+    "Usage older than the first recorded price was priced at that price.": "最初に記録された価格より前の使用量は、その価格で計算しました。",
+    "{{n}} requests fell in hours without a recorded price.": "{{n}} 件のリクエストは価格が記録されていない時間帯のものです。",
+    "margin": "粗利",
+    "Expected cost": "想定コスト",
+    "Expected cost is our usage at the prices recorded daily for this channel, with our margin over it; it is a range where a price depends on what the hourly usage does not keep, and red where the bill falls outside it.": "想定コストは、このチャネルについて毎日記録した価格で当方の使用量を計算した金額で、その下は粗利です。価格が時間単位の使用量に残らない情報に依存する場合は範囲で表示し、請求がその範囲を外れると赤で表示します。",
     "The current price charges nothing": "現在の価格では課金されません",
     "Vendor prices listed in CNY": "人民元建ての公式価格",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark の価格は人民元建てです。換算のため 1 米ドルが何人民元かを入力してください。未入力の場合これらの価格は読み込まれません。変更後は下の公式価格を更新してください。",

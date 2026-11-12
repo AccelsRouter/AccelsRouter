@@ -1,5 +1,11 @@
 {
   "translation": {
+    "No upstream price is recorded for this channel and model.": "这个渠道和模型没有记录上游价格。",
+    "Usage older than the first recorded price was priced at that price.": "早于首次记录价格的用量，按首次记录的价格计算。",
+    "{{n}} requests fell in hours without a recorded price.": "{{n}} 次请求所在的小时没有记录到价格。",
+    "margin": "毛利",
+    "Expected cost": "应付成本",
+    "Expected cost is our usage at the prices recorded daily for this channel, with our margin over it; it is a range where a price depends on what the hourly usage does not keep, and red where the bill falls outside it.": "应付成本是我方用量按该渠道每日记录的进价算出的金额，下方是相对它的毛利；价格取决于小时用量里没有保留的信息时显示为区间，账单落在区间之外时标红。",
     "The current price charges nothing": "当前价格的收费为 0",
     "Vendor prices listed in CNY": "以人民币标价的厂商价格",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "火山方舟以人民币标价。填写 1 美元可兑换多少人民币用于换算；未填写时不读取这些价格。修改后请在下方刷新厂商价格。",

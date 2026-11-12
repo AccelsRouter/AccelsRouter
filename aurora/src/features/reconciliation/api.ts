@@ -108,10 +108,27 @@ export type UpstreamBillSide = {
   rows: number
 }
 
+// What the channel's recorded prices make of our usage, in USD. lowest and
+// highest differ where a price depends on what the hourly usage does not
+// keep (each call's input length, a video's resolution).
+export type UpstreamBillExpected = {
+  lowest: number
+  highest: number
+  // Usage older than the first recorded price was priced at that record.
+  later_price: boolean
+  // Our requests in hours no recorded price covers.
+  unpriced_requests: number
+  // The recorded prices applied, oldest first; pricing is the price sync's
+  // fields as JSON.
+  prices?: Array<{ id: number; effective_at: number; pricing: string }>
+}
+
 export type UpstreamBillRow = {
   model: string
   ours: UpstreamBillSide
   bill: UpstreamBillSide
+  // Absent when the channel has no recorded price for the model.
+  expected?: UpstreamBillExpected
 }
 
 export type UpstreamBillReport = {
@@ -142,6 +159,7 @@ export type UpstreamBillReport = {
   rows: UpstreamBillRow[]
   ours: UpstreamBillSide
   bill: UpstreamBillSide
+  expected?: UpstreamBillExpected
 }
 
 type ApiResp<T> = { success: boolean; message?: string; data?: T }

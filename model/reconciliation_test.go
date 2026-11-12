@@ -86,7 +86,7 @@ func TestGetReconciliationReceivedAndDayBuckets(t *testing.T) {
 // name: our rows pass through the channel's model mapping, and the bill's
 // zone is detected from the hour buckets its requests line up with.
 func TestUpstreamBillParseAndCompare(t *testing.T) {
-	require.NoError(t, DB.AutoMigrate(&QuotaData{}, &Channel{}))
+	require.NoError(t, DB.AutoMigrate(&QuotaData{}, &Channel{}, &CustomChannelPrice{}))
 	clear := func() {
 		DB.Exec("DELETE FROM quota_data")
 		DB.Exec("DELETE FROM channels WHERE id IN (9, 10)")

@@ -405,6 +405,7 @@ func migrateDB() error {
 		&CustomVendorPrice{},
 		&CustomVendorPriceChange{},
 		&CustomVendorPriceSource{},
+		&CustomChannelPrice{},
 	)
 	if err != nil {
 		return err
