@@ -1,5 +1,11 @@
 {
   "translation": {
+    "No upstream price is recorded for this channel and model.": "Chưa ghi nhận giá thượng nguồn cho kênh và mô hình này.",
+    "Usage older than the first recorded price was priced at that price.": "Lượng dùng trước mức giá đầu tiên được ghi nhận được tính theo mức giá đó.",
+    "{{n}} requests fell in hours without a recorded price.": "{{n}} yêu cầu rơi vào các giờ chưa ghi nhận giá.",
+    "margin": "biên lợi nhuận",
+    "Expected cost": "Chi phí dự kiến",
+    "Expected cost is our usage at the prices recorded daily for this channel, with our margin over it; it is a range where a price depends on what the hourly usage does not keep, and red where the bill falls outside it.": "Chi phí dự kiến là lượng dùng của chúng tôi tính theo giá được ghi nhận hằng ngày cho kênh này, bên dưới là biên lợi nhuận; đó là một khoảng khi giá phụ thuộc vào thông tin mà lượng dùng theo giờ không lưu, và hiển thị màu đỏ khi hóa đơn nằm ngoài khoảng đó.",
     "The current price charges nothing": "Giá hiện tại không tính phí",
     "Vendor prices listed in CNY": "Giá nhà cung cấp niêm yết bằng CNY",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark niêm yết giá bằng CNY. Nhập số CNY đổi được từ 1 USD để quy đổi; nếu để trống các giá này sẽ không được đọc. Hãy làm mới giá nhà cung cấp bên dưới sau khi thay đổi.",

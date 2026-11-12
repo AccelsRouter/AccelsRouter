@@ -43,6 +43,7 @@ import {
   compareAlibabaBill,
   compareBytePlusBill,
   compareUpstreamBill,
+  type UpstreamBillExpected,
   type UpstreamBillReport,
   type UpstreamBillRow,
   type UpstreamBillScope,
@@ -131,6 +132,76 @@ function BillCost(props: {
   )
 }
 
+/* What the upstream should have billed: our usage at the prices recorded for
+the channel, as one amount or a range, with our margin over it underneath.
+Red when the bill falls outside it by more than a cent and one percent. */
+function ExpectedCost(props: {
+  expected: UpstreamBillExpected | undefined
+  revenue: number
+  // The bill's cost in USD, or null when no exchange rate was entered.
+  billed: number | null
+  money: (n: number) => string
+}) {
+  const { t } = useTranslation()
+  const expected = props.expected
+  if (!expected)
+    return (
+      <span
+        className='text-muted-foreground'
+        title={t('No upstream price is recorded for this channel and model.')}
+      >
+        -
+      </span>
+    )
+  const exact = Math.abs(expected.highest - expected.lowest) < 0.00005
+  const amount = exact
+    ? `$${props.money(expected.lowest)}`
+    : `$${props.money(expected.lowest)} ~ $${props.money(expected.highest)}`
+  const off =
+    props.billed !== null &&
+    (props.billed < expected.lowest * 0.99 - 0.01 ||
+      props.billed > expected.highest * 1.01 + 0.01)
+  const margin = props.revenue - expected.highest
+  const notes = (expected.prices ?? []).map((price) => {
+    let values: Record<string, unknown> = {}
+    try {
+      values = JSON.parse(price.pricing)
+    } catch {
+      values = {}
+    }
+    const text =
+      typeof values.billing_expr === 'string'
+        ? values.billing_expr
+        : Object.entries(values)
+            .map(([key, value]) => `${key} ${String(value)}`)
+            .join(', ')
+    return `${dayjs(price.effective_at * 1000).format('YYYY-MM-DD HH:mm')}: ${text}`
+  })
+  if (expected.later_price)
+    notes.push(
+      t('Usage older than the first recorded price was priced at that price.')
+    )
+  if (expected.unpriced_requests > 0)
+    notes.push(
+      t('{{n}} requests fell in hours without a recorded price.', {
+        n: formatNumber(expected.unpriced_requests),
+      })
+    )
+  return (
+    <span
+      className='inline-flex flex-col items-end tabular-nums'
+      title={notes.join('\n')}
+    >
+      <span className={off ? 'text-destructive' : ''}>{amount}</span>
+      <span
+        className={`text-[11px] ${margin < -0.00005 ? 'text-destructive' : 'text-muted-foreground'}`}
+      >
+        {t('margin')} {props.money(margin)}
+      </span>
+    </span>
+  )
+}
+
 function isTokenRow(r: UpstreamBillRow): boolean {
   return (
     (r.ours.usage_unit === '' || r.ours.usage_unit === 'token') &&
@@ -174,6 +245,9 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
             </th>
             <th className='px-3 py-2 text-right font-medium'>
               {t('Ours')} (USD)
+            </th>
+            <th className='px-3 py-2 text-right font-medium'>
+              {t('Expected cost')} (USD)
             </th>
             <th className='px-3 py-2 text-right font-medium'>
               {t('Bill')}
@@ -284,6 +358,14 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                 <td className='px-3 py-2 text-right tabular-nums'>
                   {usd(r.ours.quota)}
                 </td>
+                <td className='px-3 py-2 text-right'>
+                  <ExpectedCost
+                    expected={r.expected}
+                    revenue={usdFromQuota(r.ours.quota)}
+                    billed={rate > 0 ? r.bill.cost / rate : null}
+                    money={money}
+                  />
+                </td>
                 <td className='px-3 py-2 text-right tabular-nums'>
                   <BillCost
                     cost={r.bill.cost}
@@ -333,6 +415,14 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
             <td className='px-3 py-2 text-right tabular-nums'>
               {usd(report.ours.quota)}
             </td>
+            <td className='px-3 py-2 text-right'>
+              <ExpectedCost
+                expected={report.expected}
+                revenue={usdFromQuota(report.ours.quota)}
+                billed={rate > 0 ? report.bill.cost / rate : null}
+                money={money}
+              />
+            </td>
             <td className='px-3 py-2 text-right tabular-nums'>
               <BillCost
                 cost={report.bill.cost}
@@ -374,6 +464,8 @@ function downloadComparison(report: UpstreamBillReport, rate: number) {
       'Our cache read tokens',
       'Bill cache read tokens',
       'Ours (USD)',
+      'Expected cost low (USD)',
+      'Expected cost high (USD)',
       'Bill cost',
       ...(rate > 0 ? ['Bill (USD)'] : []),
       ...(report.bill_payable_known ? ['Bill payable'] : []),
@@ -392,6 +484,8 @@ function downloadComparison(report: UpstreamBillReport, rate: number) {
         hasSplit(r.ours) ? r.ours.cache_read_tokens : '',
         r.bill.cache_read_tokens,
         usdFromQuota(r.ours.quota).toFixed(6),
+        r.expected ? r.expected.lowest.toFixed(6) : '',
+        r.expected ? r.expected.highest.toFixed(6) : '',
         r.bill.cost.toFixed(6),
         ...(rate > 0 ? [(r.bill.cost / rate).toFixed(6)] : []),
         ...(report.bill_payable_known ? [r.bill.payable.toFixed(6)] : []),
@@ -669,6 +763,9 @@ export function UpstreamBillDialog(props: {
           <p className='text-muted-foreground text-xs'>
             {t(
               "Each cell shows our figure above the bill's; red where they differ. Task models compare requests and cost only."
+            )}{' '}
+            {t(
+              'Expected cost is our usage at the prices recorded daily for this channel, with our margin over it; it is a range where a price depends on what the hourly usage does not keep, and red where the bill falls outside it.'
             )}
             {!hasSplit(report.ours) &&
               ' ' +

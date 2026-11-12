@@ -419,7 +419,8 @@ func notifyCustomVendorChanges(ctx context.Context, summary *customVendorChangeS
 	}
 }
 
-// StartCustomVendorPriceRefresh refreshes the catalog daily on the master node.
+// StartCustomVendorPriceRefresh refreshes the catalog and records what the
+// channels charge, daily on the master node.
 func StartCustomVendorPriceRefresh() {
 	if !common.IsMasterNode {
 		return
@@ -429,6 +430,12 @@ func StartCustomVendorPriceRefresh() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		if err := RefreshCustomVendorPrices(ctx, false); err != nil {
 			common.SysLog(common.LogText("vendor price refresh failed: %s", err.Error()))
+		}
+		// After the catalog: a channel pointed at a vendor's own API is recorded at its list price.
+		if changed, err := recordCustomChannelPrices(ctx); err != nil {
+			common.SysLog(common.LogText("channel price record failed: %s", err.Error()))
+		} else if changed > 0 {
+			common.SysLog(common.LogText("channel price record: %d prices changed", changed))
 		}
 		cancel()
 		time.Sleep(customVendorRefreshEvery)

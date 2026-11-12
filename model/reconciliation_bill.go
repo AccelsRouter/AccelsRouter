@@ -233,12 +233,30 @@ type UpstreamBillSide struct {
 	Rows int64 `json:"rows"`
 }
 
+// UpstreamBillExpected is what the channel's recorded prices make of our
+// usage, in USD: the cost the upstream should have billed. Lowest and Highest
+// differ where a price depends on something the hourly usage does not keep
+// (the input length of each call, a video's resolution).
+type UpstreamBillExpected struct {
+	Lowest  float64 `json:"lowest"`
+	Highest float64 `json:"highest"`
+	// LaterPrice is set when usage older than the first recorded price was
+	// priced at that first record.
+	LaterPrice bool `json:"later_price"`
+	// UnpricedRequests counts our requests in hours no recorded price covers.
+	UnpricedRequests int64 `json:"unpriced_requests"`
+	// Prices are the recorded prices that were applied, oldest first.
+	Prices []CustomChannelPrice `json:"prices,omitempty"`
+}
+
 // UpstreamBillRow is one model as the bill names it, with our rows mapped
-// through the channel's model mapping to that name.
+// through the channel's model mapping to that name. Expected is nil when no
+// recorded price of the channel covers any of our usage of the model.
 type UpstreamBillRow struct {
-	Model string           `json:"model"`
-	Ours  UpstreamBillSide `json:"ours"`
-	Bill  UpstreamBillSide `json:"bill"`
+	Model    string                `json:"model"`
+	Ours     UpstreamBillSide      `json:"ours"`
+	Bill     UpstreamBillSide      `json:"bill"`
+	Expected *UpstreamBillExpected `json:"expected,omitempty"`
 }
 
 type UpstreamBillReport struct {
@@ -276,6 +294,8 @@ type UpstreamBillReport struct {
 	Rows       []UpstreamBillRow `json:"rows"`
 	Ours       UpstreamBillSide  `json:"ours"`
 	Bill       UpstreamBillSide  `json:"bill"`
+	// Expected totals the rows' expected cost; nil when no row has one.
+	Expected *UpstreamBillExpected `json:"expected,omitempty"`
 }
 
 const (
@@ -344,10 +364,16 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 		entries[i].Model = modelKey(entries[i].Model)
 	}
 	ourHourly := map[upstreamBillHourKey]int64{}
+	// The names our records and the upstream know each scanned model by,
+	// before the bill's naming folds them.
+	served := make([]string, len(scans))
+	upstream := make([]string, len(scans))
 	for i := range scans {
+		served[i] = scans[i].ModelName
 		if mapped := mapping[scans[i].ModelName]; mapped != "" {
 			scans[i].ModelName = mapped
 		}
+		upstream[i] = scans[i].ModelName
 		scans[i].ModelName = modelKey(scans[i].ModelName)
 		ourHourly[upstreamBillHourKey{scans[i].CreatedAt, scans[i].ModelName}] += scans[i].Requests
 	}
@@ -402,10 +428,37 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 	shift := int64(report.OffsetMinutes) * 60
 	report.From = (minWall - shift) - (minWall-shift)%3600
 	report.To = (maxWall - shift) - (maxWall-shift)%3600
+	history, err := customChannelPriceHistory(channelId)
+	if err != nil {
+		return nil, err
+	}
+	expected := map[string]*UpstreamBillExpected{}
+	applied := map[string]map[int]CustomChannelPrice{}
 	var ours []reconUnitScan
-	for _, s := range scans {
+	for i, s := range scans {
 		if s.CreatedAt < report.From || s.CreatedAt > report.To {
 			continue
+		}
+		if expected[s.ModelName] == nil {
+			expected[s.ModelName], applied[s.ModelName] = &UpstreamBillExpected{}, map[int]CustomChannelPrice{}
+		}
+		price, later, found := customChannelPriceAt(history[upstream[i]], s.CreatedAt)
+		var pricing map[string]any
+		priced := found && common.UnmarshalJsonStr(price.Pricing, &pricing) == nil
+		var lowest, highest float64
+		if priced {
+			lowest, highest, priced = customChannelCost(pricing, customChannelUsage{
+				Requests: s.Requests, PromptTokens: s.PromptTokens, CompletionTokens: s.CompletionTokens,
+				CacheReadTokens: s.CacheReadTokens, UsageUnit: s.UsageUnit, UsageAmount: s.UsageAmount,
+			}, served[i])
+		}
+		if priced {
+			expected[s.ModelName].Lowest += lowest
+			expected[s.ModelName].Highest += highest
+			expected[s.ModelName].LaterPrice = expected[s.ModelName].LaterPrice || later
+			applied[s.ModelName][price.ID] = price
+		} else {
+			expected[s.ModelName].UnpricedRequests += s.Requests
 		}
 		ours = append(ours, reconUnitScan{Dim: s.ModelName, UsageUnit: s.UsageUnit, UsageAmount: s.UsageAmount, Quota: s.Quota, Requests: s.Requests, Tokens: s.Tokens, PromptTokens: s.PromptTokens, CompletionTokens: s.CompletionTokens, CacheReadTokens: s.CacheReadTokens})
 	}
@@ -438,6 +491,23 @@ func CompareUpstreamBill(channelId int, entries []UpstreamBillEntry, offsetMinut
 	}
 	report.Rows = make([]UpstreamBillRow, 0, len(rows))
 	for _, r := range rows {
+		if cost := expected[r.Model]; cost != nil && len(applied[r.Model]) > 0 {
+			for _, price := range applied[r.Model] {
+				cost.Prices = append(cost.Prices, price)
+			}
+			sort.Slice(cost.Prices, func(i, j int) bool {
+				a, b := cost.Prices[i], cost.Prices[j]
+				return a.EffectiveAt < b.EffectiveAt || (a.EffectiveAt == b.EffectiveAt && a.ID < b.ID)
+			})
+			r.Expected = cost
+			if report.Expected == nil {
+				report.Expected = &UpstreamBillExpected{}
+			}
+			report.Expected.Lowest += cost.Lowest
+			report.Expected.Highest += cost.Highest
+			report.Expected.LaterPrice = report.Expected.LaterPrice || cost.LaterPrice
+			report.Expected.UnpricedRequests += cost.UnpricedRequests
+		}
 		report.Rows = append(report.Rows, *r)
 		report.Ours.Requests += r.Ours.Requests
 		report.Ours.Tokens += r.Ours.Tokens

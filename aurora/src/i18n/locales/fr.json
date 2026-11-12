@@ -1,5 +1,11 @@
 {
   "translation": {
+    "No upstream price is recorded for this channel and model.": "Aucun prix amont n'est enregistré pour ce canal et ce modèle.",
+    "Usage older than the first recorded price was priced at that price.": "L'usage antérieur au premier prix enregistré a été valorisé à ce prix.",
+    "{{n}} requests fell in hours without a recorded price.": "{{n}} requêtes tombent dans des heures sans prix enregistré.",
+    "margin": "marge",
+    "Expected cost": "Coût attendu",
+    "Expected cost is our usage at the prices recorded daily for this channel, with our margin over it; it is a range where a price depends on what the hourly usage does not keep, and red where the bill falls outside it.": "Le coût attendu est notre usage aux prix enregistrés chaque jour pour ce canal, avec notre marge au-dessus ; c'est une fourchette lorsqu'un prix dépend de ce que l'usage horaire ne conserve pas, et il est en rouge lorsque la facture en sort.",
     "The current price charges nothing": "Le prix actuel ne facture rien",
     "Vendor prices listed in CNY": "Prix fournisseurs affichés en CNY",
     "Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.": "Volcengine Ark affiche ses prix en CNY. Indiquez combien de CNY vaut un USD pour les convertir ; sans cela ces prix ne sont pas lus. Actualisez les prix fournisseurs ci-dessous après modification.",

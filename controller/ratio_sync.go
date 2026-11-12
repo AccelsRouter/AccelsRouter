@@ -472,6 +472,11 @@ func FetchUpstreamRatios(c *gin.Context) {
 				AudioCompletionRatio *float64 `json:"audio_completion_ratio"`
 				BillingMode          string   `json:"billing_mode"`
 				BillingExpr          string   `json:"billing_expr"`
+				// Fork: the price each task plugin serving the model charges there.
+				BillingPluginVariants []struct {
+					BillingMode string `json:"billing_mode"`
+					BillingExpr string `json:"billing_expr"`
+				} `json:"billing_plugin_variants"`
 			}
 			if err := common.Unmarshal(body.Data, &pricingItems); err != nil {
 				logger.LogWarn(c.Request.Context(), common.LogText("unrecognized data format from %s: %s", chItem.Name, err.Error()))
@@ -493,6 +498,20 @@ func FetchUpstreamRatios(c *gin.Context) {
 			for _, item := range pricingItems {
 				if item.ModelName == "" {
 					continue
+				}
+				// Fork: a task plugin's own price overrides the model's price at
+				// the upstream. When the plugins serving the model there agree on
+				// one expression, that is what the upstream charges for it.
+				pluginExprs := make(map[string]struct{})
+				for _, variant := range item.BillingPluginVariants {
+					if variant.BillingMode == billing_setting.BillingModeTieredExpr && variant.BillingExpr != "" {
+						pluginExprs[variant.BillingExpr] = struct{}{}
+					}
+				}
+				if len(pluginExprs) == 1 {
+					for expr := range pluginExprs {
+						item.BillingMode, item.BillingExpr = billing_setting.BillingModeTieredExpr, expr
+					}
 				}
 				if item.BillingMode == billing_setting.BillingModeTieredExpr {
 					billingModeMap[item.ModelName] = billing_setting.BillingModeTieredExpr
@@ -607,6 +626,9 @@ func FetchUpstreamRatios(c *gin.Context) {
 				name string
 				data map[string]any
 			}{name: r.Name, data: effectivePricingSyncData(r.Data)})
+			if sink, ok := c.Get(customUpstreamPriceSinkKey); ok { // Fork: the daily channel price record reads each price list here
+				sink.(func(string, map[string]any))(r.Name, successfulChannels[len(successfulChannels)-1].data)
+			}
 			if reasons, ok := r.Data[customPricingSkippedField].(map[string]string); ok && len(reasons) > 0 { // Fork
 				skipped[r.Name] = reasons
 			}
