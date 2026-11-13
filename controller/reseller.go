@@ -847,6 +847,12 @@ func PurchaseMyResellerCredit(c *gin.Context) {
 		common.ApiErrorMsg(c, "单次购买额度超过上限")
 		return
 	}
+	// A balance under a refund request is frozen: it cannot be moved into the
+	// distributor wallet while the refund is being paid out.
+	if locked, lockErr := model.HasActiveRefundRequest(c.GetInt("id")); lockErr != nil || locked {
+		common.ApiErrorMsg(c, "您有进行中的退款申请，暂时不能购买分销商额度")
+		return
+	}
 	// Route-2: the reseller tops up its cost balance 1:1 (personal quota spent =
 	// credit bought). The wholesale discount is no longer realized at top-up — it
 	// is applied per call, per model, against the reseller wallet (see

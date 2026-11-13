@@ -2,12 +2,14 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -183,6 +185,11 @@ func listRankings(in rankingsInput) (*mcp.CallToolResult, rankingsOutput, error)
 	if limit > maxRankingLimit {
 		limit = maxRankingLimit
 	}
+	// The same switch as the rankings page: with the module off, the usage
+	// ranking is not published through this tool either.
+	if !middleware.HeaderNavModuleEnabled("rankings") {
+		return nil, rankingsOutput{}, errors.New("rankings is disabled")
+	}
 	since := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Unix()
 	type row struct {
 		ModelName string
@@ -193,6 +200,9 @@ func listRankings(in rankingsInput) (*mcp.CallToolResult, rankingsOutput, error)
 	err := model.DB.Table("quota_data").
 		Select("model_name, COALESCE(SUM(token_used), 0) AS token_used, COALESCE(SUM(count), 0) AS count").
 		Where("created_at >= ? AND model_name <> ''", since).
+		// BYOK traffic is left out: its model names and token counts are whatever
+		// its owner's upstream says.
+		Where("use_group NOT LIKE ? AND use_group NOT LIKE ?", "user-%", "org-%").
 		Group("model_name").
 		Order("token_used DESC").
 		Limit(limit).

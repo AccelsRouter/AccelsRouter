@@ -40,7 +40,7 @@ func TestOrgAuditLog(t *testing.T) {
 	orgB := mustCreateOrg(t, "other", OrgTypeEnterprise, 0)
 
 	RecordOrgAudit(orgA.Id, 1, "workspace.create", "workspace:1", "prod")
-	RecordOrgAudit(orgA.Id, 2, "credit.allocate", "org:9", "quota=100")
+	RecordOrgAudit(orgA.Id, 2, "credit.allocate", "org:999999", "quota=100")
 	RecordOrgAudit(orgB.Id, 3, "org.update", "org:2", "name=x")
 	RecordOrgAudit(0, 1, "ignored", "", "") // invalid org id → no row
 

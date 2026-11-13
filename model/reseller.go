@@ -385,11 +385,23 @@ func IsCustomerOrg(orgId int) bool {
 // ResellerOrgIdForCustomer returns the reseller org that owns a customer org,
 // or (0, false) when the org is not a reseller-provisioned customer.
 func ResellerOrgIdForCustomer(customerOrgId int) (int, bool) {
-	var link ResellerCustomerLink
-	if err := DB.Where("customer_org_id = ?", customerOrgId).First(&link).Error; err != nil {
-		return 0, false
+	resellerId, err := resellerOrgIdOfCustomer(customerOrgId)
+	return resellerId, err == nil && resellerId > 0
+}
+
+// resellerOrgIdOfCustomer is ResellerOrgIdForCustomer for the request path:
+// it tells "not a customer" (0, nil) from a lookup that failed. A request must
+// not go on when the lookup fails, or a customer's call would be billed to its
+// own wallet alone, past its reseller's wallet, suspension and model list.
+func resellerOrgIdOfCustomer(customerOrgId int) (int, error) {
+	var links []ResellerCustomerLink
+	if err := DB.Where("customer_org_id = ?", customerOrgId).Limit(1).Find(&links).Error; err != nil {
+		return 0, err
 	}
-	return link.ResellerOrgId, true
+	if len(links) == 0 {
+		return 0, nil
+	}
+	return links[0].ResellerOrgId, nil
 }
 
 // IsResellerCustomerUser reports whether a user belongs to a reseller-

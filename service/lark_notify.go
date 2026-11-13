@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/larknotify"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -93,6 +94,12 @@ func ReportUpstreamFailure(c *gin.Context, ch types.ChannelError, err *types.New
 	}
 	target := LarkAlertTarget()
 	if !target.Configured() {
+		return
+	}
+	// A BYOK channel is its owner's upstream, with a name, models and error
+	// texts the owner chooses: its failures are the owner's to see, not alerts
+	// for the operations group.
+	if model.IsByokGroup(common.GetContextKeyString(c, constant.ContextKeyUsingGroup)) {
 		return
 	}
 	// The caller hung up. That says nothing about the channel.

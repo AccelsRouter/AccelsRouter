@@ -377,3 +377,22 @@ func TestRechargeWonderGateCreditsOnceAndRejectsOverflow(t *testing.T) {
 	assert.Equal(t, 2*500000, getUserQuotaForPaymentGuardTest(t, user.Id))
 	assert.Equal(t, common.TopUpStatusPending, getTopUpStatusForPaymentGuardTest(t, huge.TradeNo))
 }
+
+// A refund request leaves pending once: a handler that read it while pending
+// cannot cancel it after another has approved it.
+func TestRefundRequestLeavesPendingOnce(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&RefundRequest{}))
+	require.NoError(t, DB.Exec("DELETE FROM refund_requests").Error)
+	request := &RefundRequest{UserId: 531, AmountUSD: 5, Method: "bank", Reason: "test", Status: RefundStatusPending}
+	require.NoError(t, DB.Create(request).Error)
+	stale := *request
+
+	require.NoError(t, request.Approve(1, "ok"))
+	assert.Equal(t, RefundStatusApproved, request.Status)
+	require.Error(t, stale.Cancel())
+	require.Error(t, stale.Reject(1, "no"))
+
+	var stored RefundRequest
+	require.NoError(t, DB.First(&stored, request.Id).Error)
+	assert.Equal(t, RefundStatusApproved, stored.Status)
+}

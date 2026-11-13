@@ -331,7 +331,10 @@ func reconcileWonderGateOrders() {
 				logger.LogInfo(ctx, fmt.Sprintf("WonderGate 对账补单成功 trade_no=%s", topUp.TradeNo))
 			}
 			UnlockOrder(topUp.TradeNo)
-		case service.WonderGateCodeTransactionDeclined, service.WonderGateCodeOrderClosed:
+		// Only a closed order is final. A declined attempt leaves the order
+		// open: the payer can retry on the same hosted page, and an order
+		// marked failed could no longer be credited when that retry succeeds.
+		case service.WonderGateCodeOrderClosed:
 			if uErr := model.UpdatePendingTopUpStatus(topUp.TradeNo, model.PaymentProviderWonderGate, common.TopUpStatusFailed); uErr != nil &&
 				!errors.Is(uErr, model.ErrTopUpNotFound) &&
 				!errors.Is(uErr, model.ErrTopUpStatusInvalid) {

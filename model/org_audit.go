@@ -34,8 +34,10 @@ func RecordOrgAudit(orgId, actorUserId int, action, target, detail string) {
 	if orgId <= 0 || action == "" {
 		return
 	}
+	// Cut on a character boundary: half a multi-byte character is not valid
+	// text, and PostgreSQL refuses the row.
 	if len(detail) > 512 {
-		detail = detail[:512]
+		detail = strings.ToValidUTF8(detail[:512], "")
 	}
 	row := &OrgAuditLog{
 		OrgId:       orgId,

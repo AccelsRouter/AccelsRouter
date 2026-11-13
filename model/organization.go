@@ -454,7 +454,11 @@ func GetOrgPayerInfo(userId int) (*OrgPayerInfo, error) {
 		}
 		// A reseller customer is also capped by its reseller's offerable models:
 		// carry the reseller's allow-list so the distributor enforces both.
-		if resellerId, ok := ResellerOrgIdForCustomer(row.OrgId); ok && resellerId > 0 {
+		resellerId, rErr := resellerOrgIdOfCustomer(row.OrgId)
+		if rErr != nil {
+			return nil, rErr
+		}
+		if resellerId > 0 {
 			info.ResellerOrgId = resellerId
 			if reseller, rErr := GetOrganizationById(resellerId); rErr == nil && reseller != nil {
 				info.ResellerAllowedModels = parseAllowedModels(reseller.AllowedModels)
@@ -705,7 +709,11 @@ func GetWorkspaceBillingInfo(tokenId int) (*WorkspaceBillingInfo, error) {
 	// Route-2: if this org is a reseller's customer, carry the reseller id and
 	// its per-model wholesale map so the hot path can debit the reseller wallet
 	// at wholesale alongside the customer wallet at retail.
-	if resellerId, ok := ResellerOrgIdForCustomer(ws.OrgId); ok && resellerId > 0 {
+	resellerId, rErr := resellerOrgIdOfCustomer(ws.OrgId)
+	if rErr != nil {
+		return nil, rErr
+	}
+	if resellerId > 0 {
 		info.ResellerOrgId = resellerId
 		if reseller, rErr := GetOrganizationById(resellerId); rErr == nil && reseller != nil {
 			info.WholesaleRatios = reseller.WholesaleRatios
