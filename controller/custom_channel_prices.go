@@ -47,7 +47,9 @@ func customChannelVendorSource(baseURL string) string {
 // at ByteDance's own API takes the vendor list price. A channel whose list
 // cannot be read keeps its recorded prices.
 func recordCustomChannelPrices(ctx context.Context) (int, error) {
-	channels, err := model.GetAllChannels(0, 0, true, false)
+	// Platform channels only: a BYOK channel's address is its owner's choice
+	// and its price list says nothing about what the platform pays.
+	channels, err := model.GetPlatformChannels()
 	if err != nil {
 		return 0, err
 	}

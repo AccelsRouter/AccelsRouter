@@ -222,8 +222,10 @@ func identityTarget(c *gin.Context) (*model.Channel, string, bool) {
 		common.ApiErrorMsg(c, "channel_id and model are required")
 		return nil, "", false
 	}
+	// A BYOK channel is its owner's: probing it would spend the owner's key
+	// and show its upstream's answers to an admin.
 	channel, err := model.GetChannelById(req.ChannelId, true)
-	if err != nil || channel == nil {
+	if err != nil || channel == nil || model.IsByokChannel(req.ChannelId) {
 		common.ApiErrorMsg(c, "channel not found")
 		return nil, "", false
 	}

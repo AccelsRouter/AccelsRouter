@@ -11,6 +11,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,21 @@ type UserChannel struct {
 // user can select it; the owner reaches it only through IsOwnByokGroup.
 func UserPrivateGroup(userId int) string {
 	return fmt.Sprintf("user-%d", userId)
+}
+
+// IsByokGroup reports whether a group name is a BYOK private group, a user's
+// (user-<id>) or an organization's (org-<id>).
+func IsByokGroup(group string) bool {
+	for _, prefix := range []string{"user-", "org-"} {
+		digits, found := strings.CutPrefix(group, prefix)
+		if !found || digits == "" || len(digits) > 9 {
+			continue
+		}
+		if strings.Trim(digits, "0123456789") == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // IsOwnByokGroup reports whether group is the caller's own BYOK private group.

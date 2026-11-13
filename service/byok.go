@@ -15,7 +15,19 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 )
+
+// ValidateByokBaseURL refuses a BYOK base URL that is, or resolves to, an
+// internal, loopback or metadata address. A BYOK address is chosen by an end
+// user, unlike an operator's channel, so the check applies whatever the
+// deployment's fetch-protection switch says and always resolves the host. It
+// runs when the channel is saved and again each time the channel is about to
+// serve a request, because the host can be re-pointed after it was saved.
+func ValidateByokBaseURL(baseURL string) error {
+	fetch := system_setting.GetFetchSetting()
+	return common.ValidateURLWithFetchSetting(baseURL, true, false, fetch.DomainFilterMode, fetch.IpFilterMode, fetch.DomainList, fetch.IpList, fetch.AllowedPorts, true)
+}
 
 // byokGroupRatioMu serializes the read-modify-write of the shared group-ratio
 // option so concurrent BYOK create/delete calls can't clobber each other.

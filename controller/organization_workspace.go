@@ -358,7 +358,7 @@ func CreateMyByokChannel(c *gin.Context) {
 		// A BYOK base URL is end-user controlled, unlike operator-managed provider
 		// channels. The relay dialer is intentionally not SSRF-protected, so block
 		// internal/metadata targets here at creation time.
-		if err := service.ValidateSSRFProtectedFetchURL(baseURL); err != nil {
+		if err := service.ValidateByokBaseURL(baseURL); err != nil {
 			common.ApiErrorMsg(c, "base_url 无效或指向被禁止的内网地址")
 			return
 		}

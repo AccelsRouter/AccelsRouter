@@ -183,6 +183,16 @@ func ExcludeByokChannels(query *gorm.DB) *gorm.DB {
 		Where("id NOT IN (?)", DB.Model(&OrgChannel{}).Select("channel_id"))
 }
 
+// GetPlatformChannels returns every channel the platform itself runs, keys
+// included, without the BYOK channels users and organizations own. The jobs
+// that probe, price and reconcile channels act on the platform's upstreams:
+// they must not spend a customer's key or fetch an address a customer chose.
+func GetPlatformChannels() ([]*Channel, error) {
+	var channels []*Channel
+	err := ExcludeByokChannels(DB.Order("id asc")).Find(&channels).Error
+	return channels, err
+}
+
 // EncryptExistingByokKeys encrypts at rest any BYOK channel key that is still
 // stored in plaintext (pre-encryption rows). Idempotent: already-encrypted keys
 // are skipped, so it is safe to run on every startup. Only BYOK channels (those

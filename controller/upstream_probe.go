@@ -97,7 +97,7 @@ func runUpstreamProbeSweep(ctx context.Context, only map[int]bool) bool {
 		common.SysError("upstream probe sweep: " + err.Error())
 		return true
 	}
-	channels, err := model.GetAllChannels(0, 0, true, false)
+	channels, err := model.GetPlatformChannels()
 	if err != nil {
 		common.SysError("upstream probe sweep: " + err.Error())
 		return true
@@ -242,7 +242,7 @@ func StartUpstreamProbeScheduler() {
 				}
 				// A channel is due on its own interval when it has one, else on the
 				// global one; paused channels are never due.
-				channels, err := model.GetAllChannels(0, 0, true, false)
+				channels, err := model.GetPlatformChannels()
 				if err != nil {
 					common.SysError("upstream probe scheduler: " + err.Error())
 					continue

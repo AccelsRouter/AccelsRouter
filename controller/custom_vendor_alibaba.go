@@ -18,10 +18,11 @@ const customVendorAlibabaProvider = "Alibaba Model Studio (intl)"
 // fetchCustomAlibabaVendorPrices reads Model Studio's price list with the key of an
 // enabled international Alibaba channel.
 func fetchCustomAlibabaVendorPrices(ctx context.Context, client *http.Client) (map[string]customVendorPrice, string, error) {
-	channels, err := model.GetAllChannels(0, 0, true, false)
+	channels, err := model.GetPlatformChannels()
 	if err != nil {
 		return nil, "", err
 	}
+	var lastErr error
 	for _, channel := range channels {
 		if channel == nil || channel.Status != common.ChannelStatusEnabled || !isCustomAlibabaIntlBaseURL(channel.GetBaseURL()) {
 			continue
@@ -30,12 +31,17 @@ func fetchCustomAlibabaVendorPrices(ctx context.Context, client *http.Client) (m
 		if apiErr != nil || strings.TrimSpace(key) == "" {
 			continue
 		}
+		// A channel whose key no longer reads the list does not stop the next.
 		models, err := fetchCustomAlibabaModels(ctx, client, channel.GetBaseURL(), strings.TrimSpace(key))
 		if err != nil {
-			return nil, "", err
+			lastErr = err
+			continue
 		}
 		prices := customAlibabaVendorPrices(models)
 		return prices, customAlibabaVendorNote(models, prices), nil
+	}
+	if lastErr != nil {
+		return nil, "", lastErr
 	}
 	return nil, "", errors.New("no enabled international Alibaba channel")
 }

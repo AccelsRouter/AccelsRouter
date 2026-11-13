@@ -307,7 +307,7 @@ func alibabaApiKeyIDs(ctx context.Context, client *http.Client, host, accessKey,
 		}
 	}
 	var ids []string
-	for _, key := range keys {
+	for position, key := range keys {
 		key = strings.TrimSpace(key)
 		found := ""
 		for _, l := range all {
@@ -317,11 +317,8 @@ func alibabaApiKeyIDs(ctx context.Context, client *http.Client, host, accessKey,
 			}
 		}
 		if found == "" {
-			shown := key
-			if len(shown) > 12 {
-				shown = shown[:8] + "..." + shown[len(shown)-4:]
-			}
-			return nil, fmt.Errorf("the key %s is not among the account's %d Model Studio API keys", shown, len(all))
+			// The key is named by its position: no part of it goes back.
+			return nil, fmt.Errorf("key #%d of the channel is not among the account's %d Model Studio API keys", position+1, len(all))
 		}
 		if !slices.Contains(ids, found) {
 			ids = append(ids, found)
@@ -472,6 +469,12 @@ func AdminCompareAlibabaBill(c *gin.Context) {
 	channel, err := model.GetChannelById(req.ChannelId, true)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	// Platform channels only: a customer's BYOK key is not the platform's to
+	// match against its cloud account.
+	if model.IsByokChannel(req.ChannelId) {
+		common.ApiErrorMsg(c, "The bill can only be compared with a platform channel")
 		return
 	}
 	region := alibabaCloudRegion(channel.GetBaseURL())
