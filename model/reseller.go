@@ -217,6 +217,9 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	if initialQuota <= 0 {
 		return nil, errors.New("初始划拨额度必须为正")
 	}
+	if err := common.ValidateWalletQuota(initialQuota); err != nil {
+		return nil, err
+	}
 	// Route-2: the initial allocation is a spending-cap grant to the customer, not
 	// a transfer funded from the reseller wallet (that wallet is the reseller's
 	// per-call cost balance), so no reseller-balance precheck is needed.

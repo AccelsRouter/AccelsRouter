@@ -715,6 +715,16 @@ func GetWorkspaceBillingInfo(tokenId int) (*WorkspaceBillingInfo, error) {
 	return info, nil
 }
 
+// GetTokenOrgId returns the organization whose workspace a key is bound to, 0
+// for a personal key.
+func GetTokenOrgId(tokenId int) (int, error) {
+	var binding WorkspaceToken
+	if err := DB.Where("token_id = ?", tokenId).Limit(1).Find(&binding).Error; err != nil {
+		return 0, err
+	}
+	return binding.OrgId, nil
+}
+
 func GetTokenWorkspaceId(tokenId int) (int, error) {
 	if tokenId == 0 || DB == nil {
 		return 0, nil
@@ -877,8 +887,14 @@ func GrantCustomerQuota(resellerOrgId, customerOrgId, quota, operatorId int, rem
 	if resellerOrgId == customerOrgId {
 		return errors.New("cannot allocate to the same organization")
 	}
+	if err := common.ValidateWalletQuota(quota); err != nil {
+		return err
+	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&Organization{}).Where("id = ?", customerOrgId).
+		// The balance after the grant stays within the wallet limit, so no
+		// sequence of grants can push the column out of range.
+		res := tx.Model(&Organization{}).
+			Where("id = ? AND wallet_quota <= ?", customerOrgId, common.MaxWalletQuota-quota).
 			Updates(map[string]interface{}{
 				"wallet_quota": gorm.Expr("wallet_quota + ?", quota),
 				"updated_time": common.GetTimestamp(),
@@ -887,7 +903,7 @@ func GrantCustomerQuota(resellerOrgId, customerOrgId, quota, operatorId int, rem
 			return res.Error
 		}
 		if res.RowsAffected != 1 {
-			return errors.New("customer organization not found")
+			return errors.New("customer organization not found, or the grant would exceed the wallet limit")
 		}
 		return insertLedger(tx, resellerOrgId, customerOrgId, quota, operatorId, LedgerTypeAllocate, "", remark)
 	})
@@ -1096,8 +1112,16 @@ func disablePersonalTokensIfResellerParty(orgId, userId int) {
 }
 
 func DetachOrgAccount(orgId, userId int) error {
+	var disabled []Token
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("org_id = ? AND user_id = ?", orgId, userId).Delete(&OrgAccount{}).Error; err != nil {
+			return err
+		}
+		// The keys the organization paid for stop with the membership: once
+		// unbound below they would otherwise keep working as the user's
+		// personal keys, in the hands of every admin who had read them.
+		var err error
+		if disabled, err = disableOrgTokens(tx, orgId, userId, 0); err != nil {
 			return err
 		}
 		// Clear the user's workspace bindings so a later re-attach to another
@@ -1118,8 +1142,84 @@ func DetachOrgAccount(orgId, userId int) error {
 	})
 	if err == nil {
 		InvalidateOrgPayerCache(userId)
+		invalidateDisabledOrgTokens(disabled)
 	}
 	return err
+}
+
+// disableOrgTokens disables, inside tx, the enabled keys bound to an
+// organization's workspaces: those of one user (userId > 0), those in one
+// workspace (workspaceId > 0), or all of them. A key issued for an
+// organization is paid by it and readable by its admins, so it must stop
+// working when the membership, the workspace or the admin role it was issued
+// under ends, instead of falling back to its owner's personal balance. The
+// caller passes the result to invalidateDisabledOrgTokens after the commit.
+func disableOrgTokens(tx *gorm.DB, orgId, userId, workspaceId int) ([]Token, error) {
+	bound := tx.Model(&WorkspaceToken{}).Select("token_id").Where("org_id = ?", orgId)
+	if workspaceId > 0 {
+		bound = bound.Where("workspace_id = ?", workspaceId)
+	}
+	query := tx.Where("status = ?", common.TokenStatusEnabled).Where("id IN (?)", bound)
+	if userId > 0 {
+		query = query.Where("user_id = ?", userId)
+	}
+	var tokens []Token
+	if err := query.Find(&tokens).Error; err != nil {
+		return nil, err
+	}
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+	ids := make([]int, 0, len(tokens))
+	for _, token := range tokens {
+		ids = append(ids, token.Id)
+	}
+	if err := tx.Model(&Token{}).Where("id IN ?", ids).Update("status", common.TokenStatusDisabled).Error; err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
+func invalidateDisabledOrgTokens(tokens []Token) {
+	if err := invalidateTokensCache(tokens); err != nil {
+		common.SysError("failed to invalidate disabled organization token cache: " + err.Error())
+	}
+}
+
+// DisableOrgTokensOfUser disables the keys a user holds in an organization,
+// for a membership or an admin role that is suspended or revoked while the
+// user's account stays. It returns how many keys were disabled.
+func DisableOrgTokensOfUser(orgId, userId int) (int, error) {
+	var disabled []Token
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		disabled, err = disableOrgTokens(tx, orgId, userId, 0)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	invalidateDisabledOrgTokens(disabled)
+	return len(disabled), nil
+}
+
+// HasActiveOrgTie reports whether a user still acts for an organization: an
+// active member account in it, or an active distributor admin link to it.
+func HasActiveOrgTie(orgId, userId int) (bool, error) {
+	var members int64
+	if err := DB.Model(&OrgAccount{}).
+		Where("org_id = ? AND user_id = ? AND status <> ?", orgId, userId, OrgStatusSuspended).
+		Count(&members).Error; err != nil {
+		return false, err
+	}
+	if members > 0 {
+		return true, nil
+	}
+	var admins int64
+	err := DB.Model(&ResellerAdmin{}).
+		Where("reseller_org_id = ? AND user_id = ? AND status <> ?", orgId, userId, OrgStatusSuspended).
+		Count(&admins).Error
+	return admins > 0, err
 }
 
 func UpdateOrgAccountFields(orgId, userId int, fields map[string]interface{}) error {
@@ -1232,10 +1332,18 @@ func UpdateWorkspaceFields(id int, fields map[string]interface{}) error {
 }
 
 func DeleteWorkspace(id int) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+	var disabled []Token
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		var bindings []WorkspaceToken
 		if err := tx.Where("workspace_id = ?", id).Find(&bindings).Error; err != nil {
 			return err
+		}
+		// The workspace's keys end with it (see disableOrgTokens).
+		if len(bindings) > 0 {
+			var err error
+			if disabled, err = disableOrgTokens(tx, bindings[0].OrgId, 0, id); err != nil {
+				return err
+			}
 		}
 		if err := tx.Where("workspace_id = ?", id).Delete(&WorkspaceToken{}).Error; err != nil {
 			return err
@@ -1245,6 +1353,10 @@ func DeleteWorkspace(id int) error {
 		}
 		return tx.Where("id = ?", id).Delete(&Workspace{}).Error
 	})
+	if err == nil {
+		invalidateDisabledOrgTokens(disabled)
+	}
+	return err
 }
 
 // BindTokenToWorkspace attaches a token; rebinding moves it (upsert-ish via

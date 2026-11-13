@@ -1,5 +1,6 @@
 {
   "translation": {
+    "No email could be sent, so the activation link was copied to your clipboard. Share it with the invitee; it is valid for 7 days.": "Aucun e-mail n'a pu être envoyé : le lien d'activation a été copié dans le presse-papiers. Transmettez-le à l'invité ; il est valable 7 jours.",
     "No longer assignable, removed when you save: {{models}}": "Ne peuvent plus être attribués, retirés à l'enregistrement : {{models}}",
     "Nothing is selected now, so saving opens every model in the catalog to this customer.": "Rien n'est sélectionné : l'enregistrement ouvre tous les modèles du catalogue à ce client.",
     "Saved the organization settings: {{changes}}": "Paramètres de l'organisation enregistrés : {{changes}}",

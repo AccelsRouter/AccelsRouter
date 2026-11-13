@@ -88,6 +88,13 @@ func SetResellerAdminStatus(resellerOrgId, userId int, status string) error {
 	// The admin link now feeds the payer record (own reseller keys route and
 	// bill as reseller traffic), so a status flip must reach the hot path.
 	InvalidateOrgPayerCache(userId)
+	// Suspension contains the admin: the distributor keys issued to it stop
+	// debiting the distributor wallet.
+	if status == OrgStatusSuspended {
+		if _, err := DisableOrgTokensOfUser(resellerOrgId, userId); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -105,6 +112,10 @@ func RemoveResellerAdmin(resellerOrgId, userId int) error {
 		return errors.New("该用户不是此分销商的管理员")
 	}
 	InvalidateOrgPayerCache(userId)
+	// A revoked admin's distributor keys stop with the role.
+	if _, err := DisableOrgTokensOfUser(resellerOrgId, userId); err != nil {
+		return err
+	}
 	return nil
 }
 

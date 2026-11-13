@@ -72,6 +72,19 @@ func (r *OrgUsageReport) ApplyRetailDiscounts(discounts map[string]float64) {
 	r.TotalRetailQuota = total
 }
 
+// DropResellerCost removes what the calls cost the organization's reseller
+// from a report, for the organization's own members: the cost over the
+// standard amount is the reseller's wholesale ratio, which is the reseller's
+// to know and not its customer's.
+func (r *OrgUsageReport) DropResellerCost() {
+	r.TotalCostQuota = 0
+	for _, buckets := range [][]OrgUsageBucket{r.ByWorkspace, r.ByModel, r.ByMember} {
+		for i := range buckets {
+			buckets[i].CostQuota = 0
+		}
+	}
+}
+
 // logUsageRow is one grouped row from LOG_DB.
 type logUsageRow struct {
 	TokenId          int

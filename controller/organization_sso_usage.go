@@ -157,6 +157,7 @@ func GetMyOrgUsage(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	report.DropResellerCost()
 	common.ApiSuccess(c, report)
 }
 
@@ -175,6 +176,7 @@ func ExportMyOrgUsage(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	report.DropResellerCost()
 	writeUsageCSV(c, org, report)
 }
 

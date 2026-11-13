@@ -155,6 +155,13 @@ func UpdateMyOrgAccount(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// A suspended member's organization keys stop debiting the wallet at once.
+	if req.Status != nil && *req.Status == model.OrgStatusSuspended {
+		if _, err := model.DisableOrgTokensOfUser(org.Id, userId); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "account.update", fmt.Sprintf("user:%d", userId), fmt.Sprintf("%v", fields))
 	common.ApiSuccess(c, nil)
 }
@@ -189,8 +196,8 @@ func DetachMyOrgAccount(c *gin.Context) {
 
 // LeaveMyOrganization — POST /api/organization/leave
 // A member or admin removes itself from its organization. The owner cannot
-// leave (platform admin removes or reassigns it). Keys the user created keep
-// existing under the user's own account; they just stop being paid by the org.
+// leave (platform admin removes or reassigns it). The keys the organization
+// paid for are disabled with the membership (see model.DetachOrgAccount).
 func LeaveMyOrganization(c *gin.Context) {
 	userId := c.GetInt("id")
 	acc, err := model.LeaveOrganization(userId)

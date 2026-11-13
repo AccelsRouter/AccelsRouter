@@ -250,13 +250,19 @@ type inviteRequest struct {
 
 // CreateMyOrgInvitation — POST /api/organization/invitations
 func CreateMyOrgInvitation(c *gin.Context) {
-	org, _, ok := callerOrg(c)
+	org, isOwner, ok := callerOrg(c)
 	if !ok {
 		return
 	}
 	var req inviteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	// Making someone an admin is the owner's call, as it is when a member's
+	// role is changed; an admin must not mint further admins by invitation.
+	if req.Role == model.OrgRoleAdmin && !isOwner {
+		common.ApiErrorMsg(c, "只有 owner 可以邀请管理员")
 		return
 	}
 	if req.Relation == "" {
@@ -276,7 +282,7 @@ func CreateMyOrgInvitation(c *gin.Context) {
 	if err == nil {
 		emailed := sendOrgActivationEmail(inv.InvitedEmail, org.Name, inv.Code, inv.ExpiresAt)
 		model.RecordOrgAudit(org.Id, c.GetInt("id"), "invitation.provision", fmt.Sprintf("inv:%d", inv.Id), inv.InvitedEmail)
-		common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
+		common.ApiSuccess(c, gin.H{"code": activationCodeForInviter(inv.Code, emailed), "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
 		return
 	}
 	if !errors.Is(err, model.ErrEmailAlreadyRegistered) {
@@ -312,7 +318,33 @@ func ResendMyOrgInvitation(c *gin.Context) {
 	}
 	emailed := sendOrgActivationEmail(inv.InvitedEmail, org.Name, inv.Code, inv.ExpiresAt)
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "invitation.provision.resend", fmt.Sprintf("inv:%d", inv.Id), inv.InvitedEmail)
-	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
+	common.ApiSuccess(c, gin.H{"code": activationCodeForInviter(inv.Code, emailed), "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
+}
+
+// activationCodeForInviter is the activation code an inviter is given back. The
+// code sets the password of the account opened for the invited address, so it
+// belongs to that mailbox alone: once the email went out the inviter gets
+// none. Only when no email could be sent does the inviter receive it, to hand
+// the link over personally.
+func activationCodeForInviter(code string, emailed bool) string {
+	if emailed {
+		return ""
+	}
+	return code
+}
+
+// withoutActivationCodes blanks the code of every invitation whose account is
+// opened and awaiting its password, before a list leaves the server: whoever
+// reads the list (another admin, or the distributor of a customer) could
+// otherwise set that account's password. A join code stays; it only works for
+// the invited address after signing in.
+func withoutActivationCodes(rows []*model.OrgInvitation) []*model.OrgInvitation {
+	for _, row := range rows {
+		if row.Status == model.OrgInvitationProvisioned {
+			row.Code = ""
+		}
+	}
+	return rows
 }
 
 // ListMyOrgInvitations — GET /api/organization/invitations
@@ -326,7 +358,7 @@ func ListMyOrgInvitations(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, rows)
+	common.ApiSuccess(c, withoutActivationCodes(rows))
 }
 
 // RevokeMyOrgInvitation — DELETE /api/organization/invitations/:id
