@@ -588,10 +588,10 @@ func TestVendorPriceCard(t *testing.T) {
 
 	// Prices below the vendor's and a drifted CNY rate make the card red, under their own title when nothing changed.
 	loss := VendorPriceCard(VendorPriceReport{
-		Below: []VendorPriceBelow{{Model: "seedance-b", What: "1080p · tokens", Charged: 6.4, Listed: 7}, {Model: "qwen-a", What: "cache write", Charged: 2, Listed: 2.5}},
+		Below: []VendorPriceBelow{{Model: "seedance-b", What: "1080p · tokens", Charged: 6.4, Listed: 7}, {Model: "qwen-a", What: "cache write", Length: 32001, Charged: 2, Listed: 2.5}},
 		Rate:  &VendorRateDrift{Set: 6.67, Market: 6.5, Date: "2026-11-11"},
 	}, fakeTr)
-	wantBelow := MsgVendorPriceBelow + "[Charged=2,Listed=2.5,Model=qwen-a,Percent=20,What=cache write]\n" +
+	wantBelow := MsgVendorPriceBelow + "[Charged=2,Listed=2.5,Model=qwen-a,Percent=20,What=" + MsgVendorPriceUnitAt + "[Length=32001,Unit=lark.vendor_price_unit_cache_write]]\n" +
 		MsgVendorPriceBelow + "[Charged=6.4,Listed=7,Model=seedance-b,Percent=8.6,What=1080p · tokens]"
 	wantRate := MsgVendorPriceRateDrift + "[Date=2026-11-11,Market=6.5,Percent=2.6,Set=6.67]"
 	if loss.Title != MsgVendorPriceTitleBelow || loss.Color != "red" || len(loss.Fields) != 2 ||

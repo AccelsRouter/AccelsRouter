@@ -330,13 +330,14 @@ func TestCustomChargesBelowVendorListPrice(t *testing.T) {
 		name            string
 		current, vendor string
 		what            string
+		length          int64
 		charged, listed float64
 	}{
 		{name: "the same task prices in another shape", current: byHand, vendor: listed},
 		{name: "one task tier short", current: strings.Replace(byHand, "* 7 /", "* 6.4 /", 1), vendor: listed, what: "1080p · video · tokens", charged: 6.4, listed: 7},
 		{name: "a rounded conversion", current: `tier("base", p * 10.494753 + c * 20)`, vendor: `tier("base", p * 10.4948 + c * 20)`},
 		{name: "cache writes charged as input", current: `tier("base", p * 2 + c * 6)`, vendor: `tier("base", p * 2 + c * 6 + cr * 0.4 + cc * 2.5)`, what: "cache write", charged: 2, listed: 2.5},
-		{name: "one price where the vendor has two", current: `tier("base", p * 0.03 + c * 0.13)`, vendor: tieredQwen, what: "input at 32001 input tokens", charged: 0.03, listed: 0.1},
+		{name: "one price where the vendor has two", current: `tier("base", p * 0.03 + c * 0.13)`, vendor: tieredQwen, what: "input", length: 32001, charged: 0.03, listed: 0.1},
 		{name: "a price per request against a token price", current: `tier("request", fixed(0.001))`, vendor: tieredQwen},
 		{name: "a token price against a task price", current: `tier("base", p * 1 + c * 1)`, vendor: listed},
 	}
@@ -345,9 +346,10 @@ func TestCustomChargesBelowVendorListPrice(t *testing.T) {
 		if strings.Contains(c.vendor, `u("`) {
 			schema = seedance
 		}
-		what, charged, vendor, below := customChargesBelow(c.current, c.vendor, schema)
+		what, length, charged, vendor, below := customChargesBelow(c.current, c.vendor, schema)
 		assert.Equal(t, c.what != "", below, c.name)
 		assert.Equal(t, c.what, what, c.name)
+		assert.Equal(t, c.length, length, c.name)
 		assert.InDelta(t, c.charged, charged, 1e-9, c.name)
 		assert.InDelta(t, c.listed, vendor, 1e-9, c.name)
 	}

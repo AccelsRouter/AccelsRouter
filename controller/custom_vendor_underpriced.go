@@ -40,10 +40,12 @@ var customBillingLengthBound = regexp.MustCompile(`\blen\s*<=?\s*([0-9]+)`)
 // unit of a task fact. Where several units fall short it reports the one that
 // falls short the most. A price in a shape that cannot be compared with the
 // vendor's, such as one price per request against a price per token, is not
-// reported.
-func customChargesBelow(current, vendor string, schema map[string]jsplugin.UsageFieldSchema) (what string, charged, listed float64, below bool) {
+// reported. For a token price that changes with the input length, length is
+// the number of input tokens the two prices are compared at, 0 otherwise.
+func customChargesBelow(current, vendor string, schema map[string]jsplugin.UsageFieldSchema) (what string, length int64, charged, listed float64, below bool) {
 	type unit struct {
 		what    string
+		length  int64
 		charged float64
 		listed  float64
 	}
@@ -54,7 +56,7 @@ func customChargesBelow(current, vendor string, schema map[string]jsplugin.Usage
 	}
 	if priced := billingexpr.UsedUsageKeys(vendor); len(priced) > 0 {
 		if len(billingexpr.UsedUsageKeys(current)) == 0 {
-			return "", 0, 0, false
+			return "", 0, 0, 0, false
 		}
 		conditions := []map[string]any{{}}
 		var quantities []string
@@ -83,7 +85,7 @@ func customChargesBelow(current, vendor string, schema map[string]jsplugin.Usage
 			conditions = next
 		}
 		if len(conditions) > customVendorBelowMaxConditions {
-			return "", 0, 0, false
+			return "", 0, 0, 0, false
 		}
 		for _, condition := range conditions {
 			var labels []string
@@ -113,13 +115,13 @@ func customChargesBelow(current, vendor string, schema map[string]jsplugin.Usage
 				theirs, ok := cost(vendor, billingexpr.TokenParams{}, usage)
 				ours, comparable := cost(current, billingexpr.TokenParams{}, usage)
 				if ok && comparable {
-					units = append(units, unit{strings.Join(append(labels, quantity), " · "), ours, theirs})
+					units = append(units, unit{what: strings.Join(append(labels, quantity), " · "), charged: ours, listed: theirs})
 				}
 			}
 		}
 	} else {
 		if billingexpr.UsesFixedPricing(current) || len(billingexpr.UsedUsageKeys(current)) > 0 {
-			return "", 0, 0, false
+			return "", 0, 0, 0, false
 		}
 		// Each side of every input-length bound either expression names.
 		lengths := []float64{1}
@@ -158,21 +160,21 @@ func customChargesBelow(current, vendor string, schema map[string]jsplugin.Usage
 			}
 			return params
 		}
-		for _, length := range lengths {
+		for _, tokens := range lengths {
 			for _, kind := range kinds {
 				if kind.variable != "p" && kind.variable != "c" && !billingexpr.UsedVars(vendor)[kind.variable] {
 					continue
 				}
-				theirs, ok := cost(vendor, million(vendor, kind.variable, length), nil)
-				ours, comparable := cost(current, million(current, kind.variable, length), nil)
+				theirs, ok := cost(vendor, million(vendor, kind.variable, tokens), nil)
+				ours, comparable := cost(current, million(current, kind.variable, tokens), nil)
 				if !ok || !comparable {
 					continue
 				}
-				name := kind.name
+				compared := unit{what: kind.name, charged: ours / 1e6, listed: theirs / 1e6}
 				if len(lengths) > 1 {
-					name += fmt.Sprintf(" at %d input tokens", int64(length))
+					compared.length = int64(tokens)
 				}
-				units = append(units, unit{name, ours / 1e6, theirs / 1e6})
+				units = append(units, compared)
 			}
 		}
 	}
@@ -182,9 +184,9 @@ func customChargesBelow(current, vendor string, schema map[string]jsplugin.Usage
 			continue
 		}
 		worst = candidate.charged / candidate.listed
-		what, charged, listed, below = candidate.what, candidate.charged, candidate.listed, true
+		what, length, charged, listed, below = candidate.what, candidate.length, candidate.charged, candidate.listed, true
 	}
-	return what, math.Round(charged*1e6) / 1e6, math.Round(listed*1e6) / 1e6, below
+	return what, length, math.Round(charged*1e6) / 1e6, math.Round(listed*1e6) / 1e6, below
 }
 
 // customVendorUnderpriced lists the models an enabled channel serves that
@@ -219,8 +221,8 @@ func customVendorUnderpriced() ([]larknotify.VendorPriceBelow, error) {
 			}
 			current = conversion.Expression
 		}
-		if what, charged, listed, below := customChargesBelow(current, vendor[entry.ModelName], entry.UsageSchema); below {
-			found = append(found, larknotify.VendorPriceBelow{Model: entry.ModelName, What: what, Charged: charged, Listed: listed})
+		if what, length, charged, listed, below := customChargesBelow(current, vendor[entry.ModelName], entry.UsageSchema); below {
+			found = append(found, larknotify.VendorPriceBelow{Model: entry.ModelName, What: what, Length: length, Charged: charged, Listed: listed})
 		}
 	}
 	return found, nil

@@ -50,10 +50,14 @@ type VendorPriceFailure struct {
 
 // VendorPriceBelow is a model the gateway serves for less than its vendor
 // lists: What names the unit that falls short the most, Charged and Listed are
-// the two prices of that unit in USD.
+// the two prices of that unit in USD. What is a kind of token (one of the
+// keys of vendorPriceUnits), with Length the input tokens the prices are
+// compared at when they change with the input length, or the names of a task
+// plugin's facts, shown as they are.
 type VendorPriceBelow struct {
 	Model   string
 	What    string
+	Length  int64
 	Charged float64
 	Listed  float64
 }
@@ -97,7 +101,20 @@ const (
 	MsgVendorPriceBelow       = "lark.vendor_price_below"
 	MsgVendorPriceFieldRate   = "lark.vendor_price_field_rate"
 	MsgVendorPriceRateDrift   = "lark.vendor_price_rate_drift"
+	MsgVendorPriceUnitAt      = "lark.vendor_price_unit_at"
 )
+
+// vendorPriceUnits are the message keys of the token kinds a price is compared
+// on. They are declared again in i18n/keys.go and written in
+// i18n/locales/*.yaml.
+var vendorPriceUnits = map[string]string{
+	"input":       "lark.vendor_price_unit_input",
+	"output":      "lark.vendor_price_unit_output",
+	"cache read":  "lark.vendor_price_unit_cache_read",
+	"cache write": "lark.vendor_price_unit_cache_write",
+	"audio input": "lark.vendor_price_unit_audio_input",
+	"image input": "lark.vendor_price_unit_image_input",
+}
 
 // MaxVendorPriceChanges is how many models one card lists; the rest are counted.
 const MaxVendorPriceChanges = 20
@@ -193,8 +210,15 @@ func VendorPriceCard(report VendorPriceReport, tr Translator) Card {
 		slices.SortFunc(below, func(a, b VendorPriceBelow) int { return strings.Compare(a.Model, b.Model) })
 		lines := make([]string, 0, min(len(below), MaxVendorPriceChanges)+1)
 		for _, item := range below[:min(len(below), MaxVendorPriceChanges)] {
+			what := item.What
+			if key, known := vendorPriceUnits[what]; known {
+				what = tr(key, nil)
+			}
+			if item.Length > 0 {
+				what = tr(MsgVendorPriceUnitAt, map[string]any{"Unit": what, "Length": item.Length})
+			}
 			lines = append(lines, tr(MsgVendorPriceBelow, map[string]any{
-				"Model": item.Model, "What": item.What,
+				"Model": item.Model, "What": what,
 				"Charged": strconv.FormatFloat(item.Charged, 'f', -1, 64), "Listed": strconv.FormatFloat(item.Listed, 'f', -1, 64),
 				"Percent": percent(1 - item.Charged/item.Listed),
 			}))

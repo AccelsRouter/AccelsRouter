@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/larknotify"
 	"github.com/QuantumNous/new-api/service"
@@ -416,7 +417,10 @@ func notifyCustomVendorChanges(ctx context.Context, summary *customVendorChangeS
 	for i := range report.Changes {
 		report.Changes[i].InUse = slices.Contains(served, report.Changes[i].Model)
 	}
-	if err := service.SendLarkCard(ctx, service.LarkAlertTarget(), larknotify.VendorPriceCard(report, service.LarkTranslator)); err != nil {
+	// The card is written for the pricing team, who read Chinese, whatever
+	// language the deployment answers API clients in.
+	inChinese := func(key string, params map[string]any) string { return i18n.Translate("zh-CN", key, params) }
+	if err := service.SendLarkCard(ctx, service.LarkAlertTarget(), larknotify.VendorPriceCard(report, inChinese)); err != nil {
 		common.SysLog(common.LogText("vendor price change alert not sent: %s", err.Error()))
 	}
 }

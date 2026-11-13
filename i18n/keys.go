@@ -177,4 +177,11 @@ const (
 	MsgLarkVendorPriceBelow       = "lark.vendor_price_below"
 	MsgLarkVendorPriceFieldRate   = "lark.vendor_price_field_rate"
 	MsgLarkVendorPriceRateDrift   = "lark.vendor_price_rate_drift"
+	MsgLarkVendorPriceUnitAt      = "lark.vendor_price_unit_at"
+	MsgLarkVendorPriceUnitInput   = "lark.vendor_price_unit_input"
+	MsgLarkVendorPriceUnitOutput  = "lark.vendor_price_unit_output"
+	MsgLarkVendorPriceUnitCacheR  = "lark.vendor_price_unit_cache_read"
+	MsgLarkVendorPriceUnitCacheW  = "lark.vendor_price_unit_cache_write"
+	MsgLarkVendorPriceUnitAudioIn = "lark.vendor_price_unit_audio_input"
+	MsgLarkVendorPriceUnitImageIn = "lark.vendor_price_unit_image_input"
 )
