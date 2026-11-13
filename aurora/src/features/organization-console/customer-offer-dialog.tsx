@@ -73,7 +73,12 @@ export function CustomerOfferDialog(props: {
     loadedId !== customer.org.id
   ) {
     setLoadedId(customer.org.id)
-    setSelected(new Set(modelsQuery.data.allowed))
+    // A saved model that has left the catalog cannot be shown, unchecked or
+    // saved again (the server rejects the whole offer), so it is not selected.
+    const assignable = new Set(modelsQuery.data.catalog)
+    setSelected(
+      new Set(modelsQuery.data.allowed.filter((m) => assignable.has(m)))
+    )
     setFilter('')
     const seeded = Object.entries(pricingQuery.data).map(([token, ratio]) => ({
       token,
@@ -84,6 +89,10 @@ export function CustomerOfferDialog(props: {
 
   const catalog = modelsQuery.data?.catalog ?? []
   const offerable = modelsQuery.data?.offerable ?? []
+  // Saved for this customer but no longer in the catalog: dropped on save.
+  const noLongerAssignable = (modelsQuery.data?.allowed ?? []).filter(
+    (m) => !catalog.includes(m)
+  )
   // Which platform token admits a catalog model: exact name, else the longest
   // matching prefix. Makes prefix-driven inclusion visible in the list.
   const admittedBy = (m: string): string => {
@@ -273,6 +282,18 @@ export function CustomerOfferDialog(props: {
                     : `${t('{{n}} selected', { n: selected.size })} · ${catalog.length} ${t('in catalog')}`}
                 </span>
               </div>
+              {noLongerAssignable.length > 0 && (
+                <div className='rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-500/25 dark:text-amber-400'>
+                  {t(
+                    'No longer assignable, removed when you save: {{models}}',
+                    {
+                      models: noLongerAssignable.join(', '),
+                    }
+                  )}
+                  {selected.size === 0 &&
+                    ` ${t('Nothing is selected now, so saving opens every model in the catalog to this customer.')}`}
+                </div>
+              )}
               <div className='flex items-center justify-between gap-2'>
                 <Input
                   value={filter}

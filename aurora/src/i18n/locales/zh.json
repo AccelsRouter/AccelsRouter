@@ -1,5 +1,7 @@
 {
   "translation": {
+    "No longer assignable, removed when you save: {{models}}": "以下模型已不可分配，保存后会移除：{{models}}",
+    "Nothing is selected now, so saving opens every model in the catalog to this customer.": "现在没有勾选任何模型，保存后该客户可调用目录里的全部模型。",
     "Saved the organization settings: {{changes}}": "保存了组织设置：{{changes}}",
     "Wholesale cost {{amount}}": "批发成本 {{amount}}",
     "name set to {{value}}": "名称改为 {{value}}",

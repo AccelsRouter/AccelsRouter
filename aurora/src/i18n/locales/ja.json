@@ -1,5 +1,7 @@
 {
   "translation": {
+    "No longer assignable, removed when you save: {{models}}": "割り当て不可になったため、保存時に削除されます：{{models}}",
+    "Nothing is selected now, so saving opens every model in the catalog to this customer.": "現在何も選択されていないため、保存するとこの顧客はカタログ内の全モデルを利用できます。",
     "Saved the organization settings: {{changes}}": "組織設定を保存：{{changes}}",
     "Wholesale cost {{amount}}": "卸売コスト {{amount}}",
     "name set to {{value}}": "名前を {{value}} に設定",

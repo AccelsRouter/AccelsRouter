@@ -1,5 +1,7 @@
 {
   "translation": {
+    "No longer assignable, removed when you save: {{models}}": "Больше нельзя назначить, будут удалены при сохранении: {{models}}",
+    "Nothing is selected now, so saving opens every model in the catalog to this customer.": "Сейчас ничего не выбрано, поэтому после сохранения клиенту будут доступны все модели каталога.",
     "Saved the organization settings: {{changes}}": "Сохранены настройки организации: {{changes}}",
     "Wholesale cost {{amount}}": "Оптовая стоимость {{amount}}",
     "name set to {{value}}": "название изменено на {{value}}",

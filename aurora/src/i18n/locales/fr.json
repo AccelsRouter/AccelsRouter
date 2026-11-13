@@ -1,5 +1,7 @@
 {
   "translation": {
+    "No longer assignable, removed when you save: {{models}}": "Ne peuvent plus être attribués, retirés à l'enregistrement : {{models}}",
+    "Nothing is selected now, so saving opens every model in the catalog to this customer.": "Rien n'est sélectionné : l'enregistrement ouvre tous les modèles du catalogue à ce client.",
     "Saved the organization settings: {{changes}}": "Paramètres de l'organisation enregistrés : {{changes}}",
     "Wholesale cost {{amount}}": "Coût de gros {{amount}}",
     "name set to {{value}}": "nom défini sur {{value}}",
