@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"context"
+	"math"
 	"sync"
 	"testing"
 
@@ -77,4 +78,15 @@ func TestAllowFallsBackToEvalAfterScriptFlush(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, exists, 1)
 	assert.True(t, exists[0])
+}
+
+// The in-memory daily counter saturates: two absurd usages reported by an
+// upstream must not wrap it below zero, which would lift the limit.
+func TestMemTokenWindowSaturatesInsteadOfWrapping(t *testing.T) {
+	windows := &memTokenWindows{}
+	const huge = int64(5e18)
+	assert.Equal(t, huge, windows.add("day:user:1", huge))
+	assert.Equal(t, int64(math.MaxInt64), windows.add("day:user:1", huge))
+	assert.Equal(t, int64(math.MaxInt64), windows.add("day:user:1", 1))
+	assert.Equal(t, int64(math.MaxInt64), windows.peek("day:user:1"))
 }

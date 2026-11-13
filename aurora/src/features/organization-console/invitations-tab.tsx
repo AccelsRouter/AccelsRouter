@@ -109,10 +109,17 @@ export function InvitationsTab({ orgType }: { orgType: OrgType }) {
   const resendMutation = useMutation({
     mutationFn: (id: number) => resendInvitation(id),
     onSuccess: (res) => {
+      // The link is only handed back when the email could not be sent; the
+      // list no longer carries it.
+      if (!res.emailed && res.code) {
+        void navigator.clipboard?.writeText(activateLink(res.code))
+      }
       toast.success(
         res.emailed
           ? t('Activation email resent. The new link is valid for 7 days.')
-          : t('Activation link renewed; share it below. Valid for 7 days.')
+          : t(
+              'No email could be sent, so the activation link was copied to your clipboard. Share it with the invitee; it is valid for 7 days.'
+            )
       )
       invalidate()
     },
@@ -185,41 +192,44 @@ export function InvitationsTab({ orgType }: { orgType: OrgType }) {
                   </Td>
                   <Td className='text-right'>
                     <div className='flex justify-end gap-2'>
+                      {/* An opened account's activation link goes to its
+                          mailbox only, so such a row has no code to copy. */}
                       {(inv.status === 'pending' ||
-                        inv.status === 'provisioned') && (
-                        <>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            className='gap-1.5'
-                            onClick={() => copyCode(inv)}
-                          >
-                            {copiedId === inv.id ? (
-                              <Check className='h-3.5 w-3.5' />
-                            ) : (
-                              <Copy className='h-3.5 w-3.5' />
-                            )}
-                            {t('Copy Link')}
-                          </Button>
-                          {inv.status === 'provisioned' && (
+                        inv.status === 'provisioned') &&
+                        inv.code && (
+                          <>
                             <Button
                               size='sm'
                               variant='outline'
-                              disabled={resendMutation.isPending}
-                              onClick={() => resendMutation.mutate(inv.id)}
+                              className='gap-1.5'
+                              onClick={() => copyCode(inv)}
                             >
-                              {t('Resend')}
+                              {copiedId === inv.id ? (
+                                <Check className='h-3.5 w-3.5' />
+                              ) : (
+                                <Copy className='h-3.5 w-3.5' />
+                              )}
+                              {t('Copy Link')}
                             </Button>
-                          )}
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setRevokeInv(inv)}
-                          >
-                            {t('Revoke')}
-                          </Button>
-                        </>
-                      )}
+                            {inv.status === 'provisioned' && (
+                              <Button
+                                size='sm'
+                                variant='outline'
+                                disabled={resendMutation.isPending}
+                                onClick={() => resendMutation.mutate(inv.id)}
+                              >
+                                {t('Resend')}
+                              </Button>
+                            )}
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setRevokeInv(inv)}
+                            >
+                              {t('Revoke')}
+                            </Button>
+                          </>
+                        )}
                     </div>
                   </Td>
                 </tr>
@@ -284,6 +294,9 @@ function NewInvitationDialog(props: {
         invited_email: email.trim(),
       }),
     onSuccess: (res) => {
+      if (res.provisioned && !res.emailed && res.code) {
+        void navigator.clipboard?.writeText(activateLink(res.code))
+      }
       toast.success(
         res.provisioned
           ? res.emailed
@@ -291,7 +304,7 @@ function NewInvitationDialog(props: {
                 'Account opened and activation email sent. The link is valid for 7 days.'
               )
             : t(
-                'Account opened. Copy the activation link from the list; it is valid for 7 days.'
+                'No email could be sent, so the activation link was copied to your clipboard. Share it with the invitee; it is valid for 7 days.'
               )
           : res.emailed
             ? t('Invitation email sent')

@@ -185,6 +185,13 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
               icon: Building2,
             },
             { title: t('Profile'), url: '/profile', icon: User },
+            // Creating an organization key requires two-factor
+            // authentication, which is set up on this page.
+            {
+              title: t('Security & Access'),
+              url: '/security',
+              icon: ShieldCheck,
+            },
           ],
         },
       ],

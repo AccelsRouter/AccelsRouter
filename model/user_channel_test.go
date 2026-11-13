@@ -18,6 +18,14 @@ func TestIsOwnByokGroupIsolation(t *testing.T) {
 	assert.False(t, IsOwnByokGroup(8, "user-7"), "must never reach another user's group")
 	assert.False(t, IsOwnByokGroup(7, "default"), "a normal group is not a BYOK group")
 	assert.False(t, IsOwnByokGroup(7, ""), "empty group is never a BYOK group")
+
+	// The private groups whose channels carry an owner-chosen address.
+	for group, private := range map[string]bool{
+		"user-7": true, "org-12": true,
+		"default": false, "user-": false, "user-7a": false, "users-7": false, "reseller-3": false, "": false,
+	} {
+		assert.Equal(t, private, IsByokGroup(group), group)
+	}
 }
 
 // Ownership gates every personal-BYOK channel operation.

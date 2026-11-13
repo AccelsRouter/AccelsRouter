@@ -353,3 +353,46 @@ func TestRechargeEpayEnforcesFinalWalletQuotaLimit(t *testing.T) {
 		})
 	}
 }
+
+// A WonderGate order is credited once however many notifications arrive (the
+// webhook and the reconcile poller can both carry it), and an amount whose
+// quota does not fit a wallet leaves the order pending and uncredited.
+func TestRechargeWonderGateCreditsOnceAndRejectsOverflow(t *testing.T) {
+	truncateTables(t)
+
+	oldQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 500000
+	t.Cleanup(func() { common.QuotaPerUnit = oldQuotaPerUnit })
+
+	user := insertUserForPaymentGuardTest(t, 521, 0)
+	order := createEpayTestOrder(t, user.Id, "WGTESTONCE", PaymentProviderWonderGate, common.TopUpStatusPending)
+	require.NoError(t, RechargeWonderGate(order.TradeNo, "127.0.0.1"))
+	require.NoError(t, RechargeWonderGate(order.TradeNo, "127.0.0.1"))
+	assert.Equal(t, 2*500000, getUserQuotaForPaymentGuardTest(t, user.Id))
+	assert.Equal(t, common.TopUpStatusSuccess, getTopUpStatusForPaymentGuardTest(t, order.TradeNo))
+
+	common.QuotaPerUnit = float64(common.MaxWalletQuota + 1)
+	huge := createEpayTestOrder(t, user.Id, "WGTESTOVERFLOW", PaymentProviderWonderGate, common.TopUpStatusPending)
+	require.Error(t, RechargeWonderGate(huge.TradeNo, "127.0.0.1"))
+	assert.Equal(t, 2*500000, getUserQuotaForPaymentGuardTest(t, user.Id))
+	assert.Equal(t, common.TopUpStatusPending, getTopUpStatusForPaymentGuardTest(t, huge.TradeNo))
+}
+
+// A refund request leaves pending once: a handler that read it while pending
+// cannot cancel it after another has approved it.
+func TestRefundRequestLeavesPendingOnce(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&RefundRequest{}))
+	require.NoError(t, DB.Exec("DELETE FROM refund_requests").Error)
+	request := &RefundRequest{UserId: 531, AmountUSD: 5, Method: "bank", Reason: "test", Status: RefundStatusPending}
+	require.NoError(t, DB.Create(request).Error)
+	stale := *request
+
+	require.NoError(t, request.Approve(1, "ok"))
+	assert.Equal(t, RefundStatusApproved, request.Status)
+	require.Error(t, stale.Cancel())
+	require.Error(t, stale.Reject(1, "no"))
+
+	var stored RefundRequest
+	require.NoError(t, DB.First(&stored, request.Id).Error)
+	assert.Equal(t, RefundStatusApproved, stored.Status)
+}

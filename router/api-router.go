@@ -211,22 +211,30 @@ func SetApiRouter(router *gin.Engine) {
 			reconRoute.POST("/alibaba-bill", controller.AdminCompareAlibabaBill)
 		}
 		// Upstream monitor: channel/model health history and price comparison.
+		// These show and exercise the channels, so they follow the channel
+		// permissions an administrator holds, as the channel routes do: reading
+		// the inventory, health and prices needs channel.read; testing channels
+		// and changing the probe schedule channel.operate; pointing the server at
+		// a price address channel.sensitive_write.
 		upstreamRoute := apiRouter.Group("/admin/upstream")
 		upstreamRoute.Use(middleware.AdminAuth())
 		{
-			upstreamRoute.GET("/health", controller.AdminUpstreamHealth)
-			upstreamRoute.GET("/history", controller.AdminUpstreamHistory)
-			upstreamRoute.POST("/probe-all", controller.AdminUpstreamProbeAll)
-			upstreamRoute.GET("/probe-config", controller.AdminGetUpstreamProbeConfig)
-			upstreamRoute.PUT("/probe-config", controller.AdminSetUpstreamProbeConfig)
-			upstreamRoute.GET("/identity", controller.AdminUpstreamIdentityList)
-			upstreamRoute.GET("/identity/result", controller.AdminUpstreamIdentityResult)
-			upstreamRoute.POST("/identity/probe", controller.AdminUpstreamIdentityProbe)
-			upstreamRoute.POST("/identity/baseline", controller.AdminUpstreamIdentityBaseline)
-			upstreamRoute.GET("/prices", controller.AdminUpstreamPrices)
-			upstreamRoute.GET("/price-source/:channel_id", controller.AdminGetUpstreamPriceSource)
-			upstreamRoute.PUT("/price-source/:channel_id", controller.AdminSetUpstreamPriceSource)
-			upstreamRoute.POST("/price-source/test", controller.AdminTestUpstreamPriceSource)
+			canRead := middleware.RequirePermission(authz.ChannelRead)
+			canOperate := middleware.RequirePermission(authz.ChannelOperate)
+			canSetAddress := middleware.RequirePermission(authz.ChannelSensitiveWrite)
+			upstreamRoute.GET("/health", canRead, controller.AdminUpstreamHealth)
+			upstreamRoute.GET("/history", canRead, controller.AdminUpstreamHistory)
+			upstreamRoute.POST("/probe-all", canOperate, controller.AdminUpstreamProbeAll)
+			upstreamRoute.GET("/probe-config", canRead, controller.AdminGetUpstreamProbeConfig)
+			upstreamRoute.PUT("/probe-config", canOperate, controller.AdminSetUpstreamProbeConfig)
+			upstreamRoute.GET("/identity", canRead, controller.AdminUpstreamIdentityList)
+			upstreamRoute.GET("/identity/result", canRead, controller.AdminUpstreamIdentityResult)
+			upstreamRoute.POST("/identity/probe", canOperate, controller.AdminUpstreamIdentityProbe)
+			upstreamRoute.POST("/identity/baseline", canOperate, controller.AdminUpstreamIdentityBaseline)
+			upstreamRoute.GET("/prices", canRead, controller.AdminUpstreamPrices)
+			upstreamRoute.GET("/price-source/:channel_id", canRead, controller.AdminGetUpstreamPriceSource)
+			upstreamRoute.PUT("/price-source/:channel_id", canSetAddress, controller.AdminSetUpstreamPriceSource)
+			upstreamRoute.POST("/price-source/test", canSetAddress, controller.AdminTestUpstreamPriceSource)
 		}
 
 		// Business development summary (业务信息汇总): leads and deals. Opt-in
@@ -325,7 +333,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.POST("/apply", middleware.CriticalRateLimit(), controller.ApplyForOrganization)
 			orgRoute.GET("/apply/self", controller.GetMyOrgApplication)
 			orgRoute.GET("/invitations", controller.ListMyOrgInvitations)
-			orgRoute.POST("/invitations", controller.CreateMyOrgInvitation)
+			orgRoute.POST("/invitations", middleware.CriticalRateLimit(), controller.CreateMyOrgInvitation)
 			orgRoute.DELETE("/invitations/:id", controller.RevokeMyOrgInvitation)
 			orgRoute.POST("/invitations/:id/resend", middleware.CriticalRateLimit(), controller.ResendMyOrgInvitation)
 			orgRoute.GET("/invitations/preview", controller.PreviewOrgInvitation)
@@ -402,11 +410,13 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
+			// Fork: paying a provider for a plan is money in, gated on a second
+			// factor like a top-up; paying from the balance spends what is held.
 			subscriptionRoute.POST("/balance/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestBalancePay)
-			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestEpay)
-			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestStripePay)
-			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestCreemPay)
-			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestWaffoPancakePay)
+			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.SubscriptionRequestEpay)
+			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.SubscriptionRequestStripePay)
+			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.SubscriptionRequestCreemPay)
+			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.SubscriptionRequestWaffoPancakePay)
 		}
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")
 		subscriptionAdminRoute.Use(middleware.AdminAuth())

@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -19,8 +21,10 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
@@ -802,3 +806,48 @@ func (s *priceTestReservation) GetPreConsumedQuota() int { return s.held }
 func (s *priceTestReservation) Reserve(quota int) error  { s.held = max(s.held, quota); return nil }
 
 func (s *priceTestReservation) ReserveBeforeSubmit(quota int) error { return s.Reserve(quota) }
+
+// Fork: a BYOK private group prices its owner's own channels only. A request
+// on that group that ends up on a channel the user does not own (a follow-up
+// on an earlier task, reseller routing) pays at the user's own group, and is
+// recorded under it so a later settlement agrees.
+func TestByokGroupNeverPricesAForeignChannel(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.UserChannel{}))
+	savedDB := model.DB
+	model.DB = db
+	savedRatios := ratio_setting.GroupRatio2JSONString()
+	t.Cleanup(func() {
+		model.DB = savedDB
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(savedRatios))
+	})
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":0.8,"user-42":0}`))
+	require.NoError(t, db.Create(&model.UserChannel{UserId: 42, ChannelId: 7}).Error)
+
+	price := func(usingGroup string, channelId int, originGroup string) (float64, string) {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		common.SetContextKey(ctx, constant.ContextKeyChannelId, channelId)
+		if originGroup != "" {
+			common.SetContextKey(ctx, constant.ContextKeyResellerOriginGroup, originGroup)
+		}
+		info := &relaycommon.RelayInfo{UserId: 42, UserGroup: "vip", UsingGroup: usingGroup}
+		return HandleGroupRatio(ctx, info).GroupRatio, info.UsingGroup
+	}
+
+	ratio, group := price("user-42", 7, "")
+	assert.Equal(t, 0.0, ratio, "the owner's own channel keeps the BYOK fee")
+	assert.Equal(t, "user-42", group)
+
+	ratio, group = price("user-42", 99, "")
+	assert.Equal(t, 0.8, ratio, "a platform channel is paid at the user's own group")
+	assert.Equal(t, "vip", group)
+
+	ratio, group = price("reseller-3", 99, "user-42")
+	assert.Equal(t, 0.8, ratio, "reseller routing cannot be billed at the BYOK group either")
+	assert.Equal(t, "reseller-3", group)
+
+	ratio, _ = price("user-41", 99, "")
+	assert.Equal(t, 1.0, ratio, "another user's group is not this user's to price with; it has no ratio here")
+}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,15 @@ import (
 // its creator or by a bd.manage holder.
 
 func bdCanManage(c *gin.Context) bool {
-	return authz.Can(c.GetInt("id"), c.GetInt("role"), authz.BdManage)
+	if !authz.Can(c.GetInt("id"), c.GetInt("role"), authz.BdManage) {
+		return false
+	}
+	// The routes are declared with bd.write, so a scoped access token must
+	// carry the manage scope itself to act for its owner's manage permission.
+	if !c.GetBool("use_access_token") || c.GetBool("access_token_legacy") {
+		return true
+	}
+	return service.AccessTokenScopeGranted(c.GetStringSlice("access_token_scopes"), service.AccessTokenScopeOf(authz.BdManage))
 }
 
 func bdParamId(c *gin.Context) (int, bool) {

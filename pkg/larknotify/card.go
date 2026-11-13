@@ -1,6 +1,9 @@
 package larknotify
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Field is one labelled value on a card.
 type Field struct {
@@ -26,6 +29,16 @@ func Truncate(s string, max int) string {
 	return string(r[:max]) + "…"
 }
 
+// PlainText makes a value safe to place in a lark_md element. Card values carry
+// text that API users and upstreams control (key names, usernames, model names,
+// error messages), and lark_md would turn "<at id=all></at>" into a mention of
+// the whole group and "[text](url)" into a link under words of the sender's
+// choosing. The opening angle bracket becomes its full-width form and a link's
+// two halves are parted, so both read as the plain text they are.
+func PlainText(s string) string {
+	return strings.NewReplacer("<", "＜", "](", "] (").Replace(s)
+}
+
 // Payload renders the card object of a Lark "interactive" message.
 func (c Card) Payload() map[string]any {
 	color := c.Color
@@ -38,7 +51,7 @@ func (c Card) Payload() map[string]any {
 			"is_short": utf8.RuneCountInString(f.Value) <= 36,
 			"text": map[string]any{
 				"tag":     "lark_md",
-				"content": "**" + f.Name + "**\n" + Truncate(f.Value, 600),
+				"content": "**" + f.Name + "**\n" + PlainText(Truncate(f.Value, 600)),
 			},
 		})
 	}

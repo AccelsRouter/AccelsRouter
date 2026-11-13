@@ -37,7 +37,7 @@ import {
   formatTokenCount,
   getTierPriceLines,
   getTimeBandPrices,
-  getUsagePriceRange,
+  getUsagePriceText,
   getUnitPriceText,
   matchesVendorPrice,
   type PriceSegment,
@@ -54,7 +54,6 @@ import { PRICING_ISSUE_REASONS, useModelPricingIssues } from './pricing-issues'
 import { getDefaultEndpointForChannel } from './upstream-ratio-sync'
 import {
   describeSyncPrice,
-  getSyncPriceKind,
   getUpstreamDisplayName,
 } from './upstream-ratio-sync-helpers'
 
@@ -645,22 +644,8 @@ export function CustomPricingPreview() {
   // A price that is not per input and output token: per request, or a task
   // model's price as one number or a range per 1M tokens, per second or per
   // image, over the conditions its expression distinguishes.
-  const usageText = (values?: PricingSyncValues): string | null => {
-    if (getSyncPriceKind(values) === 'request') {
-      return `${formatUnit(Number(values?.model_price))} · ${t('Per-request')}`
-    }
-    if (chargesNothing(values)) return formatUnit(0)
-    const range = getUsagePriceRange(values)
-    if (!range) return null
-    const price =
-      range.max > range.min * (1 + 1e-9)
-        ? `${formatUnit(range.min)}–${formatUnit(range.max)}`
-        : formatUnit(range.min)
-    if (range.fact === 'tokens') return `${price} / ${t('1M token')}`
-    if (range.fact === 'seconds') return `${price} / ${t('second')}`
-    if (range.fact.startsWith('image')) return `${price} · ${t('Per image')}`
-    return `${price} / ${range.fact}`
-  }
+  const usageText = (values?: PricingSyncValues): string | null =>
+    getUsagePriceText(values, t)
 
   // The current price: every input-length tier when it has several.
   const currentCell = (row: PreviewRow) => {

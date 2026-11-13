@@ -77,6 +77,24 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		billingGroup = origin
 	}
 
+	// Fork: a private BYOK group prices the owner's own upstream keys (ratio 0
+	// by default), so it must never price a channel that is not the owner's.
+	// A follow-up on an earlier task runs on that task's platform channel
+	// whatever group the request is on, and reseller routing serves a customer
+	// from its reseller's channels while keeping the group it came in on; such
+	// a request pays at the user's own group.
+	if model.IsOwnByokGroup(relayInfo.UserId, billingGroup) {
+		channelId := common.GetContextKeyInt(ctx, constant.ContextKeyChannelId)
+		if owns, err := model.UserOwnsChannel(relayInfo.UserId, channelId); err != nil || !owns {
+			// The group the request is recorded under follows, so a task's later
+			// settlement, which prices by the recorded group, agrees.
+			if relayInfo.UsingGroup == billingGroup {
+				relayInfo.UsingGroup = relayInfo.UserGroup
+			}
+			billingGroup = relayInfo.UserGroup
+		}
+	}
+
 	// check user group special ratio
 	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, billingGroup)
 	if ok {

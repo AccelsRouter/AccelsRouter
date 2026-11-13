@@ -417,6 +417,13 @@ func AdminCompareBytePlusBill(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+		// The keys are sent to BytePlus to be resolved, so they must be the
+		// platform's own BytePlus keys: never a customer's BYOK key, never
+		// another vendor's.
+		if model.IsByokChannel(req.ChannelId) || !isCustomBytePlusBaseURL(channel.GetBaseURL()) {
+			common.ApiErrorMsg(c, "The bill can only be compared with a platform channel that points at BytePlus")
+			return
+		}
 		keys := channel.GetKeys()
 		if len(keys) == 0 {
 			common.ApiErrorMsg(c, "The channel has no API key to filter the bill by")

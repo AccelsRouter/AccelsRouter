@@ -3,7 +3,7 @@ Individual call records (consume logs) for an organization — used both by the
 reseller (viewing a customer) and by the org itself (a reseller customer or any
 org admin seeing every call under its org, not just its own key).
 */
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
 import { Download, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -48,6 +48,30 @@ function toUsageLog(l: OrgLog): UsageLog {
     upstream_request_id: '',
   }
 }
+// The prices of one call, one to a line: a name, the share of the list price
+// when the line is a discounted one, and the amount.
+function PriceLines(props: {
+  lines: { label: string; quota: number; ratio?: number; strong?: boolean }[]
+  sign: string
+}) {
+  return (
+    <div className='ml-auto grid w-fit grid-cols-[auto_auto] items-baseline gap-x-3 text-xs'>
+      {props.lines.map((line) => (
+        <Fragment key={line.label}>
+          <span className='text-muted-foreground text-left'>
+            {line.label}
+            {line.ratio != null && ` ${Math.round(line.ratio * 100)}%`}
+          </span>
+          <span className={line.strong ? 'text-sm font-medium' : undefined}>
+            {props.sign}
+            {formatQuotaWithCurrency(line.quota, MONEY_OPTS)}
+          </span>
+        </Fragment>
+      ))}
+    </div>
+  )
+}
+
 type LogFetcher = (params: {
   page: number
   pageSize: number
@@ -80,9 +104,11 @@ export function CallRecords({
   })
 
   const items = data?.items ?? []
-  // Show the discounted (actually-charged) price column only when the reseller
-  // has set a discount for this customer.
-  const showRetail = items.some((l) => l.retail_quota != null)
+  // The price column names its prices once any row was billed at a discount
+  // or carries what it cost the reseller.
+  const showRetail = items.some(
+    (l) => l.retail_quota != null || l.cost_ratio != null
+  )
   // A reseller's aggregated log spans multiple customers; show which customer
   // each row belongs to. Empty in single-org (customer/enterprise) views.
   const showCustomer = items.some((l) => l.customer_name)
@@ -138,7 +164,7 @@ export function CallRecords({
               <Th>{t('Status')}</Th>
               <Th className='text-right'>{t('Tokens (in / out)')}</Th>
               <Th className='text-right'>
-                {showRetail ? t('Cost / Charged') : t('Cost')}
+                {showRetail ? t('Price') : t('Cost')}
               </Th>
               <Th>{t('Detail')}</Th>
             </tr>
@@ -188,30 +214,44 @@ export function CallRecords({
                       ? '-'
                       : `${l.prompt_tokens} / ${l.completion_tokens}`}
                   </Td>
-                  {/* Price merged: charged (bold) + standard·discount% as subtext. */}
+                  {/* A row billed at a discount names each price: the list
+                      price, what the organization paid, and for the reseller
+                      what the call cost it. A plain row is one amount. */}
                   <Td className='text-right whitespace-nowrap tabular-nums'>
-                    {isError ? (
-                      '-'
-                    ) : showRetail ? (
-                      <div className='flex flex-col items-end'>
-                        <span className='font-medium'>
-                          {sign}
-                          {formatQuotaWithCurrency(
-                            l.retail_quota ?? l.quota,
-                            MONEY_OPTS
-                          )}
-                        </span>
-                        <span className='text-muted-foreground text-xs'>
-                          {sign}
-                          {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
-                          {l.retail_ratio != null
-                            ? ` · ${Math.round(l.retail_ratio * 100)}%`
-                            : ''}
-                        </span>
-                      </div>
-                    ) : (
-                      `${sign}${formatQuotaWithCurrency(l.quota, MONEY_OPTS)}`
-                    )}
+                    {isError && '-'}
+                    {!isError &&
+                      l.retail_ratio == null &&
+                      l.cost_ratio == null &&
+                      `${sign}${formatQuotaWithCurrency(l.quota, MONEY_OPTS)}`}
+                    {!isError &&
+                      (l.retail_ratio != null || l.cost_ratio != null) && (
+                        <PriceLines
+                          lines={[
+                            { label: t('List price'), quota: l.quota },
+                            {
+                              // To the reseller it is the customer's price; to
+                              // the payer itself, what it was charged.
+                              label:
+                                l.cost_ratio != null
+                                  ? t('Customer price')
+                                  : t('Charged'),
+                              quota: l.retail_quota ?? l.quota,
+                              ratio: l.retail_ratio,
+                              strong: true,
+                            },
+                            ...(l.cost_ratio != null
+                              ? [
+                                  {
+                                    label: t('Wholesale price'),
+                                    quota: l.cost_quota ?? 0,
+                                    ratio: l.cost_ratio,
+                                  },
+                                ]
+                              : []),
+                          ]}
+                          sign={sign}
+                        />
+                      )}
                   </Td>
                   <Td className='text-muted-foreground text-xs'>
                     {isError && l.content ? (

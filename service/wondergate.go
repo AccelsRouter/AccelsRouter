@@ -180,7 +180,9 @@ func VerifyWonderGateNotification(rawBody []byte) (map[string]json.RawMessage, e
 		[]byte(strings.ToLower(expected)),
 		[]byte(strings.ToLower(sign)),
 	) != 1 {
-		return nil, fmt.Errorf("验签失败 expected=%s got=%s", expected, sign)
+		// The expected signature is never put in the error: a log reader could
+		// replay it with the same body to credit an unpaid order.
+		return nil, errors.New("验签失败")
 	}
 	return fields, nil
 }

@@ -148,10 +148,24 @@ func (r *RefundRequest) Cancel() error {
 		return fmt.Errorf("only pending refund requests can be cancelled (current status: %s)", r.Status)
 	}
 	now := time.Now()
-	return DB.Model(r).Updates(map[string]any{
+	return r.leavePending(map[string]any{
 		"status":       RefundStatusCancelled,
 		"processed_at": &now,
-	}).Error
+	})
+}
+
+// leavePending moves the request out of pending with the given fields, and
+// fails when it is no longer pending in the database: a user cancelling and an
+// admin approving at the same moment must not overwrite one another.
+func (r *RefundRequest) leavePending(fields map[string]any) error {
+	result := DB.Model(&RefundRequest{}).Where("id = ? AND status = ?", r.Id, RefundStatusPending).Updates(fields)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("the refund request is no longer pending")
+	}
+	return DB.First(r, r.Id).Error
 }
 
 // Approve — admin transitions pending → approved.
@@ -160,12 +174,12 @@ func (r *RefundRequest) Approve(adminId int, note string) error {
 		return fmt.Errorf("only pending refund requests can be approved (current status: %s)", r.Status)
 	}
 	now := time.Now()
-	return DB.Model(r).Updates(map[string]any{
+	return r.leavePending(map[string]any{
 		"status":       RefundStatusApproved,
 		"admin_note":   note,
 		"processed_by": adminId,
 		"processed_at": &now,
-	}).Error
+	})
 }
 
 // Reject — admin transitions pending → rejected. Cannot reject an
@@ -176,12 +190,12 @@ func (r *RefundRequest) Reject(adminId int, note string) error {
 		return fmt.Errorf("only pending refund requests can be rejected (current status: %s)", r.Status)
 	}
 	now := time.Now()
-	return DB.Model(r).Updates(map[string]any{
+	return r.leavePending(map[string]any{
 		"status":       RefundStatusRejected,
 		"admin_note":   note,
 		"processed_by": adminId,
 		"processed_at": &now,
-	}).Error
+	})
 }
 
 // InvalidateUserCache deletes the cached user snapshot so the next read

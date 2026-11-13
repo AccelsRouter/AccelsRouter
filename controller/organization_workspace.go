@@ -175,6 +175,19 @@ func BindMyWorkspaceToken(c *gin.Context) {
 		common.ApiErrorMsg(c, "token does not belong to a member of your organization")
 		return
 	}
+	// Only a key that is already the organization's can be moved between its
+	// workspaces. Binding makes a key readable and editable by every admin, so
+	// a member's personal key (or a key of another organization the member
+	// also acts for) may be brought in by its owner alone.
+	bound, bErr := model.GetTokenOrgId(token.Id)
+	if bErr != nil {
+		common.ApiError(c, bErr)
+		return
+	}
+	if bound != org.Id && (bound != 0 || token.UserId != c.GetInt("id")) {
+		common.ApiErrorMsg(c, "only the key's owner can bring a personal key into the organization")
+		return
+	}
 	if err := model.BindTokenToWorkspace(org.Id, ws.Id, req.TokenId); err != nil {
 		common.ApiError(c, err)
 		return
@@ -345,7 +358,7 @@ func CreateMyByokChannel(c *gin.Context) {
 		// A BYOK base URL is end-user controlled, unlike operator-managed provider
 		// channels. The relay dialer is intentionally not SSRF-protected, so block
 		// internal/metadata targets here at creation time.
-		if err := service.ValidateSSRFProtectedFetchURL(baseURL); err != nil {
+		if err := service.ValidateByokBaseURL(baseURL); err != nil {
 			common.ApiErrorMsg(c, "base_url 无效或指向被禁止的内网地址")
 			return
 		}

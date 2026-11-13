@@ -209,7 +209,7 @@ func MarkRefunded(p MarkRefundedParams) error {
 			return fmt.Errorf("load user: %w", err)
 		}
 		// Convert USD to quota units. Round to avoid floating drift.
-		quotaToDeduct := int(math.Round(r.AmountUSD * common.QuotaPerUnit))
+		quotaToDeduct := common.QuotaRound(r.AmountUSD * common.QuotaPerUnit)
 		if quotaToDeduct <= 0 {
 			return errors.New("computed quota deduction is non-positive; refund amount is invalid")
 		}
@@ -218,11 +218,17 @@ func MarkRefunded(p MarkRefundedParams) error {
 				float64(user.Quota)/common.QuotaPerUnit, r.AmountUSD)
 		}
 
-		// (c) deduct quota atomically with row-level UPDATE
-		if err := tx.Model(&model.User{}).
+		// (c) deduct quota atomically with row-level UPDATE. The balance may
+		// have been spent since it was read above: a deduction that matched no
+		// row deducted nothing, and the request must not be marked refunded.
+		deducted := tx.Model(&model.User{}).
 			Where("id = ? AND quota >= ?", user.Id, quotaToDeduct).
-			Update("quota", gorm.Expr("quota - ?", quotaToDeduct)).Error; err != nil {
-			return fmt.Errorf("deduct user quota: %w", err)
+			Update("quota", gorm.Expr("quota - ?", quotaToDeduct))
+		if deducted.Error != nil {
+			return fmt.Errorf("deduct user quota: %w", deducted.Error)
+		}
+		if deducted.RowsAffected != 1 {
+			return errors.New("the user's balance no longer covers the refund; nothing was deducted")
 		}
 
 		// (d) audit log — use the dedicated refund log type.
@@ -238,15 +244,22 @@ func MarkRefunded(p MarkRefundedParams) error {
 			return fmt.Errorf("write refund log: %w", err)
 		}
 
-		// (e) flip status
+		// (e) flip status, from approved only: of two concurrent calls the
+		// second matches no row and its deduction rolls back with it.
 		now := time.Now()
-		if err := tx.Model(&r).Updates(map[string]any{
-			"status":       model.RefundStatusRefunded,
-			"admin_note":   p.Note,
-			"processed_by": p.AdminId,
-			"processed_at": &now,
-		}).Error; err != nil {
-			return fmt.Errorf("update refund request status: %w", err)
+		flipped := tx.Model(&model.RefundRequest{}).
+			Where("id = ? AND status = ?", r.Id, model.RefundStatusApproved).
+			Updates(map[string]any{
+				"status":       model.RefundStatusRefunded,
+				"admin_note":   p.Note,
+				"processed_by": p.AdminId,
+				"processed_at": &now,
+			})
+		if flipped.Error != nil {
+			return fmt.Errorf("update refund request status: %w", flipped.Error)
+		}
+		if flipped.RowsAffected != 1 {
+			return errors.New("the refund request was already processed")
 		}
 
 		// Invalidate Redis user-quota cache so the new balance is visible

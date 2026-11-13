@@ -80,6 +80,9 @@ func runUpstreamProbeSweep(ctx context.Context, only map[int]bool) bool {
 	upstreamProbeRunning = true
 	upstreamProbeMu.Unlock()
 	summary := upstreamProbeSummary{StartedAt: common.GetTimestamp()}
+	// Registered first so it runs last: the running flag is reset before the
+	// panic, if any, is swallowed.
+	defer customRecoverJob("upstream probe sweep")
 	defer func() {
 		summary.FinishedAt = common.GetTimestamp()
 		if err := model.FlushUpstreamHealth(); err != nil {
@@ -97,7 +100,7 @@ func runUpstreamProbeSweep(ctx context.Context, only map[int]bool) bool {
 		common.SysError("upstream probe sweep: " + err.Error())
 		return true
 	}
-	channels, err := model.GetAllChannels(0, 0, true, false)
+	channels, err := model.GetPlatformChannels()
 	if err != nil {
 		common.SysError("upstream probe sweep: " + err.Error())
 		return true
@@ -182,6 +185,7 @@ func runUpstreamProbeSweep(ctx context.Context, only map[int]bool) bool {
 		wg.Add(1)
 		go func(j job) {
 			defer wg.Done()
+			defer customRecoverJob("upstream probe")
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			probeCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -221,6 +225,7 @@ func StartUpstreamProbeScheduler() {
 			upstreamProbeMu.Unlock()
 		}
 		go func() {
+			defer customRecoverJob("upstream probe scheduler")
 			// Let the process settle before the first sweep.
 			time.Sleep(2 * time.Minute)
 			ticker := time.NewTicker(time.Minute)
@@ -242,7 +247,7 @@ func StartUpstreamProbeScheduler() {
 				}
 				// A channel is due on its own interval when it has one, else on the
 				// global one; paused channels are never due.
-				channels, err := model.GetAllChannels(0, 0, true, false)
+				channels, err := model.GetPlatformChannels()
 				if err != nil {
 					common.SysError("upstream probe scheduler: " + err.Error())
 					continue

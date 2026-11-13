@@ -18,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
@@ -84,7 +85,7 @@ func AdminUpstreamHealth(c *gin.Context) {
 	hours := upstreamWindowHours(c)
 	since := common.GetTimestamp() - int64(hours)*3600
 	var channels []model.Channel
-	if err := model.DB.Select("id", "name", "type", "status", "models", "test_time", "response_time").
+	if err := model.ExcludeByokChannels(model.DB.Select("id", "name", "type", "status", "models", "test_time", "response_time")).
 		Order("id asc").Find(&channels).Error; err != nil {
 		common.ApiError(c, err)
 		return
@@ -524,7 +525,9 @@ func (p *upstreamPricing) count() int { return len(p.modelRatio) + len(p.modelPr
 func resolveUpstreamPricing(ctx context.Context, client *http.Client, base string, src *model.UpstreamPriceSource) (*upstreamPricing, string, string) {
 	var fetchErr string
 	if src != nil && src.PriceURL != "" {
-		if p, err := fetchUpstreamPricingURL(ctx, client, src.PriceURL); err == nil {
+		// A typed-in endpoint goes through the client that refuses internal
+		// addresses when it connects and on every redirect.
+		if p, err := fetchUpstreamPricingURL(ctx, service.GetSSRFProtectedHTTPClient(), src.PriceURL); err == nil {
 			return p, "custom url", ""
 		} else {
 			fetchErr = "custom url: " + err.Error()
@@ -556,7 +559,7 @@ func invalidateUpstreamPriceCache(channelId int) {
 func AdminUpstreamPrices(c *gin.Context) {
 	refresh := c.Query("refresh") == "1"
 	var channels []model.Channel
-	if err := model.DB.Select("id", "name", "type", "status", "models", "base_url").
+	if err := model.ExcludeByokChannels(model.DB.Select("id", "name", "type", "status", "models", "base_url")).
 		Order("id asc").Find(&channels).Error; err != nil {
 		common.ApiError(c, err)
 		return
@@ -599,6 +602,7 @@ func AdminUpstreamPrices(c *gin.Context) {
 		wg.Add(1)
 		go func(i int, row upstreamChannelPrices, base string, src *model.UpstreamPriceSource, models []string) {
 			defer wg.Done()
+			defer customRecoverJob("upstream price fetch")
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			ctx, cancel := context.WithTimeout(c.Request.Context(), upstreamPriceTimeout)
@@ -663,7 +667,7 @@ func AdminSetUpstreamPriceSource(c *gin.Context) {
 		common.ApiErrorMsg(c, "invalid channel id")
 		return
 	}
-	if ch, err := model.GetChannelById(channelId, false); err != nil || ch == nil {
+	if ch, err := model.GetChannelById(channelId, false); err != nil || ch == nil || model.IsByokChannel(channelId) {
 		common.ApiErrorMsg(c, "channel not found")
 		return
 	}
@@ -677,6 +681,11 @@ func AdminSetUpstreamPriceSource(c *gin.Context) {
 		u, err := url.Parse(priceURL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			common.ApiErrorMsg(c, "price_url must be an http(s) URL")
+			return
+		}
+		// The address is fetched by the server on every price check.
+		if err := service.ValidateSSRFProtectedFetchURL(priceURL); err != nil {
+			common.ApiErrorMsg(c, "price_url points at an address the server may not fetch")
 			return
 		}
 	}
@@ -708,13 +717,13 @@ func AdminTestUpstreamPriceSource(c *gin.Context) {
 		return
 	}
 	if u := strings.TrimSpace(req.PriceURL); u != "" {
-		client := &http.Client{Timeout: upstreamPriceTimeout}
-		if common.TLSInsecureSkipVerify {
-			client.Transport = &http.Transport{TLSClientConfig: common.InsecureTLSConfig}
+		if err := service.ValidateSSRFProtectedFetchURL(u); err != nil {
+			common.ApiErrorMsg(c, "price_url points at an address the server may not fetch")
+			return
 		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), upstreamPriceTimeout)
 		defer cancel()
-		p, err := fetchUpstreamPricingURL(ctx, client, u)
+		p, err := fetchUpstreamPricingURL(ctx, service.GetSSRFProtectedHTTPClient(), u)
 		if err != nil {
 			common.ApiErrorMsg(c, err.Error())
 			return

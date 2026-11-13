@@ -807,8 +807,9 @@ func RechargeWonderGate(tradeNo string, callerIp string) (err error) {
 		refCol = `"trade_no"`
 	}
 
+	credited := false
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(topUp).Error
+		err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error
 		if err != nil {
 			return errors.New("充值订单不存在")
 		}
@@ -825,24 +826,28 @@ func RechargeWonderGate(tradeNo string, callerIp string) (err error) {
 			return errors.New("充值订单状态错误")
 		}
 
-		dAmount := decimal.NewFromInt(topUp.Amount)
-		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		quotaToAdd = int(dAmount.Mul(dQuotaPerUnit).IntPart())
-		if quotaToAdd <= 0 {
-			return errors.New("无效的充值额度")
+		var quotaErr error
+		quotaToAdd, quotaErr = common.WalletQuotaFromDecimalStrict(
+			decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)),
+		)
+		if quotaErr != nil || quotaToAdd <= 0 {
+			return ErrInvalidTopUpQuota
 		}
 
-		topUp.CompleteTime = common.GetTimestamp()
-		topUp.Status = common.TopUpStatusSuccess
-		if err := tx.Save(topUp).Error; err != nil {
-			return err
+		// The order moves to success only from pending, so a webhook and the
+		// reconcile poller on two instances (or SQLite, which takes no row
+		// lock) cannot both credit it.
+		completed := tx.Model(&TopUp{}).
+			Where("id = ? AND status = ?", topUp.Id, common.TopUpStatusPending).
+			Updates(map[string]any{"status": common.TopUpStatusSuccess, "complete_time": common.GetTimestamp()})
+		if completed.Error != nil {
+			return completed.Error
 		}
-
-		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
-			return err
+		if completed.RowsAffected != 1 {
+			return nil // another instance credited it first
 		}
-
-		return nil
+		credited = true
+		return creditTopUpQuota(tx, topUp.UserId, quotaToAdd, nil)
 	})
 
 	if err != nil {
@@ -850,7 +855,8 @@ func RechargeWonderGate(tradeNo string, callerIp string) (err error) {
 		return errors.New("充值失败，请稍后重试")
 	}
 
-	if quotaToAdd > 0 {
+	if credited {
+		syncCreditUserQuotaCache(topUp.UserId, quotaToAdd, common.LogText("wondergate topup"))
 		RecordTopupLog(topUp.UserId, common.NewMessage("{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}", map[string]any{"provider": "WonderGate", "quota": logger.FormatQuota(quotaToAdd), "amount": fmt.Sprintf("%.2f", topUp.Money)}), callerIp, topUp.PaymentMethod, PaymentMethodWonderGate)
 	}
 

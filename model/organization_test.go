@@ -1,7 +1,10 @@
 package model
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/QuantumNous/new-api/common"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,7 +40,7 @@ func TestOrgAuditLog(t *testing.T) {
 	orgB := mustCreateOrg(t, "other", OrgTypeEnterprise, 0)
 
 	RecordOrgAudit(orgA.Id, 1, "workspace.create", "workspace:1", "prod")
-	RecordOrgAudit(orgA.Id, 2, "credit.allocate", "org:9", "quota=100")
+	RecordOrgAudit(orgA.Id, 2, "credit.allocate", "org:999999", "quota=100")
 	RecordOrgAudit(orgB.Id, 3, "org.update", "org:2", "name=x")
 	RecordOrgAudit(0, 1, "ignored", "", "") // invalid org id → no row
 
@@ -47,6 +50,18 @@ func TestOrgAuditLog(t *testing.T) {
 	require.Len(t, rows, 2)
 	assert.Equal(t, "credit.allocate", rows[0].Action, "newest first")
 	assert.Equal(t, "workspace.create", rows[1].Action)
+	assert.Empty(t, rows[0].TargetName, "a target that is gone keeps its bare id")
+
+	// A row names the organization, member or workspace it points at.
+	ws := &Workspace{OrgId: orgA.Id, Name: "prod"}
+	require.NoError(t, CreateWorkspace(ws))
+	RecordOrgAudit(orgA.Id, 1, "credit.allocate", fmt.Sprintf("org:%d", orgB.Id), "quota=100")
+	RecordOrgAudit(orgA.Id, 1, "workspace.update", fmt.Sprintf("workspace:%d", ws.Id), "")
+	RecordOrgAudit(orgA.Id, 1, "sso.domain.add", "example.com", "provider=github")
+	rows, _, err = ListOrgAuditLogs(orgA.Id, 0, 3)
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+	assert.Equal(t, []string{"", "prod", "other"}, []string{rows[0].TargetName, rows[1].TargetName, rows[2].TargetName})
 
 	// Another org's trail is isolated.
 	rowsB, totalB, err := ListOrgAuditLogs(orgB.Id, 0, 20)
@@ -583,4 +598,85 @@ func TestPlatformAdjustOrg(t *testing.T) {
 	require.Error(t, err)
 
 	assert.Equal(t, []string{LedgerTypePurchase, LedgerTypeDebit, LedgerTypePurchase, LedgerTypeDebit}, ledgerTypes())
+}
+
+// A key issued for an organization stops working when the tie it was issued
+// under ends (member detached or suspended, workspace deleted), instead of
+// becoming its owner's personal key; personal keys and other members' keys are
+// left alone.
+func TestOrgKeysAreDisabledWhenTheirTieEnds(t *testing.T) {
+	migrateOrgTables(t)
+	require.NoError(t, DB.Exec("DELETE FROM tokens").Error)
+	org := mustCreateOrg(t, "keys org", OrgTypeEnterprise, 0)
+	require.NoError(t, AttachOrgAccount(&OrgAccount{OrgId: org.Id, UserId: 8101, Relation: OrgRelationMember, Role: OrgRoleMember}))
+	require.NoError(t, AttachOrgAccount(&OrgAccount{OrgId: org.Id, UserId: 8102, Relation: OrgRelationMember, Role: OrgRoleMember}))
+	wsA := &Workspace{OrgId: org.Id, Name: "workspace a"}
+	wsB := &Workspace{OrgId: org.Id, Name: "workspace b"}
+	require.NoError(t, CreateWorkspace(wsA))
+	require.NoError(t, CreateWorkspace(wsB))
+	key := func(id, userId, workspaceId int) {
+		require.NoError(t, DB.Create(&Token{Id: id, UserId: userId, Key: fmt.Sprintf("orgkey%040d", id), Status: common.TokenStatusEnabled, Name: "k"}).Error)
+		if workspaceId > 0 {
+			require.NoError(t, BindTokenToWorkspace(org.Id, workspaceId, id))
+		}
+	}
+	key(8201, 8101, wsA.Id) // member 1, workspace a
+	key(8202, 8101, 0)      // member 1, personal
+	key(8203, 8102, wsA.Id) // member 2, workspace a
+	key(8204, 8102, wsB.Id) // member 2, workspace b
+	enabled := func(id int) bool {
+		var token Token
+		require.NoError(t, DB.First(&token, id).Error)
+		return token.Status == common.TokenStatusEnabled
+	}
+
+	tie, err := HasActiveOrgTie(org.Id, 8101)
+	require.NoError(t, err)
+	assert.True(t, tie)
+
+	require.NoError(t, DetachOrgAccount(org.Id, 8101))
+	assert.Equal(t, []bool{false, true, true, true}, []bool{enabled(8201), enabled(8202), enabled(8203), enabled(8204)}, "only the detached member's organization key stops")
+	tie, err = HasActiveOrgTie(org.Id, 8101)
+	require.NoError(t, err)
+	assert.False(t, tie)
+
+	require.NoError(t, DeleteWorkspace(wsA.Id))
+	assert.Equal(t, []bool{false, true}, []bool{enabled(8203), enabled(8204)}, "the deleted workspace's key stops, the other workspace's stays")
+
+	require.NoError(t, UpdateOrgAccountFields(org.Id, 8102, map[string]any{"status": OrgStatusSuspended}))
+	n, err := DisableOrgTokensOfUser(org.Id, 8102)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.False(t, enabled(8204))
+	tie, err = HasActiveOrgTie(org.Id, 8102)
+	require.NoError(t, err)
+	assert.False(t, tie, "a suspended member cannot switch its key back on")
+}
+
+// A grant to a customer is bounded by the wallet limit, before and after it
+// is added, and a customer's own usage report carries no reseller cost.
+func TestCustomerGrantIsBoundedAndCostStaysWithTheReseller(t *testing.T) {
+	migrateOrgTables(t)
+	reseller := mustCreateOrg(t, "bounded reseller", OrgTypeReseller, 1000)
+	_, err := CreateResellerCustomer(reseller.Id, "too much", "default", common.MaxWalletQuota+1, 1)
+	require.Error(t, err)
+	customer, err := CreateResellerCustomer(reseller.Id, "bounded customer", "default", 400, 1)
+	require.NoError(t, err)
+	require.Error(t, GrantCustomerQuota(reseller.Id, customer.Id, common.MaxWalletQuota+1, 1, ""))
+	require.Error(t, GrantCustomerQuota(reseller.Id, customer.Id, common.MaxWalletQuota, 1, ""), "400 held plus the limit is over the limit")
+	require.NoError(t, GrantCustomerQuota(reseller.Id, customer.Id, 100, 1, ""))
+	after, err := GetOrganizationById(customer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 500, after.WalletQuota)
+
+	report := &OrgUsageReport{
+		TotalQuota: 1000, TotalRetailQuota: 900, TotalCostQuota: 700,
+		ByModel:  []OrgUsageBucket{{Key: "m", Quota: 1000, RetailQuota: 900, CostQuota: 700}},
+		ByMember: []OrgUsageBucket{{Key: "u", Quota: 1000, CostQuota: 700}},
+	}
+	report.DropResellerCost()
+	assert.Zero(t, report.TotalCostQuota)
+	assert.Equal(t, OrgUsageBucket{Key: "m", Quota: 1000, RetailQuota: 900}, report.ByModel[0])
+	assert.Zero(t, report.ByMember[0].CostQuota)
+	assert.EqualValues(t, 900, report.TotalRetailQuota, "what the customer paid stays")
 }

@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -131,7 +132,13 @@ func (m *memTokenWindows) add(key string, amount int64) int64 {
 		e = &memWindowEntry{}
 		m.store[key] = e
 	}
-	e.value += amount
+	// Saturate: an absurd usage reported by an upstream must not wrap the
+	// counter below zero and lift the limit for the rest of the day.
+	if amount > 0 && e.value > math.MaxInt64-amount {
+		e.value = math.MaxInt64
+	} else {
+		e.value += amount
+	}
 	e.expiresAt = time.Now().Add(dailyBucketTTLSeconds * time.Second)
 	return e.value
 }

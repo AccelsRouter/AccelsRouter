@@ -59,7 +59,7 @@ func inviteCustomerOwner(c *gin.Context, reseller, customer *model.Organization,
 	if err == nil {
 		emailed := sendOrgActivationEmail(inv.InvitedEmail, customer.Name, inv.Code, inv.ExpiresAt)
 		model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.provision", fmt.Sprintf("org:%d", customer.Id), inv.InvitedEmail)
-		return gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true}, nil
+		return gin.H{"code": activationCodeForInviter(inv.Code, emailed), "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true}, nil
 	}
 	if !errors.Is(err, model.ErrEmailAlreadyRegistered) {
 		return nil, err
@@ -99,6 +99,12 @@ func CreateMyCustomer(c *gin.Context) {
 	ownerEmail := strings.TrimSpace(req.OwnerEmail)
 	if ownerEmail != "" && !strings.Contains(ownerEmail, "@") {
 		common.ApiErrorMsg(c, "负责人邮箱格式无效")
+		return
+	}
+	// As with a later allocation (AllocateFromMyOrg): a grant is a spending
+	// cap, not a transfer, but it never exceeds what the distributor holds.
+	if req.InitialQuota > reseller.WalletQuota {
+		common.ApiErrorMsg(c, "初始划拨额度不能超过分销商钱包余额")
 		return
 	}
 	// A reseller customer always uses the default price group: its pricing is
@@ -211,13 +217,18 @@ func ListMyResellerLogs(c *gin.Context) {
 			common.ApiErrorMsg(c, "该组织不是你的客户")
 			return
 		}
-		logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+		logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize(), true)
 	} else {
 		logs, total, err = model.ListResellerLogs(reseller.Id, from, to, page.GetStartIdx(), page.GetPageSize())
 	}
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	// As in GetMyCustomerLogs: a customer's end-user client IPs stay with the
+	// customer.
+	for _, l := range logs {
+		l.Ip = ""
 	}
 	page.SetTotal(int(total))
 	page.SetItems(logs)
@@ -235,7 +246,7 @@ func ExportMyResellerLogs(c *gin.Context) {
 		return
 	}
 	customerId, _ := strconv.Atoi(c.Query("customer_id"))
-	writeOrgLogsCSV(c, reseller.Id, customerId, reseller.Name, from, to)
+	writeOrgLogsCSV(c, reseller.Id, customerId, reseller.Name, from, to, true)
 }
 
 // GetMyCustomerPricing — GET /api/reseller/customers/:id/pricing
@@ -379,7 +390,7 @@ func ResendMyCustomerInvitation(c *gin.Context) {
 	}
 	emailed := sendOrgActivationEmail(inv.InvitedEmail, orgName, inv.Code, inv.ExpiresAt)
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.provision.resend", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
-	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
+	common.ApiSuccess(c, gin.H{"code": activationCodeForInviter(inv.Code, emailed), "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
 }
 
 // ListMyCustomerInvitations — GET /api/reseller/customers/:id/invitations
@@ -393,7 +404,7 @@ func ListMyCustomerInvitations(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, rows)
+	common.ApiSuccess(c, withoutActivationCodes(rows))
 }
 
 // RevokeMyCustomerInvitation — DELETE /api/reseller/customers/:id/invitations/:inv_id
@@ -652,7 +663,7 @@ func ExportMyCustomerLogs(c *gin.Context) {
 	if org, err := model.GetOrganizationById(customerId); err == nil && org != nil {
 		name = org.Name
 	}
-	writeOrgLogsCSV(c, customerId, 0, name, from, to)
+	writeOrgLogsCSV(c, customerId, 0, name, from, to, true)
 }
 
 func GetMyCustomerLogs(c *gin.Context) {
@@ -665,7 +676,7 @@ func GetMyCustomerLogs(c *gin.Context) {
 		return
 	}
 	page := common.GetPageQuery(c)
-	logs, total, err := model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+	logs, total, err := model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize(), true)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -834,6 +845,12 @@ func PurchaseMyResellerCredit(c *gin.Context) {
 	}
 	if req.Quota > maxResellerPurchaseQuota {
 		common.ApiErrorMsg(c, "单次购买额度超过上限")
+		return
+	}
+	// A balance under a refund request is frozen: it cannot be moved into the
+	// distributor wallet while the refund is being paid out.
+	if locked, lockErr := model.HasActiveRefundRequest(c.GetInt("id")); lockErr != nil || locked {
+		common.ApiErrorMsg(c, "您有进行中的退款申请，暂时不能购买分销商额度")
 		return
 	}
 	// Route-2: the reseller tops up its cost balance 1:1 (personal quota spent =

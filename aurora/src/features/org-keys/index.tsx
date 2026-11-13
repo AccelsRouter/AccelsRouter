@@ -312,7 +312,7 @@ export function OrgKeysPanel({
                 'Two-factor authentication must be enabled on your account before you can create an API key here.'
               )}
             </span>
-            <Button size='sm' variant='outline' render={<Link to='/profile' />}>
+            <Button size='sm' variant='outline' render={<Link to='/security' />}>
               {t('Enable two-factor authentication')}
             </Button>
           </AlertDescription>

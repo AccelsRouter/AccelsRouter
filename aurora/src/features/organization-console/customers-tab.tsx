@@ -324,7 +324,12 @@ function CustomerInviteDialog(props: {
     mutationFn: () => inviteCustomerOwner(customer!.org.id, email.trim()),
     onSuccess: (res) => {
       setLastProvisioned(res.provisioned)
-      setLastLink(res.provisioned ? activateLink(res.code) : joinLink(res.code))
+      // An activation link comes back only when no email could be sent.
+      if (!res.code) setLastLink(null)
+      else
+        setLastLink(
+          res.provisioned ? activateLink(res.code) : joinLink(res.code)
+        )
       setEmail('')
       toast.success(
         res.provisioned
@@ -349,7 +354,7 @@ function CustomerInviteDialog(props: {
       resendCustomerInvitation(customer!.org.id, invId),
     onSuccess: (res) => {
       setLastProvisioned(true)
-      setLastLink(activateLink(res.code))
+      setLastLink(res.code ? activateLink(res.code) : null)
       toast.success(
         res.emailed
           ? t('Activation email resent. The new link is valid for 7 days.')
@@ -470,18 +475,19 @@ function CustomerInviteDialog(props: {
                   </div>
                   <div className='flex items-center gap-2'>
                     {(inv.status === 'pending' ||
-                      inv.status === 'provisioned') && (
-                      <Button
-                        size='sm'
-                        variant='ghost'
-                        onClick={() => {
-                          void navigator.clipboard?.writeText(linkFor(inv))
-                          toast.success(t('Copied'))
-                        }}
-                      >
-                        {t('Copy link')}
-                      </Button>
-                    )}
+                      inv.status === 'provisioned') &&
+                      inv.code && (
+                        <Button
+                          size='sm'
+                          variant='ghost'
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(linkFor(inv))
+                            toast.success(t('Copied'))
+                          }}
+                        >
+                          {t('Copy link')}
+                        </Button>
+                      )}
                     {inv.status === 'provisioned' && (
                       <Button
                         size='sm'

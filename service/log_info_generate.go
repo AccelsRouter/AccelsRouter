@@ -37,15 +37,42 @@ func attachQuotaSaturationToOther(other *model.LogOther, clamp *common.QuotaClam
 // show the discounted price. Visible (not admin_info) — the customer and
 // reseller both see what was charged. No-op when there is no discount.
 func attachOrgRetailDiscount(relayInfo *relaycommon.RelayInfo, other *model.LogOther, quota int) {
-	if relayInfo == nil || other == nil {
+	if relayInfo == nil {
 		return
 	}
-	ratio := relayInfo.OrgDiscountRatio
-	if ratio <= 0 || ratio >= 1 {
+	attachOrgCharge(other, quota, relayInfo.OrgDiscountRatio, orgCustomerWholesaleRatio(relayInfo), false)
+}
+
+// orgCustomerWholesaleRatio is the wholesale ratio the reseller's wallet pays
+// for this request when a reseller's customer made it, 0 otherwise. A
+// reseller's own call is a single debit its discount ratio already describes.
+func orgCustomerWholesaleRatio(relayInfo *relaycommon.RelayInfo) float64 {
+	if relayInfo.ResellerOrgId <= 0 || relayInfo.ResellerOrgId == relayInfo.OrgId {
+		return 0
+	}
+	return relayInfo.OrgWholesaleRatio
+}
+
+// attachOrgCharge records the ratios an org-wallet request was charged at onto
+// its log, so the call records show what was billed then and not what the
+// settings say now: the discount on the paying org's wallet, for every viewer
+// of the row, and the wholesale ratio the reseller's wallet paid for its
+// customer's call under admin_info, which the customer never receives. A
+// discount of exactly 1 is recorded only for a task row (always): rows from
+// before tasks recorded theirs carry none, and the call records fall back to
+// the current settings for those.
+func attachOrgCharge(other *model.LogOther, quota int, discountRatio, wholesaleRatio float64, always bool) {
+	if other == nil {
 		return
 	}
-	other.SetPublic("org_discount_ratio", ratio)
-	other.SetPublic("org_charged_quota", common.QuotaRound(float64(quota)*ratio))
+	if discountRatio > 0 && (discountRatio < 1 || (always && discountRatio == 1)) {
+		other.SetPublic("org_discount_ratio", discountRatio)
+		other.SetPublic("org_charged_quota", common.QuotaRound(float64(quota)*discountRatio))
+	}
+	if wholesaleRatio > 0 && wholesaleRatio <= 1 {
+		other.SetAdmin("org_wholesale_ratio", wholesaleRatio)
+		other.SetAdmin("org_cost_quota", common.QuotaRound(float64(quota)*wholesaleRatio))
+	}
 }
 
 func attachQuotaSaturation(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other *model.LogOther) {

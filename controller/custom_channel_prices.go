@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -46,7 +47,9 @@ func customChannelVendorSource(baseURL string) string {
 // at ByteDance's own API takes the vendor list price. A channel whose list
 // cannot be read keeps its recorded prices.
 func recordCustomChannelPrices(ctx context.Context) (int, error) {
-	channels, err := model.GetAllChannels(0, 0, true, false)
+	// Platform channels only: a BYOK channel's address is its owner's choice
+	// and its price list says nothing about what the platform pays.
+	channels, err := model.GetPlatformChannels()
 	if err != nil {
 		return 0, err
 	}
@@ -138,4 +141,20 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 		changed += added
 	}
 	return changed, nil
+}
+
+// ListCustomChannelPrices returns the recorded prices of the channels, newest
+// first: every price a channel charged for a model and when it took effect.
+// channel_id narrows it to one channel.
+func ListCustomChannelPrices(c *gin.Context) {
+	query := model.DB.Model(&model.CustomChannelPrice{}).Order("effective_at desc, id desc").Limit(2000)
+	if id, err := strconv.Atoi(c.Query("channel_id")); err == nil && id > 0 {
+		query = query.Where("channel_id = ?", id)
+	}
+	var rows []model.CustomChannelPrice
+	if err := query.Find(&rows).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": rows})
 }

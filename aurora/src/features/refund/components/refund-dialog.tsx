@@ -422,7 +422,7 @@ function NoSecondFactorBlocker(props: { onClose: () => void }) {
         <Button
           onClick={() => {
             props.onClose()
-            navigate({ to: '/profile' })
+            navigate({ to: '/security' })
           }}
         >
           {t('Go to security settings')}

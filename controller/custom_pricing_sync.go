@@ -39,8 +39,8 @@ func fetchCustomPricingSync(ctx context.Context, client *http.Client, upstream d
 		return customPricingSyncResult(convertCustomBytePlusPricesToBillingExpr(prices))
 	case isCustomAlibabaIntlBaseURL(upstream.BaseURL):
 		channel, err := model.GetChannelById(upstream.ID, true)
-		if err != nil {
-			return nil, true, errors.New("failed to get channel key: " + err.Error())
+		if err != nil || model.IsByokChannel(upstream.ID) {
+			return nil, true, errors.New("failed to get channel key")
 		}
 		key, _, apiErr := channel.GetNextEnabledKey()
 		if apiErr != nil || strings.TrimSpace(key) == "" {

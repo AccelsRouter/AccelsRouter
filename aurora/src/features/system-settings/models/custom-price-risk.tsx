@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/status-badge'
 import { splitBillingExprAndRequestRules } from '@/features/pricing/lib/billing-expr'
@@ -648,6 +649,30 @@ export function getUnitPriceText(values?: PricingSyncValues): string | null {
 
 export function formatUnit(value: number | null): string {
   return value === null ? '—' : `$${Number(value.toPrecision(4))}`
+}
+
+// A price that is not per input and output token: per request, or a task
+// model's price as one number or a range per 1M tokens, per second or per
+// image, over the conditions its expression distinguishes. null for any
+// other price.
+export function getUsagePriceText(
+  values: PricingSyncValues | undefined,
+  t: TFunction
+): string | null {
+  if (getSyncPriceKind(values) === 'request') {
+    return `${formatUnit(Number(values?.model_price))} · ${t('Per-request')}`
+  }
+  if (chargesNothing(values)) return formatUnit(0)
+  const range = getUsagePriceRange(values)
+  if (!range) return null
+  const price =
+    range.max > range.min * (1 + 1e-9)
+      ? `${formatUnit(range.min)}–${formatUnit(range.max)}`
+      : formatUnit(range.min)
+  if (range.fact === 'tokens') return `${price} / ${t('1M token')}`
+  if (range.fact === 'seconds') return `${price} / ${t('second')}`
+  if (range.fact.startsWith('image')) return `${price} · ${t('Per image')}`
+  return `${price} / ${range.fact}`
 }
 
 export function CustomSourceRiskBadge(props: {

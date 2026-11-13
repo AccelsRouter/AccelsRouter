@@ -453,6 +453,14 @@ func UpdateToken(c *gin.Context) {
 			common.ApiError(c, fmt.Errorf("分销商及其客户的个人密钥已停用，请使用控制台的组织密钥"))
 			return
 		}
+	} else if orgId, oErr := model.GetTokenOrgId(cleanToken.Id); oErr != nil {
+		common.ApiError(c, oErr)
+		return
+	} else if active, tErr := model.HasActiveOrgTie(orgId, userId); tErr != nil || !active {
+		// An organization key is disabled when its owner is suspended or loses
+		// the role it was issued under; the owner cannot switch it back on.
+		common.ApiError(c, fmt.Errorf("该密钥所属组织的成员身份已停用，无法修改此密钥"))
+		return
 	}
 	params["name"] = cleanToken.Name
 	previous := *cleanToken

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/larknotify"
 	"github.com/QuantumNous/new-api/service"
@@ -58,6 +59,7 @@ func fetchCustomVendorSources(ctx context.Context) []customVendorSourceResult {
 		wg.Add(1)
 		go func(result *customVendorSourceResult) {
 			defer wg.Done()
+			defer customRecoverJob("vendor price source " + result.Name)
 			switch result.Name {
 			case "alibaba":
 				result.Prices, result.Note, result.Err = fetchCustomAlibabaVendorPrices(ctx, client)
@@ -139,10 +141,33 @@ func customVendorJump(a, b *float64) float64 {
 	return math.Max(*a / *b, *b / *a)
 }
 
+// customVendorIsLargeJump reports a price that moved by more than the allowed
+// factor, or to or from zero, on any price both versions carry: the headline
+// input, output and cache read, and tier by tier the input, output, cache,
+// audio and image prices and every usage price. A page that parses badly
+// usually breaks one of the secondary prices and leaves the headline alone.
 func customVendorIsLargeJump(old, next model.CustomVendorPrice) bool {
-	in1, in2 := old.InputPrice, next.InputPrice
-	return customVendorJump(&in1, &in2) > customVendorMaxJump ||
-		customVendorJump(old.OutputPrice, next.OutputPrice) > customVendorMaxJump
+	large := func(a, b *float64) bool { return customVendorJump(a, b) > customVendorMaxJump }
+	if large(&old.InputPrice, &next.InputPrice) || large(old.OutputPrice, next.OutputPrice) || large(old.CacheReadPrice, next.CacheReadPrice) {
+		return true
+	}
+	before, after := customVendorPriceFromRow(old).Tiers, customVendorPriceFromRow(next).Tiers
+	if len(before) != len(after) {
+		return false
+	}
+	for i := range before {
+		a, b := before[i], after[i]
+		if large(&a.Input, &b.Input) || large(a.Output, b.Output) || large(a.CacheRead, b.CacheRead) ||
+			large(a.CacheWrite, b.CacheWrite) || large(a.AudioInput, b.AudioInput) || large(a.ImageInput, b.ImageInput) {
+			return true
+		}
+		for unit, price := range a.Usage {
+			if other, priced := b.Usage[unit]; priced && large(&price, &other) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // customVendorPriceJSON is a stable encoding: it leaves out the row id and the
@@ -416,7 +441,10 @@ func notifyCustomVendorChanges(ctx context.Context, summary *customVendorChangeS
 	for i := range report.Changes {
 		report.Changes[i].InUse = slices.Contains(served, report.Changes[i].Model)
 	}
-	if err := service.SendLarkCard(ctx, service.LarkAlertTarget(), larknotify.VendorPriceCard(report, service.LarkTranslator)); err != nil {
+	// The card is written for the pricing team, who read Chinese, whatever
+	// language the deployment answers API clients in.
+	inChinese := func(key string, params map[string]any) string { return i18n.Translate("zh-CN", key, params) }
+	if err := service.SendLarkCard(ctx, service.LarkAlertTarget(), larknotify.VendorPriceCard(report, inChinese)); err != nil {
 		common.SysLog(common.LogText("vendor price change alert not sent: %s", err.Error()))
 	}
 }
@@ -429,18 +457,31 @@ func StartCustomVendorPriceRefresh() {
 	}
 	time.Sleep(time.Minute)
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		if err := RefreshCustomVendorPrices(ctx, false); err != nil {
-			common.SysLog(common.LogText("vendor price refresh failed: %s", err.Error()))
-		}
-		// After the catalog: a channel pointed at a vendor's own API is recorded at its list price.
-		if changed, err := recordCustomChannelPrices(ctx); err != nil {
-			common.SysLog(common.LogText("channel price record failed: %s", err.Error()))
-		} else if changed > 0 {
-			common.SysLog(common.LogText("channel price record: %d prices changed", changed))
-		}
-		cancel()
+		func() {
+			defer customRecoverJob("vendor price refresh")
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			if err := RefreshCustomVendorPrices(ctx, false); err != nil {
+				common.SysLog(common.LogText("vendor price refresh failed: %s", err.Error()))
+			}
+			// After the catalog: a channel pointed at a vendor's own API is recorded at its list price.
+			if changed, err := recordCustomChannelPrices(ctx); err != nil {
+				common.SysLog(common.LogText("channel price record failed: %s", err.Error()))
+			} else if changed > 0 {
+				common.SysLog(common.LogText("channel price record: %d prices changed", changed))
+			}
+		}()
 		time.Sleep(customVendorRefreshEvery)
+	}
+}
+
+// customRecoverJob is deferred in the fork's background goroutines. gin's
+// recovery covers request goroutines only, so a panic in one of these would
+// end the whole process, and the daily price refresh starts again a minute
+// after every start: one bad vendor page could keep the gateway restarting.
+func customRecoverJob(job string) {
+	if r := recover(); r != nil {
+		common.SysError(fmt.Sprintf("%s panicked: %v", job, r))
 	}
 }
 
@@ -701,4 +742,5 @@ func RegisterCustomVendorPriceRoutes(group *gin.RouterGroup) {
 	group.GET("/vendor_price_changes", ListCustomVendorPriceChanges)
 	group.POST("/vendor_price_changes/:id/accept", AcceptCustomVendorPriceChange)
 	group.POST("/vendor_price_changes/:id/reject", RejectCustomVendorPriceChange)
+	group.GET("/channel_prices", ListCustomChannelPrices)
 }

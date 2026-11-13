@@ -220,8 +220,9 @@ type customOpenRouterPricing struct {
 // customOpenRouterPerMillion converts a USD-per-token string to USD per 1M
 // tokens; an absent or unreadable price is nil.
 func customOpenRouterPerMillion(value string) *float64 {
+	// ParseFloat reads "NaN" and "Inf" as numbers; neither is a price.
 	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	if err != nil || parsed < 0 {
+	if err != nil || !validCustomVendorNumber(parsed) {
 		return nil
 	}
 	perMillion, _ := strconv.ParseFloat(strconv.FormatFloat(parsed*1e6, 'f', 6, 64), 64)
@@ -329,6 +330,7 @@ func fetchCustomOpenAIVendorPrices(ctx context.Context, client *http.Client, mod
 	var wg sync.WaitGroup
 	for i, name := range names {
 		wg.Go(func() {
+			defer customRecoverJob("OpenAI vendor price endpoints")
 			slots <- struct{}{}
 			defer func() { <-slots }()
 			var reply struct {

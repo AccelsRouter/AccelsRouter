@@ -846,6 +846,14 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 		logTaskPluginChannelDecision(c, nil, modelName, "channel_rejected", "nil_channel")
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+	// Fork: a BYOK channel's address is its owner's choice and its host can be
+	// re-pointed after the channel was saved, so it is checked again before
+	// every use (see service.ValidateByokBaseURL).
+	if channel.BaseURL != nil && *channel.BaseURL != "" && model.IsByokGroup(channel.Group) {
+		if err := service.ValidateByokBaseURL(*channel.BaseURL); err != nil {
+			return types.NewError(errors.New("the BYOK channel's base_url points at an address that is not allowed"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+	}
 	if expectedPlugin != "" && !channelMatchesExpectedTaskPlugin(c, channel, expectedPlugin) {
 		logTaskPluginChannelDecision(c, channel, modelName, "channel_rejected", "identity_mismatch")
 		return types.NewError(
