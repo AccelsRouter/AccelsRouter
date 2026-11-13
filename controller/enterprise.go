@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/larknotify"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -147,11 +148,12 @@ func buildLarkCard(req *enterpriseInquiryRequest, clientIP, userAgent string) ma
 }
 
 // escapeLark replaces characters that would break Lark markdown rendering.
+// escapeLark prepares a field of the public inquiry form for the lark_md card:
+// it is capped, and cannot mention the group or disguise a link (see
+// larknotify.PlainText).
 func escapeLark(s string) string {
 	s = strings.ReplaceAll(s, "\r", "")
-	// Lark lark_md treats bare newlines literally, no escape needed.
-	// Just avoid raw control chars.
-	return s
+	return larknotify.PlainText(larknotify.Truncate(s, 1000))
 }
 
 func truncate(s string, n int) string {

@@ -111,13 +111,17 @@ func GetOptions(c *gin.Context) {
 	// The Lark webhook addresses and signing secrets are listed in full. Their keys
 	// end in "secret", so the loop above skipped them; this endpoint is root only
 	// and the settings page shows them to the root administrator who set them.
-	lark := operation_setting.GetLarkSetting()
-	options = append(options,
-		&model.Option{Key: "lark_setting.enterprise_webhook_url_secret", Value: lark.EnterpriseWebhookURLSecret},
-		&model.Option{Key: "lark_setting.enterprise_sign_secret", Value: lark.EnterpriseSignSecret},
-		&model.Option{Key: "lark_setting.alert_webhook_url_secret", Value: lark.AlertWebhookURLSecret},
-		&model.Option{Key: "lark_setting.alert_sign_secret", Value: lark.AlertSignSecret},
-	)
+	// A personal access token does not get them: a token scoped to read options
+	// must not be enough to post into the team's Lark groups.
+	if !c.GetBool("use_access_token") {
+		lark := operation_setting.GetLarkSetting()
+		options = append(options,
+			&model.Option{Key: "lark_setting.enterprise_webhook_url_secret", Value: lark.EnterpriseWebhookURLSecret},
+			&model.Option{Key: "lark_setting.enterprise_sign_secret", Value: lark.EnterpriseSignSecret},
+			&model.Option{Key: "lark_setting.alert_webhook_url_secret", Value: lark.AlertWebhookURLSecret},
+			&model.Option{Key: "lark_setting.alert_sign_secret", Value: lark.AlertSignSecret},
+		)
+	}
 	common.OptionMapRWMutex.Unlock()
 	// Display the same effective expressions used by pricing and settlement,
 	// including built-in defaults absent from persisted administrator options.

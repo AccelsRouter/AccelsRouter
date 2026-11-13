@@ -57,3 +57,19 @@ func TestOrgUpdateAuditDetailSaysWhatChanged(t *testing.T) {
 	assert.Equal(t, map[string]any{"models_added": float64(60), "remark_changed": true},
 		detail(map[string]any{"allowed_models": stored, "remark": strings.Repeat("备注", 200)}))
 }
+
+// The activation code of an account opened by invitation sets that account's
+// password, so it reaches the inviter only when no email could carry it, and
+// no invitation list hands it to whoever reads the list. A join code, which
+// works only for the invited address after sign-in, stays.
+func TestActivationCodesStayWithTheInvitedMailbox(t *testing.T) {
+	assert.Empty(t, activationCodeForInviter("secret-code", true))
+	assert.Equal(t, "secret-code", activationCodeForInviter("secret-code", false))
+
+	rows := withoutActivationCodes([]*model.OrgInvitation{
+		{Id: 1, Code: "activation", Status: model.OrgInvitationProvisioned},
+		{Id: 2, Code: "join", Status: "pending"},
+	})
+	assert.Empty(t, rows[0].Code)
+	assert.Equal(t, "join", rows[1].Code)
+}

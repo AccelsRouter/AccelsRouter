@@ -15,13 +15,12 @@ func ConfigureTrustedProxies(engine *gin.Engine) error {
 	// populates RealClientIPHeader from CloudFront-Viewer-Address; TrustedPlatform
 	// makes gin's ClientIP() read that header first (falling back to the
 	// X-Forwarded-For / RemoteAddr logic below when absent).
-	engine.TrustedPlatform = RealClientIPHeader
-	engine.Use(RealClientIP())
-
 	trustedProxies, usedDefaults, err := common.ResolveTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
 	if err != nil {
 		return err
 	}
+	engine.TrustedPlatform = RealClientIPHeader
+	engine.Use(RealClientIP(trustedProxies))
 	if usedDefaults {
 		log.Print(common.LogText("WARNING: TRUSTED_PROXIES is unset or blank; trusting loopback, RFC 1918, and IPv6 ULA proxy addresses for compatibility. Set TRUSTED_PROXIES=none to trust no proxies, or configure explicit proxy IPs/CIDRs to replace these defaults."))
 	}

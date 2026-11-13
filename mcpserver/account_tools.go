@@ -130,8 +130,9 @@ func lookupGeneration(tokenId int, requestId string) (*generation, error) {
 	}
 	if row.Other != "" {
 		details := map[string]any{}
-		if common.UnmarshalJsonStr(row.Other, &details) == nil {
-			delete(details, "admin_info")
+		// What the web console shows a user of its own log, no more: the
+		// root and audit sections name the upstream task and the serving node.
+		if common.UnmarshalJsonStr(model.UserVisibleLogOther(row.Other), &details) == nil {
 			out.Details = details
 		}
 	}

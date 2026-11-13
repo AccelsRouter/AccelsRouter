@@ -95,6 +95,12 @@ type logUsageRow struct {
 	CompletionTokens int64
 }
 
+// UserVisibleLogOther is a log's metadata as its own user may read it: without
+// the admin, root and audit sections and the legacy channel fields.
+func UserVisibleLogOther(other string) string {
+	return formatLogOtherJSON(other, logOtherVisibilityUser)
+}
+
 // formatOrgLogs is formatUserLogs for org and reseller call records: besides
 // the channel and admin-only blobs, the upstream's own request id is dropped
 // too, since a customer must not learn which provider served a call.

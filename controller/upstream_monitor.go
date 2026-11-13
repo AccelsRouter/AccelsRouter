@@ -602,6 +602,7 @@ func AdminUpstreamPrices(c *gin.Context) {
 		wg.Add(1)
 		go func(i int, row upstreamChannelPrices, base string, src *model.UpstreamPriceSource, models []string) {
 			defer wg.Done()
+			defer customRecoverJob("upstream price fetch")
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			ctx, cancel := context.WithTimeout(c.Request.Context(), upstreamPriceTimeout)

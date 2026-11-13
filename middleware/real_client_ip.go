@@ -10,6 +10,7 @@ package middleware
 
 import (
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -31,14 +32,40 @@ const cloudFrontViewerAddressHeader = "CloudFront-Viewer-Address"
 // RealClientIPHeader. Register it as the first global middleware, before any
 // handler or middleware that reads c.ClientIP().
 //
+// CloudFront-Viewer-Address is believed only when the request's direct peer is
+// a proxy: one of trustedProxies (IPs or CIDRs, as TRUSTED_PROXIES gives them)
+// or any private or loopback address, which is what a load balancer or an
+// ingress always is. A client that reaches the server itself, from a public
+// address, could otherwise name any address as its own and pass a key's IP
+// allow-list or the per-IP limits. Behind a load balancer the peer is always
+// the balancer, so the balancer must in turn only accept CloudFront.
+//
 // Fail-safe: when CloudFront-Viewer-Address is absent (e.g. no CloudFront in
-// front, or a health check), the header is cleared and gin falls back to its
-// normal X-Forwarded-For / RemoteAddr resolution governed by TrustedProxies.
-func RealClientIP() gin.HandlerFunc {
+// front, or a health check) or not believed, the header is cleared and gin
+// falls back to its normal X-Forwarded-For / RemoteAddr resolution governed by
+// TrustedProxies.
+func RealClientIP(trustedProxies []string) gin.HandlerFunc {
+	var trusted []*net.IPNet
+	for _, entry := range trustedProxies {
+		entry = strings.TrimSpace(entry)
+		if !strings.Contains(entry, "/") {
+			if ip := net.ParseIP(entry); ip != nil && ip.To4() != nil {
+				entry += "/32"
+			} else {
+				entry += "/128"
+			}
+		}
+		if _, network, err := net.ParseCIDR(entry); err == nil {
+			trusted = append(trusted, network)
+		}
+	}
 	return func(c *gin.Context) {
 		// Never trust an inbound value for this header — only we may set it.
 		c.Request.Header.Del(RealClientIPHeader)
-		if addr := strings.TrimSpace(c.GetHeader(cloudFrontViewerAddressHeader)); addr != "" {
+		peer := net.ParseIP(c.RemoteIP())
+		fromProxy := peer != nil && (peer.IsPrivate() || peer.IsLoopback() ||
+			slices.ContainsFunc(trusted, func(network *net.IPNet) bool { return network.Contains(peer) }))
+		if addr := strings.TrimSpace(c.GetHeader(cloudFrontViewerAddressHeader)); addr != "" && fromProxy {
 			if ip := ipFromViewerAddress(addr); ip != "" {
 				c.Request.Header.Set(RealClientIPHeader, ip)
 			}
