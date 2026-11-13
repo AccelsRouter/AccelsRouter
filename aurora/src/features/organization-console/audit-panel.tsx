@@ -73,7 +73,7 @@ export function AuditPanel(props: {
   }
 
   return (
-    <div className='flex flex-col gap-4'>
+    <div className='flex min-w-0 flex-col gap-4'>
       <div className='border-border/60 max-h-[50vh] overflow-auto rounded-md border'>
         <table className='w-full text-sm'>
           <thead className='bg-muted/40 text-muted-foreground text-xs'>
@@ -113,7 +113,10 @@ export function AuditPanel(props: {
                   )}
                 </Td>
                 {/* What the row did, in words; the stored detail on hover. */}
-                <Td className='text-muted-foreground'>
+                {/* Wide enough to read as a sentence; a narrow container
+                    scrolls sideways instead of stacking it a few characters
+                    to a line. */}
+                <Td className='text-muted-foreground min-w-[20rem]'>
                   <span title={e.detail || undefined}>
                     {auditDetailText(e, t)}
                   </span>

@@ -1198,7 +1198,7 @@ function AuditDialog(props: { org: Organization | null; onClose: () => void }) {
         }
       }}
     >
-      <DialogContent className='sm:max-w-2xl'>
+      <DialogContent className='sm:max-w-4xl'>
         <DialogHeader>
           <DialogTitle>
             {t('Audit log')}
