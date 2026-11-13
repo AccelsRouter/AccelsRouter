@@ -50,7 +50,7 @@ export function Topup2FAGuardDialog(props: Props) {
           <Button
             onClick={() => {
               props.onOpenChange(false)
-              navigate({ to: '/profile' })
+              navigate({ to: '/security' })
             }}
           >
             {t('Go to security settings')}
