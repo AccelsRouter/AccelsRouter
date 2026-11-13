@@ -211,7 +211,7 @@ func ListMyResellerLogs(c *gin.Context) {
 			common.ApiErrorMsg(c, "该组织不是你的客户")
 			return
 		}
-		logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+		logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize(), true)
 	} else {
 		logs, total, err = model.ListResellerLogs(reseller.Id, from, to, page.GetStartIdx(), page.GetPageSize())
 	}
@@ -235,7 +235,7 @@ func ExportMyResellerLogs(c *gin.Context) {
 		return
 	}
 	customerId, _ := strconv.Atoi(c.Query("customer_id"))
-	writeOrgLogsCSV(c, reseller.Id, customerId, reseller.Name, from, to)
+	writeOrgLogsCSV(c, reseller.Id, customerId, reseller.Name, from, to, true)
 }
 
 // GetMyCustomerPricing — GET /api/reseller/customers/:id/pricing
@@ -652,7 +652,7 @@ func ExportMyCustomerLogs(c *gin.Context) {
 	if org, err := model.GetOrganizationById(customerId); err == nil && org != nil {
 		name = org.Name
 	}
-	writeOrgLogsCSV(c, customerId, 0, name, from, to)
+	writeOrgLogsCSV(c, customerId, 0, name, from, to, true)
 }
 
 func GetMyCustomerLogs(c *gin.Context) {
@@ -665,7 +665,7 @@ func GetMyCustomerLogs(c *gin.Context) {
 		return
 	}
 	page := common.GetPageQuery(c)
-	logs, total, err := model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+	logs, total, err := model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize(), true)
 	if err != nil {
 		common.ApiError(c, err)
 		return

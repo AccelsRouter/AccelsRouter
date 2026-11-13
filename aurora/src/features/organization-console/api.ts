@@ -190,8 +190,12 @@ export type OrgLog = {
   quota: number
   // Discounted price actually charged to the org wallet (reseller customers).
   retail_quota?: number
-  // Configured discount ratio for the row's model (0,1); shown as the discount %.
+  // Discount ratio the row was billed with (0,1); shown as the discount %.
   retail_ratio?: number
+  // What a customer's call cost the reseller and the wholesale ratio it was
+  // billed with. Only in the reseller's and the platform admin's views.
+  cost_quota?: number
+  cost_ratio?: number
   content: string
   // Customer org name — set only in a reseller's aggregated call log (rows span
   // multiple customers); empty in single-org views.

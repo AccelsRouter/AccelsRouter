@@ -7,6 +7,8 @@ package controller
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -135,6 +137,16 @@ func AdminUpdateOrganization(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// Fork: the settings before the update, so the audit row says what changed.
+	before, err := model.GetOrganizationById(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if before == nil {
+		common.ApiErrorMsg(c, "organization not found")
+		return
+	}
 	fields := map[string]interface{}{}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -225,8 +237,103 @@ func AdminUpdateOrganization(c *gin.Context) {
 	if req.Status != nil || req.AllowedModels != nil {
 		invalidateOrgAccountsCache(id)
 	}
-	model.RecordOrgAudit(id, c.GetInt("id"), "org.update", fmt.Sprintf("org:%d", id), fmt.Sprintf("%v", fields))
+	model.RecordOrgAudit(id, c.GetInt("id"), "org.update", fmt.Sprintf("org:%d", id), orgUpdateAuditDetail(before, fields))
 	common.ApiSuccess(c, nil)
+}
+
+// orgAuditDetailLimit is the room an audit row has for its detail.
+const orgAuditDetailLimit = 512
+
+// orgUpdateAuditDetail says what an update changed on an organization, as the
+// JSON the audit trail reads: each setting that differs from before with its
+// new value, and the callable models as the names added and removed (or the
+// whole list when the organization was unrestricted, or models_unrestricted
+// when the list was cleared). A list too long for the audit row is replaced by
+// its length.
+func orgUpdateAuditDetail(before *model.Organization, fields map[string]any) string {
+	changes := map[string]any{}
+	for key, value := range fields {
+		switch key {
+		case "name":
+			if value != before.Name {
+				changes[key] = value
+			}
+		case "price_group":
+			if value != before.PriceGroup {
+				changes[key] = value
+			}
+		case "status":
+			if value != before.Status {
+				changes[key] = value
+			}
+		case "remark":
+			if value != before.Remark {
+				changes[key] = value
+			}
+		case "wholesale_ratio":
+			if value != before.WholesaleRatio {
+				changes[key] = value
+			}
+		case "wholesale_ratios":
+			stored, _ := value.(string)
+			ratios := model.ParseRetailDiscounts(stored)
+			if !maps.Equal(ratios, model.ParseRetailDiscounts(before.WholesaleRatios)) {
+				changes[key] = ratios
+			}
+		case "allowed_models":
+			stored, _ := value.(string)
+			now := (&model.Organization{AllowedModels: stored}).AllowedModelList()
+			was := before.AllowedModelList()
+			added := slices.DeleteFunc(slices.Clone(now), func(name string) bool { return slices.Contains(was, name) })
+			removed := slices.DeleteFunc(slices.Clone(was), func(name string) bool { return slices.Contains(now, name) })
+			switch {
+			case len(added) == 0 && len(removed) == 0:
+			case len(now) == 0:
+				changes["models_unrestricted"] = true
+			case len(was) == 0:
+				changes["models_limited"] = now
+			default:
+				if len(added) > 0 {
+					changes["models_added"] = added
+				}
+				if len(removed) > 0 {
+					changes["models_removed"] = removed
+				}
+			}
+		}
+	}
+	for {
+		detail, err := common.Marshal(changes)
+		if err != nil {
+			return ""
+		}
+		if len(detail) <= orgAuditDetailLimit {
+			return string(detail)
+		}
+		longest, size := "", 0
+		for key, value := range changes {
+			switch list := value.(type) {
+			case []string:
+				if len(list) > size {
+					longest, size = key, len(list)
+				}
+			case map[string]float64:
+				if len(list) > size {
+					longest, size = key, len(list)
+				}
+			}
+		}
+		if longest == "" {
+			// Only the name and the remark are free text; the remark is the long one.
+			if _, noted := changes["remark"]; !noted {
+				return ""
+			}
+			delete(changes, "remark")
+			changes["remark_changed"] = true
+			continue
+		}
+		changes[longest] = size
+	}
 }
 
 type adminCreditOrgRequest struct {

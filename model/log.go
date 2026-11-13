@@ -81,10 +81,17 @@ type Log struct {
 	// = what the customer's org wallet actually paid. Set only on reseller-
 	// customer org log views (see ListOrgLogs); 0/omitted otherwise.
 	RetailQuota int `json:"retail_quota,omitempty" gorm:"-"`
-	// RetailRatio is the CONFIGURED discount ratio for this row's model (0,1),
-	// shown as the discount %. Distinct from RetailQuota/Quota, which fluctuates
-	// row to row from integer truncation at tiny quotas. Computed, non-persisted.
+	// RetailRatio is the discount ratio applied to this row (0,1), shown as the
+	// discount %: the one the request was billed with, as its log records it.
+	// Distinct from RetailQuota/Quota, which fluctuates row to row from integer
+	// rounding at tiny quotas. Computed, non-persisted.
 	RetailRatio float64 `json:"retail_ratio,omitempty" gorm:"-"`
+	// CostQuota is what the reseller's wallet paid the platform for a customer's
+	// call (Quota × CostRatio, the wholesale ratio applied to it). Set only on
+	// the views of a reseller's customers that the reseller or a platform admin
+	// reads, never on the customer's own. Computed, non-persisted.
+	CostQuota int     `json:"cost_quota,omitempty" gorm:"-"`
+	CostRatio float64 `json:"cost_ratio,omitempty" gorm:"-"`
 	// CustomerName is the name of the customer org this row belongs to. Populated
 	// only in a reseller's AGGREGATED call log (ListResellerLogs), where rows span
 	// multiple customers; empty otherwise. Computed, non-persisted.

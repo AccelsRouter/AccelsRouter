@@ -103,6 +103,8 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 	}
 	appendTaskLogInfo(task, other)
 	attachQuotaSaturation(c, info, other)
+	// Fork: the ratios the org wallets were charged at, for the call records.
+	attachOrgCharge(other, info.PriceData.Quota, info.OrgDiscountRatio, orgCustomerWholesaleRatio(info), true)
 	// Fork: a dev-only mock task consumed nothing upstream. It is still billed
 	// and logged (flagged), but stays out of channel usage, the quota_data
 	// rollup and the org usage rollup so reconciliation only sees real calls.
@@ -234,6 +236,28 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 	if err != nil {
 		logger.LogWarn(ctx, common.LogText("failed to adjust token quota (delta=%d, task=%s): %s", delta, task.TaskID, err.Error()))
 	}
+}
+
+// attachTaskOrgCharge records, on a settlement or refund row of an org-wallet
+// funded task, the ratios its submission was charged at (the funding
+// snapshot's), which are the ones the difference is settled with.
+func attachTaskOrgCharge(task *model.Task, other *model.LogOther, quota int) {
+	funding := task.PrivateData.OrgFunding
+	if funding == nil {
+		return
+	}
+	discount := funding.DiscountRatio
+	if discount <= 0 || discount > 1 {
+		discount = 1
+	}
+	wholesale := 0.0
+	if funding.ResellerOrgId > 0 {
+		wholesale = funding.WholesaleRatio
+		if wholesale <= 0 || wholesale > 1 {
+			wholesale = 1
+		}
+	}
+	attachOrgCharge(other, quota, discount, wholesale, true)
 }
 
 // taskBillingOther 从 task 的 BillingContext 构建日志 Other 字段。
@@ -377,6 +401,7 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 	other := taskBillingOther(task)
 	other.SetPublic("task_id", task.TaskID)
 	other.SetPublic("reason", reason)
+	attachTaskOrgCharge(task, other, quota)
 	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
 		UserId:    task.UserId,
 		LogType:   model.LogTypeRefund,
@@ -468,6 +493,7 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	other.SetPublic("task_id", task.TaskID)
 	other.SetPublic("pre_consumed_quota", preConsumedQuota)
 	other.SetPublic("actual_quota", actualQuota)
+	attachTaskOrgCharge(task, other, logQuota)
 	for _, clamp := range clamps {
 		attachQuotaSaturationToOther(other, clamp)
 	}

@@ -96,6 +96,8 @@ export type OrgAuditLog = {
   target: string
   detail: string
   created_time: number
+  // Name of the organization, member or workspace the target points at.
+  target_name?: string
 }
 
 export type PagedResponse<T> = {

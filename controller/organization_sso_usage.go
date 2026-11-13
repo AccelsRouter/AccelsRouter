@@ -6,6 +6,7 @@ package controller
 import (
 	"encoding/csv"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -206,8 +207,10 @@ const orgLogsExportCap = 100000
 
 // writeOrgLogsCSV streams one org's per-request call log as CSV, one row per
 // request with the reseller retail discount already overlaid (ListOrgLogs). The
-// caller is responsible for authorizing access to orgId.
-func writeOrgLogsCSV(c *gin.Context, orgId, customerId int, orgName string, from, to int64) {
+// caller is responsible for authorizing access to orgId. resellerView is the
+// reseller's or a platform admin's export: it adds what each customer call
+// cost the reseller, which the customer's own export must not carry.
+func writeOrgLogsCSV(c *gin.Context, orgId, customerId int, orgName string, from, to int64, resellerView bool) {
 	// A reseller aggregates its customers' rows; any other org (or a single
 	// selected customer) uses that org's own rows.
 	var logs []*model.Log
@@ -216,14 +219,14 @@ func writeOrgLogsCSV(c *gin.Context, orgId, customerId int, orgName string, from
 	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
 		if customerId > 0 {
 			if isCust, _ := model.IsResellerCustomer(orgId, customerId); isCust {
-				logs, _, err = model.ListOrgLogs(customerId, from, to, 0, orgLogsExportCap)
+				logs, _, err = model.ListOrgLogs(customerId, from, to, 0, orgLogsExportCap, resellerView)
 			}
 		} else {
 			logs, _, err = model.ListResellerLogs(orgId, from, to, 0, orgLogsExportCap)
 			withCustomer = true // aggregated log spans multiple customers
 		}
 	} else {
-		logs, _, err = model.ListOrgLogs(orgId, from, to, 0, orgLogsExportCap)
+		logs, _, err = model.ListOrgLogs(orgId, from, to, 0, orgLogsExportCap, resellerView)
 	}
 	if err != nil {
 		common.ApiError(c, err)
@@ -250,29 +253,43 @@ func writeOrgLogsCSV(c *gin.Context, orgId, customerId int, orgName string, from
 		"Time", "Member", "Model", "Status", "Input Tokens", "Output Tokens",
 		"Standard Price (USD)", "Discount", "Charged Price (USD)", "Detail",
 	)
+	// What each customer call cost the reseller, when any row carries it.
+	withCost := slices.ContainsFunc(logs, func(l *model.Log) bool { return l.CostRatio > 0 })
+	if withCost {
+		header = append(header, "Wholesale Ratio", "Wholesale Cost (USD)")
+	}
+	withSuffix := func(l *model.Log, cols []string) []string {
+		switch {
+		case !withCost:
+			return cols
+		case l.CostRatio > 0 && l.Type != model.LogTypeError:
+			return append(cols, strconv.FormatFloat(l.CostRatio, 'f', 2, 64), usd(l.CostQuota))
+		}
+		return append(cols, "-", "-")
+	}
 	_ = w.Write(header)
 	for _, l := range logs {
 		if l.Type == model.LogTypeError {
 			// Failed request (e.g. model not opened to the customer): no charge,
 			// carry the reason in Detail.
-			_ = w.Write(withPrefix(csvSafe(l.CustomerName),
+			_ = w.Write(withSuffix(l, withPrefix(csvSafe(l.CustomerName),
 				time.Unix(l.CreatedAt, 0).Format("2006-01-02 15:04:05"),
 				csvSafe(l.Username), csvSafe(l.ModelName), "Failed",
 				strconv.Itoa(l.PromptTokens), strconv.Itoa(l.CompletionTokens),
 				"-", "-", "-", csvSafe(l.Content),
-			))
+			)))
 			continue
 		}
 		charged := l.Quota
 		if l.RetailQuota > 0 {
 			charged = l.RetailQuota
 		}
-		// Configured discount ratio (consistent), not the truncated effective one.
+		// The discount ratio the row was billed with, not the rounded effective one.
 		discount := "-"
 		if l.RetailRatio > 0 {
 			discount = strconv.FormatFloat(l.RetailRatio, 'f', 2, 64)
 		}
-		_ = w.Write(withPrefix(csvSafe(l.CustomerName),
+		_ = w.Write(withSuffix(l, withPrefix(csvSafe(l.CustomerName),
 			time.Unix(l.CreatedAt, 0).Format("2006-01-02 15:04:05"),
 			csvSafe(l.Username),
 			csvSafe(l.ModelName),
@@ -283,7 +300,7 @@ func writeOrgLogsCSV(c *gin.Context, orgId, customerId int, orgName string, from
 			discount,
 			usd(charged),
 			"",
-		))
+		)))
 	}
 }
 
@@ -299,7 +316,7 @@ func AdminExportOrgLogs(c *gin.Context) {
 		name = org.Name
 	}
 	customerId, _ := strconv.Atoi(c.Query("customer_id"))
-	writeOrgLogsCSV(c, orgId, customerId, name, from, to)
+	writeOrgLogsCSV(c, orgId, customerId, name, from, to, true)
 }
 
 // AdminListOrgLogs — GET /api/admin/organizations/:id/logs
@@ -322,13 +339,13 @@ func AdminListOrgLogs(c *gin.Context) {
 	if org, gErr := model.GetOrganizationById(orgId); gErr == nil && org != nil && org.Type == model.OrgTypeReseller {
 		if customerId > 0 {
 			if isCust, _ := model.IsResellerCustomer(orgId, customerId); isCust {
-				logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize())
+				logs, total, err = model.ListOrgLogs(customerId, from, to, page.GetStartIdx(), page.GetPageSize(), true)
 			}
 		} else {
 			logs, total, err = model.ListResellerLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
 		}
 	} else {
-		logs, total, err = model.ListOrgLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize())
+		logs, total, err = model.ListOrgLogs(orgId, from, to, page.GetStartIdx(), page.GetPageSize(), true)
 	}
 	if err != nil {
 		common.ApiError(c, err)

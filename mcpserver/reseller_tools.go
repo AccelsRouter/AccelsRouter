@@ -344,7 +344,7 @@ func resellerCustomerLogsTool(ctx context.Context, in customerLogsInput) (*mcp.C
 		return nil, customerLogsOutput{}, err
 	}
 	from, to, _ := usageWindow(in.Days)
-	logs, total, err := model.ListOrgLogs(customer.Id, from, to, 0, clampLimit(in.Limit, 50))
+	logs, total, err := model.ListOrgLogs(customer.Id, from, to, 0, clampLimit(in.Limit, 50), true)
 	if err != nil {
 		return nil, customerLogsOutput{}, err
 	}

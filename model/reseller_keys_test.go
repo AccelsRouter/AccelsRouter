@@ -132,9 +132,17 @@ func TestResellerConsoleIncludesOwnKeyTraffic(t *testing.T) {
 	require.NoError(t, BindTokenToWorkspace(reseller.Id, ownWs.Id, 7501))
 	require.NoError(t, BindTokenToWorkspace(customer.Id, custWs.Id, 7502))
 
+	// Each row carries the ratios it was billed with. The customer's rows were
+	// billed at a 0.9 discount and a 0.7 wholesale; the settings have since
+	// moved to 0.5 and 0.8, which must not rewrite them.
+	require.NoError(t, UpdateOrganizationFields(customer.Id, map[string]interface{}{
+		"retail_discounts": `{"claude-opus-4-8":0.5}`,
+	}))
 	now := common.GetTimestamp()
-	require.NoError(t, LOG_DB.Create(&Log{UserId: 7601, Type: LogTypeConsume, TokenId: 7501, ModelName: "claude-opus-4-8", Quota: 1000, CreatedAt: now}).Error)
-	require.NoError(t, LOG_DB.Create(&Log{UserId: 7602, Type: LogTypeConsume, TokenId: 7502, ModelName: "claude-opus-4-8", Quota: 500, CreatedAt: now}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{UserId: 7601, Type: LogTypeConsume, TokenId: 7501, ModelName: "claude-opus-4-8", Quota: 1000, CreatedAt: now,
+		Other: `{"org_discount_ratio":0.8,"org_charged_quota":800}`}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{UserId: 7602, Type: LogTypeConsume, TokenId: 7502, ModelName: "claude-opus-4-8", Quota: 500, CreatedAt: now,
+		Other: `{"org_discount_ratio":0.9,"org_charged_quota":450,"admin_info":{"org_wholesale_ratio":0.7,"org_cost_quota":350}}`}).Error)
 
 	logs, total, err := ListResellerLogs(reseller.Id, now-10, now+10, 0, 50)
 	require.NoError(t, err)
@@ -147,7 +155,40 @@ func TestResellerConsoleIncludesOwnKeyTraffic(t *testing.T) {
 	assert.Equal(t, "reseller", byToken[7501].CustomerName)
 	assert.Equal(t, 0.8, byToken[7501].RetailRatio, "own row's paid overlay is the wholesale ratio")
 	assert.Equal(t, 800, byToken[7501].RetailQuota)
+	assert.Zero(t, byToken[7501].CostQuota, "an own row is a single debit: no separate cost")
 	assert.Equal(t, "customer-one", byToken[7502].CustomerName)
+	assert.Equal(t, 0.9, byToken[7502].RetailRatio, "the discount the row was billed with, not today's 0.5")
+	assert.Equal(t, 450, byToken[7502].RetailQuota)
+	assert.Equal(t, 0.7, byToken[7502].CostRatio, "the wholesale the row was billed with, not today's 0.8")
+	assert.Equal(t, 350, byToken[7502].CostQuota)
+
+	// Rows that recorded nothing: a text row was billed without a discount; a
+	// task row from before tasks recorded theirs reads today's settings; either
+	// takes today's wholesale as the reseller's cost.
+	require.NoError(t, LOG_DB.Create(&Log{UserId: 7602, Type: LogTypeConsume, TokenId: 7502, ModelName: "claude-opus-4-8", Quota: 200, CreatedAt: now + 1}).Error)
+	require.NoError(t, LOG_DB.Create(&Log{UserId: 7602, Type: LogTypeConsume, TokenId: 7502, ModelName: "claude-opus-4-8", Quota: 100, CreatedAt: now + 2,
+		Other: `{"is_task":true}`}).Error)
+	reseen, _, err := ListOrgLogs(customer.Id, now-10, now+10, 0, 50, true)
+	require.NoError(t, err)
+	require.Len(t, reseen, 3)
+	assert.Equal(t, []float64{0.5, 0, 0.9}, []float64{reseen[0].RetailRatio, reseen[1].RetailRatio, reseen[2].RetailRatio})
+	assert.Equal(t, []int{80, 160, 350}, []int{reseen[0].CostQuota, reseen[1].CostQuota, reseen[2].CostQuota})
+
+	// The customer reads its own records without the reseller's cost, in the
+	// columns or in the row's metadata.
+	own, _, err := ListOrgLogs(customer.Id, now-10, now+10, 0, 50, false)
+	require.NoError(t, err)
+	require.Len(t, own, 3)
+	for _, l := range own {
+		assert.Zero(t, l.CostQuota)
+		assert.Zero(t, l.CostRatio)
+		assert.NotContains(t, l.Other, "wholesale")
+		assert.NotContains(t, l.Other, "org_cost_quota")
+	}
+	assert.Equal(t, 450, own[2].RetailQuota, "it still sees what it paid")
+	for _, l := range reseen {
+		assert.NotContains(t, l.Other, "wholesale", "the reseller reads the cost from the columns only")
+	}
 
 	// Rollup: an own-key row written before own calls were tagged (reseller_org_id
 	// 0, org_id = reseller) and one written after (tagged) both count once.

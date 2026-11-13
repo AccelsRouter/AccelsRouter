@@ -92,11 +92,62 @@ func formatOrgLogs(logs []*Log, startIdx int) {
 	}
 }
 
+// orgLogCharge is what a call record's own metadata says the request was
+// charged at: the discount applied to the paying org's wallet and, for a
+// reseller's customer, the wholesale ratio the reseller's wallet paid. A zero
+// ratio means the row does not say.
+type orgLogCharge struct {
+	task      bool
+	discount  float64
+	wholesale float64
+}
+
+// readOrgLogCharge reads a row's charge before formatOrgLogs strips the
+// wholesale ratio, which sits under admin_info so the customer never gets it.
+func readOrgLogCharge(other string) orgLogCharge {
+	var values struct {
+		IsTask    bool    `json:"is_task"`
+		Discount  float64 `json:"org_discount_ratio"`
+		AdminInfo struct {
+			Wholesale float64 `json:"org_wholesale_ratio"`
+		} `json:"admin_info"`
+	}
+	_ = common.UnmarshalJsonStr(other, &values)
+	return orgLogCharge{task: values.IsTask, discount: values.Discount, wholesale: values.AdminInfo.Wholesale}
+}
+
+// overlayOrgLogCharge sets what a call record was charged: the discount the
+// request was billed with and the amount the org's wallet paid, and with
+// resellerCost what the reseller's wallet paid for it. The ratios are the ones
+// the row recorded. A row from before they were recorded takes the ones in
+// force now (discounts, wholesale): a task row for its discount, since a text
+// row has always recorded its own, and any row for the reseller's cost.
+func overlayOrgLogCharge(l *Log, charge orgLogCharge, discounts, wholesale map[string]float64, resellerCost bool) {
+	ratio := charge.discount
+	if ratio == 0 && charge.task {
+		ratio = RetailDiscountFor(l.ModelName, discounts)
+	}
+	if ratio > 0 && ratio < 1 {
+		l.RetailRatio = ratio
+		l.RetailQuota = common.QuotaRound(float64(l.Quota) * ratio)
+	}
+	if !resellerCost {
+		return
+	}
+	ratio = charge.wholesale
+	if ratio <= 0 || ratio > 1 {
+		ratio = WholesaleRatioFor(l.ModelName, wholesale)
+	}
+	l.CostRatio = ratio
+	l.CostQuota = common.QuotaRound(float64(l.Quota) * ratio)
+}
+
 // ListOrgLogs returns the org's individual consume call records (newest first,
 // paginated) for [from, to]. Cross-DB safe: the org's token ids are resolved
 // from the main DB, and the logs are read from LOG_DB by token_id (no join),
-// mirroring GetOrgUsage.
-func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, error) {
+// mirroring GetOrgUsage. resellerView adds what each call cost the reseller the
+// org is a customer of; the org's own members must not be given it.
+func ListOrgLogs(orgId int, from, to int64, startIdx, num int, resellerView bool) ([]*Log, int64, error) {
 	var bindings []WorkspaceToken
 	if err := DB.Where("org_id = ?", orgId).Find(&bindings).Error; err != nil {
 		return nil, 0, err
@@ -127,33 +178,39 @@ func ListOrgLogs(orgId int, from, to int64, startIdx, num int) ([]*Log, int64, e
 	if err := tx.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
+	charges := make([]orgLogCharge, len(logs))
+	for i, l := range logs {
+		charges[i] = readOrgLogCharge(l.Other)
+	}
 	// Strip admin-only fields (Other.admin_info/audit_info, ChannelName) — these
 	// viewers (reseller admin, org owner/admin) are not platform admins.
 	formatOrgLogs(logs, startIdx)
-	// Overlay the reseller's per-model retail discount so each row shows the
-	// discounted price the customer's org wallet actually paid. Reporting only;
-	// mirrors ApplyRetailDiscounts on the aggregate report and the live charge
-	// applied in service/org_funding.go.
-	if org, err := GetOrganizationById(orgId); err == nil && org != nil && org.RetailDiscounts != "" {
-		discounts := ParseRetailDiscounts(org.RetailDiscounts)
-		if len(discounts) > 0 {
-			for _, l := range logs {
-				ratio := RetailDiscountFor(l.ModelName, discounts)
-				if ratio >= 1 {
-					continue // model has no configured discount
-				}
-				l.RetailRatio = ratio
-				l.RetailQuota = common.QuotaRound(float64(l.Quota) * ratio)
+	// Overlay the discounted price the org's wallet actually paid on each row,
+	// and for a reseller's view what the call cost the reseller. Reporting only.
+	var discounts, wholesale map[string]float64
+	if org, err := GetOrganizationById(orgId); err == nil && org != nil {
+		discounts = ParseRetailDiscounts(org.RetailDiscounts)
+	}
+	resellerCost := false
+	if resellerView {
+		if resellerId, ok := ResellerOrgIdForCustomer(orgId); ok {
+			resellerCost = true
+			if reseller, err := GetOrganizationById(resellerId); err == nil && reseller != nil {
+				wholesale = ParseRetailDiscounts(reseller.WholesaleRatios)
 			}
 		}
+	}
+	for i, l := range logs {
+		overlayOrgLogCharge(l, charges[i], discounts, wholesale, resellerCost)
 	}
 	return logs, total, nil
 }
 
 // ListResellerLogs returns the per-request call log across ALL of a reseller's
 // customer orgs plus the reseller's OWN keys (bound to the reseller org). A
-// customer row's paid overlay uses that customer's retail discount; an own row's
-// uses the reseller's wholesale ratio (what the reseller wallet actually paid).
+// customer row's paid overlay uses that customer's retail discount and carries
+// what the call cost the reseller; an own row's uses the reseller's wholesale
+// ratio (what the reseller wallet actually paid).
 func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*Log, int64, error) {
 	var links []ResellerCustomerLink
 	if err := DB.Where("reseller_org_id = ?", resellerOrgId).Find(&links).Error; err != nil {
@@ -193,6 +250,10 @@ func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*
 	if err := tx.Order("id desc").Limit(num).Offset(startIdx).Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
+	charges := make([]orgLogCharge, len(logs))
+	for i, l := range logs {
+		charges[i] = readOrgLogCharge(l.Other)
+	}
 	formatOrgLogs(logs, startIdx)
 	// Per customer: the retail discount (for the overlay) and the org name (for
 	// the aggregated call log's customer column).
@@ -212,19 +273,10 @@ func ListResellerLogs(resellerOrgId int, from, to int64, startIdx, num int) ([]*
 			discountsByOrg[resellerOrgId] = ParseRetailDiscounts(reseller.WholesaleRatios)
 		}
 	}
-	for _, lg := range logs {
+	for i, lg := range logs {
 		orgId := tokenToOrg[lg.TokenId]
 		lg.CustomerName = nameByOrg[orgId]
-		d := discountsByOrg[orgId]
-		if len(d) == 0 {
-			continue
-		}
-		ratio := RetailDiscountFor(lg.ModelName, d)
-		if ratio >= 1 {
-			continue
-		}
-		lg.RetailRatio = ratio
-		lg.RetailQuota = common.QuotaRound(float64(lg.Quota) * ratio)
+		overlayOrgLogCharge(lg, charges[i], discountsByOrg[orgId], discountsByOrg[resellerOrgId], orgId != resellerOrgId)
 	}
 	return logs, total, nil
 }

@@ -26,6 +26,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import { auditDetailText } from './audit-detail'
 import { Td, Th, fmtTime } from './shared'
 import type { OrgAuditLog, PagedResponse } from './types'
 
@@ -103,11 +104,20 @@ export function AuditPanel(props: {
                   <span className='font-mono text-[11px]'>{e.action}</span>
                 </Td>
                 <Td>
-                  <span className='font-mono text-[11px]'>
-                    {e.target || '-'}
+                  {e.target_name ? (
+                    <span title={e.target}>{e.target_name}</span>
+                  ) : (
+                    <span className='font-mono text-[11px]'>
+                      {e.target || '-'}
+                    </span>
+                  )}
+                </Td>
+                {/* What the row did, in words; the stored detail on hover. */}
+                <Td className='text-muted-foreground'>
+                  <span title={e.detail || undefined}>
+                    {auditDetailText(e, t)}
                   </span>
                 </Td>
-                <Td className='text-muted-foreground'>{e.detail || '-'}</Td>
               </tr>
             ))}
           </tbody>

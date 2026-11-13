@@ -27,7 +27,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import { Trans, useTranslation } from 'react-i18next'
-import { formatNumber } from '@/lib/format'
+import { formatLocalCurrencyAmount, getCurrencyDisplay } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -181,6 +181,11 @@ export function RechargeFormCard({
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
   const minTopup = getMinTopupAmount(topupInfo)
+  // The amount typed and the minimums are system dollars, unless the site
+  // counts balances in tokens.
+  const amountInDollars = getCurrencyDisplay().meta.kind !== 'tokens'
+  const amountText = (amount: number) =>
+    amountInDollars ? `$${amount}` : String(amount)
   const redemptionEnabled = topupInfo?.enable_redemption !== false
 
   if (loading) {
@@ -296,7 +301,11 @@ export function RechargeFormCard({
                         >
                           <div className='flex w-full items-center justify-between'>
                             <div className='text-base font-semibold sm:text-lg'>
-                              {formatNumber(displayValue)}
+                              {formatLocalCurrencyAmount(displayValue, {
+                                digitsLarge: 2,
+                                digitsSmall: 2,
+                                abbreviate: false,
+                              })}
                             </div>
                             {hasDiscount && (
                               <div className='text-xs font-medium text-green-600'>
@@ -338,15 +347,27 @@ export function RechargeFormCard({
                   {t('Custom Amount')}
                 </Label>
                 <div className='grid grid-cols-[minmax(0,1fr)_minmax(110px,0.55fr)] gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center'>
-                  <Input
-                    id='topup-amount'
-                    type='number'
-                    value={localAmount}
-                    onChange={(e) => handleAmountChange(e.target.value)}
-                    min={minTopup}
-                    placeholder={t('Minimum {{amount}}', { amount: minTopup })}
-                    className='h-9 text-base sm:h-10 sm:text-lg'
-                  />
+                  <div className='relative'>
+                    {amountInDollars && (
+                      <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-base sm:text-lg'>
+                        $
+                      </span>
+                    )}
+                    <Input
+                      id='topup-amount'
+                      type='number'
+                      value={localAmount}
+                      onChange={(e) => handleAmountChange(e.target.value)}
+                      min={minTopup}
+                      placeholder={t('Minimum {{amount}}', {
+                        amount: amountText(minTopup),
+                      })}
+                      className={cn(
+                        'h-9 text-base sm:h-10 sm:text-lg',
+                        amountInDollars && 'pl-7'
+                      )}
+                    />
+                  </div>
                   <div className='bg-muted/30 flex min-h-9 items-center justify-between gap-2 rounded-md border px-3 lg:min-w-52'>
                     <span className='text-muted-foreground truncate text-xs'>
                       {t('Amount to pay:')}
@@ -394,7 +415,7 @@ export function RechargeFormCard({
                               <TooltipTrigger render={button}></TooltipTrigger>
                               <TooltipContent>
                                 {t('Minimum topup amount: {{amount}}', {
-                                  amount: wgMin,
+                                  amount: amountText(wgMin),
                                 })}
                               </TooltipContent>
                             </Tooltip>
@@ -408,11 +429,11 @@ export function RechargeFormCard({
                       const disabled = minTopup > topupAmount
                       const disabledReason = disabled
                         ? t('Minimum topup amount: {{amount}}', {
-                            amount: minTopup,
+                            amount: amountText(minTopup),
                           })
                         : undefined
                       const disabledLabel = disabled
-                        ? `${t('Minimum:')} ${minTopup}`
+                        ? `${t('Minimum:')} ${amountText(minTopup)}`
                         : undefined
 
                       const button = (
@@ -489,11 +510,11 @@ export function RechargeFormCard({
                         const belowMin = waffoMin > topupAmount
                         const disabledReason = belowMin
                           ? t('Minimum topup amount: {{amount}}', {
-                              amount: waffoMin,
+                              amount: amountText(waffoMin),
                             })
                           : undefined
                         const disabledLabel = belowMin
-                          ? `${t('Minimum:')} ${waffoMin}`
+                          ? `${t('Minimum:')} ${amountText(waffoMin)}`
                           : undefined
 
                         const button = (

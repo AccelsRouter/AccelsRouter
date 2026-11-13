@@ -217,7 +217,7 @@ func GetMyOrgLogs(c *gin.Context) {
 		return
 	}
 	page := common.GetPageQuery(c)
-	logs, total, err := model.ListOrgLogs(org.Id, from, to, page.GetStartIdx(), page.GetPageSize())
+	logs, total, err := model.ListOrgLogs(org.Id, from, to, page.GetStartIdx(), page.GetPageSize(), false)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -237,7 +237,7 @@ func ExportMyOrgLogs(c *gin.Context) {
 	if !ok {
 		return
 	}
-	writeOrgLogsCSV(c, org.Id, 0, org.Name, from, to)
+	writeOrgLogsCSV(c, org.Id, 0, org.Name, from, to, false)
 }
 
 func ListMyOrgLedger(c *gin.Context) {

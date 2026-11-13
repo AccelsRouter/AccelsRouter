@@ -80,9 +80,11 @@ export function CallRecords({
   })
 
   const items = data?.items ?? []
-  // Show the discounted (actually-charged) price column only when the reseller
-  // has set a discount for this customer.
-  const showRetail = items.some((l) => l.retail_quota != null)
+  // The price column reads "Cost / Charged" once any row was billed at a
+  // discount or carries what it cost the reseller.
+  const showRetail = items.some(
+    (l) => l.retail_quota != null || l.cost_ratio != null
+  )
   // A reseller's aggregated log spans multiple customers; show which customer
   // each row belongs to. Empty in single-org (customer/enterprise) views.
   const showCustomer = items.some((l) => l.customer_name)
@@ -188,29 +190,46 @@ export function CallRecords({
                       ? '-'
                       : `${l.prompt_tokens} / ${l.completion_tokens}`}
                   </Td>
-                  {/* Price merged: charged (bold) + standard·discount% as subtext. */}
+                  {/* Charged (bold); under it the standard price and the
+                      discount it was billed with, then, for the reseller, what
+                      the call cost it. */}
                   <Td className='text-right whitespace-nowrap tabular-nums'>
                     {isError ? (
                       '-'
-                    ) : showRetail ? (
+                    ) : (
                       <div className='flex flex-col items-end'>
-                        <span className='font-medium'>
+                        <span
+                          className={
+                            l.retail_ratio != null || l.cost_ratio != null
+                              ? 'font-medium'
+                              : undefined
+                          }
+                        >
                           {sign}
                           {formatQuotaWithCurrency(
                             l.retail_quota ?? l.quota,
                             MONEY_OPTS
                           )}
                         </span>
-                        <span className='text-muted-foreground text-xs'>
-                          {sign}
-                          {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
-                          {l.retail_ratio != null
-                            ? ` · ${Math.round(l.retail_ratio * 100)}%`
-                            : ''}
-                        </span>
+                        {l.retail_ratio != null && (
+                          <span className='text-muted-foreground text-xs'>
+                            {sign}
+                            {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
+                            {` × ${Math.round(l.retail_ratio * 100)}%`}
+                          </span>
+                        )}
+                        {l.cost_ratio != null && (
+                          <span className='text-muted-foreground text-xs'>
+                            {t('Wholesale cost {{amount}}', {
+                              amount: `${sign}${formatQuotaWithCurrency(
+                                l.cost_quota ?? 0,
+                                MONEY_OPTS
+                              )}`,
+                            })}
+                            {` × ${Math.round(l.cost_ratio * 100)}%`}
+                          </span>
+                        )}
                       </div>
-                    ) : (
-                      `${sign}${formatQuotaWithCurrency(l.quota, MONEY_OPTS)}`
                     )}
                   </Td>
                   <Td className='text-muted-foreground text-xs'>

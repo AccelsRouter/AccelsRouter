@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -47,6 +48,18 @@ func TestOrgAuditLog(t *testing.T) {
 	require.Len(t, rows, 2)
 	assert.Equal(t, "credit.allocate", rows[0].Action, "newest first")
 	assert.Equal(t, "workspace.create", rows[1].Action)
+	assert.Empty(t, rows[0].TargetName, "a target that is gone keeps its bare id")
+
+	// A row names the organization, member or workspace it points at.
+	ws := &Workspace{OrgId: orgA.Id, Name: "prod"}
+	require.NoError(t, CreateWorkspace(ws))
+	RecordOrgAudit(orgA.Id, 1, "credit.allocate", fmt.Sprintf("org:%d", orgB.Id), "quota=100")
+	RecordOrgAudit(orgA.Id, 1, "workspace.update", fmt.Sprintf("workspace:%d", ws.Id), "")
+	RecordOrgAudit(orgA.Id, 1, "sso.domain.add", "example.com", "provider=github")
+	rows, _, err = ListOrgAuditLogs(orgA.Id, 0, 3)
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+	assert.Equal(t, []string{"", "prod", "other"}, []string{rows[0].TargetName, rows[1].TargetName, rows[2].TargetName})
 
 	// Another org's trail is isolated.
 	rowsB, totalB, err := ListOrgAuditLogs(orgB.Id, 0, 20)
