@@ -92,13 +92,24 @@ func RequestWonderGatePay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "参数错误"})
 		return
 	}
-	minTopup := int64(setting.WonderGateMinTopUp)
-	if req.Amount < minTopup {
+	id := c.GetInt("id")
+	// Bounded like every other top-up: the credited quota must convert without
+	// saturating and fit the wallet.
+	if rejectInvalidTopUpQuota(c, id, req.Amount) {
+		return
+	}
+	// The dollars credited. A token-mode request counts tokens; an amount worth
+	// less than one dollar is refused, never rounded up to one.
+	amount := req.Amount
+	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		amount = int64(float64(req.Amount) / common.QuotaPerUnit)
+	}
+	minTopup := max(int64(setting.WonderGateMinTopUp), 1)
+	if amount < minTopup {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %d", minTopup)})
 		return
 	}
 
-	id := c.GetInt("id")
 	user, err := model.GetUserById(id, false)
 	if err != nil || user == nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "用户不存在"})
@@ -115,16 +126,6 @@ func RequestWonderGatePay(c *gin.Context) {
 	// WonderGate transactionId must be unique; reuse it as our trade_no so
 	// webhook/reconcile line up. Alphanumeric only (no separators).
 	tradeNo := fmt.Sprintf("WG%d%d%s", id, time.Now().UnixMilli(), randstr.String(6))
-
-	// Token display mode: normalise Amount to USD-equivalent units so
-	// RechargeWonderGate does not double-scale quota during settlement.
-	amount := req.Amount
-	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		amount = int64(float64(req.Amount) / common.QuotaPerUnit)
-		if amount < 1 {
-			amount = 1
-		}
-	}
 
 	topUp := &model.TopUp{
 		UserId:          id,
@@ -236,7 +237,7 @@ func WonderGateWebhook(c *gin.Context) {
 
 	fields, err := service.VerifyWonderGateNotification(body)
 	if err != nil {
-		logger.LogWarn(c.Request.Context(), fmt.Sprintf("WonderGate webhook 验签失败 client_ip=%s error=%q body=%q", c.ClientIP(), err.Error(), string(body)))
+		logger.LogWarn(c.Request.Context(), fmt.Sprintf("WonderGate webhook 验签失败 client_ip=%s error=%q body_bytes=%d", c.ClientIP(), err.Error(), len(body)))
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}

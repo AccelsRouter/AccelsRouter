@@ -402,11 +402,13 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionRoute.GET("/plans", controller.GetSubscriptionPlans)
 			subscriptionRoute.GET("/self", controller.GetSubscriptionSelf)
 			subscriptionRoute.PUT("/self/preference", controller.UpdateSubscriptionPreference)
+			// Fork: paying a provider for a plan is money in, gated on a second
+			// factor like a top-up; paying from the balance spends what is held.
 			subscriptionRoute.POST("/balance/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestBalancePay)
-			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestEpay)
-			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestStripePay)
-			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestCreemPay)
-			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), controller.SubscriptionRequestWaffoPancakePay)
+			subscriptionRoute.POST("/epay/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.SubscriptionRequestEpay)
+			subscriptionRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.SubscriptionRequestStripePay)
+			subscriptionRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.SubscriptionRequestCreemPay)
+			subscriptionRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.SubscriptionRequestWaffoPancakePay)
 		}
 		subscriptionAdminRoute := apiRouter.Group("/subscription/admin")
 		subscriptionAdminRoute.Use(middleware.AdminAuth())
