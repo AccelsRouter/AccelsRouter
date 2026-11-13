@@ -116,7 +116,7 @@ export function AuditPanel(props: {
                 {/* Wide enough to read as a sentence; a narrow container
                     scrolls sideways instead of stacking it a few characters
                     to a line. */}
-                <Td className='text-muted-foreground min-w-[20rem]'>
+                <Td className='text-muted-foreground min-w-[18rem]'>
                   <span title={e.detail || undefined}>
                     {auditDetailText(e, t)}
                   </span>
