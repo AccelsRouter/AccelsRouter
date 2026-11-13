@@ -1,10 +1,11 @@
 {
   "translation": {
+    "List price": "List price",
+    "Customer price": "Customer price",
     "No email could be sent, so the activation link was copied to your clipboard. Share it with the invitee; it is valid for 7 days.": "No email could be sent, so the activation link was copied to your clipboard. Share it with the invitee; it is valid for 7 days.",
     "No longer assignable, removed when you save: {{models}}": "No longer assignable, removed when you save: {{models}}",
     "Nothing is selected now, so saving opens every model in the catalog to this customer.": "Nothing is selected now, so saving opens every model in the catalog to this customer.",
     "Saved the organization settings: {{changes}}": "Saved the organization settings: {{changes}}",
-    "Wholesale cost {{amount}}": "Wholesale cost {{amount}}",
     "name set to {{value}}": "name set to {{value}}",
     "price group set to {{value}}": "price group set to {{value}}",
     "status set to {{value}}": "status set to {{value}}",

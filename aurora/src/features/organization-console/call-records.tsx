@@ -3,7 +3,7 @@ Individual call records (consume logs) for an organization — used both by the
 reseller (viewing a customer) and by the org itself (a reseller customer or any
 org admin seeing every call under its org, not just its own key).
 */
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
 import { Download, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -48,6 +48,30 @@ function toUsageLog(l: OrgLog): UsageLog {
     upstream_request_id: '',
   }
 }
+// The prices of one call, one to a line: a name, the share of the list price
+// when the line is a discounted one, and the amount.
+function PriceLines(props: {
+  lines: { label: string; quota: number; ratio?: number; strong?: boolean }[]
+  sign: string
+}) {
+  return (
+    <div className='ml-auto grid w-fit grid-cols-[auto_auto] items-baseline gap-x-3 text-xs'>
+      {props.lines.map((line) => (
+        <Fragment key={line.label}>
+          <span className='text-muted-foreground text-left'>
+            {line.label}
+            {line.ratio != null && ` ${Math.round(line.ratio * 100)}%`}
+          </span>
+          <span className={line.strong ? 'text-sm font-medium' : undefined}>
+            {props.sign}
+            {formatQuotaWithCurrency(line.quota, MONEY_OPTS)}
+          </span>
+        </Fragment>
+      ))}
+    </div>
+  )
+}
+
 type LogFetcher = (params: {
   page: number
   pageSize: number
@@ -80,8 +104,8 @@ export function CallRecords({
   })
 
   const items = data?.items ?? []
-  // The price column reads "Cost / Charged" once any row was billed at a
-  // discount or carries what it cost the reseller.
+  // The price column names its prices once any row was billed at a discount
+  // or carries what it cost the reseller.
   const showRetail = items.some(
     (l) => l.retail_quota != null || l.cost_ratio != null
   )
@@ -140,7 +164,7 @@ export function CallRecords({
               <Th>{t('Status')}</Th>
               <Th className='text-right'>{t('Tokens (in / out)')}</Th>
               <Th className='text-right'>
-                {showRetail ? t('Cost / Charged') : t('Cost')}
+                {showRetail ? t('Price') : t('Cost')}
               </Th>
               <Th>{t('Detail')}</Th>
             </tr>
@@ -190,47 +214,44 @@ export function CallRecords({
                       ? '-'
                       : `${l.prompt_tokens} / ${l.completion_tokens}`}
                   </Td>
-                  {/* Charged (bold); under it the standard price and the
-                      discount it was billed with, then, for the reseller, what
-                      the call cost it. */}
+                  {/* A row billed at a discount names each price: the list
+                      price, what the organization paid, and for the reseller
+                      what the call cost it. A plain row is one amount. */}
                   <Td className='text-right whitespace-nowrap tabular-nums'>
-                    {isError ? (
-                      '-'
-                    ) : (
-                      <div className='flex flex-col items-end'>
-                        <span
-                          className={
-                            l.retail_ratio != null || l.cost_ratio != null
-                              ? 'font-medium'
-                              : undefined
-                          }
-                        >
-                          {sign}
-                          {formatQuotaWithCurrency(
-                            l.retail_quota ?? l.quota,
-                            MONEY_OPTS
-                          )}
-                        </span>
-                        {l.retail_ratio != null && (
-                          <span className='text-muted-foreground text-xs'>
-                            {sign}
-                            {formatQuotaWithCurrency(l.quota, MONEY_OPTS)}
-                            {` × ${Math.round(l.retail_ratio * 100)}%`}
-                          </span>
-                        )}
-                        {l.cost_ratio != null && (
-                          <span className='text-muted-foreground text-xs'>
-                            {t('Wholesale cost {{amount}}', {
-                              amount: `${sign}${formatQuotaWithCurrency(
-                                l.cost_quota ?? 0,
-                                MONEY_OPTS
-                              )}`,
-                            })}
-                            {` × ${Math.round(l.cost_ratio * 100)}%`}
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {isError && '-'}
+                    {!isError &&
+                      l.retail_ratio == null &&
+                      l.cost_ratio == null &&
+                      `${sign}${formatQuotaWithCurrency(l.quota, MONEY_OPTS)}`}
+                    {!isError &&
+                      (l.retail_ratio != null || l.cost_ratio != null) && (
+                        <PriceLines
+                          lines={[
+                            { label: t('List price'), quota: l.quota },
+                            {
+                              // To the reseller it is the customer's price; to
+                              // the payer itself, what it was charged.
+                              label:
+                                l.cost_ratio != null
+                                  ? t('Customer price')
+                                  : t('Charged'),
+                              quota: l.retail_quota ?? l.quota,
+                              ratio: l.retail_ratio,
+                              strong: true,
+                            },
+                            ...(l.cost_ratio != null
+                              ? [
+                                  {
+                                    label: t('Wholesale price'),
+                                    quota: l.cost_quota ?? 0,
+                                    ratio: l.cost_ratio,
+                                  },
+                                ]
+                              : []),
+                          ]}
+                          sign={sign}
+                        />
+                      )}
                   </Td>
                   <Td className='text-muted-foreground text-xs'>
                     {isError && l.content ? (

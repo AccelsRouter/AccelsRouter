@@ -1,10 +1,13 @@
 {
   "translation": {
+    "List price": "Цена по прайсу",
+    "Customer price": "Цена для клиента",
+    "Wholesale price": "Оптовая цена",
+    "Charged": "Списано",
     "No email could be sent, so the activation link was copied to your clipboard. Share it with the invitee; it is valid for 7 days.": "Письмо отправить не удалось, поэтому ссылка активации скопирована в буфер обмена. Передайте её приглашённому; она действует 7 дней.",
     "No longer assignable, removed when you save: {{models}}": "Больше нельзя назначить, будут удалены при сохранении: {{models}}",
     "Nothing is selected now, so saving opens every model in the catalog to this customer.": "Сейчас ничего не выбрано, поэтому после сохранения клиенту будут доступны все модели каталога.",
     "Saved the organization settings: {{changes}}": "Сохранены настройки организации: {{changes}}",
-    "Wholesale cost {{amount}}": "Оптовая стоимость {{amount}}",
     "name set to {{value}}": "название изменено на {{value}}",
     "price group set to {{value}}": "ценовая группа изменена на {{value}}",
     "status set to {{value}}": "статус изменён на «{{value}}»",

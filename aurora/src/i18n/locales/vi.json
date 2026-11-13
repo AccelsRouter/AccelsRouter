@@ -1,10 +1,13 @@
 {
   "translation": {
+    "List price": "Giá niêm yết",
+    "Customer price": "Giá khách hàng",
+    "Wholesale price": "Giá sỉ",
+    "Charged": "Đã tính",
     "No email could be sent, so the activation link was copied to your clipboard. Share it with the invitee; it is valid for 7 days.": "Không gửi được email nên liên kết kích hoạt đã được sao chép vào bộ nhớ tạm. Hãy chuyển cho người được mời; liên kết có hiệu lực 7 ngày.",
     "No longer assignable, removed when you save: {{models}}": "Không còn phân bổ được, sẽ bị gỡ khi lưu: {{models}}",
     "Nothing is selected now, so saving opens every model in the catalog to this customer.": "Hiện chưa chọn mô hình nào, nên khi lưu khách hàng này sẽ gọi được mọi mô hình trong danh mục.",
     "Saved the organization settings: {{changes}}": "Đã lưu cài đặt tổ chức: {{changes}}",
-    "Wholesale cost {{amount}}": "Giá sỉ {{amount}}",
     "name set to {{value}}": "tên đặt thành {{value}}",
     "price group set to {{value}}": "nhóm giá đặt thành {{value}}",
     "status set to {{value}}": "trạng thái đặt thành {{value}}",

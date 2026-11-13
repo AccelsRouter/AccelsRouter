@@ -1,10 +1,11 @@
 {
   "translation": {
+    "List price": "刊例价",
+    "Customer price": "客户价",
     "No email could be sent, so the activation link was copied to your clipboard. Share it with the invitee; it is valid for 7 days.": "邮件没能发出，激活链接已复制到剪贴板。请转交给被邀请人，7 天内有效。",
     "No longer assignable, removed when you save: {{models}}": "以下模型已不可分配，保存后会移除：{{models}}",
     "Nothing is selected now, so saving opens every model in the catalog to this customer.": "现在没有勾选任何模型，保存后该客户可调用目录里的全部模型。",
     "Saved the organization settings: {{changes}}": "保存了组织设置：{{changes}}",
-    "Wholesale cost {{amount}}": "批发成本 {{amount}}",
     "name set to {{value}}": "名称改为 {{value}}",
     "price group set to {{value}}": "定价分组改为 {{value}}",
     "status set to {{value}}": "状态改为{{value}}",
