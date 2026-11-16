@@ -40,6 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SectionPageLayout } from '@/components/layout'
 import { OrgKeysPanel } from '@/features/org-keys'
+import { PendingBindings } from '@/features/reseller-binding/pending-bindings'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { AccountsTab } from './accounts-tab'
 import { myOrgKeysApi } from './api'
@@ -140,9 +141,19 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
             <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
           </div>
         ) : !self ? (
-          <ApplyPanel />
+          <div className='flex flex-col gap-5'>
+            <PendingBindings canApply />
+            <ApplyPanel />
+          </div>
         ) : (
           <div className='flex flex-col gap-5'>
+            <PendingBindings
+              canApply={
+                self.type === 'enterprise' &&
+                !isResellerCustomer &&
+                self.role === 'owner'
+              }
+            />
             <div className='border-border/60 bg-muted/30 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4'>
               <div className='flex flex-col gap-1'>
                 <div className='flex items-center gap-2'>

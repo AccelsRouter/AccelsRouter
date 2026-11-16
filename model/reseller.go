@@ -503,6 +503,12 @@ func ResellerLabelOfCustomer(customerOrgId int) string {
 	if err != nil || reseller == nil {
 		return ""
 	}
+	return ResellerLabelOfOrg(reseller)
+}
+
+// ResellerLabelOfOrg is the name a reseller goes by towards customers: its
+// brand, or its organization name when it has set none.
+func ResellerLabelOfOrg(reseller *Organization) string {
 	if brand := strings.TrimSpace(reseller.BrandName); brand != "" {
 		return brand
 	}

@@ -291,6 +291,10 @@ func SetApiRouter(router *gin.Engine) {
 			orgAdminRoute.GET("/applications", controller.AdminListOrgApplications)
 			orgAdminRoute.POST("/applications/:id/approve", controller.AdminApproveOrgApplication)
 			orgAdminRoute.POST("/applications/:id/reject", controller.AdminRejectOrgApplication)
+			// Bindings of customers that have paid the platform before.
+			orgAdminRoute.GET("/bind-requests", controller.AdminListResellerBindRequests)
+			orgAdminRoute.POST("/bind-requests/:id/approve", middleware.CriticalRateLimit(), controller.AdminApproveResellerBindRequest)
+			orgAdminRoute.POST("/bind-requests/:id/reject", controller.AdminRejectResellerBindRequest)
 			// SSO domain mappings (JIT provisioning) are admin-managed only.
 			orgAdminRoute.GET("/sso-providers", controller.AdminListSsoProviders)
 			orgAdminRoute.GET("/:id/sso-domains", controller.AdminListOrgSsoDomains)
@@ -311,6 +315,13 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.GET("/ledger", controller.ListMyOrgLedger)
 			orgRoute.GET("/topups", controller.ListMyOrgTopUps)
 			orgRoute.POST("/reseller/leave", middleware.CriticalRateLimit(), controller.LeaveMyReseller)
+			// Becoming a reseller's customer: answer its invitation, or apply
+			// with its join code and confirm the offer it answers with.
+			orgRoute.GET("/reseller-binding", controller.ListMyResellerBindings)
+			orgRoute.GET("/reseller-binding/preview", controller.PreviewResellerBinding)
+			orgRoute.POST("/reseller-binding/apply", middleware.CriticalRateLimit(), controller.ApplyToJoinReseller)
+			orgRoute.POST("/reseller-binding/accept", middleware.CriticalRateLimit(), controller.AcceptResellerBindOffer)
+			orgRoute.DELETE("/reseller-binding/:id", controller.CloseMyResellerBinding)
 			orgRoute.POST("/allocate", middleware.CriticalRateLimit(), controller.AllocateFromMyOrg)
 			orgRoute.POST("/revoke", middleware.CriticalRateLimit(), controller.RevokeFromMyOrg)
 			// Reseller customer management (reseller orgs only). Resolved via
@@ -413,6 +424,13 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.PUT("/customers/:id/offer", controller.SetMyCustomerOffer)
 			// Ending the relationship: allowed once the customer's allowance is zero.
 			resellerRoute.DELETE("/customers/:id", controller.RemoveMyCustomer)
+			// Taking on an organization or person that already exists.
+			resellerRoute.GET("/join-code", controller.GetMyResellerJoinCode)
+			resellerRoute.PUT("/join-code", controller.UpdateMyResellerJoinCode)
+			resellerRoute.GET("/bind-requests", controller.ListMyResellerBindRequests)
+			resellerRoute.POST("/bind-requests", middleware.CriticalRateLimit(), controller.InviteExistingCustomer)
+			resellerRoute.POST("/bind-requests/:id/approve", controller.OfferToBindApplicant)
+			resellerRoute.DELETE("/bind-requests/:id", controller.CloseMyResellerBindRequest)
 		}
 
 		personalByokRoute := apiRouter.Group("/personal_byok")

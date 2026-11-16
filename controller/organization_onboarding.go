@@ -6,6 +6,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"html"
 	"strconv"
 	"strings"
 	"time"
@@ -18,13 +19,14 @@ import (
 
 // orgNameForInvitee is how an organization is named to someone invited into
 // it: a reseller's customer organization carries the reseller it belongs to,
-// so the invitee knows whose customer they are joining.
+// so the invitee knows whose customer they are joining. The result goes into
+// the HTML of an email, and a reseller's brand is free text, so it is escaped.
 func orgNameForInvitee(org *model.Organization) string {
 	reseller := model.ResellerLabelOfCustomer(org.Id)
 	if reseller == "" {
 		return org.Name
 	}
-	return fmt.Sprintf("%s（分销商 %s 的客户）", org.Name, reseller)
+	return fmt.Sprintf("%s（分销商 %s 的客户）", org.Name, html.EscapeString(reseller))
 }
 
 // sendOrgInvitationEmail best-effort emails an org join link to the invitee.

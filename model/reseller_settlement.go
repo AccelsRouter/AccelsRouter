@@ -509,37 +509,45 @@ func AddManualSettlementAdjustment(resellerOrgId, customerOrgId int, quota int64
 	}).Error
 }
 
-// RecordChargebackAdjustment takes back the commission a reseller earned on
+// RecordChargebackAdjustment takes back the commission resellers earned on
 // money a reversed payment had brought in and the customer had already spent
 // (shortfall, in quota). Only the commission is taken back, at the rate the
-// customer has earned the reseller so far; the wholesale part of the loss is
+// customer has earned each reseller so far; the wholesale part of the loss is
 // the platform's. The same payment is never counted twice.
 //
-// The reseller is the one the customer's usage earned commission for, not the
-// one it is linked to today: a customer that has since left, or been released,
-// does not take the commission on a reversed payment with it. A customer is
-// created under one reseller and cannot be moved to another, so there is at
-// most one. What it spent after leaving earned no commission and lowers the
-// rate accordingly.
+// The resellers are the ones the customer's usage earned commission for, not
+// the one it is linked to today: a customer that has since left, or been
+// released, does not take the commission on a reversed payment with it. A
+// customer that moved from one reseller to another earned both a commission,
+// and each gives back its own share. What the customer spent under no
+// reseller earned no commission and lowers every rate accordingly.
 func RecordChargebackAdjustment(customerOrgId int, tradeNo string, shortfall int) error {
 	if shortfall <= 0 || tradeNo == "" {
 		return nil
 	}
-	var earned struct {
+	var counted int64
+	if err := DB.Model(&ResellerSettlementAdjustment{}).
+		Where("type = ? AND (ref = ? OR ref LIKE ?)", SettlementAdjustChargeback, tradeNo, tradeNo+"#r%").
+		Count(&counted).Error; err != nil {
+		return err
+	}
+	if counted > 0 {
+		return nil
+	}
+	var earners []struct {
 		ResellerOrgId int
 		Commission    int64
 	}
 	if err := DB.Model(&OrgUsageDaily{}).
 		Select("reseller_org_id, COALESCE(SUM(commission_quota), 0) AS commission").
 		Where("org_id = ? AND reseller_org_id > 0", customerOrgId).
-		Group("reseller_org_id").Order("commission DESC").Limit(1).
-		Scan(&earned).Error; err != nil {
+		Group("reseller_org_id").Order("commission DESC, reseller_org_id ASC").
+		Scan(&earners).Error; err != nil {
 		return err
 	}
-	if earned.Commission <= 0 {
+	if len(earners) == 0 || earners[0].Commission <= 0 {
 		return nil
 	}
-	resellerOrgId := earned.ResellerOrgId
 	var spent struct{ Charged int64 }
 	if err := DB.Model(&OrgUsageDaily{}).
 		Select("COALESCE(SUM(charged_quota), 0) AS charged").
@@ -550,32 +558,49 @@ func RecordChargebackAdjustment(customerOrgId int, tradeNo string, shortfall int
 	if spent.Charged <= 0 {
 		return nil
 	}
-	// A payment can be far larger than one request, so this is wallet-sized
-	// arithmetic: shortfall × commission ÷ charged, never more than shortfall.
-	share := decimal.NewFromInt(int64(shortfall)).Mul(decimal.NewFromInt(earned.Commission)).Div(decimal.NewFromInt(spent.Charged))
-	rounded, err := common.WalletQuotaFromDecimalStrict(share)
-	if err != nil {
-		return err
-	}
-	// Several reversed payments together never take back more than the
-	// customer has earned the reseller.
-	var taken struct{ Total int64 }
-	if err := DB.Model(&ResellerSettlementAdjustment{}).
-		Select("COALESCE(SUM(quota), 0) AS total").
-		Where("type = ? AND reseller_org_id = ? AND customer_org_id = ?", SettlementAdjustChargeback, resellerOrgId, customerOrgId).
-		Scan(&taken).Error; err != nil {
-		return err
-	}
-	takenBack := min(int64(rounded), int64(shortfall), earned.Commission+taken.Total)
-	if takenBack <= 0 {
-		return nil
-	}
 	now := common.GetTimestamp()
-	return DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&ResellerSettlementAdjustment{
-		ResellerOrgId: resellerOrgId, CustomerOrgId: customerOrgId,
-		Type: SettlementAdjustChargeback, Ref: tradeNo,
-		Period: SettlementPeriodOf(now), Quota: -takenBack, CreatedTime: now,
-	}).Error
+	remaining := int64(shortfall)
+	for i, earned := range earners {
+		if earned.Commission <= 0 || remaining <= 0 {
+			break
+		}
+		// A payment can be far larger than one request, so this is wallet-sized
+		// arithmetic: shortfall × commission ÷ charged, never more than shortfall.
+		share := decimal.NewFromInt(int64(shortfall)).Mul(decimal.NewFromInt(earned.Commission)).Div(decimal.NewFromInt(spent.Charged))
+		rounded, err := common.WalletQuotaFromDecimalStrict(share)
+		if err != nil {
+			return err
+		}
+		// Several reversed payments together never take back more than the
+		// customer has earned the reseller.
+		var taken struct{ Total int64 }
+		if err := DB.Model(&ResellerSettlementAdjustment{}).
+			Select("COALESCE(SUM(quota), 0) AS total").
+			Where("type = ? AND reseller_org_id = ? AND customer_org_id = ?", SettlementAdjustChargeback, earned.ResellerOrgId, customerOrgId).
+			Scan(&taken).Error; err != nil {
+			return err
+		}
+		takenBack := min(int64(rounded), remaining, earned.Commission+taken.Total)
+		if takenBack <= 0 {
+			continue
+		}
+		// One adjustment per payment and reseller: the reseller that earned the
+		// most carries the trade number itself, as every adjustment did when a
+		// customer could have one reseller only.
+		ref := tradeNo
+		if i > 0 {
+			ref = fmt.Sprintf("%s#r%d", tradeNo, earned.ResellerOrgId)
+		}
+		if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&ResellerSettlementAdjustment{
+			ResellerOrgId: earned.ResellerOrgId, CustomerOrgId: customerOrgId,
+			Type: SettlementAdjustChargeback, Ref: ref,
+			Period: SettlementPeriodOf(now), Quota: -takenBack, CreatedTime: now,
+		}).Error; err != nil {
+			return err
+		}
+		remaining -= takenBack
+	}
+	return nil
 }
 
 // ListSettlementItems returns settlement items, newest month first, for one

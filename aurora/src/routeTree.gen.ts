@@ -49,6 +49,7 @@ import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authentica
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedOrganizationIndexRouteImport } from './routes/_authenticated/organization/index'
+import { Route as AuthenticatedOrganizationBindRouteImport } from './routes/_authenticated/organization/bind'
 import { Route as AuthenticatedOrganizationJoinRouteImport } from './routes/_authenticated/organization/join'
 import { Route as AuthenticatedOrganizationsIndexRouteImport } from './routes/_authenticated/organizations/index'
 import { Route as AuthenticatedPersonalByokIndexRouteImport } from './routes/_authenticated/personal-byok/index'
@@ -294,6 +295,12 @@ const AuthenticatedOrganizationIndexRoute =
   AuthenticatedOrganizationIndexRouteImport.update({
     id: '/organization/',
     path: '/organization/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOrganizationBindRoute =
+  AuthenticatedOrganizationBindRouteImport.update({
+    id: '/organization/bind',
+    path: '/organization/bind',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOrganizationJoinRoute =
@@ -561,6 +568,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/organization/bind': typeof AuthenticatedOrganizationBindRoute
   '/organization/join': typeof AuthenticatedOrganizationJoinRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -639,6 +647,7 @@ export interface FileRoutesByTo {
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/organization/bind': typeof AuthenticatedOrganizationBindRoute
   '/organization/join': typeof AuthenticatedOrganizationJoinRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -721,6 +730,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
+  '/_authenticated/organization/bind': typeof AuthenticatedOrganizationBindRoute
   '/_authenticated/organization/join': typeof AuthenticatedOrganizationJoinRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -802,6 +812,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/errors/$error'
     | '/models/$section'
+    | '/organization/bind'
     | '/organization/join'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
@@ -880,6 +891,7 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/errors/$error'
     | '/models/$section'
+    | '/organization/bind'
     | '/organization/join'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
@@ -961,6 +973,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
     | '/_authenticated/models/$section'
+    | '/_authenticated/organization/bind'
     | '/_authenticated/organization/join'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/usage-logs/audit'
@@ -1311,6 +1324,13 @@ declare module '@tanstack/react-router' {
       path: '/organization'
       fullPath: '/organization/'
       preLoaderRoute: typeof AuthenticatedOrganizationIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/organization/bind': {
+      id: '/_authenticated/organization/bind'
+      path: '/organization/bind'
+      fullPath: '/organization/bind'
+      preLoaderRoute: typeof AuthenticatedOrganizationBindRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/organization/join': {
@@ -1696,6 +1716,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardSectionRoute: typeof AuthenticatedDashboardSectionRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
+  AuthenticatedOrganizationBindRoute: typeof AuthenticatedOrganizationBindRoute
   AuthenticatedOrganizationJoinRoute: typeof AuthenticatedOrganizationJoinRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedUsageLogsAuditRoute: typeof AuthenticatedUsageLogsAuditRoute
@@ -1731,6 +1752,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardSectionRoute: AuthenticatedDashboardSectionRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
+  AuthenticatedOrganizationBindRoute: AuthenticatedOrganizationBindRoute,
   AuthenticatedOrganizationJoinRoute: AuthenticatedOrganizationJoinRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedUsageLogsAuditRoute: AuthenticatedUsageLogsAuditRoute,

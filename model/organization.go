@@ -101,8 +101,10 @@ type Organization struct {
 	// reseller grants it a spending cap and pays the platform per call. "direct"
 	// (OrgFundingDirect): the customer tops the wallet up online, each call is
 	// paid from it alone, and the reseller earns the margin as commission. Set
-	// when the customer is created and never changed; it outlives the link to
-	// the reseller, so a customer that leaves keeps paying for itself.
+	// when the customer is created, or when an existing organization is bound
+	// to a reseller (model/reseller_binding.go), and never changed back; it
+	// outlives the link to the reseller, so a customer that leaves keeps
+	// paying for itself.
 	FundingMode string `json:"funding_mode" gorm:"type:varchar(16)"`
 	// BrandName / BrandLogo white-label a RESELLER org: its downstream customers
 	// see this name+logo in place of the platform brand. Reseller self-set (see

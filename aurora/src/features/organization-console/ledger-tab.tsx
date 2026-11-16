@@ -57,6 +57,7 @@ export function LedgerTab({
     if (type === 'topup') return t('Online top-up')
     if (type === 'chargeback') return t('Payment reversed')
     if (type === 'clawback') return t('Settlement debit')
+    if (type === 'transfer') return t('Personal balance moved in')
     return type === 'purchase'
       ? t('Purchase')
       : type === 'allocate'
@@ -97,6 +98,11 @@ export function LedgerTab({
     }
     if (e.type === 'topup') {
       return t('Paid online into {{name}}', { name: to })
+    }
+    if (e.type === 'transfer') {
+      return t('Personal balance of its owner moved into {{name}}', {
+        name: to,
+      })
     }
     if (e.type === 'chargeback') {
       return t('An online payment into {{name}} was reversed', { name: from })

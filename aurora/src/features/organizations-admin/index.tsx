@@ -59,6 +59,7 @@ import { exportAdminOrgLogs } from '@/features/organization-console/api'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CustomerFilteredCallRecords } from '@/features/organization-console/customer-filtered-call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
+import { AdminBindRequests } from '@/features/reseller-binding/admin-bind-requests'
 import { ResellerUsageReport } from '@/features/reseller-console/usage-report'
 import { getChannelModelSummaries } from '@/features/system-settings/api'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
@@ -92,7 +93,7 @@ const PAGE_SIZE = 20
 export function OrganizationsAdmin() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [view, setView] = useState<'orgs' | 'applications'>('orgs')
+  const [view, setView] = useState<'orgs' | 'applications' | 'bindings'>('orgs')
   // Default to platform-managed orgs (enterprise direct + resellers), hiding
   // reseller customers — those are a reseller's private clients; the admin can
   // still switch to "All organizations" or "Reseller customers" to see them.
@@ -177,17 +178,22 @@ export function OrganizationsAdmin() {
       <SectionPageLayout.Content>
         <Tabs
           value={view}
-          onValueChange={(v) => setView(v as 'orgs' | 'applications')}
+          onValueChange={(v) =>
+            setView(v as 'orgs' | 'applications' | 'bindings')
+          }
           className='mb-4'
         >
           <TabsList>
             <TabsTrigger value='orgs'>{t('Organizations')}</TabsTrigger>
             <TabsTrigger value='applications'>{t('Applications')}</TabsTrigger>
+            <TabsTrigger value='bindings'>
+              {t('Distributor bindings')}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
-        {view === 'applications' ? (
-          <ApplicationsPanel />
-        ) : (
+        {view === 'applications' && <ApplicationsPanel />}
+        {view === 'bindings' && <AdminBindRequests />}
+        {view === 'orgs' && (
           <div className='flex flex-col gap-4'>
             {isLoading ? (
               <div className='flex h-40 items-center justify-center'>

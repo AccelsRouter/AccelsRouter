@@ -47,6 +47,7 @@ import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CallableModelsTab } from '@/features/organization-console/callable-models-tab'
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
+import { ResellerBindingsTab } from '@/features/reseller-binding/reseller-bindings-tab'
 import { EarningsTab } from './earnings-tab'
 import { ResellerRecordsTab } from './records-tab'
 import { ResellerTopUpDialog } from './reseller-topup-dialog'
@@ -140,6 +141,11 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
                 <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
                 {self.direct_pay_enabled && (
+                  <TabsTrigger value='bindings'>
+                    {t('Existing customers')}
+                  </TabsTrigger>
+                )}
+                {self.direct_pay_enabled && (
                   <TabsTrigger value='earnings'>{t('Earnings')}</TabsTrigger>
                 )}
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
@@ -176,6 +182,11 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
               <TabsContent value='records' className='pt-4'>
                 <ResellerRecordsTab />
               </TabsContent>
+              {self.direct_pay_enabled && (
+                <TabsContent value='bindings' className='pt-4'>
+                  <ResellerBindingsTab />
+                </TabsContent>
+              )}
               {self.direct_pay_enabled && (
                 <TabsContent value='earnings' className='pt-4'>
                   <EarningsTab />

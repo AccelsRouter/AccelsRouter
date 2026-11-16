@@ -433,6 +433,28 @@ export function auditDetailText(entry: OrgAuditLog, t: TFunction): string {
     case 'reseller.key.delete':
     case 'member.key.delete':
       return t('Deleted a key')
+    case 'bind.invite':
+      return t('Invited {{email}} to become a customer', { email: detail })
+    case 'bind.apply':
+      return t('Received an application to become a customer')
+    case 'bind.offer':
+      return t('Answered an application with an offer')
+    case 'bind.rejected':
+      return t('Rejected an application to become a customer')
+    case 'bind.revoked':
+      return t('Withdrew an offer to become a customer')
+    case 'bind.decline':
+      return t('A request to become a customer was withdrawn or declined')
+    case 'bind.join_code':
+      return t('Changed the join link')
+    case 'bind.accept':
+      return values.status === 'completed'
+        ? t('The offer was accepted and the customer is bound')
+        : t('The offer was accepted and waits for the platform')
+    case 'bind.review':
+      return values.status === 'completed'
+        ? t('The platform approved the binding')
+        : t('The platform rejected the binding')
     case 'byok.create':
       return t('Added the BYOK channel {{name}}', { name: detail })
     case 'byok.delete':

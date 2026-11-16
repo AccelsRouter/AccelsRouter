@@ -157,6 +157,25 @@ func TestResellerCommissionSettlement(t *testing.T) {
 	require.NoError(t, RecordChargebackAdjustment(steady.Id, "STRIPE-NOTHING-LEFT", 1270))
 	require.NoError(t, DB.Where("ref IN ?", []string{"STRIPE-AFTER-LEAVING", "STRIPE-EVERYTHING"}).Delete(&ResellerSettlementAdjustment{}).Error)
 
+	// A customer that went on to a second reseller earned both a commission:
+	// 130 for the first and 60 for the second, of the 1670 it was charged in
+	// all. Each gives back its own share of a reversed payment, once.
+	second := mustCreateOrg(t, "second-reseller", OrgTypeReseller, 0)
+	require.NoError(t, RecordOrgUsageDaily(now, steady.Id, 0, second.Id, 7, "second-era", 400, 400, 340, 60, 1, 1))
+	for range 2 {
+		require.NoError(t, RecordChargebackAdjustment(steady.Id, "STRIPE-TWO-RESELLERS", 835))
+	}
+	var split []ResellerSettlementAdjustment
+	require.NoError(t, DB.Where("ref LIKE ?", "STRIPE-TWO-RESELLERS%").Order("quota ASC").Find(&split).Error)
+	require.Len(t, split, 2)
+	assert.Equal(t, reseller.Id, split[0].ResellerOrgId)
+	assert.Equal(t, int64(-65), split[0].Quota)
+	assert.Equal(t, "STRIPE-TWO-RESELLERS", split[0].Ref)
+	assert.Equal(t, second.Id, split[1].ResellerOrgId)
+	assert.Equal(t, int64(-30), split[1].Quota)
+	require.NoError(t, DB.Where("ref LIKE ?", "STRIPE-TWO-RESELLERS%").Delete(&ResellerSettlementAdjustment{}).Error)
+	require.NoError(t, DB.Where("model_name = ?", "second-era").Delete(&OrgUsageDaily{}).Error)
+
 	// Once the hold has passed, the held item is paid too.
 	later := end + 121*86400
 	require.NoError(t, AddManualSettlementAdjustment(reseller.Id, carded.Id, 25, "goodwill", 1, later))
