@@ -99,7 +99,7 @@ export function SystemBrand(props: SystemBrandProps) {
             <img src='/logo-wordmark.png' alt={name} className='h-4 w-auto' />
             {servedBy && (
               <span
-                className='text-muted-foreground hidden truncate text-xs sm:inline'
+                className='text-muted-foreground hidden truncate text-xs @min-[22rem]/system-brand:inline'
                 title={t('Served by {{reseller}}', { reseller: servedBy })}
               >
                 {t('Served by {{reseller}}', { reseller: servedBy })}

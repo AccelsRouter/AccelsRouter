@@ -56,6 +56,7 @@ var (
 	ErrBindRequestPending  = common.NewMessage("There is already an open request; withdraw it or wait for its outcome")
 	ErrBindAlreadyInvited  = common.NewMessage("This address already has an open invitation from you")
 	ErrJoinCodeInvalid     = common.NewMessage("This distributor link is invalid or no longer accepts applications")
+	ErrBindEmailInvalid    = common.NewMessage("Please enter a valid email address")
 )
 
 // ResellerBindRequest is one attempt to make an existing organization or
@@ -290,7 +291,9 @@ type ResellerBindOutlook struct {
 	OrgName string `json:"org_name"`
 	// FundingChanges: the organization starts paying by online top-up.
 	FundingChanges bool `json:"funding_changes"`
-	NeedsReview    bool `json:"needs_review"`
+	// NeedsReview: the platform approves this binding whatever the person
+	// does with a personal balance; bringing one along needs approval too.
+	NeedsReview bool `json:"needs_review"`
 	// Members whose personal API keys stop working, and how many keys that is.
 	Members      int `json:"members"`
 	PersonalKeys int `json:"personal_keys"`
@@ -333,7 +336,7 @@ func ResellerBindOutlookFor(resellerOrgId, userId int) (*ResellerBindOutlook, er
 		return nil, err
 	}
 	outlook.PersonalKeys = int(keys)
-	if outlook.NeedsReview, err = bindNeedsPlatformReview(DB, cand, outlook.PersonalQuota > 0); err != nil {
+	if outlook.NeedsReview, err = bindNeedsPlatformReview(DB, cand, false); err != nil {
 		return nil, err
 	}
 	return outlook, nil
@@ -410,7 +413,7 @@ func ResellerOrgIdByJoinCode(code string) (int, error) {
 func CreateResellerBindInvite(resellerOrgId, operatorId int, email, discounts, models string) (*ResellerBindRequest, error) {
 	email = NormalizeEmail(strings.TrimSpace(email))
 	if email == "" || !strings.Contains(email, "@") {
-		return nil, errors.New("受邀邮箱必填")
+		return nil, ErrBindEmailInvalid
 	}
 	var req *ResellerBindRequest
 	err := DB.Transaction(func(tx *gorm.DB) error {

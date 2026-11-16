@@ -198,7 +198,14 @@ export function BindResellerPage(props: { code?: string; join?: string }) {
               {outlook &&
                 (!request || request.status === 'pending_customer') && (
                   <>
-                    <WhatChanges outlook={outlook} reseller={reseller} />
+                    <WhatChanges
+                      outlook={outlook}
+                      reseller={reseller}
+                      needsReview={
+                        outlook.needs_review ||
+                        (transfer && outlook.personal_quota > 0)
+                      }
+                    />
                     {needsOrgName && request && (
                       <Field label={t('Name of your organization')}>
                         <Input
@@ -301,7 +308,7 @@ function BindingStage(props: { request: MyBinding; reseller: string }) {
     )
   } else if (props.request.status === 'pending_platform') {
     text = t(
-      'You confirmed the offer of {{reseller}}. The platform approves it before it takes effect, because you have paid the platform before.',
+      'You confirmed the offer of {{reseller}}. The platform approves it before it takes effect, because you have paid the platform before or brought a balance along.',
       { reseller }
     )
   } else if (
@@ -363,7 +370,11 @@ function OfferSummary(props: { request: MyBinding; reseller: string }) {
 }
 
 // What becoming the distributor's customer changes, before the user consents.
-function WhatChanges(props: { outlook: BindOutlook; reseller: string }) {
+function WhatChanges(props: {
+  outlook: BindOutlook
+  reseller: string
+  needsReview: boolean
+}) {
   const { t } = useTranslation()
   const reseller = props.reseller
   const outlook = props.outlook
@@ -406,10 +417,10 @@ function WhatChanges(props: { outlook: BindOutlook; reseller: string }) {
             { reseller }
           )}
         </li>
-        {outlook.needs_review && (
+        {props.needsReview && (
           <li>
             {t(
-              'You have paid the platform before, so the platform approves this before it takes effect.'
+              'The platform approves this before it takes effect, because you have paid the platform before or are bringing a balance along.'
             )}
           </li>
         )}

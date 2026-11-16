@@ -138,7 +138,7 @@ export function ModelRatioRows({
         const invalid =
           r.ratio.trim() !== '' && (!r.token.trim() || !rowValid(r))
         return (
-          <div key={i} className='flex items-center gap-2'>
+          <div key={i} className='flex flex-wrap items-center gap-2'>
             <Input
               className='min-w-0 flex-1'
               placeholder='claude-opus-4-8'

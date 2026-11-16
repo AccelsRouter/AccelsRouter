@@ -290,7 +290,7 @@ func TestBindingAPersonOpensTheirOrganization(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, outlook.HasOrg)
 	assert.Equal(t, 4200, outlook.PersonalQuota)
-	assert.True(t, outlook.NeedsReview)
+	assert.False(t, outlook.NeedsReview, "a balance that was never paid for needs approval only when it is brought along")
 
 	waiting, err := AcceptResellerBinding(f.invite(saver.Email).Code, saver.Id, "Saver Labs", true)
 	require.NoError(t, err)
