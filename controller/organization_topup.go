@@ -1,6 +1,9 @@
 package controller
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 
@@ -66,4 +69,54 @@ func ListMyCustomerTopUps(c *gin.Context) {
 	page.SetTotal(int(total))
 	page.SetItems(rows)
 	common.ApiSuccess(c, page)
+}
+
+// LeaveMyReseller — POST /api/organization/reseller/leave
+// The owner of a customer that tops up its own wallet takes the organization
+// out from under its distributor: it keeps its balance and keys and becomes
+// the platform's own client at list price.
+func LeaveMyReseller(c *gin.Context) {
+	org, isOwner, ok := callerOrg(c)
+	if !ok {
+		return
+	}
+	if !isOwner {
+		common.ApiErrorT(c, "Only the organization owner can do this")
+		return
+	}
+	resellerOrgId, err := model.LeaveReseller(org.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordOrgAudit(resellerOrgId, c.GetInt("id"), "customer.left", fmt.Sprintf("org:%d", org.Id), "")
+	model.RecordOrgAudit(org.Id, c.GetInt("id"), "reseller.leave", fmt.Sprintf("org:%d", resellerOrgId), "")
+	common.ApiSuccess(c, nil)
+}
+
+// AdminRegisterOrgChargeback — POST /api/admin/topup-orders/chargeback
+// {trade_no}. Registers that a payment channel took back a completed payment
+// into an organization's wallet (see model.ReverseOrgTopUpOrder).
+func AdminRegisterOrgChargeback(c *gin.Context) {
+	var req struct {
+		TradeNo string `json:"trade_no"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	tradeNo := strings.TrimSpace(req.TradeNo)
+	if tradeNo == "" {
+		common.ApiErrorT(c, "Enter the order number of the reversed payment")
+		return
+	}
+	LockOrder(tradeNo)
+	defer UnlockOrder(tradeNo)
+	orgId, shortfall, err := model.ReverseOrgTopUpOrder(tradeNo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.RecordOrgAudit(orgId, c.GetInt("id"), "topup.chargeback", fmt.Sprintf("org:%d", orgId), fmt.Sprintf("trade=%s spent=%d", tradeNo, shortfall))
+	common.ApiSuccess(c, gin.H{"org_id": orgId, "spent": shortfall})
 }

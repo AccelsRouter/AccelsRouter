@@ -310,6 +310,7 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.POST("/leave", middleware.CriticalRateLimit(), controller.LeaveMyOrganization)
 			orgRoute.GET("/ledger", controller.ListMyOrgLedger)
 			orgRoute.GET("/topups", controller.ListMyOrgTopUps)
+			orgRoute.POST("/reseller/leave", middleware.CriticalRateLimit(), controller.LeaveMyReseller)
 			orgRoute.POST("/allocate", middleware.CriticalRateLimit(), controller.AllocateFromMyOrg)
 			orgRoute.POST("/revoke", middleware.CriticalRateLimit(), controller.RevokeFromMyOrg)
 			// Reseller customer management (reseller orgs only). Resolved via
@@ -585,6 +586,7 @@ func SetApiRouter(router *gin.Engine) {
 			topupAdminRoute.GET("/", controller.AdminListTopUpOrders)
 			topupAdminRoute.GET("/wondergate-status", controller.AdminQueryWonderGateOrderStatus)
 			topupAdminRoute.POST("/wondergate-resync", controller.AdminResyncWonderGateOrder)
+			topupAdminRoute.POST("/chargeback", middleware.CriticalRateLimit(), controller.AdminRegisterOrgChargeback)
 		}
 		handlePermissionRoute(apiRouter.Group("", middleware.DisableCache(), middleware.AdminAuth()), http.MethodGet, "/audit", authz.AuditRead, controller.GetAuditLogs)
 		apiRouter.GET("/audit/self", middleware.DisableCache(), middleware.UserAuth(), controller.GetAuditLogs)

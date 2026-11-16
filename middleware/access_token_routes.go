@@ -420,6 +420,8 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/admin/reseller-settlements/clawback":                accessTokenSessionRule,
 	"POST /api/admin/reseller-adjustments":                         accessTokenSessionRule,
 	"POST /api/admin/reseller-payouts":                             accessTokenSessionRule,
+	"POST /api/admin/topup-orders/chargeback":                      accessTokenSessionRule,
+	"POST /api/organization/reseller/leave":                        accessTokenSessionRule,
 	"POST /api/admin/topup-orders/wondergate-resync":               accessTokenScopeRule("billing:write"),
 	"POST /api/admin/reconciliation/byteplus-bill":                 accessTokenScopeRule("billing:write"),
 	"POST /api/admin/reconciliation/upstream-bill":                 accessTokenScopeRule("billing:read"),

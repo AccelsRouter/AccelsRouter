@@ -359,6 +359,15 @@ export async function leaveMyOrganization(): Promise<void> {
 
 // Ends the relationship with a customer whose allowance is already zero:
 // unlinks it, disables its keys and suspends its org.
+// The owner of a customer that tops up its own wallet takes it out from under
+// its distributor; it becomes the platform's own client.
+export async function leaveMyReseller(): Promise<void> {
+  const res = await api.post<ApiResp<unknown>>(
+    '/api/organization/reseller/leave'
+  )
+  assertOk(res, 'Failed to leave the distributor')
+}
+
 export async function removeCustomer(customerId: number): Promise<void> {
   const res = await api.delete<ApiResp<unknown>>(
     `/api/reseller/customers/${customerId}`

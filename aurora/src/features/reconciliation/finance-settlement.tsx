@@ -37,6 +37,7 @@ import {
   listPayouts,
   listSettlementItems,
   payoutMethodLabel,
+  registerOrgChargeback,
   registerPayout,
   type FinancePayableRow,
   type SettlementItem,
@@ -64,6 +65,8 @@ export function FinanceSettlement(props: { payables: FinancePayableRow[] }) {
   const [paying, setPaying] = useState<FinancePayableRow | null>(null)
   const [adjusting, setAdjusting] = useState<FinancePayableRow | null>(null)
   const [debiting, setDebiting] = useState<FinancePayableRow | null>(null)
+  const [reversedOrder, setReversedOrder] = useState('')
+  const [confirmReversal, setConfirmReversal] = useState(false)
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['admin-finance-report'] })
@@ -87,6 +90,26 @@ export function FinanceSettlement(props: { payables: FinancePayableRow[] }) {
   const exportItems = useMutation({
     mutationFn: () => exportSettlementItems(period || undefined),
     onError: (e) => toast.error(errorText(e)),
+  })
+  const reversal = useMutation({
+    mutationFn: () => registerOrgChargeback(reversedOrder.trim()),
+    onSuccess: (res) => {
+      toast.success(
+        res.spent > 0
+          ? t(
+              'Payment reversed. {{amount}} had already been spent; the commission on it was taken back.',
+              { amount: quota(res.spent) }
+            )
+          : t('Payment reversed and taken back from the wallet in full.')
+      )
+      setConfirmReversal(false)
+      setReversedOrder('')
+      refresh()
+    },
+    onError: (e) => {
+      setConfirmReversal(false)
+      toast.error(errorText(e))
+    },
   })
   const debit = useMutation({
     mutationFn: (row: FinancePayableRow) =>
@@ -225,6 +248,29 @@ export function FinanceSettlement(props: { payables: FinancePayableRow[] }) {
         </Button>
       </div>
 
+      <div className='flex flex-wrap items-end gap-2'>
+        <div className='flex flex-col gap-1.5'>
+          <Label htmlFor='reversed-order' className='text-xs'>
+            {t('Order number of a reversed organization payment')}
+          </Label>
+          <Input
+            id='reversed-order'
+            value={reversedOrder}
+            onChange={(e) => setReversedOrder(e.target.value)}
+            className='w-72 font-mono text-xs'
+          />
+        </div>
+        <Button
+          size='sm'
+          variant='outline'
+          className='text-destructive'
+          disabled={!reversedOrder.trim() || reversal.isPending}
+          onClick={() => setConfirmReversal(true)}
+        >
+          {t('Register chargeback')}
+        </Button>
+      </div>
+
       <SettlementItems period={period} />
       <Payouts />
 
@@ -237,6 +283,19 @@ export function FinanceSettlement(props: { payables: FinancePayableRow[] }) {
         row={adjusting}
         onClose={() => setAdjusting(null)}
         onSaved={refresh}
+      />
+      <ConfirmDialog
+        open={confirmReversal}
+        onOpenChange={setConfirmReversal}
+        title={t('Register this payment as reversed?')}
+        desc={t(
+          'Use this when a payment channel has taken back a completed payment into an organization wallet, for example a card chargeback. The order {{order}} is marked failed and the amount is deducted from the wallet as far as it still holds it; commission earned on the part already spent is taken back from the distributor. This cannot be undone.',
+          { order: reversedOrder.trim() }
+        )}
+        destructive
+        isLoading={reversal.isPending}
+        confirmText={t('Register chargeback')}
+        handleConfirm={() => reversal.mutate()}
       />
       <ConfirmDialog
         open={!!debiting}

@@ -345,6 +345,38 @@ func RemoveResellerCustomer(resellerOrgId, customerOrgId int) (int, error) {
 	return len(tokens), nil
 }
 
+// ErrCannotLeaveReseller refuses a customer that asks to leave its reseller
+// when its balance is an allowance the reseller granted, or it has none.
+var ErrCannotLeaveReseller = common.NewMessage("Only an organization that tops up its own wallet can leave its distributor by itself")
+
+// LeaveReseller is the customer's own exit from its reseller, open to a
+// customer that pays the platform itself: the same release the reseller could
+// perform (see releaseDirectFundedCustomer). Returns the reseller it left.
+func LeaveReseller(customerOrgId int) (int, error) {
+	resellerOrgId, err := resellerOrgIdOfCustomer(customerOrgId)
+	if err != nil {
+		return 0, err
+	}
+	if resellerOrgId == 0 {
+		return 0, ErrCannotLeaveReseller
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var customer Organization
+		if err := lockForUpdate(tx).Where("id = ?", customerOrgId).First(&customer).Error; err != nil {
+			return err
+		}
+		if customer.FundingMode != OrgFundingDirect {
+			return ErrCannotLeaveReseller
+		}
+		return releaseDirectFundedCustomer(tx, resellerOrgId, customerOrgId)
+	})
+	if err != nil {
+		return 0, err
+	}
+	InvalidateOrgPayerCacheForOrg(customerOrgId)
+	return resellerOrgId, nil
+}
+
 // releaseDirectFundedCustomer unlinks a customer that pays the platform itself
 // from its reseller. The offer the reseller made goes with the link: the
 // discounts and the model allow-list are cleared, so the organization is

@@ -260,6 +260,18 @@ export async function clawbackResellerDebt(
   assertOk(res, 'Failed to debit the wallet')
 }
 
+// Registers that a payment channel took back a completed payment into an
+// organization's wallet. spent is the part the wallet could no longer return.
+export async function registerOrgChargeback(
+  tradeNo: string
+): Promise<{ org_id: number; spent: number }> {
+  const res = await api.post<ApiResp<{ org_id: number; spent: number }>>(
+    '/api/admin/topup-orders/chargeback',
+    { trade_no: tradeNo }
+  )
+  return unwrap(res, 'Failed to register the reversed payment')
+}
+
 export async function exportSettlementItems(period?: string): Promise<void> {
   const qs = new URLSearchParams()
   if (period) qs.set('period', period)

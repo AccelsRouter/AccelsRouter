@@ -916,7 +916,7 @@ func ReverseWonderGateTopUp(tradeNo string, callerIp string) (err error) {
 		}
 		// A payment that went to an organization's wallet comes back out of
 		// that wallet, not out of the payer's own balance.
-		if orgId, shortfall, err := reverseOrgTopUp(tx, tradeNo, quotaToDeduct); err != nil {
+		if orgId, shortfall, err := reverseOrgTopUp(tx, tradeNo); err != nil {
 			return err
 		} else if orgId > 0 {
 			reversedOrgId, orgShortfall = orgId, shortfall

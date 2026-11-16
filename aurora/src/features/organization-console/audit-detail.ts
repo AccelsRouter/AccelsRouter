@@ -371,6 +371,20 @@ export function auditDetailText(entry: OrgAuditLog, t: TFunction): string {
         'Released customer {{target}} to the platform; it keeps its balance and keys',
         { target }
       )
+    case 'customer.left':
+      return t(
+        'Customer {{target}} left and became a direct client of the platform',
+        { target }
+      )
+    case 'reseller.leave':
+      return t('Left the distributor {{target}}; now a direct client', {
+        target,
+      })
+    case 'topup.chargeback':
+      return t(
+        'Registered a reversed payment (order no. {{trade}}); {{amount}} had already been spent',
+        { trade: values.trade, amount: amount(values.spent) }
+      )
     case 'settlement.payout':
       return t('Recorded a commission payout settling {{amount}}', {
         amount: amount(values.quota),

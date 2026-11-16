@@ -794,6 +794,40 @@ func TestDirectFundedCustomerTopsUpItsOwnWallet(t *testing.T) {
 	assert.Equal(t, reversible.TradeNo, ledger[0].TradeNo)
 	require.NoError(t, PlatformCreditOrg(customer.Id, 2*500, 1, "restore", "test"))
 
+	// A chargeback an administrator registers on another channel's order
+	// works the same way, once, and only for an organization's payment.
+	_, _, err = ReverseOrgTopUpOrder(reversible.TradeNo)
+	require.ErrorIs(t, err, ErrUseGatewayResync)
+	_, _, err = ReverseOrgTopUpOrder(personal.TradeNo)
+	require.ErrorIs(t, err, ErrNotOrgPayment)
+	assert.Equal(t, common.TopUpStatusSuccess, GetTopUpByTradeNo(personal.TradeNo).Status, "a refused reversal changes nothing")
+	reversedOrg, spent, err := ReverseOrgTopUpOrder(order.TradeNo)
+	require.NoError(t, err)
+	assert.Equal(t, customer.Id, reversedOrg)
+	assert.Equal(t, 0, spent)
+	assert.Equal(t, common.TopUpStatusFailed, GetTopUpByTradeNo(order.TradeNo).Status)
+	fresh, err = GetOrganizationById(customer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 0, fresh.WalletQuota)
+	_, _, err = ReverseOrgTopUpOrder(order.TradeNo)
+	require.ErrorIs(t, err, ErrTopUpStatusInvalid, "an order is reversed once")
+	require.NoError(t, PlatformCreditOrg(customer.Id, 2*500, 1, "restore", "test"))
+
+	// A customer that pays for itself may leave on its own; one living on an
+	// allowance from the reseller may not.
+	leaver, err := CreateResellerCustomer(reseller.Id, "direct-two", "default", OrgFundingDirect, 0, 1)
+	require.NoError(t, err)
+	allowance, err := CreateResellerCustomer(reseller.Id, "prepaid-one", "default", "", 100, 1)
+	require.NoError(t, err)
+	_, err = LeaveReseller(allowance.Id)
+	require.ErrorIs(t, err, ErrCannotLeaveReseller)
+	left, err := LeaveReseller(leaver.Id)
+	require.NoError(t, err)
+	assert.Equal(t, reseller.Id, left)
+	assert.False(t, IsCustomerOrg(leaver.Id))
+	_, err = LeaveReseller(leaver.Id)
+	require.ErrorIs(t, err, ErrCannotLeaveReseller, "it has no reseller any more")
+
 	// Leaving the reseller does not shut the customer down: it keeps its
 	// money and keys, loses the reseller's offer, and still pays for itself.
 	require.NoError(t, UpdateOrganizationFields(customer.Id, map[string]any{"retail_discounts": `{"claude":0.9}`, "allowed_models": `["claude-opus"]`}))

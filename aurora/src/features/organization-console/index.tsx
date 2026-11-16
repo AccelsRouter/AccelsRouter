@@ -47,6 +47,7 @@ import {
   exportMyOrgLogs,
   getOrgContext,
   leaveMyOrganization,
+  leaveMyReseller,
   listOrgLogs,
 } from './api'
 import { getOrgSelf } from './api'
@@ -101,6 +102,23 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
   // party and can only be removed by the platform admin.
   const queryClient = useQueryClient()
   const [leaveOpen, setLeaveOpen] = useState(false)
+  // The owner of a customer that tops up its own wallet may take it out from
+  // under its distributor: the balance is its own money.
+  const canLeaveReseller =
+    isResellerCustomer &&
+    self?.role === 'owner' &&
+    self.funding_mode === 'direct'
+  const [leaveResellerOpen, setLeaveResellerOpen] = useState(false)
+  const leaveReseller = useMutation({
+    mutationFn: leaveMyReseller,
+    onSuccess: () => {
+      setLeaveResellerOpen(false)
+      toast.success(t('Your organization is now a direct client.'))
+      void queryClient.invalidateQueries({ queryKey: ['org-self'] })
+      void queryClient.invalidateQueries({ queryKey: ['org-context'] })
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
   const leave = useMutation({
     mutationFn: leaveMyOrganization,
     onSuccess: () => {
@@ -171,8 +189,31 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
                     {t('Leave organization')}
                   </Button>
                 )}
+                {canLeaveReseller && (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    className='gap-1.5'
+                    onClick={() => setLeaveResellerOpen(true)}
+                  >
+                    <LogOut className='h-3.5 w-3.5' />
+                    {t('Leave distributor')}
+                  </Button>
+                )}
               </div>
             </div>
+            <ConfirmDialog
+              open={leaveResellerOpen}
+              onOpenChange={setLeaveResellerOpen}
+              title={t('Leave your distributor?')}
+              desc={t(
+                'Your organization becomes a direct client of the platform. It keeps its balance, members and API keys. The discounts and model limits your distributor set no longer apply, and usage is charged at list price from then on. This cannot be undone.'
+              )}
+              destructive
+              isLoading={leaveReseller.isPending}
+              confirmText={t('Leave distributor')}
+              handleConfirm={() => leaveReseller.mutate()}
+            />
             <ConfirmDialog
               open={leaveOpen}
               onOpenChange={setLeaveOpen}

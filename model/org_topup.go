@@ -113,7 +113,7 @@ func orgOrderBeingCredited(tx *gorm.DB, orgId, userId int) (string, error) {
 // payment was a personal one). The wallet gives back what it still holds of
 // the amount and never goes below zero; the part already spent is returned as
 // shortfall for the caller to account for.
-func reverseOrgTopUp(tx *gorm.DB, tradeNo string, quota int) (orgId int, shortfall int, err error) {
+func reverseOrgTopUp(tx *gorm.DB, tradeNo string) (orgId int, shortfall int, err error) {
 	var credit CreditLedger
 	if err := tx.Where("trade_no = ? AND type = ?", tradeNo, LedgerTypeTopUp).Limit(1).Find(&credit).Error; err != nil {
 		return 0, 0, err
@@ -121,6 +121,8 @@ func reverseOrgTopUp(tx *gorm.DB, tradeNo string, quota int) (orgId int, shortfa
 	if credit.ToOrgId == 0 {
 		return 0, 0, nil
 	}
+	// What comes back is what the payment put in.
+	quota := credit.Quota
 	var org Organization
 	if err := lockForUpdate(tx).Where("id = ?", credit.ToOrgId).First(&org).Error; err != nil {
 		return 0, 0, err
@@ -180,4 +182,63 @@ func ListOrgTopUps(orgId, startIdx, num int) (orders []*TopUp, total int64, err 
 	orders = []*TopUp{}
 	err = query.Order("id DESC").Limit(num).Offset(startIdx).Find(&orders).Error
 	return orders, total, err
+}
+
+// ErrNotOrgPayment refuses to register a reversal for an order that did not
+// fund an organization's wallet.
+var ErrNotOrgPayment = common.NewMessage("This order was not paid into an organization wallet")
+
+// ErrUseGatewayResync sends a WonderGate order to its own reconciliation,
+// where the gateway says whether the payment stands.
+var ErrUseGatewayResync = common.NewMessage("Reconcile a WonderGate order with the gateway instead; it reverses the payment when the gateway says it failed")
+
+// ReverseOrgTopUpOrder registers that a payment channel took back a completed
+// payment into an organization's wallet (a chargeback, or a reversal the
+// channel reported outside this system). The order is marked failed, the
+// wallet gives back what it still holds of the amount, and the commission the
+// reseller earned on the part already spent is taken back. A second call on
+// the same order is refused. Returns the organization and the spent part.
+func ReverseOrgTopUpOrder(tradeNo string) (orgId, shortfall int, err error) {
+	refCol := "`trade_no`"
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		refCol = `"trade_no"`
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+			return ErrTopUpNotFound
+		}
+		if topUp.PaymentProvider == PaymentProviderWonderGate {
+			return ErrUseGatewayResync
+		}
+		// Only a completed order moves, and only once: two requests cannot
+		// both take the amount back.
+		reversed := tx.Model(&TopUp{}).
+			Where("id = ? AND status = ?", topUp.Id, common.TopUpStatusSuccess).
+			Update("status", common.TopUpStatusFailed)
+		if reversed.Error != nil {
+			return reversed.Error
+		}
+		if reversed.RowsAffected != 1 {
+			return ErrTopUpStatusInvalid
+		}
+		var rErr error
+		orgId, shortfall, rErr = reverseOrgTopUp(tx, tradeNo)
+		if rErr != nil {
+			return rErr
+		}
+		if orgId == 0 {
+			return ErrNotOrgPayment
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	if shortfall > 0 {
+		if err := RecordChargebackAdjustment(orgId, tradeNo, shortfall); err != nil {
+			common.SysError("failed to record the chargeback against the reseller's commission: " + err.Error())
+		}
+	}
+	return orgId, shortfall, nil
 }
