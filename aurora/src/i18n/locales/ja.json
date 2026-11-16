@@ -1,5 +1,6 @@
 {
   "translation": {
+    "The first person to come in owns the customer organization and can invite its own members from “My Organization”; later ones are admins.": "最初に入った人が顧客組織のオーナーになり、「マイ組織」から自分のメンバーを招待できます。以降の人は管理者になります。",
     "Requests to become your customer": "あなたの顧客になるリクエスト",
     "Your join link": "参加リンク",
     "An organization or a person that already uses the platform opens this link to apply to become your customer. You answer with an offer, they confirm it, and the platform approves when they have paid it before. Customers joining this way top up their own wallet.": "すでにプラットフォームを利用している組織または個人がこのリンクを開くと、あなたの顧客になる申請ができます。あなたがオファーを返し、相手が確認します。相手がプラットフォームに支払ったことがある場合は、プラットフォームの承認も必要です。この方法で参加した顧客は自分のウォレットに自分でチャージします。",

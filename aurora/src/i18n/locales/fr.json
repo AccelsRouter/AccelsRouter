@@ -1,5 +1,6 @@
 {
   "translation": {
+    "The first person to come in owns the customer organization and can invite its own members from “My Organization”; later ones are admins.": "La première personne à entrer devient propriétaire de l’organisation cliente et peut inviter ses propres membres depuis « Mon organisation » ; les suivantes sont administrateurs.",
     "Requests to become your customer": "Demandes pour devenir votre client",
     "Your join link": "Votre lien d'adhésion",
     "An organization or a person that already uses the platform opens this link to apply to become your customer. You answer with an offer, they confirm it, and the platform approves when they have paid it before. Customers joining this way top up their own wallet.": "Une organisation ou une personne qui utilise déjà la plateforme ouvre ce lien pour demander à devenir votre client. Vous répondez par une offre, elle la confirme, et la plateforme approuve si elle a déjà payé la plateforme. Les clients qui vous rejoignent ainsi rechargent leur propre portefeuille.",

@@ -1,5 +1,6 @@
 {
   "translation": {
+    "The first person to come in owns the customer organization and can invite its own members from “My Organization”; later ones are admins.": "第一位進入的人成為該客戶組織的 owner，可以在「我的組織」裡邀請自己的成員；之後進入的人是管理員。",
     "Requests to become your customer": "成為你客戶的請求",
     "Your join link": "你的加入連結",
     "An organization or a person that already uses the platform opens this link to apply to become your customer. You answer with an offer, they confirm it, and the platform approves when they have paid it before. Customers joining this way top up their own wallet.": "已在使用平台的組織或個人開啟此連結，即可申請成為你的客戶。你回覆一份報價，對方確認；對方向平台儲值過的，還需平台審批。透過這種方式加入的客戶自行儲值到自己的錢包。",

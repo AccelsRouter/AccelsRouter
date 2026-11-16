@@ -198,6 +198,9 @@ type ResellerCustomer struct {
 	// OwnerEmail is the customer org's operator (the invited admin) email, so a
 	// reseller can identify the contact behind each customer.
 	OwnerEmail string `json:"owner_email,omitempty"`
+	// Members is how many accounts the customer org has: its operator and the
+	// members the customer added itself.
+	Members int `json:"members"`
 }
 
 // ErrDirectPayNotGranted refuses a self-funded customer for a reseller the
@@ -408,10 +411,12 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 		custIds = append(custIds, l.CustomerOrgId)
 	}
 	ownerByOrg := map[int]int{}
+	membersByOrg := map[int]int{}
 	if len(custIds) > 0 {
 		var accts []OrgAccount
 		if err := DB.Where("org_id IN ?", custIds).Find(&accts).Error; err == nil {
 			for _, a := range accts {
+				membersByOrg[a.OrgId]++
 				// Prefer an explicit owner, else the first admin/member seen.
 				if cur, ok := ownerByOrg[a.OrgId]; !ok || (a.Role == OrgRoleOwner && cur != 0) {
 					ownerByOrg[a.OrgId] = a.UserId
@@ -439,6 +444,7 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 			Org:          org,
 			NetAllocated: net,
 			OwnerEmail:   emails[ownerByOrg[link.CustomerOrgId]],
+			Members:      membersByOrg[link.CustomerOrgId],
 		})
 	}
 	return out, nil

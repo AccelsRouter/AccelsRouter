@@ -221,6 +221,8 @@ export type ResellerCustomer = {
   net_allocated: number
   // Email of the customer's operator (invited admin), for reseller contact.
   owner_email?: string
+  // Accounts in the customer org: its operator and the members it added.
+  members?: number
 }
 
 // A JIT-provisioning email-domain mapping. New members whose email matches an

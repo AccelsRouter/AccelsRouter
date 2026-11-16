@@ -371,6 +371,15 @@ func TestResellerCustomers(t *testing.T) {
 	require.Len(t, customers, 1)
 	assert.Equal(t, cust.Id, customers[0].Org.Id)
 	assert.Equal(t, 400, customers[0].NetAllocated)
+	assert.Zero(t, customers[0].Members)
+
+	// The members a customer adds itself are counted for the reseller.
+	for _, userId := range []int{930001, 930002} {
+		require.NoError(t, DB.Create(&OrgAccount{OrgId: cust.Id, UserId: userId, Relation: OrgRelationMember, Role: OrgRoleMember, Status: OrgStatusActive}).Error)
+	}
+	customers, err = ListResellerCustomers(reseller.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 2, customers[0].Members)
 
 	// Authorization: the reseller's own customer is authorized; a stranger org
 	// (the enterprise it never allocated to) is not.

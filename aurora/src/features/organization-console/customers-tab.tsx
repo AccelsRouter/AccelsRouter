@@ -184,6 +184,7 @@ export function CustomersTab(props: {
               <tr>
                 <Th>{t('Name')}</Th>
                 <Th>{t('Owner')}</Th>
+                <Th className='text-right'>{t('Members')}</Th>
                 <Th className='text-right'>{t('Wallet Balance')}</Th>
                 <Th className='text-right'>{t('Net Allocated')}</Th>
                 <Th className='text-right'>{t('Action')}</Th>
@@ -211,6 +212,7 @@ export function CustomersTab(props: {
                   <Td className='text-muted-foreground'>
                     {c.owner_email || '-'}
                   </Td>
+                  <Td className='text-right tabular-nums'>{c.members ?? 0}</Td>
                   <Td className='text-right tabular-nums'>
                     {formatQuotaWithCurrency(c.org.wallet_quota)}
                   </Td>
@@ -420,6 +422,9 @@ function CustomerInviteDialog(props: {
           <DialogDescription>
             {t(
               'Enter the customer operator’s email. A new email gets an account opened right away plus an activation link to set a password (valid 7 days). An already registered email receives a join invitation to accept after signing in.'
+            )}{' '}
+            {t(
+              'The first person to come in owns the customer organization and can invite its own members from “My Organization”; later ones are admins.'
             )}
           </DialogDescription>
         </DialogHeader>
