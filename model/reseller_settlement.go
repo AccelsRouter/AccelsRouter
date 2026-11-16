@@ -557,7 +557,16 @@ func RecordChargebackAdjustment(customerOrgId int, tradeNo string, shortfall int
 	if err != nil {
 		return err
 	}
-	takenBack := min(int64(rounded), int64(shortfall))
+	// Several reversed payments together never take back more than the
+	// customer has earned the reseller.
+	var taken struct{ Total int64 }
+	if err := DB.Model(&ResellerSettlementAdjustment{}).
+		Select("COALESCE(SUM(quota), 0) AS total").
+		Where("type = ? AND reseller_org_id = ? AND customer_org_id = ?", SettlementAdjustChargeback, resellerOrgId, customerOrgId).
+		Scan(&taken).Error; err != nil {
+		return err
+	}
+	takenBack := min(int64(rounded), int64(shortfall), earned.Commission+taken.Total)
 	if takenBack <= 0 {
 		return nil
 	}

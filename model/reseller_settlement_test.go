@@ -109,13 +109,16 @@ func TestResellerCommissionSettlement(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(-150), summary.Due)
 
-	// A payment larger than any single request is not cut short: the same
-	// rate applies to nineteen billion units of quota.
+	// A payment larger than any single request is not cut short: with thirty-
+	// eight billion charged and six billion earned in all, nineteen billion
+	// reversed takes back three billion.
+	require.NoError(t, RecordOrgUsageDaily(now, carded.Id, 0, reseller.Id, 8, "large-model", 40_000_000_000, 38_000_000_000-1900, 32_000_000_000, 6_000_000_000-300, 1, 1))
 	require.NoError(t, RecordChargebackAdjustment(carded.Id, "STRIPE-LARGE", 19_000_000_000))
 	var large ResellerSettlementAdjustment
 	require.NoError(t, DB.Where("ref = ?", "STRIPE-LARGE").First(&large).Error)
 	assert.Equal(t, int64(-3_000_000_000), large.Quota)
 	require.NoError(t, DB.Delete(&large).Error)
+	require.NoError(t, DB.Where("model_name = ?", "large-model").Delete(&OrgUsageDaily{}).Error)
 
 	// What the reseller owes comes out of its wallet, in full or not at all.
 	require.NoError(t, UpdateOrganizationFields(reseller.Id, map[string]any{"wallet_quota": 100}))
@@ -144,7 +147,15 @@ func TestResellerCommissionSettlement(t *testing.T) {
 	require.NoError(t, DB.Where("ref = ?", "STRIPE-AFTER-LEAVING").First(&late).Error)
 	assert.Equal(t, reseller.Id, late.ResellerOrgId)
 	assert.Equal(t, int64(-51), late.Quota)
-	require.NoError(t, DB.Delete(&late).Error)
+	// Reversed payments together never take back more than the customer
+	// earned the reseller: with everything it spent reversed, the second one
+	// takes the 79 that are left of the 130.
+	require.NoError(t, RecordChargebackAdjustment(steady.Id, "STRIPE-EVERYTHING", 1270))
+	var rest ResellerSettlementAdjustment
+	require.NoError(t, DB.Where("ref = ?", "STRIPE-EVERYTHING").First(&rest).Error)
+	assert.Equal(t, int64(-79), rest.Quota)
+	require.NoError(t, RecordChargebackAdjustment(steady.Id, "STRIPE-NOTHING-LEFT", 1270))
+	require.NoError(t, DB.Where("ref IN ?", []string{"STRIPE-AFTER-LEAVING", "STRIPE-EVERYTHING"}).Delete(&ResellerSettlementAdjustment{}).Error)
 
 	// Once the hold has passed, the held item is paid too.
 	later := end + 121*86400
