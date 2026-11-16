@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm/clause"
 )
 
@@ -214,7 +215,12 @@ func financeNonCash(from, to int64) ([]FinanceNonCash, error) {
 			Scan(&s).Error; err != nil {
 			return nil, err
 		}
-		rows = append(rows, FinanceNonCash{Kind: method, Count: s.Count, Quota: int64(common.QuotaFromFloat(float64(s.Amount) * common.QuotaPerUnit))})
+		// A total over many rows: bounded like a wallet, not like one request.
+		quota, err := common.WalletQuotaFromDecimalStrict(decimal.NewFromInt(s.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)))
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, FinanceNonCash{Kind: method, Count: s.Count, Quota: int64(quota)})
 	}
 	var redeemed sum
 	if err := DB.Model(&Redemption{}).Select("COUNT(*) AS count, COALESCE(SUM(quota), 0) AS quota").

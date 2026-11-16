@@ -157,7 +157,7 @@ export function FinanceTab(props: { from?: number; to?: number }) {
               <>
                 <Th>{t('Paid into')}</Th>
                 <Th>{t('Payment Method')}</Th>
-                <Th right>{t('Payments')}</Th>
+                <Th right>{t('Count')}</Th>
                 <Th right>{t('Paid amount')}</Th>
                 <Th right>{t('Credited')}</Th>
               </>

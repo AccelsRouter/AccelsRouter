@@ -109,6 +109,14 @@ func TestResellerCommissionSettlement(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(-150), summary.Due)
 
+	// A payment larger than any single request is not cut short: the same
+	// rate applies to nineteen billion units of quota.
+	require.NoError(t, RecordChargebackAdjustment(carded.Id, "STRIPE-LARGE", 19_000_000_000))
+	var large ResellerSettlementAdjustment
+	require.NoError(t, DB.Where("ref = ?", "STRIPE-LARGE").First(&large).Error)
+	assert.Equal(t, int64(-3_000_000_000), large.Quota)
+	require.NoError(t, DB.Delete(&large).Error)
+
 	// What the reseller owes comes out of its wallet, in full or not at all.
 	require.NoError(t, UpdateOrganizationFields(reseller.Id, map[string]any{"wallet_quota": 100}))
 	_, err = ClawbackResellerDebt(reseller.Id, 1, now)
@@ -142,9 +150,17 @@ func TestResellerCommissionSettlement(t *testing.T) {
 		assert.NotZero(t, row.PayoutId, "every adjustment was settled by a payout")
 	}
 
-	// The finance view of October.
+	// The finance view of October. A large administrator deduction is shown
+	// in full, not capped at what a single request may cost.
+	require.NoError(t, DB.Create(&TopUp{UserId: 8, Amount: -5000, TradeNo: "DEDUCT-LARGE", PaymentMethod: PaymentMethodCreditDeduction, PaymentProvider: PaymentMethodCreditDeduction, CreateTime: inOctober, CompleteTime: inOctober, Status: common.TopUpStatusSuccess}).Error)
 	report, err := GetFinanceReport(start, end-1, now)
 	require.NoError(t, err)
+	nonCash := map[string]FinanceNonCash{}
+	for _, row := range report.NonCash {
+		nonCash[row.Kind] = row
+	}
+	assert.Equal(t, int64(-5000*common.QuotaPerUnit), nonCash[PaymentMethodCreditDeduction].Quota)
+	assert.Less(t, nonCash[PaymentMethodCreditDeduction].Quota, int64(-2_147_483_647))
 	revenue := map[string]FinanceRevenueRow{}
 	for _, row := range report.Revenue {
 		revenue[row.Category] = row

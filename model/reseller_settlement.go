@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -532,8 +533,14 @@ func RecordChargebackAdjustment(customerOrgId int, tradeNo string, shortfall int
 	if earned.Charged <= 0 || earned.Commission <= 0 {
 		return nil
 	}
-	rate := min(float64(earned.Commission)/float64(earned.Charged), 1)
-	takenBack := int64(common.QuotaRound(float64(shortfall) * rate))
+	// A payment can be far larger than one request, so this is wallet-sized
+	// arithmetic: shortfall × commission ÷ charged, never more than shortfall.
+	share := decimal.NewFromInt(int64(shortfall)).Mul(decimal.NewFromInt(earned.Commission)).Div(decimal.NewFromInt(earned.Charged))
+	rounded, err := common.WalletQuotaFromDecimalStrict(share)
+	if err != nil {
+		return err
+	}
+	takenBack := min(int64(rounded), int64(shortfall))
 	if takenBack <= 0 {
 		return nil
 	}
