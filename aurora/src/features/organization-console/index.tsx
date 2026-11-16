@@ -94,6 +94,7 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
     staleTime: 60_000,
   })
   const isResellerCustomer = orgContext?.is_reseller_customer ?? false
+  const resellerName = orgContext?.reseller_name ?? ''
   // A plain member manages only its own keys; owners and admins get the
   // management tabs (the backing endpoints are owner/admin-only anyway).
   const canManage = self?.role !== 'member'
@@ -152,7 +153,9 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
                     {self.type === 'reseller'
                       ? t('Reseller')
                       : isResellerCustomer
-                        ? t('Customer')
+                        ? t('Customer of {{reseller}}', {
+                            reseller: resellerName,
+                          })
                         : t('Enterprise')}
                   </Badge>
                   <Badge
@@ -166,6 +169,19 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
                 {self.price_group && (
                   <span className='text-muted-foreground text-xs'>
                     {t('Price Group')}: {self.price_group}
+                  </span>
+                )}
+                {isResellerCustomer && (
+                  <span className='text-muted-foreground max-w-2xl text-xs'>
+                    {self.funding_mode === 'direct'
+                      ? t(
+                          'This organization is a customer of the distributor {{reseller}}, which sets its prices and available models. Its wallet holds what the organization itself has paid in.',
+                          { reseller: resellerName }
+                        )
+                      : t(
+                          'This organization is a customer of the distributor {{reseller}}, which sets its prices and available models and allocates its credit.',
+                          { reseller: resellerName }
+                        )}
                   </span>
                 )}
               </div>
@@ -205,22 +221,36 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
             <ConfirmDialog
               open={leaveResellerOpen}
               onOpenChange={setLeaveResellerOpen}
-              title={t('Leave your distributor?')}
+              title={t('Leave the distributor {{reseller}}?', {
+                reseller: resellerName,
+              })}
               desc={t(
-                'Your organization becomes a direct client of the platform. It keeps its balance, members and API keys. The discounts and model limits your distributor set no longer apply, and usage is charged at list price from then on. This cannot be undone.'
+                '{{org}} stops being a customer of {{reseller}} and becomes a direct client of the platform. It keeps its balance, members and API keys. The discounts and model limits set by {{reseller}} no longer apply, and usage is charged at list price from then on. This cannot be undone.',
+                { org: self.name, reseller: resellerName }
               )}
               destructive
               isLoading={leaveReseller.isPending}
-              confirmText={t('Leave distributor')}
+              confirmText={t('Leave {{reseller}}', { reseller: resellerName })}
               handleConfirm={() => leaveReseller.mutate()}
             />
             <ConfirmDialog
               open={leaveOpen}
               onOpenChange={setLeaveOpen}
               title={t('Leave this organization?')}
-              desc={t(
-                'You lose access to its wallet, models and shared keys. Keys you created stay on your own account but are no longer paid by the organization. Rejoining requires a new invitation.'
-              )}
+              desc={
+                (isResellerCustomer
+                  ? t(
+                      '{{org}} is a customer of the distributor {{reseller}}.',
+                      {
+                        org: self.name,
+                        reseller: resellerName,
+                      }
+                    ) + ' '
+                  : '') +
+                t(
+                  'You lose access to its wallet, models and shared keys. Keys you created stay on your own account but are no longer paid by the organization. Rejoining requires a new invitation.'
+                )
+              }
               destructive
               isLoading={leave.isPending}
               confirmText={t('Leave')}

@@ -8,7 +8,11 @@ import { useTranslation } from 'react-i18next'
 import { formatQuotaWithCurrency } from '@/lib/currency'
 import { getOrgSelf } from '@/features/organization-console/api'
 
-export function OrgWalletNotice(props: { canTopUp: boolean }) {
+export function OrgWalletNotice(props: {
+  canTopUp: boolean
+  // The distributor the organization is a customer of, when it is one.
+  resellerName?: string
+}) {
   const { t } = useTranslation()
   const { data: org } = useQuery({
     queryKey: ['org-self'],
@@ -26,6 +30,15 @@ export function OrgWalletNotice(props: { canTopUp: boolean }) {
           : t(
               'Your API keys spend from the wallet of {{name}}. Its owner or an admin tops it up.',
               { name: org?.name ?? t('your organization') }
+            )}
+        {props.resellerName &&
+          ' ' +
+            t(
+              '{{org}} is a customer of the distributor {{reseller}}, which sets its prices.',
+              {
+                org: org?.name ?? t('your organization'),
+                reseller: props.resellerName,
+              }
             )}
       </div>
       <div className='flex flex-col gap-1 text-right'>

@@ -427,6 +427,9 @@ func migrateDB() error {
 	if err := backfillResellerAdmins(); err != nil {
 		return err
 	}
+	if err := backfillCustomerOrgOwners(); err != nil {
+		return err
+	}
 	if err := EncryptExistingByokKeys(); err != nil {
 		return err
 	}

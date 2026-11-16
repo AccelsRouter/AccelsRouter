@@ -490,6 +490,95 @@ func resellerOrgIdOfCustomer(customerOrgId int) (int, error) {
 	return links[0].ResellerOrgId, nil
 }
 
+// ResellerLabelOfCustomer names the reseller a customer organization belongs
+// to, the way that reseller presents itself to its customers: the brand it
+// chose, or its organization name when it has set none. Empty when the
+// organization is not a reseller's customer.
+func ResellerLabelOfCustomer(customerOrgId int) string {
+	resellerId, ok := ResellerOrgIdForCustomer(customerOrgId)
+	if !ok {
+		return ""
+	}
+	reseller, err := GetOrganizationById(resellerId)
+	if err != nil || reseller == nil {
+		return ""
+	}
+	if brand := strings.TrimSpace(reseller.BrandName); brand != "" {
+		return brand
+	}
+	return reseller.Name
+}
+
+// claimCustomerOrgOwnership makes a user the owner of a reseller's customer
+// organization that has none: the first operator the reseller brings in is the
+// accountable party of that organization, able to appoint other admins and,
+// when the organization pays for itself, to take it out from under the
+// reseller. A later operator stays an admin. Does nothing for an organization
+// that is not a reseller's customer, already has an owner, or in which the
+// user is not an admin. Reports whether the user became the owner.
+func claimCustomerOrgOwnership(tx *gorm.DB, orgId, userId int) (bool, error) {
+	var linked int64
+	if err := tx.Model(&ResellerCustomerLink{}).Where("customer_org_id = ?", orgId).Count(&linked).Error; err != nil {
+		return false, err
+	}
+	if linked == 0 {
+		return false, nil
+	}
+	// The organization row is the lock two operators arriving together queue on.
+	var org Organization
+	if err := lockForUpdate(tx).Select("id").Where("id = ?", orgId).First(&org).Error; err != nil {
+		return false, err
+	}
+	var owners int64
+	if err := tx.Model(&OrgAccount{}).Where("org_id = ? AND role = ?", orgId, OrgRoleOwner).Count(&owners).Error; err != nil {
+		return false, err
+	}
+	if owners > 0 {
+		return false, nil
+	}
+	promoted := tx.Model(&OrgAccount{}).
+		Where("org_id = ? AND user_id = ? AND role = ?", orgId, userId, OrgRoleAdmin).
+		Update("role", OrgRoleOwner)
+	if promoted.Error != nil || promoted.RowsAffected == 0 {
+		return false, promoted.Error
+	}
+	err := tx.Model(&Organization{}).Where("id = ?", orgId).
+		Updates(map[string]any{"owner_user_id": userId, "updated_time": common.GetTimestamp()}).Error
+	return err == nil, err
+}
+
+// backfillCustomerOrgOwners gives every reseller customer organization that has
+// no owner its first operator as owner (see claimCustomerOrgOwnership), for
+// the organizations opened before that rule. An account still waiting for its
+// activation link is passed over: nobody has come in on it yet. Idempotent.
+func backfillCustomerOrgOwners() error {
+	var orgIds []int
+	if err := DB.Model(&ResellerCustomerLink{}).
+		Where("customer_org_id NOT IN (?)", DB.Model(&OrgAccount{}).Select("org_id").Where("role = ?", OrgRoleOwner)).
+		Pluck("customer_org_id", &orgIds).Error; err != nil {
+		return err
+	}
+	for _, orgId := range orgIds {
+		var operators []OrgAccount
+		if err := DB.Where("org_id = ? AND role = ?", orgId, OrgRoleAdmin).
+			Where("user_id NOT IN (?)", DB.Model(&OrgInvitation{}).Select("accepted_user_id").
+				Where("org_id = ? AND status = ?", orgId, OrgInvitationProvisioned)).
+			Order("id ASC").Limit(1).Find(&operators).Error; err != nil {
+			return err
+		}
+		if len(operators) == 0 {
+			continue
+		}
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			_, err := claimCustomerOrgOwnership(tx, orgId, operators[0].UserId)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // IsResellerCustomerUser reports whether a user belongs to a reseller-
 // provisioned customer org (its single-payer OrgAccount). Such users are
 // downstream clients of a reseller, not platform customers, so they must not

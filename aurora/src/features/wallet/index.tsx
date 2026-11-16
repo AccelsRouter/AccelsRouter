@@ -330,12 +330,17 @@ export function Wallet(props: WalletProps) {
                 )}{' '}
                 {t(
                   'It is a spending allowance granted by {{brand}}, not a deposit held for you: when the relationship ends the distributor reclaims what is left, and any refund is settled with the distributor directly.',
-                  { brand: orgContext?.brand_name || t('your distributor') }
+                  { brand: orgContext?.reseller_name || t('your distributor') }
                 )}
               </div>
             )}
 
-            {orgFundsItself && <OrgWalletNotice canTopUp={canTopUp} />}
+            {orgFundsItself && (
+              <OrgWalletNotice
+                canTopUp={canTopUp}
+                resellerName={orgContext?.reseller_name}
+              />
+            )}
 
             {canTopUp && (
             <div

@@ -405,6 +405,9 @@ func AcceptOrgInvitation(code string, userId int) (*OrgInvitation, error) {
 		if err := tx.Create(acc).Error; err != nil {
 			return fmt.Errorf("attach failed: %w", err)
 		}
+		if _, err := claimCustomerOrgOwnership(tx, inv.OrgId, userId); err != nil {
+			return err
+		}
 		if err := tx.Model(&OrgInvitation{}).Where("id = ?", inv.Id).Updates(map[string]interface{}{
 			"status":           OrgInvitationAccepted,
 			"accepted_user_id": userId,
@@ -613,6 +616,11 @@ func ActivateProvisionedAccount(code, password string) (*User, error) {
 			return errors.New("激活链接已被使用")
 		}
 		if err := tx.Model(&User{}).Where("id = ?", inv.AcceptedUserId).Update("password", hashed).Error; err != nil {
+			return err
+		}
+		// Setting the password is the operator coming in: see
+		// claimCustomerOrgOwnership.
+		if _, err := claimCustomerOrgOwnership(tx, inv.OrgId, inv.AcceptedUserId); err != nil {
 			return err
 		}
 		var u User

@@ -95,6 +95,9 @@ export type OrgContext = {
   // White-label brand a reseller customer sees in place of the platform brand.
   brand_name: string
   brand_logo: string
+  // The distributor the organization is a customer of, as that distributor
+  // names itself (its brand, else its organization name); '' otherwise.
+  reseller_name: string
 }
 
 const EMPTY_ORG_CONTEXT: OrgContext = {
@@ -107,6 +110,7 @@ const EMPTY_ORG_CONTEXT: OrgContext = {
   can_top_up_org: false,
   brand_name: '',
   brand_logo: '',
+  reseller_name: '',
 }
 
 export async function getOrgContext(): Promise<OrgContext> {

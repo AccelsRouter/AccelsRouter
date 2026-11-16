@@ -139,3 +139,70 @@ func TestOrgInvitationConsent(t *testing.T) {
 	require.NoError(t, CreateOrgInvitation(inv4))
 	require.Error(t, RevokeOrgInvitation(other.Id, inv4.Id), "a foreign org cannot revoke another org's invite")
 }
+
+// A reseller's customer organization is owned by the first operator who comes
+// in — by accepting an invitation or by setting the password of a provisioned
+// account — and a later operator stays an admin. Organizations opened before
+// that rule get their first operator as owner at startup.
+func TestFirstCustomerOperatorOwnsTheOrganization(t *testing.T) {
+	migrateOrgTables(t)
+	reseller := mustCreateOrg(t, "owner-rule-reseller", OrgTypeReseller, 0)
+	roleOf := func(orgId, userId int) string {
+		var acc OrgAccount
+		require.NoError(t, DB.Where("org_id = ? AND user_id = ?", orgId, userId).First(&acc).Error)
+		return acc.Role
+	}
+	inviteAndAccept := func(org *Organization, name string) *User {
+		user := &User{Username: name, Email: name + "@example.com", AffCode: name + "-aff"}
+		require.NoError(t, DB.Create(user).Error)
+		inv := &OrgInvitation{OrgId: org.Id, Relation: OrgRelationCustomer, Role: OrgRoleAdmin, InvitedEmail: user.Email, CreatedBy: 1}
+		require.NoError(t, CreateOrgInvitation(inv))
+		_, err := AcceptOrgInvitation(inv.Code, user.Id)
+		require.NoError(t, err)
+		return user
+	}
+
+	invited, err := CreateResellerCustomer(reseller.Id, "owner-rule-invited", "", "", 100, 1)
+	require.NoError(t, err)
+	first := inviteAndAccept(invited, "owner-rule-first")
+	second := inviteAndAccept(invited, "owner-rule-second")
+	assert.Equal(t, OrgRoleOwner, roleOf(invited.Id, first.Id))
+	assert.Equal(t, OrgRoleAdmin, roleOf(invited.Id, second.Id))
+	fresh, err := GetOrganizationById(invited.Id)
+	require.NoError(t, err)
+	assert.Equal(t, first.Id, fresh.OwnerUserId)
+
+	// A provisioned account owns nothing until its password is set.
+	provisioned, err := CreateResellerCustomer(reseller.Id, "owner-rule-provisioned", "", "", 100, 1)
+	require.NoError(t, err)
+	inv, opened, err := ProvisionCustomerAccount(provisioned.Id, "owner-rule-opened@example.com", 1)
+	require.NoError(t, err)
+	require.NoError(t, backfillCustomerOrgOwners())
+	assert.Equal(t, OrgRoleAdmin, roleOf(provisioned.Id, opened.Id))
+	_, err = ActivateProvisionedAccount(inv.Code, "Secret-Pass-1")
+	require.NoError(t, err)
+	assert.Equal(t, OrgRoleOwner, roleOf(provisioned.Id, opened.Id))
+
+	// An organization from before the rule: its earliest operator is the owner.
+	legacy, err := CreateResellerCustomer(reseller.Id, "owner-rule-legacy", "", "", 100, 1)
+	require.NoError(t, err)
+	for _, userId := range []int{910001, 910002} {
+		require.NoError(t, DB.Create(&OrgAccount{OrgId: legacy.Id, UserId: userId, Relation: OrgRelationCustomer, Role: OrgRoleAdmin, Status: OrgStatusActive}).Error)
+	}
+	require.NoError(t, backfillCustomerOrgOwners())
+	require.NoError(t, backfillCustomerOrgOwners())
+	assert.Equal(t, OrgRoleOwner, roleOf(legacy.Id, 910001))
+	assert.Equal(t, OrgRoleAdmin, roleOf(legacy.Id, 910002))
+	assert.Equal(t, OrgRoleAdmin, roleOf(invited.Id, second.Id), "an organization that has an owner is left alone")
+
+	// An organization that is not a reseller's customer keeps its roles.
+	enterprise := mustCreateOrg(t, "owner-rule-enterprise", OrgTypeEnterprise, 0)
+	admin := inviteAndAccept(enterprise, "owner-rule-admin")
+	assert.Equal(t, OrgRoleAdmin, roleOf(enterprise.Id, admin.Id))
+
+	// Customers are told whose customer they are: the brand, or the name.
+	assert.Equal(t, "owner-rule-reseller", ResellerLabelOfCustomer(invited.Id))
+	require.NoError(t, UpdateOrganizationFields(reseller.Id, map[string]any{"brand_name": "Northwind"}))
+	assert.Equal(t, "Northwind", ResellerLabelOfCustomer(invited.Id))
+	assert.Empty(t, ResellerLabelOfCustomer(enterprise.Id))
+}

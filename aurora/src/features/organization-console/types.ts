@@ -159,6 +159,8 @@ export type OrgInvitation = {
 export type InvitationPreview = {
   org_name: string
   org_type: OrgType
+  // Set when the organization is a distributor's customer: that distributor.
+  reseller_name?: string
   relation: string
   role: string
   expires_at: number

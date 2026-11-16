@@ -157,6 +157,14 @@ export function JoinOrganization({ code }: { code?: string }) {
                     : t('Enterprise')}
                 </Badge>
               </div>
+              {preview.reseller_name && (
+                <p className='text-muted-foreground text-sm'>
+                  {t('{{org}} is a customer of the distributor {{reseller}}.', {
+                    org: preview.org_name,
+                    reseller: preview.reseller_name,
+                  })}
+                </p>
+              )}
               <p className='text-muted-foreground text-sm'>
                 {t('You are invited to join as')}{' '}
                 <span className='text-foreground font-medium'>

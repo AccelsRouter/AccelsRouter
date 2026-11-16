@@ -36,6 +36,8 @@ import { AuthLayout } from '../auth-layout'
 
 type ActivationPreview = {
   org_name: string
+  // Set when the organization is a distributor's customer: that distributor.
+  reseller_name?: string
   invited_email: string
   expires_at: number
 }
@@ -73,6 +75,19 @@ export function AccountActivation({ code }: { code?: string }) {
         : String(preview.error)
       : null
 
+  let activationIntro = t('Checking your activation link…')
+  if (preview.data?.reseller_name) {
+    activationIntro = t(
+      '{{org}}, a customer of the distributor {{reseller}}, has opened an account for you. Set a password to sign in.',
+      { org: preview.data.org_name, reseller: preview.data.reseller_name }
+    )
+  } else if (preview.data) {
+    activationIntro = t(
+      '{{org}} has opened an account for you. Set a password to sign in.',
+      { org: preview.data.org_name }
+    )
+  }
+
   const passwordOk = password.length >= 8 && password.length <= 20
   const canSubmit =
     !!preview.data && passwordOk && password === confirm && !submitting
@@ -109,12 +124,7 @@ export function AccountActivation({ code }: { code?: string }) {
               ? t(
                   'Your account is ready. Sign in with your email and the password you just set.'
                 )
-              : preview.data
-                ? t(
-                    '{{org}} has opened an account for you. Set a password to sign in.',
-                    { org: preview.data.org_name }
-                  )
-                : t('Checking your activation link…')}
+              : activationIntro}
           </p>
         </div>
         <div className='space-y-4'>

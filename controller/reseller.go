@@ -60,15 +60,16 @@ type createCustomerRequest struct {
 func inviteCustomerOwner(c *gin.Context, reseller, customer *model.Organization, email string) (gin.H, error) {
 	inv, _, err := model.ProvisionCustomerAccount(customer.Id, email, c.GetInt("id"))
 	if err == nil {
-		emailed := sendOrgActivationEmail(inv.InvitedEmail, customer.Name, inv.Code, inv.ExpiresAt)
+		emailed := sendOrgActivationEmail(inv.InvitedEmail, orgNameForInvitee(customer), inv.Code, inv.ExpiresAt)
 		model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.provision", fmt.Sprintf("org:%d", customer.Id), inv.InvitedEmail)
 		return gin.H{"code": activationCodeForInviter(inv.Code, emailed), "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true}, nil
 	}
 	if !errors.Is(err, model.ErrEmailAlreadyRegistered) {
 		return nil, err
 	}
-	// Role must be admin (owner is not invitable); relation customer marks this
-	// as a reseller-provisioned managed org.
+	// An invitation carries the admin role (owner is not invitable); the first
+	// operator to come in becomes the owner (model.claimCustomerOrgOwnership).
+	// Relation customer marks this as a reseller-provisioned managed org.
 	inv = &model.OrgInvitation{
 		OrgId:        customer.Id,
 		Relation:     model.OrgRelationCustomer,
@@ -79,7 +80,7 @@ func inviteCustomerOwner(c *gin.Context, reseller, customer *model.Organization,
 	if err := model.CreateOrgInvitation(inv); err != nil {
 		return nil, err
 	}
-	emailed := sendOrgInvitationEmail(inv.InvitedEmail, customer.Name, inv.Code)
+	emailed := sendOrgInvitationEmail(inv.InvitedEmail, orgNameForInvitee(customer), inv.Code)
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite", fmt.Sprintf("org:%d", customer.Id), inv.InvitedEmail)
 	return gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": false}, nil
 }
@@ -409,7 +410,7 @@ func ResendMyCustomerInvitation(c *gin.Context) {
 	}
 	orgName := fmt.Sprintf("#%d", customerId)
 	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
-		orgName = customer.Name
+		orgName = orgNameForInvitee(customer)
 	}
 	emailed := sendOrgActivationEmail(inv.InvitedEmail, orgName, inv.Code, inv.ExpiresAt)
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.provision.resend", fmt.Sprintf("org:%d", customerId), inv.InvitedEmail)
@@ -639,6 +640,9 @@ func GetMyOrgContext(c *gin.Context) {
 	orgType := ""
 	brandName := ""
 	brandLogo := ""
+	// The reseller the caller's organization is a customer of, named so every
+	// customer surface can say whose customer it is, branded or not.
+	resellerName := ""
 	if acc, err := model.GetOrgAccountByUser(userId); err == nil && acc != nil {
 		isOrgMember = true
 		if org, err := model.GetOrganizationById(acc.OrgId); err == nil && org != nil {
@@ -651,6 +655,7 @@ func GetMyOrgContext(c *gin.Context) {
 			// White-label: a customer sees its reseller's brand in place of the
 			// platform brand.
 			if isResellerCustomer {
+				resellerName = model.ResellerLabelOfCustomer(org.Id)
 				if resellerId, ok := model.ResellerOrgIdForCustomer(org.Id); ok {
 					if reseller, err := model.GetOrganizationById(resellerId); err == nil && reseller != nil {
 						brandName = reseller.BrandName
@@ -676,6 +681,7 @@ func GetMyOrgContext(c *gin.Context) {
 		"can_top_up_org":       canTopUpOrg,
 		"brand_name":           brandName,
 		"brand_logo":           brandLogo,
+		"reseller_name":        resellerName,
 	})
 }
 
