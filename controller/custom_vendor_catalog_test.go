@@ -61,6 +61,28 @@ func TestApplyCustomVendorSourceStoresAndTracksChanges(t *testing.T) {
 	assert.InDelta(t, 1.5, row.InputPrice, 1e-9)
 	require.NoError(t, db.Model(&model.CustomVendorPriceChange{}).Where("status = ?", "applied").Count(&changes).Error)
 	assert.EqualValues(t, 1, changes)
+
+	// A video model that gains a resolution keeps its first price: the change
+	// names the tier that is new, not the tiers that stayed.
+	video := func(resolutions ...string) customVendorPrice {
+		prices := map[string]float64{"720p": 10.7, "1080p": 11.7, "4k": 4.7}
+		tiers := make([]customVendorTier, 0, len(resolutions))
+		for _, resolution := range resolutions {
+			tiers = append(tiers, customVendorTier{
+				When:  map[string]string{"resolution": resolution, "video_input": "none"},
+				Usage: map[string]float64{"tokens": prices[resolution]},
+			})
+		}
+		return customVendorPrice{Provider: "test", Input: 10.7, Tiers: tiers}
+	}
+	grown := &customVendorChangeSummary{}
+	require.NoError(t, applyCustomVendorSource("byteplus", map[string]customVendorPrice{"seedance": video("720p", "1080p")}, false, 300, grown))
+	require.NoError(t, applyCustomVendorSource("byteplus", map[string]customVendorPrice{"seedance": video("720p", "1080p", "4k")}, false, 400, grown))
+	require.Len(t, grown.Report.Changes, 1)
+	assert.Empty(t, grown.Report.Changes[0].Old)
+	assert.Equal(t, []larknotify.VendorPriceTier{
+		{Range: "resolution=4k, video_input=none", Text: "per 1M video tokens $4.7"},
+	}, grown.Report.Changes[0].New)
 }
 
 func TestApplyCustomVendorSourceHoldsLargeJumpsForReview(t *testing.T) {

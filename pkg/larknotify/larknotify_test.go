@@ -576,6 +576,20 @@ func TestVendorPriceCard(t *testing.T) {
 		}
 	}
 
+	// A task model's tier is written out, and a change that only adds or
+	// only drops tiers says which it is.
+	tier := []VendorPriceTier{{Range: "resolution=4k", Text: "per 1M video tokens $4.7"}}
+	tiers := VendorPriceCard(VendorPriceReport{Changes: []VendorPriceChange{
+		{Kind: VendorPriceChanged, Model: "a", Source: "byteplus", New: tier},
+		{Kind: VendorPriceChanged, Model: "b", Source: "byteplus", Old: tier},
+	}}, fakeTr)
+	if got, want := tiers.Fields[0].Value, MsgVendorPriceAdded+"\nresolution=4k: per 1M video tokens $4.7"; got != want {
+		t.Errorf("added tier = %q, want %q", got, want)
+	}
+	if got, want := tiers.Fields[1].Value, MsgVendorPriceRemoved+"\nresolution=4k: per 1M video tokens $4.7"; got != want {
+		t.Errorf("dropped tier = %q, want %q", got, want)
+	}
+
 	// Without a held change the card is orange; a source that cannot be read makes it red.
 	calm := VendorPriceCard(VendorPriceReport{Changes: report.Changes[:3]}, fakeTr)
 	if calm.Color != "orange" {

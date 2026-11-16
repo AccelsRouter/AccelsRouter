@@ -167,6 +167,8 @@ const (
 	MsgLarkVendorPriceCacheRead   = "lark.vendor_price_cache_read"
 	MsgLarkVendorPriceCacheWrite  = "lark.vendor_price_cache_write"
 	MsgLarkVendorPriceAudioInput  = "lark.vendor_price_audio_input"
+	MsgLarkVendorPriceAdded       = "lark.vendor_price_added"
+	MsgLarkVendorPriceRemoved     = "lark.vendor_price_removed"
 	MsgLarkVendorPriceBandPeak    = "lark.vendor_price_band_peak"
 	MsgLarkVendorPriceBandOffPeak = "lark.vendor_price_band_off_peak"
 	MsgLarkVendorPriceFieldFailed = "lark.vendor_price_field_failed"

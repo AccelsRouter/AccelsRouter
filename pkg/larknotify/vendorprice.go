@@ -20,10 +20,13 @@ const (
 
 // VendorPriceTier is one price a vendor lists for a model, in USD per 1M
 // tokens. Range names the prompt lengths it covers ("≤200k", ">200k") and Band
-// the time band ("peak", "off_peak"); both are empty for a single price.
+// the time band ("peak", "off_peak"); both are empty for a single price. A
+// task model's tier is written out in Text instead, what each usage fact
+// costs, with the conditions it holds under in Range.
 type VendorPriceTier struct {
 	Range      string
 	Band       string
+	Text       string
 	Input      float64
 	Output     *float64
 	CacheRead  *float64
@@ -32,7 +35,8 @@ type VendorPriceTier struct {
 }
 
 // VendorPriceChange is one model whose list price changed. Old is empty for a
-// newly listed model. InUse is set when the gateway serves the model.
+// newly listed model, and for a change that only adds tiers; New is empty for
+// one that only drops them. InUse is set when the gateway serves the model.
 type VendorPriceChange struct {
 	Kind   VendorPriceKind
 	Model  string
@@ -91,6 +95,8 @@ const (
 	MsgVendorPriceCacheRead   = "lark.vendor_price_cache_read"
 	MsgVendorPriceCacheWrite  = "lark.vendor_price_cache_write"
 	MsgVendorPriceAudioInput  = "lark.vendor_price_audio_input"
+	MsgVendorPriceAdded       = "lark.vendor_price_added"
+	MsgVendorPriceRemoved     = "lark.vendor_price_removed"
 	MsgVendorPriceBandPeak    = "lark.vendor_price_band_peak"
 	MsgVendorPriceBandOffPeak = "lark.vendor_price_band_off_peak"
 	MsgVendorPriceFieldFailed = "lark.vendor_price_field_failed"
@@ -137,6 +143,9 @@ func vendorPriceText(tiers []VendorPriceTier, tr Translator) string {
 			}
 		}
 		line := strings.Join(parts, " · ")
+		if tier.Text != "" {
+			line = tier.Text
+		}
 		switch {
 		case tier.Band == "peak":
 			line = tr(MsgVendorPriceBandPeak, nil) + ": " + line
@@ -185,8 +194,13 @@ func VendorPriceCard(report VendorPriceReport, tr Translator) Card {
 			name += " · " + tr(MsgVendorPriceInUse, nil)
 		}
 		value := vendorPriceText(change.New, tr)
-		if len(change.Old) > 0 {
+		switch {
+		case len(change.New) == 0:
+			value = tr(MsgVendorPriceRemoved, nil) + "\n" + vendorPriceText(change.Old, tr)
+		case len(change.Old) > 0:
 			value = vendorPriceText(change.Old, tr) + "\n→ " + value
+		case change.Kind != VendorPriceNew:
+			value = tr(MsgVendorPriceAdded, nil) + "\n" + value
 		}
 		fields = append(fields, Field{Name: name, Value: value})
 		if change.Kind == VendorPricePending {
