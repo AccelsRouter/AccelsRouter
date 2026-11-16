@@ -1,5 +1,10 @@
 {
   "translation": {
+    "The month must look like 2026-11": "Le mois doit être au format 2026-11",
+    "This month has not ended yet, so it cannot be closed": "Ce mois n'est pas encore terminé et ne peut donc pas être clôturé",
+    "The adjustment cannot be zero": "L'ajustement ne peut pas être nul",
+    "The adjustment is out of range": "L'ajustement est hors limites",
+    "The organization wallet changed while the payment was being reversed; try again": "Le portefeuille de l'organisation a changé pendant l'annulation du paiement ; réessayez",
     "Your organization is now a direct client.": "Votre organisation est désormais cliente directe.",
     "Leave distributor": "Quitter le distributeur",
     "Leave your distributor?": "Quitter votre distributeur ?",

@@ -132,6 +132,20 @@ func TestResellerCommissionSettlement(t *testing.T) {
 	_, err = ClawbackResellerDebt(reseller.Id, 1, now)
 	require.ErrorIs(t, err, ErrNoDebtToClawBack)
 
+	// A customer that has left its reseller does not take the commission with
+	// it: a payment reversed afterwards is still charged to the reseller its
+	// usage paid. What it spent since earned no commission, so the rate is
+	// the 130 it earned the reseller over the 1270 it was charged in all.
+	_, err = LeaveReseller(steady.Id)
+	require.NoError(t, err)
+	require.NoError(t, RecordOrgUsageDaily(now, steady.Id, 0, 0, 7, "claude-opus", 100, 100, 0, 0, 1, 1))
+	require.NoError(t, RecordChargebackAdjustment(steady.Id, "STRIPE-AFTER-LEAVING", 500))
+	var late ResellerSettlementAdjustment
+	require.NoError(t, DB.Where("ref = ?", "STRIPE-AFTER-LEAVING").First(&late).Error)
+	assert.Equal(t, reseller.Id, late.ResellerOrgId)
+	assert.Equal(t, int64(-51), late.Quota)
+	require.NoError(t, DB.Delete(&late).Error)
+
 	// Once the hold has passed, the held item is paid too.
 	later := end + 121*86400
 	require.NoError(t, AddManualSettlementAdjustment(reseller.Id, carded.Id, 25, "goodwill", 1, later))

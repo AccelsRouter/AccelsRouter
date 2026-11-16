@@ -1,5 +1,10 @@
 {
   "translation": {
+    "The month must look like 2026-11": "月份格式應為 2026-11",
+    "This month has not ended yet, so it cannot be closed": "這個月還沒結束，暫時不能關帳",
+    "The adjustment cannot be zero": "調整金額不能為 0",
+    "The adjustment is out of range": "調整金額超出範圍",
+    "The organization wallet changed while the payment was being reversed; try again": "沖正付款時組織錢包發生了變化，請重試",
     "Your organization is now a direct client.": "你的組織已轉為平台直接客戶。",
     "Leave distributor": "脫離分銷商",
     "Leave your distributor?": "脫離你的分銷商？",

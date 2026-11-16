@@ -139,7 +139,7 @@ func reverseOrgTopUp(tx *gorm.DB, tradeNo string) (orgId int, shortfall int, err
 			return 0, 0, taken.Error
 		}
 		if taken.RowsAffected != 1 {
-			return 0, 0, errors.New("the organization wallet changed while the payment was being reversed; try again")
+			return 0, 0, common.NewMessage("The organization wallet changed while the payment was being reversed; try again")
 		}
 		if err := insertLedger(tx, org.Id, 0, recovered, credit.OperatorId, LedgerTypeChargeback, tradeNo, ""); err != nil {
 			return 0, 0, err

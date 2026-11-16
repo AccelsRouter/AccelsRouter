@@ -1,5 +1,10 @@
 {
   "translation": {
+    "The month must look like 2026-11": "The month must look like 2026-11",
+    "This month has not ended yet, so it cannot be closed": "This month has not ended yet, so it cannot be closed",
+    "The adjustment cannot be zero": "The adjustment cannot be zero",
+    "The adjustment is out of range": "The adjustment is out of range",
+    "The organization wallet changed while the payment was being reversed; try again": "The organization wallet changed while the payment was being reversed; try again",
     "Your organization is now a direct client.": "Your organization is now a direct client.",
     "Leave distributor": "Leave distributor",
     "Leave your distributor?": "Leave your distributor?",

@@ -108,7 +108,7 @@ func SettlementPeriodOf(ts int64) string {
 func SettlementPeriodBounds(period string) (start, end int64, err error) {
 	first, err := time.ParseInLocation("2006-01", period, settlementZone)
 	if err != nil {
-		return 0, 0, errors.New("the period must look like 2026-11")
+		return 0, 0, common.NewMessage("The month must look like 2026-11")
 	}
 	return first.Unix(), first.AddDate(0, 1, 0).Unix(), nil
 }
@@ -199,7 +199,7 @@ func CloseSettlementPeriod(period string, now int64) (items, adjustments int, er
 		return 0, 0, err
 	}
 	if end > now {
-		return 0, 0, errors.New("the period has not ended yet")
+		return 0, 0, common.NewMessage("This month has not ended yet, so it cannot be closed")
 	}
 	sums, err := commissionSums(start, end, 0)
 	if err != nil {
@@ -492,11 +492,11 @@ func ClawbackResellerDebt(resellerOrgId, operatorId int, now int64) (*ResellerPa
 // a reseller is owed (positive: owed more).
 func AddManualSettlementAdjustment(resellerOrgId, customerOrgId int, quota int64, remark string, operatorId int, now int64) error {
 	if quota == 0 {
-		return errors.New("the adjustment cannot be zero")
+		return common.NewMessage("The adjustment cannot be zero")
 	}
 	limit := int64(common.MaxWalletQuota)
 	if quota > limit || quota < -limit {
-		return errors.New("the adjustment is out of range")
+		return common.NewMessage("The adjustment is out of range")
 	}
 	var reseller Organization
 	if err := DB.Select("id").Where("id = ? AND type = ?", resellerOrgId, OrgTypeReseller).First(&reseller).Error; err != nil {
@@ -513,29 +513,46 @@ func AddManualSettlementAdjustment(resellerOrgId, customerOrgId int, quota int64
 // money a reversed payment had brought in and the customer had already spent
 // (shortfall, in quota). Only the commission is taken back, at the rate the
 // customer has earned the reseller so far; the wholesale part of the loss is
-// the platform's. Nothing is recorded for a customer without a reseller, and
-// the same payment is never counted twice.
+// the platform's. The same payment is never counted twice.
+//
+// The reseller is the one the customer's usage earned commission for, not the
+// one it is linked to today: a customer that has since left, or been released,
+// does not take the commission on a reversed payment with it. A customer is
+// created under one reseller and cannot be moved to another, so there is at
+// most one. What it spent after leaving earned no commission and lowers the
+// rate accordingly.
 func RecordChargebackAdjustment(customerOrgId int, tradeNo string, shortfall int) error {
 	if shortfall <= 0 || tradeNo == "" {
 		return nil
 	}
-	resellerOrgId, err := resellerOrgIdOfCustomer(customerOrgId)
-	if err != nil || resellerOrgId == 0 {
-		return err
+	var earned struct {
+		ResellerOrgId int
+		Commission    int64
 	}
-	var earned struct{ Charged, Commission int64 }
 	if err := DB.Model(&OrgUsageDaily{}).
-		Select("COALESCE(SUM(charged_quota), 0) AS charged, COALESCE(SUM(commission_quota), 0) AS commission").
-		Where("org_id = ? AND reseller_org_id = ?", customerOrgId, resellerOrgId).
+		Select("reseller_org_id, COALESCE(SUM(commission_quota), 0) AS commission").
+		Where("org_id = ? AND reseller_org_id > 0", customerOrgId).
+		Group("reseller_org_id").Order("commission DESC").Limit(1).
 		Scan(&earned).Error; err != nil {
 		return err
 	}
-	if earned.Charged <= 0 || earned.Commission <= 0 {
+	if earned.Commission <= 0 {
+		return nil
+	}
+	resellerOrgId := earned.ResellerOrgId
+	var spent struct{ Charged int64 }
+	if err := DB.Model(&OrgUsageDaily{}).
+		Select("COALESCE(SUM(charged_quota), 0) AS charged").
+		Where("org_id = ?", customerOrgId).
+		Scan(&spent).Error; err != nil {
+		return err
+	}
+	if spent.Charged <= 0 {
 		return nil
 	}
 	// A payment can be far larger than one request, so this is wallet-sized
 	// arithmetic: shortfall × commission ÷ charged, never more than shortfall.
-	share := decimal.NewFromInt(int64(shortfall)).Mul(decimal.NewFromInt(earned.Commission)).Div(decimal.NewFromInt(earned.Charged))
+	share := decimal.NewFromInt(int64(shortfall)).Mul(decimal.NewFromInt(earned.Commission)).Div(decimal.NewFromInt(spent.Charged))
 	rounded, err := common.WalletQuotaFromDecimalStrict(share)
 	if err != nil {
 		return err

@@ -17,10 +17,11 @@ func migrateOrgTables(t *testing.T) {
 	require.NoError(t, DB.AutoMigrate(
 		&Organization{}, &OrgAccount{}, &CreditLedger{}, &Workspace{}, &WorkspaceToken{}, &OrgChannel{},
 		&OrgApplication{}, &OrgInvitation{}, &OrgSsoDomain{}, &OrgAuditLog{}, &ResellerCustomerLink{},
-		&ResellerAdmin{}, &OrgTopUp{},
+		&ResellerAdmin{}, &OrgTopUp{}, &OrgUsageDaily{},
 	))
 	// isolate between tests
 	DB.Exec("DELETE FROM organizations")
+	DB.Exec("DELETE FROM org_usage_daily")
 	DB.Exec("DELETE FROM org_accounts")
 	DB.Exec("DELETE FROM credit_ledgers")
 	DB.Exec("DELETE FROM workspaces")

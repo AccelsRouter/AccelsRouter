@@ -1,5 +1,10 @@
 {
   "translation": {
+    "The month must look like 2026-11": "Месяц должен иметь вид 2026-11",
+    "This month has not ended yet, so it cannot be closed": "Этот месяц ещё не закончился, поэтому его нельзя закрыть",
+    "The adjustment cannot be zero": "Корректировка не может быть нулевой",
+    "The adjustment is out of range": "Корректировка выходит за допустимые пределы",
+    "The organization wallet changed while the payment was being reversed; try again": "Кошелёк организации изменился во время отмены платежа; повторите попытку",
     "Your organization is now a direct client.": "Ваша организация теперь прямой клиент.",
     "Leave distributor": "Уйти от дистрибьютора",
     "Leave your distributor?": "Уйти от дистрибьютора?",

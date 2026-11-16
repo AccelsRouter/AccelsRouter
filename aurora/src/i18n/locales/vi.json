@@ -1,5 +1,10 @@
 {
   "translation": {
+    "The month must look like 2026-11": "Tháng phải có dạng 2026-11",
+    "This month has not ended yet, so it cannot be closed": "Tháng này chưa kết thúc nên chưa thể chốt sổ",
+    "The adjustment cannot be zero": "Khoản điều chỉnh không thể bằng 0",
+    "The adjustment is out of range": "Khoản điều chỉnh nằm ngoài phạm vi cho phép",
+    "The organization wallet changed while the payment was being reversed; try again": "Ví của tổ chức đã thay đổi trong khi hoàn tác khoản thanh toán; hãy thử lại",
     "Your organization is now a direct client.": "Tổ chức của bạn giờ là khách hàng trực tiếp.",
     "Leave distributor": "Rời nhà phân phối",
     "Leave your distributor?": "Rời nhà phân phối của bạn?",

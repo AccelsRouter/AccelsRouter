@@ -1,5 +1,10 @@
 {
   "translation": {
+    "The month must look like 2026-11": "月は 2026-11 の形式で入力してください",
+    "This month has not ended yet, so it cannot be closed": "この月はまだ終わっていないため、締められません",
+    "The adjustment cannot be zero": "調整額を 0 にすることはできません",
+    "The adjustment is out of range": "調整額が範囲外です",
+    "The organization wallet changed while the payment was being reversed; try again": "支払いの取り消し中に組織ウォレットが変更されました。もう一度お試しください",
     "Your organization is now a direct client.": "あなたの組織は直接顧客になりました。",
     "Leave distributor": "販売代理店から離脱",
     "Leave your distributor?": "販売代理店から離脱しますか？",
