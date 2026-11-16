@@ -37,6 +37,11 @@ export type OrgSelf = {
   // Reseller only: per-model wholesale ratios (the per-model cost basis; each
   // customer discount for a model must be >= its wholesale ratio).
   wholesale_ratios?: Record<string, number>
+  // Reseller only: the platform lets it open customers that top up their own
+  // wallet online.
+  direct_pay_enabled?: boolean
+  // 'direct' when this organization tops up its own wallet online.
+  funding_mode?: string
   is_owner: boolean
   // owner | admin | member — management tabs are owner/admin only.
   role?: string
@@ -154,6 +159,8 @@ export type OrgInvitation = {
 export type InvitationPreview = {
   org_name: string
   org_type: OrgType
+  // Set when the organization is a distributor's customer: that distributor.
+  reseller_name?: string
   relation: string
   role: string
   expires_at: number
@@ -203,6 +210,9 @@ export type ResellerCustomerOrg = {
   status: OrgStatus
   wallet_quota: number
   price_group: string
+  // 'direct': the customer tops up its own wallet online; the balance is its
+  // own money, so the distributor neither allocates to it nor reclaims from it.
+  funding_mode?: string
   created_time: number
 }
 
@@ -211,6 +221,8 @@ export type ResellerCustomer = {
   net_allocated: number
   // Email of the customer's operator (invited admin), for reseller contact.
   owner_email?: string
+  // Accounts in the customer org: its operator and the members it added.
+  members?: number
 }
 
 // A JIT-provisioning email-domain mapping. New members whose email matches an

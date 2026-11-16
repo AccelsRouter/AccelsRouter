@@ -106,6 +106,13 @@ function settingChanges(
       case 'wholesale_ratio':
         changes.push(t('wholesale ratio set to {{value}}', { value }))
         break
+      case 'direct_pay_enabled':
+        changes.push(
+          value
+            ? t('customers may now top up directly')
+            : t('customers may no longer top up directly')
+        )
+        break
       case 'wholesale_ratios': {
         if (typeof value === 'number') {
           changes.push(t('{{n}} per-model wholesale ratios set', { n: value }))
@@ -297,6 +304,11 @@ export function auditDetailText(entry: OrgAuditLog, t: TFunction): string {
     case 'sso.domain.delete':
       return t('Removed an SSO domain')
     case 'customer.create':
+      if (values.funding === 'direct') {
+        return t('Created customer {{name}}, which tops up its own wallet', {
+          name: detail.replace(/ quota=\d+ funding=direct$/, ''),
+        })
+      }
       return t(
         'Created customer {{name}} with a starting balance of {{amount}}',
         {
@@ -354,6 +366,41 @@ export function auditDetailText(entry: OrgAuditLog, t: TFunction): string {
         target,
         n: Number(values.keys_disabled),
       })
+    case 'customer.release':
+      return t(
+        'Released customer {{target}} to the platform; it keeps its balance and keys',
+        { target }
+      )
+    case 'customer.left':
+      return t(
+        'Customer {{target}} left and became a direct client of the platform',
+        { target }
+      )
+    case 'reseller.leave':
+      return t('Left the distributor {{target}}; now a direct client', {
+        target,
+      })
+    case 'topup.chargeback':
+      return t(
+        'Registered a reversed payment (order no. {{trade}}); {{amount}} had already been spent',
+        { trade: values.trade, amount: amount(values.spent) }
+      )
+    case 'settlement.payout':
+      return t('Recorded a commission payout settling {{amount}}', {
+        amount: amount(values.quota),
+      })
+    case 'settlement.adjust':
+      return Number(values.quota) < 0
+        ? t('Took {{amount}} off the commission owed', {
+            amount: amount(values.quota),
+          })
+        : t('Added {{amount}} to the commission owed', {
+            amount: amount(values.quota),
+          })
+    case 'settlement.clawback':
+      return t('Took a commission debt of {{amount}} from the wallet', {
+        amount: amount(values.quota),
+      })
     case 'reseller.brand':
       return detail
         ? t('Set the brand name to {{name}}', { name: detail })
@@ -386,6 +433,28 @@ export function auditDetailText(entry: OrgAuditLog, t: TFunction): string {
     case 'reseller.key.delete':
     case 'member.key.delete':
       return t('Deleted a key')
+    case 'bind.invite':
+      return t('Invited {{email}} to become a customer', { email: detail })
+    case 'bind.apply':
+      return t('Received an application to become a customer')
+    case 'bind.offer':
+      return t('Answered an application with an offer')
+    case 'bind.rejected':
+      return t('Rejected an application to become a customer')
+    case 'bind.revoked':
+      return t('Withdrew an offer to become a customer')
+    case 'bind.decline':
+      return t('A request to become a customer was withdrawn or declined')
+    case 'bind.join_code':
+      return t('Changed the join link')
+    case 'bind.accept':
+      return values.status === 'completed'
+        ? t('The offer was accepted and the customer is bound')
+        : t('The offer was accepted and waits for the platform')
+    case 'bind.review':
+      return values.status === 'completed'
+        ? t('The platform approved the binding')
+        : t('The platform rejected the binding')
     case 'byok.create':
       return t('Added the BYOK channel {{name}}', { name: detail })
     case 'byok.delete':

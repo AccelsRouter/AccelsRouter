@@ -193,6 +193,11 @@ type TaskOrgFunding struct {
 	WholesaleRatio   float64 `json:"wholesale_ratio,omitempty"`
 	Consumed         int     `json:"consumed"`
 	ResellerConsumed int     `json:"reseller_consumed,omitempty"`
+	// DirectPay: the customer pays the platform itself, so the reseller's
+	// wallet is left alone and the margin is owed to it as commission.
+	DirectPay bool `json:"direct_pay,omitempty"`
+	// StdConsumed is the standard quota that Consumed was charged for.
+	StdConsumed int `json:"std_consumed,omitempty"`
 }
 
 // ResultRetrievable reports whether retrieval surfaces (native query routes,

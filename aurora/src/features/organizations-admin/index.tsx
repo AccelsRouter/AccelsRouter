@@ -48,6 +48,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { SectionPageLayout } from '@/components/layout'
@@ -58,6 +59,7 @@ import { exportAdminOrgLogs } from '@/features/organization-console/api'
 import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CustomerFilteredCallRecords } from '@/features/organization-console/customer-filtered-call-records'
 import { UsageReport } from '@/features/organization-console/usage-report'
+import { AdminBindRequests } from '@/features/reseller-binding/admin-bind-requests'
 import { ResellerUsageReport } from '@/features/reseller-console/usage-report'
 import { getChannelModelSummaries } from '@/features/system-settings/api'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
@@ -91,7 +93,7 @@ const PAGE_SIZE = 20
 export function OrganizationsAdmin() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [view, setView] = useState<'orgs' | 'applications'>('orgs')
+  const [view, setView] = useState<'orgs' | 'applications' | 'bindings'>('orgs')
   // Default to platform-managed orgs (enterprise direct + resellers), hiding
   // reseller customers — those are a reseller's private clients; the admin can
   // still switch to "All organizations" or "Reseller customers" to see them.
@@ -176,17 +178,22 @@ export function OrganizationsAdmin() {
       <SectionPageLayout.Content>
         <Tabs
           value={view}
-          onValueChange={(v) => setView(v as 'orgs' | 'applications')}
+          onValueChange={(v) =>
+            setView(v as 'orgs' | 'applications' | 'bindings')
+          }
           className='mb-4'
         >
           <TabsList>
             <TabsTrigger value='orgs'>{t('Organizations')}</TabsTrigger>
             <TabsTrigger value='applications'>{t('Applications')}</TabsTrigger>
+            <TabsTrigger value='bindings'>
+              {t('Distributor bindings')}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
-        {view === 'applications' ? (
-          <ApplicationsPanel />
-        ) : (
+        {view === 'applications' && <ApplicationsPanel />}
+        {view === 'bindings' && <AdminBindRequests />}
+        {view === 'orgs' && (
           <div className='flex flex-col gap-4'>
             {isLoading ? (
               <div className='flex h-40 items-center justify-center'>
@@ -538,6 +545,7 @@ function EditOrgDialog(props: {
     version: number
   }>({ map: {}, version: 0 })
   const [allowedModels, setAllowedModels] = useState('')
+  const [directPay, setDirectPay] = useState(false)
   const [loadedId, setLoadedId] = useState<number | null>(null)
   const isReseller = org?.type === 'reseller'
   // Reseller edit is tabbed (basics / pricing & offerable models / upstream
@@ -566,6 +574,7 @@ function EditOrgDialog(props: {
     setRatioSeed({ map: org.wholesale_ratios ?? {}, version: 0 })
     setWholesaleValid(true)
     setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
+    setDirectPay(org.direct_pay_enabled ?? false)
     setTab('basics')
     setCovered([])
     setBoundCount(0)
@@ -629,6 +638,7 @@ function EditOrgDialog(props: {
                 .split(/[\n,]/)
                 .map((m) => m.trim())
                 .filter(Boolean),
+              direct_pay_enabled: directPay,
             }
           : {}),
       }),
@@ -688,6 +698,24 @@ function EditOrgDialog(props: {
           </span>
         )}
       </Field>
+      {isReseller && (
+        <label className='border-border/60 flex items-start justify-between gap-3 rounded-md border p-3'>
+          <span className='flex flex-col gap-0.5'>
+            <span className='text-sm font-medium'>
+              {t('Customers may top up directly')}
+            </span>
+            <span className='text-muted-foreground text-xs'>
+              {t(
+                'Lets this distributor open customers that pay the platform online themselves. Their calls are charged to their own wallet, and the distributor earns the margin over its wholesale price as commission.'
+              )}
+            </span>
+          </span>
+          <Switch
+            checked={directPay}
+            onCheckedChange={(c) => setDirectPay(Boolean(c))}
+          />
+        </label>
+      )}
       <Field label={t('Remark')}>
         <Textarea
           value={remark}

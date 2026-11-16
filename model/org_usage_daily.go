@@ -38,10 +38,16 @@ type OrgUsageDaily struct {
 	// ResellerOrgId is denormalized (functionally determined by OrgId) so the
 	// admin/reseller aggregation can group by it directly. 0 = not a reseller
 	// customer.
-	ResellerOrgId    int   `json:"reseller_org_id" gorm:"index"`
-	StandardQuota    int64 `json:"standard_quota"`
-	ChargedQuota     int64 `json:"charged_quota"`
-	CostQuota        int64 `json:"cost_quota"`
+	ResellerOrgId int   `json:"reseller_org_id" gorm:"index"`
+	StandardQuota int64 `json:"standard_quota"`
+	ChargedQuota  int64 `json:"charged_quota"`
+	CostQuota     int64 `json:"cost_quota"`
+	// CommissionQuota is what the platform owes the reseller for this row: the
+	// customer price less the wholesale price of a self-funded customer's calls
+	// (the customer paid the platform, which keeps the wholesale part). Negative
+	// when the customer's discount sits below the wholesale ratio. 0 for every
+	// other row; a prepaid customer's margin never passes through the platform.
+	CommissionQuota  int64 `json:"commission_quota"`
 	Requests         int64 `json:"requests"`
 	PromptTokens     int64 `json:"prompt_tokens"`
 	CompletionTokens int64 `json:"completion_tokens"`
@@ -62,18 +68,18 @@ func usageBucketOf(ts int64) int64 {
 // RecordOrgUsageDaily upserts (increments) one day/org/workspace/model/user row
 // with the actual amounts for a settled org-billed request. Cross-DB safe:
 // UPDATE-then-INSERT with a single retry to absorb the first-write race.
-func RecordOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost, prompt, completion int64) error {
-	return upsertOrgUsageDaily(createdAt, orgId, workspaceId, resellerOrgId, userId, modelName, standard, charged, cost, 1, prompt, completion)
+func RecordOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost, commission, prompt, completion int64) error {
+	return upsertOrgUsageDaily(createdAt, orgId, workspaceId, resellerOrgId, userId, modelName, standard, charged, cost, commission, 1, prompt, completion)
 }
 
 // AdjustOrgUsageDaily applies an async task's settlement (an overshoot or a
 // refund, signed) to the bucket its submission was recorded in. The request
 // was already counted at submission, so only the amounts move.
-func AdjustOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost int64) error {
-	return upsertOrgUsageDaily(createdAt, orgId, workspaceId, resellerOrgId, userId, modelName, standard, charged, cost, 0, 0, 0)
+func AdjustOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost, commission int64) error {
+	return upsertOrgUsageDaily(createdAt, orgId, workspaceId, resellerOrgId, userId, modelName, standard, charged, cost, commission, 0, 0, 0)
 }
 
-func upsertOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost, requests, prompt, completion int64) error {
+func upsertOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, userId int, modelName string, standard, charged, cost, commission, requests, prompt, completion int64) error {
 	if orgId <= 0 {
 		return nil
 	}
@@ -87,9 +93,11 @@ func upsertOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, use
 			Where("day_bucket = ? AND org_id = ? AND workspace_id = ? AND model_name = ? AND user_id = ?",
 				day, orgId, workspaceId, modelName, userId).
 			Updates(map[string]interface{}{
-				"standard_quota":    gorm.Expr("standard_quota + ?", standard),
-				"charged_quota":     gorm.Expr("charged_quota + ?", charged),
-				"cost_quota":        gorm.Expr("cost_quota + ?", cost),
+				"standard_quota": gorm.Expr("standard_quota + ?", standard),
+				"charged_quota":  gorm.Expr("charged_quota + ?", charged),
+				"cost_quota":     gorm.Expr("cost_quota + ?", cost),
+				// A row written before the column existed holds NULL there.
+				"commission_quota":  gorm.Expr("COALESCE(commission_quota, 0) + ?", commission),
 				"requests":          gorm.Expr("requests + ?", requests),
 				"prompt_tokens":     gorm.Expr("prompt_tokens + ?", prompt),
 				"completion_tokens": gorm.Expr("completion_tokens + ?", completion),
@@ -116,6 +124,7 @@ func upsertOrgUsageDaily(createdAt int64, orgId, workspaceId, resellerOrgId, use
 		StandardQuota:    standard,
 		ChargedQuota:     charged,
 		CostQuota:        cost,
+		CommissionQuota:  commission,
 		Requests:         requests,
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
@@ -139,6 +148,7 @@ type oudRow struct {
 	StandardQuota    int64
 	ChargedQuota     int64
 	CostQuota        int64
+	CommissionQuota  int64
 	Requests         int64
 	PromptTokens     int64
 	CompletionTokens int64

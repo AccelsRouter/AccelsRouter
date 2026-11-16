@@ -59,6 +59,7 @@ func GetMyOrganization(c *gin.Context) {
 		"status":       org.Status,
 		"wallet_quota": org.WalletQuota,
 		"price_group":  org.PriceGroup,
+		"funding_mode": org.FundingMode,
 		"is_owner":     acc.Role == model.OrgRoleOwner,
 		"role":         acc.Role,
 	})
@@ -303,7 +304,7 @@ func AllocateFromMyOrg(c *gin.Context) {
 		req.Remark = string(r[:255])
 	}
 	if err := model.GrantCustomerQuota(org.Id, req.ToOrgId, req.Quota, c.GetInt("id"), req.Remark); err != nil {
-		common.ApiErrorMsg(c, err.Error())
+		common.ApiError(c, err)
 		return
 	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "credit.allocate", fmt.Sprintf("org:%d", req.ToOrgId), fmt.Sprintf("quota=%d", req.Quota))
@@ -350,7 +351,7 @@ func RevokeFromMyOrg(c *gin.Context) {
 		req.Remark = string(r[:255])
 	}
 	if err := model.RevokeCustomerQuota(org.Id, req.ToOrgId, req.Quota, c.GetInt("id"), req.Remark); err != nil {
-		common.ApiErrorMsg(c, err.Error())
+		common.ApiError(c, err)
 		return
 	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "credit.revoke", fmt.Sprintf("org:%d", req.ToOrgId), fmt.Sprintf("quota=%d", req.Quota))

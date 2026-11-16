@@ -198,15 +198,26 @@ type ResellerCustomer struct {
 	// OwnerEmail is the customer org's operator (the invited admin) email, so a
 	// reseller can identify the contact behind each customer.
 	OwnerEmail string `json:"owner_email,omitempty"`
+	// Members is how many accounts the customer org has: its operator and the
+	// members the customer added itself.
+	Members int `json:"members"`
 }
 
+// ErrDirectPayNotGranted refuses a self-funded customer for a reseller the
+// platform has not allowed to open one.
+var ErrDirectPayNotGranted = common.NewMessage("Direct top-up is not enabled for this distributor")
+
+// ErrCustomerFundsItself refuses to grant to, or take back from, a customer
+// whose wallet holds its own payments.
+var ErrCustomerFundsItself = common.NewMessage("This customer tops up its own wallet, so quota cannot be allocated to it or reclaimed from it")
+
 // CreateResellerCustomer provisions a customer org (type enterprise, retail
-// price group) and seeds it with an initial allocation from the reseller's
-// wallet. The initial allocation both funds the customer and establishes the
-// ledger relationship that makes it appear in the reseller's customer list.
-// The customer starts ownerless (a reseller-managed shell); its owner is
-// onboarded separately via the invitation flow.
-func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQuota, operatorId int) (*Organization, error) {
+// price group). A prepaid customer (fundingMode "") is seeded with an initial
+// allocation from the reseller. A self-funded one (OrgFundingDirect) starts
+// empty and tops its wallet up itself, which the platform must have allowed
+// the reseller to offer. The customer starts ownerless (a reseller-managed
+// shell); its owner is onboarded separately via the invitation flow.
+func CreateResellerCustomer(resellerOrgId int, name, priceGroup, fundingMode string, initialQuota, operatorId int) (*Organization, error) {
 	reseller, err := GetOrganizationById(resellerOrgId)
 	if err != nil {
 		return nil, err
@@ -214,11 +225,24 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	if reseller == nil || reseller.Type != OrgTypeReseller {
 		return nil, errors.New("只有分销商组织可以创建客户")
 	}
-	if initialQuota <= 0 {
-		return nil, errors.New("初始划拨额度必须为正")
+	if fundingMode != "" && fundingMode != OrgFundingDirect {
+		return nil, errors.New("invalid funding mode")
 	}
-	if err := common.ValidateWalletQuota(initialQuota); err != nil {
-		return nil, err
+	direct := fundingMode == OrgFundingDirect
+	if direct {
+		if !reseller.DirectPayEnabled {
+			return nil, ErrDirectPayNotGranted
+		}
+		if initialQuota != 0 {
+			return nil, ErrCustomerFundsItself
+		}
+	} else {
+		if initialQuota <= 0 {
+			return nil, errors.New("初始划拨额度必须为正")
+		}
+		if err := common.ValidateWalletQuota(initialQuota); err != nil {
+			return nil, err
+		}
 	}
 	// Route-2: the initial allocation is a spending-cap grant to the customer, not
 	// a transfer funded from the reseller wallet (that wallet is the reseller's
@@ -226,7 +250,7 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	if priceGroup == "" {
 		priceGroup = "default"
 	}
-	customer := &Organization{Name: name, Type: OrgTypeEnterprise, PriceGroup: priceGroup}
+	customer := &Organization{Name: name, Type: OrgTypeEnterprise, PriceGroup: priceGroup, FundingMode: fundingMode}
 	if err := CreateOrganization(customer); err != nil {
 		return nil, err
 	}
@@ -234,6 +258,9 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	if err := DB.Create(&ResellerCustomerLink{ResellerOrgId: resellerOrgId, CustomerOrgId: customer.Id, CreatedTime: common.GetTimestamp()}).Error; err != nil {
 		DB.Delete(&Organization{}, customer.Id)
 		return nil, err
+	}
+	if direct {
+		return customer, nil
 	}
 	// Grant the customer its initial spending cap (+ledger). On failure remove the
 	// orphan shell + link.
@@ -261,12 +288,21 @@ var ErrCustomerHoldsBalance = errors.New("该客户仍有未消耗额度，请�
 // self-funded direct enterprise. Its members keep their accounts. The
 // customer's allowance must already be zero (ErrCustomerHoldsBalance).
 // Returns how many keys were disabled.
+//
+// A customer that pays the platform itself is released instead: its wallet
+// holds its own money, so it keeps the balance and its keys and carries on as
+// the platform's own client at list price (releaseDirectFundedCustomer).
 func RemoveResellerCustomer(resellerOrgId, customerOrgId int) (int, error) {
 	var tokens []Token
+	released := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var customer Organization
 		if err := lockForUpdate(tx).Where("id = ?", customerOrgId).First(&customer).Error; err != nil {
 			return err
+		}
+		if customer.FundingMode == OrgFundingDirect {
+			released = true
+			return releaseDirectFundedCustomer(tx, resellerOrgId, customerOrgId)
 		}
 		if customer.WalletQuota != 0 {
 			return ErrCustomerHoldsBalance
@@ -298,6 +334,10 @@ func RemoveResellerCustomer(resellerOrgId, customerOrgId int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if released {
+		InvalidateOrgPayerCacheForOrg(customerOrgId)
+		return 0, nil
+	}
 	if err := invalidateTokensCache(tokens); err != nil {
 		common.SysError("failed to invalidate removed customer token cache: " + err.Error())
 	}
@@ -306,6 +346,55 @@ func RemoveResellerCustomer(resellerOrgId, customerOrgId int) (int, error) {
 	}
 	InvalidateOrgPayerCacheForOrg(customerOrgId)
 	return len(tokens), nil
+}
+
+// ErrCannotLeaveReseller refuses a customer that asks to leave its reseller
+// when its balance is an allowance the reseller granted, or it has none.
+var ErrCannotLeaveReseller = common.NewMessage("Only an organization that tops up its own wallet can leave its distributor by itself")
+
+// LeaveReseller is the customer's own exit from its reseller, open to a
+// customer that pays the platform itself: the same release the reseller could
+// perform (see releaseDirectFundedCustomer). Returns the reseller it left.
+func LeaveReseller(customerOrgId int) (int, error) {
+	resellerOrgId, err := resellerOrgIdOfCustomer(customerOrgId)
+	if err != nil {
+		return 0, err
+	}
+	if resellerOrgId == 0 {
+		return 0, ErrCannotLeaveReseller
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var customer Organization
+		if err := lockForUpdate(tx).Where("id = ?", customerOrgId).First(&customer).Error; err != nil {
+			return err
+		}
+		if customer.FundingMode != OrgFundingDirect {
+			return ErrCannotLeaveReseller
+		}
+		return releaseDirectFundedCustomer(tx, resellerOrgId, customerOrgId)
+	})
+	if err != nil {
+		return 0, err
+	}
+	InvalidateOrgPayerCacheForOrg(customerOrgId)
+	return resellerOrgId, nil
+}
+
+// releaseDirectFundedCustomer unlinks a customer that pays the platform itself
+// from its reseller. The offer the reseller made goes with the link: the
+// discounts and the model allow-list are cleared, so the organization is
+// charged list price for whatever the platform serves it. Its balance, keys
+// and members are left as they are.
+func releaseDirectFundedCustomer(tx *gorm.DB, resellerOrgId, customerOrgId int) error {
+	res := tx.Where("reseller_org_id = ? AND customer_org_id = ?", resellerOrgId, customerOrgId).Delete(&ResellerCustomerLink{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return errors.New("该组织不是你的客户")
+	}
+	return tx.Model(&Organization{}).Where("id = ?", customerOrgId).
+		Updates(map[string]any{"retail_discounts": "", "allowed_models": "", "updated_time": common.GetTimestamp()}).Error
 }
 
 // ListResellerCustomers returns the reseller's linked customers, each with the
@@ -322,10 +411,12 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 		custIds = append(custIds, l.CustomerOrgId)
 	}
 	ownerByOrg := map[int]int{}
+	membersByOrg := map[int]int{}
 	if len(custIds) > 0 {
 		var accts []OrgAccount
 		if err := DB.Where("org_id IN ?", custIds).Find(&accts).Error; err == nil {
 			for _, a := range accts {
+				membersByOrg[a.OrgId]++
 				// Prefer an explicit owner, else the first admin/member seen.
 				if cur, ok := ownerByOrg[a.OrgId]; !ok || (a.Role == OrgRoleOwner && cur != 0) {
 					ownerByOrg[a.OrgId] = a.UserId
@@ -353,6 +444,7 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 			Org:          org,
 			NetAllocated: net,
 			OwnerEmail:   emails[ownerByOrg[link.CustomerOrgId]],
+			Members:      membersByOrg[link.CustomerOrgId],
 		})
 	}
 	return out, nil
@@ -402,6 +494,101 @@ func resellerOrgIdOfCustomer(customerOrgId int) (int, error) {
 		return 0, nil
 	}
 	return links[0].ResellerOrgId, nil
+}
+
+// ResellerLabelOfCustomer names the reseller a customer organization belongs
+// to, the way that reseller presents itself to its customers: the brand it
+// chose, or its organization name when it has set none. Empty when the
+// organization is not a reseller's customer.
+func ResellerLabelOfCustomer(customerOrgId int) string {
+	resellerId, ok := ResellerOrgIdForCustomer(customerOrgId)
+	if !ok {
+		return ""
+	}
+	reseller, err := GetOrganizationById(resellerId)
+	if err != nil || reseller == nil {
+		return ""
+	}
+	return ResellerLabelOfOrg(reseller)
+}
+
+// ResellerLabelOfOrg is the name a reseller goes by towards customers: its
+// brand, or its organization name when it has set none.
+func ResellerLabelOfOrg(reseller *Organization) string {
+	if brand := strings.TrimSpace(reseller.BrandName); brand != "" {
+		return brand
+	}
+	return reseller.Name
+}
+
+// claimCustomerOrgOwnership makes a user the owner of a reseller's customer
+// organization that has none: the first operator the reseller brings in is the
+// accountable party of that organization, able to appoint other admins and,
+// when the organization pays for itself, to take it out from under the
+// reseller. A later operator stays an admin. Does nothing for an organization
+// that is not a reseller's customer, already has an owner, or in which the
+// user is not an admin. Reports whether the user became the owner.
+func claimCustomerOrgOwnership(tx *gorm.DB, orgId, userId int) (bool, error) {
+	var linked int64
+	if err := tx.Model(&ResellerCustomerLink{}).Where("customer_org_id = ?", orgId).Count(&linked).Error; err != nil {
+		return false, err
+	}
+	if linked == 0 {
+		return false, nil
+	}
+	// The organization row is the lock two operators arriving together queue on.
+	var org Organization
+	if err := lockForUpdate(tx).Select("id").Where("id = ?", orgId).First(&org).Error; err != nil {
+		return false, err
+	}
+	var owners int64
+	if err := tx.Model(&OrgAccount{}).Where("org_id = ? AND role = ?", orgId, OrgRoleOwner).Count(&owners).Error; err != nil {
+		return false, err
+	}
+	if owners > 0 {
+		return false, nil
+	}
+	promoted := tx.Model(&OrgAccount{}).
+		Where("org_id = ? AND user_id = ? AND role = ?", orgId, userId, OrgRoleAdmin).
+		Update("role", OrgRoleOwner)
+	if promoted.Error != nil || promoted.RowsAffected == 0 {
+		return false, promoted.Error
+	}
+	err := tx.Model(&Organization{}).Where("id = ?", orgId).
+		Updates(map[string]any{"owner_user_id": userId, "updated_time": common.GetTimestamp()}).Error
+	return err == nil, err
+}
+
+// backfillCustomerOrgOwners gives every reseller customer organization that has
+// no owner its first operator as owner (see claimCustomerOrgOwnership), for
+// the organizations opened before that rule. An account still waiting for its
+// activation link is passed over: nobody has come in on it yet. Idempotent.
+func backfillCustomerOrgOwners() error {
+	var orgIds []int
+	if err := DB.Model(&ResellerCustomerLink{}).
+		Where("customer_org_id NOT IN (?)", DB.Model(&OrgAccount{}).Select("org_id").Where("role = ?", OrgRoleOwner)).
+		Pluck("customer_org_id", &orgIds).Error; err != nil {
+		return err
+	}
+	for _, orgId := range orgIds {
+		var operators []OrgAccount
+		if err := DB.Where("org_id = ? AND role = ?", orgId, OrgRoleAdmin).
+			Where("user_id NOT IN (?)", DB.Model(&OrgInvitation{}).Select("accepted_user_id").
+				Where("org_id = ? AND status = ?", orgId, OrgInvitationProvisioned)).
+			Order("id ASC").Limit(1).Find(&operators).Error; err != nil {
+			return err
+		}
+		if len(operators) == 0 {
+			continue
+		}
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			_, err := claimCustomerOrgOwnership(tx, orgId, operators[0].UserId)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // IsResellerCustomerUser reports whether a user belongs to a reseller-

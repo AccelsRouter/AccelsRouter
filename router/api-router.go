@@ -135,17 +135,17 @@ func SetApiRouter(router *gin.Engine) {
 				// self-funding a personal balance (their credit comes from the
 				// reseller wallet); it backs the hidden customer-console controls.
 				selfRoute.POST("/topup", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.TopUp)
-				selfRoute.POST("/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestEpay)
+				selfRoute.POST("/pay", middleware.CriticalRateLimit(), middleware.OrgTopUpGate(), middleware.Require2FAEnabled(), controller.RequestEpay)
 				selfRoute.POST("/amount", controller.RequestAmount)
-				selfRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestStripePay)
+				selfRoute.POST("/stripe/pay", middleware.CriticalRateLimit(), middleware.OrgTopUpGate(), middleware.Require2FAEnabled(), controller.RequestStripePay)
 				selfRoute.POST("/stripe/amount", controller.RequestStripeAmount)
-				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestCreemPay)
+				selfRoute.POST("/creem/pay", middleware.CriticalRateLimit(), middleware.OrgTopUpGate(), middleware.Require2FAEnabled(), controller.RequestCreemPay)
 				selfRoute.POST("/waffo/amount", controller.RequestWaffoAmount)
-				selfRoute.POST("/waffo/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestWaffoPay)
+				selfRoute.POST("/waffo/pay", middleware.CriticalRateLimit(), middleware.OrgTopUpGate(), middleware.Require2FAEnabled(), controller.RequestWaffoPay)
 				selfRoute.POST("/waffo-pancake/amount", controller.RequestWaffoPancakeAmount)
-				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestWaffoPancakePay)
+				selfRoute.POST("/waffo-pancake/pay", middleware.CriticalRateLimit(), middleware.OrgTopUpGate(), middleware.Require2FAEnabled(), controller.RequestWaffoPancakePay)
 				selfRoute.POST("/wondergate/amount", controller.RequestWonderGateAmount)
-				selfRoute.POST("/wondergate/pay", middleware.CriticalRateLimit(), middleware.BlockResellerCustomer(), middleware.Require2FAEnabled(), controller.RequestWonderGatePay)
+				selfRoute.POST("/wondergate/pay", middleware.CriticalRateLimit(), middleware.OrgTopUpGate(), middleware.Require2FAEnabled(), controller.RequestWonderGatePay)
 				selfRoute.POST("/aff_transfer", middleware.UserCriticalRateLimit("aff-transfer"), controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
 
@@ -209,6 +209,21 @@ func SetApiRouter(router *gin.Engine) {
 			reconRoute.POST("/upstream-bill", controller.AdminCompareUpstreamBill)
 			reconRoute.POST("/byteplus-bill", controller.AdminCompareBytePlusBill)
 			reconRoute.POST("/alibaba-bill", controller.AdminCompareAlibabaBill)
+			// The finance view: receipts, revenue, reseller payables, balances.
+			reconRoute.GET("/finance", controller.AdminGetFinanceReport)
+		}
+		// Reseller commission settlement: monthly items, corrections, payouts.
+		settlementRoute := apiRouter.Group("/admin")
+		settlementRoute.Use(middleware.AdminAuth())
+		{
+			settlementRoute.GET("/reseller-settlements", controller.AdminListResellerSettlements)
+			settlementRoute.GET("/reseller-settlements/export", controller.AdminExportResellerSettlements)
+			settlementRoute.POST("/reseller-settlements/close", middleware.CriticalRateLimit(), controller.AdminCloseResellerSettlements)
+			settlementRoute.POST("/reseller-settlements/clawback", middleware.CriticalRateLimit(), controller.AdminClawbackResellerDebt)
+			settlementRoute.GET("/reseller-adjustments", controller.AdminListResellerSettlementAdjustments)
+			settlementRoute.POST("/reseller-adjustments", middleware.CriticalRateLimit(), controller.AdminAddResellerSettlementAdjustment)
+			settlementRoute.GET("/reseller-payouts", controller.AdminListResellerPayouts)
+			settlementRoute.POST("/reseller-payouts", middleware.CriticalRateLimit(), controller.AdminRegisterResellerPayout)
 		}
 		// Upstream monitor: channel/model health history and price comparison.
 		// These show and exercise the channels, so they follow the channel
@@ -276,6 +291,10 @@ func SetApiRouter(router *gin.Engine) {
 			orgAdminRoute.GET("/applications", controller.AdminListOrgApplications)
 			orgAdminRoute.POST("/applications/:id/approve", controller.AdminApproveOrgApplication)
 			orgAdminRoute.POST("/applications/:id/reject", controller.AdminRejectOrgApplication)
+			// Bindings of customers that have paid the platform before.
+			orgAdminRoute.GET("/bind-requests", controller.AdminListResellerBindRequests)
+			orgAdminRoute.POST("/bind-requests/:id/approve", middleware.CriticalRateLimit(), controller.AdminApproveResellerBindRequest)
+			orgAdminRoute.POST("/bind-requests/:id/reject", controller.AdminRejectResellerBindRequest)
 			// SSO domain mappings (JIT provisioning) are admin-managed only.
 			orgAdminRoute.GET("/sso-providers", controller.AdminListSsoProviders)
 			orgAdminRoute.GET("/:id/sso-domains", controller.AdminListOrgSsoDomains)
@@ -294,6 +313,15 @@ func SetApiRouter(router *gin.Engine) {
 			orgRoute.DELETE("/accounts/:user_id", controller.DetachMyOrgAccount)
 			orgRoute.POST("/leave", middleware.CriticalRateLimit(), controller.LeaveMyOrganization)
 			orgRoute.GET("/ledger", controller.ListMyOrgLedger)
+			orgRoute.GET("/topups", controller.ListMyOrgTopUps)
+			orgRoute.POST("/reseller/leave", middleware.CriticalRateLimit(), controller.LeaveMyReseller)
+			// Becoming a reseller's customer: answer its invitation, or apply
+			// with its join code and confirm the offer it answers with.
+			orgRoute.GET("/reseller-binding", controller.ListMyResellerBindings)
+			orgRoute.GET("/reseller-binding/preview", controller.PreviewResellerBinding)
+			orgRoute.POST("/reseller-binding/apply", middleware.CriticalRateLimit(), controller.ApplyToJoinReseller)
+			orgRoute.POST("/reseller-binding/accept", middleware.CriticalRateLimit(), controller.AcceptResellerBindOffer)
+			orgRoute.DELETE("/reseller-binding/:id", controller.CloseMyResellerBinding)
 			orgRoute.POST("/allocate", middleware.CriticalRateLimit(), controller.AllocateFromMyOrg)
 			orgRoute.POST("/revoke", middleware.CriticalRateLimit(), controller.RevokeFromMyOrg)
 			// Reseller customer management (reseller orgs only). Resolved via
@@ -373,8 +401,15 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.PUT("/brand", controller.SetMyResellerBrand)
 			// Read-only audit trail of the reseller's operations on its customers.
 			resellerRoute.GET("/audit", controller.GetMyResellerAudit)
+			// Commission on customers that top up directly: what is accruing,
+			// held, payable and paid.
+			resellerRoute.GET("/earnings", controller.GetMyResellerEarnings)
+			resellerRoute.GET("/settlements", controller.ListMyResellerSettlements)
+			resellerRoute.GET("/settlements/adjustments", controller.ListMyResellerSettlementAdjustments)
+			resellerRoute.GET("/payouts", controller.ListMyResellerPayouts)
 			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/logs/export", controller.ExportMyCustomerLogs)
+			resellerRoute.GET("/customers/:id/topups", controller.ListMyCustomerTopUps)
 			resellerRoute.GET("/customers/:id/invitations", controller.ListMyCustomerInvitations)
 			resellerRoute.POST("/customers/:id/invitations", middleware.CriticalRateLimit(), controller.InviteMyCustomerOwner)
 			resellerRoute.DELETE("/customers/:id/invitations/:inv_id", controller.RevokeMyCustomerInvitation)
@@ -389,6 +424,13 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.PUT("/customers/:id/offer", controller.SetMyCustomerOffer)
 			// Ending the relationship: allowed once the customer's allowance is zero.
 			resellerRoute.DELETE("/customers/:id", controller.RemoveMyCustomer)
+			// Taking on an organization or person that already exists.
+			resellerRoute.GET("/join-code", controller.GetMyResellerJoinCode)
+			resellerRoute.PUT("/join-code", controller.UpdateMyResellerJoinCode)
+			resellerRoute.GET("/bind-requests", controller.ListMyResellerBindRequests)
+			resellerRoute.POST("/bind-requests", middleware.CriticalRateLimit(), controller.InviteExistingCustomer)
+			resellerRoute.POST("/bind-requests/:id/approve", controller.OfferToBindApplicant)
+			resellerRoute.DELETE("/bind-requests/:id", controller.CloseMyResellerBindRequest)
 		}
 
 		personalByokRoute := apiRouter.Group("/personal_byok")
@@ -562,6 +604,7 @@ func SetApiRouter(router *gin.Engine) {
 			topupAdminRoute.GET("/", controller.AdminListTopUpOrders)
 			topupAdminRoute.GET("/wondergate-status", controller.AdminQueryWonderGateOrderStatus)
 			topupAdminRoute.POST("/wondergate-resync", controller.AdminResyncWonderGateOrder)
+			topupAdminRoute.POST("/chargeback", middleware.CriticalRateLimit(), controller.AdminRegisterOrgChargeback)
 		}
 		handlePermissionRoute(apiRouter.Group("", middleware.DisableCache(), middleware.AdminAuth()), http.MethodGet, "/audit", authz.AuditRead, controller.GetAuditLogs)
 		apiRouter.GET("/audit/self", middleware.DisableCache(), middleware.UserAuth(), controller.GetAuditLogs)

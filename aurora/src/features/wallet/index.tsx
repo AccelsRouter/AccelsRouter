@@ -32,6 +32,7 @@ import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { InviteesDialog } from './components/dialogs/invitees-dialog'
+import { OrgWalletNotice } from './components/org-wallet-notice'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
@@ -72,7 +73,15 @@ export function Wallet(props: WalletProps) {
     queryFn: getOrgContext,
     staleTime: 60_000,
   })
-  const isResellerCustomer = orgContext?.is_reseller_customer ?? false
+  // An organization that pays for itself: its owner and admins top up the
+  // organization's wallet here; redemption codes, subscriptions and invite
+  // rewards belong to a personal balance and are left out.
+  const orgFundsItself = orgContext?.org_funding_mode === 'direct'
+  const isResellerCustomer =
+    (orgContext?.is_reseller_customer ?? false) && !orgFundsItself
+  const canTopUp =
+    !isResellerCustomer &&
+    (!orgFundsItself || (orgContext?.can_top_up_org ?? false))
   const [user, setUser] = useState<UserWalletData | null>(null)
   const [userLoading, setUserLoading] = useState(true)
   const [topupAmount, setTopupAmount] = useState(0)
@@ -321,15 +330,22 @@ export function Wallet(props: WalletProps) {
                 )}{' '}
                 {t(
                   'It is a spending allowance granted by {{brand}}, not a deposit held for you: when the relationship ends the distributor reclaims what is left, and any refund is settled with the distributor directly.',
-                  { brand: orgContext?.brand_name || t('your distributor') }
+                  { brand: orgContext?.reseller_name || t('your distributor') }
                 )}
               </div>
             )}
 
-            {!isResellerCustomer && (
+            {orgFundsItself && (
+              <OrgWalletNotice
+                canTopUp={canTopUp}
+                resellerName={orgContext?.reseller_name}
+              />
+            )}
+
+            {canTopUp && (
             <div
               className={
-                showSubscriptionPanel
+                showSubscriptionPanel && !orgFundsItself
                   ? 'grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-start'
                   : 'grid gap-4'
               }
@@ -337,6 +353,7 @@ export function Wallet(props: WalletProps) {
               <div id='wallet-add-funds' className='scroll-mt-4'>
                 <RechargeFormCard
                   topupInfo={topupInfo}
+                  hideRedemption={orgFundsItself}
                   presetAmounts={presetAmounts}
                   selectedPreset={selectedPreset}
                   onSelectPreset={handleSelectPreset}
@@ -371,16 +388,18 @@ export function Wallet(props: WalletProps) {
                 />
               </div>
 
-              <SubscriptionPlansCard
-                topupInfo={topupInfo}
-                onAvailabilityChange={handleSubscriptionAvailabilityChange}
-                userQuota={user?.quota}
-                onPurchaseSuccess={fetchUser}
-              />
+              {!orgFundsItself && (
+                <SubscriptionPlansCard
+                  topupInfo={topupInfo}
+                  onAvailabilityChange={handleSubscriptionAvailabilityChange}
+                  userQuota={user?.quota}
+                  onPurchaseSuccess={fetchUser}
+                />
+              )}
             </div>
             )}
 
-            {!isResellerCustomer && (
+            {!isResellerCustomer && !orgFundsItself && (
               <AffiliateRewardsCard
                 user={user}
                 affiliateLink={affiliateLink}

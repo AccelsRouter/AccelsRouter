@@ -43,6 +43,10 @@ export type Organization = {
   price_group: string
   wholesale_ratio?: number
   wholesale_ratios?: Record<string, number>
+  // Reseller: may open customers that top up their own wallet online.
+  direct_pay_enabled?: boolean
+  // Customer: 'direct' when it tops up its own wallet online.
+  funding_mode?: string
   is_customer?: boolean
   allowed_models?: string
   owner_user_id: number
@@ -118,6 +122,7 @@ export type UpdateOrgPayload = {
   wholesale_ratio?: number
   wholesale_ratios?: Record<string, number>
   allowed_models?: string[]
+  direct_pay_enabled?: boolean
 }
 
 export type CreditOrgPayload = {

@@ -103,6 +103,9 @@ interface RechargeFormCardProps {
   loading?: boolean
   priceRatio?: number
   usdExchangeRate?: number
+  // Redemption codes do not apply at all (an organization wallet): show
+  // neither the field nor the notice that explains why it is switched off.
+  hideRedemption?: boolean
   onOpenBilling?: () => void
   creemProducts?: CreemProduct[]
   enableCreemTopup?: boolean
@@ -137,6 +140,7 @@ export function RechargeFormCard({
   loading,
   priceRatio = 1,
   usdExchangeRate = 1,
+  hideRedemption = false,
   onOpenBilling,
   creemProducts,
   enableCreemTopup,
@@ -186,7 +190,8 @@ export function RechargeFormCard({
   const amountInDollars = getCurrencyDisplay().meta.kind !== 'tokens'
   const amountText = (amount: number) =>
     amountInDollars ? `$${amount}` : String(amount)
-  const redemptionEnabled = topupInfo?.enable_redemption !== false
+  const redemptionEnabled =
+    !hideRedemption && topupInfo?.enable_redemption !== false
 
   if (loading) {
     return (
@@ -645,13 +650,15 @@ export function RechargeFormCard({
           )}
         </div>
       ) : (
-        <Alert className='border-t'>
-          <AlertDescription>
-            {t(
-              'Redemption codes are disabled until the administrator confirms compliance terms.'
-            )}
-          </AlertDescription>
-        </Alert>
+        !hideRedemption && (
+          <Alert className='border-t'>
+            <AlertDescription>
+              {t(
+                'Redemption codes are disabled until the administrator confirms compliance terms.'
+              )}
+            </AlertDescription>
+          </Alert>
+        )
       )}
     </TitledCard>
   )

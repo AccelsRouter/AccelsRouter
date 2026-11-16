@@ -6,6 +6,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"html"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,18 @@ import (
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
+
+// orgNameForInvitee is how an organization is named to someone invited into
+// it: a reseller's customer organization carries the reseller it belongs to,
+// so the invitee knows whose customer they are joining. The result goes into
+// the HTML of an email, and a reseller's brand is free text, so it is escaped.
+func orgNameForInvitee(org *model.Organization) string {
+	reseller := model.ResellerLabelOfCustomer(org.Id)
+	if reseller == "" {
+		return org.Name
+	}
+	return fmt.Sprintf("%s（分销商 %s 的客户）", org.Name, html.EscapeString(reseller))
+}
 
 // sendOrgInvitationEmail best-effort emails an org join link to the invitee.
 // Returns whether an email was actually sent: false (no error surfaced) when
@@ -81,6 +94,7 @@ func PreviewOrgActivation(c *gin.Context) {
 	}
 	common.ApiSuccess(c, gin.H{
 		"org_name":      orgName,
+		"reseller_name": model.ResellerLabelOfCustomer(inv.OrgId),
 		"invited_email": inv.InvitedEmail,
 		"expires_at":    inv.ExpiresAt,
 	})
@@ -280,7 +294,7 @@ func CreateMyOrgInvitation(c *gin.Context) {
 	// org and an activation link; a registered email keeps the consent flow.
 	inv, _, err := model.ProvisionInvitedAccount(org.Id, req.InvitedEmail, req.Relation, req.Role, req.MonthlyBudget, c.GetInt("id"))
 	if err == nil {
-		emailed := sendOrgActivationEmail(inv.InvitedEmail, org.Name, inv.Code, inv.ExpiresAt)
+		emailed := sendOrgActivationEmail(inv.InvitedEmail, orgNameForInvitee(org), inv.Code, inv.ExpiresAt)
 		model.RecordOrgAudit(org.Id, c.GetInt("id"), "invitation.provision", fmt.Sprintf("inv:%d", inv.Id), inv.InvitedEmail)
 		common.ApiSuccess(c, gin.H{"code": activationCodeForInviter(inv.Code, emailed), "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
 		return
@@ -298,7 +312,7 @@ func CreateMyOrgInvitation(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	emailed := sendOrgInvitationEmail(inv.InvitedEmail, org.Name, inv.Code)
+	emailed := sendOrgInvitationEmail(inv.InvitedEmail, orgNameForInvitee(org), inv.Code)
 	common.ApiSuccess(c, gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": false})
 }
 
@@ -316,7 +330,7 @@ func ResendMyOrgInvitation(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	emailed := sendOrgActivationEmail(inv.InvitedEmail, org.Name, inv.Code, inv.ExpiresAt)
+	emailed := sendOrgActivationEmail(inv.InvitedEmail, orgNameForInvitee(org), inv.Code, inv.ExpiresAt)
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "invitation.provision.resend", fmt.Sprintf("inv:%d", inv.Id), inv.InvitedEmail)
 	common.ApiSuccess(c, gin.H{"code": activationCodeForInviter(inv.Code, emailed), "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": true})
 }
@@ -399,6 +413,7 @@ func PreviewOrgInvitation(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"org_name":      orgName,
 		"org_type":      orgType,
+		"reseller_name": model.ResellerLabelOfCustomer(inv.OrgId),
 		"relation":      inv.Relation,
 		"role":          inv.Role,
 		"expires_at":    inv.ExpiresAt,

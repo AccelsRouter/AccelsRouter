@@ -21,6 +21,7 @@ Organization console API client. Wraps /api/organization/* endpoints used
 by an org owner/admin to manage their own organization.
 */
 import { api } from '@/lib/api'
+import { getServerMessage } from '@/lib/server-error-message'
 import type {
   ApplyResult,
   InvitationPreview,
@@ -47,14 +48,17 @@ type ApiResp<T> = {
   data?: T
 }
 
+// A refusal's text in the reader's language where the server sent a
+// translatable message, otherwise as the server wrote it.
 function unwrap<T>(res: { data?: ApiResp<T> }, fallback: string): T {
   if (!res.data?.success || res.data.data == null)
-    throw new Error(res.data?.message || fallback)
+    throw new Error(getServerMessage(res.data) || fallback)
   return res.data.data
 }
 
 function assertOk(res: { data?: ApiResp<unknown> }, fallback: string): void {
-  if (!res.data?.success) throw new Error(res.data?.message || fallback)
+  if (!res.data?.success)
+    throw new Error(getServerMessage(res.data) || fallback)
 }
 
 // Returns null when the caller does not manage an organization (backend
@@ -84,9 +88,16 @@ export type OrgContext = {
   // barred from BYOK, so the UI hides that entry for them.
   is_reseller_party: boolean
   org_type: string
+  // 'direct' when the organization pays the platform itself: its wallet is
+  // topped up online, by its owner and admins (can_top_up_org).
+  org_funding_mode: string
+  can_top_up_org: boolean
   // White-label brand a reseller customer sees in place of the platform brand.
   brand_name: string
   brand_logo: string
+  // The distributor the organization is a customer of, as that distributor
+  // names itself (its brand, else its organization name); '' otherwise.
+  reseller_name: string
 }
 
 const EMPTY_ORG_CONTEXT: OrgContext = {
@@ -95,8 +106,11 @@ const EMPTY_ORG_CONTEXT: OrgContext = {
   is_reseller_customer: false,
   is_reseller_party: false,
   org_type: '',
+  org_funding_mode: '',
+  can_top_up_org: false,
   brand_name: '',
   brand_logo: '',
+  reseller_name: '',
 }
 
 export async function getOrgContext(): Promise<OrgContext> {
@@ -349,6 +363,15 @@ export async function leaveMyOrganization(): Promise<void> {
 
 // Ends the relationship with a customer whose allowance is already zero:
 // unlinks it, disables its keys and suspends its org.
+// The owner of a customer that tops up its own wallet takes it out from under
+// its distributor; it becomes the platform's own client.
+export async function leaveMyReseller(): Promise<void> {
+  const res = await api.post<ApiResp<unknown>>(
+    '/api/organization/reseller/leave'
+  )
+  assertOk(res, 'Failed to leave the distributor')
+}
+
 export async function removeCustomer(customerId: number): Promise<void> {
   const res = await api.delete<ApiResp<unknown>>(
     `/api/reseller/customers/${customerId}`
@@ -905,6 +928,9 @@ export async function createCustomer(payload: {
   name: string
   price_group: string
   initial_quota: number
+  // 'direct': the customer tops up its own wallet online and takes no
+  // allocation. Left out for a customer the distributor allocates to.
+  funding_mode?: 'direct'
   owner_email?: string
 }): Promise<CreateCustomerResult> {
   const res = await api.post<ApiResp<CreateCustomerResult>>(
@@ -931,4 +957,102 @@ export async function listOrgSsoDomains(): Promise<SsoDomain[]> {
     '/api/organization/sso-domains'
   )
   return unwrap(res, 'Failed to load SSO domains')
+}
+
+// An online payment a self-funded customer made into its own wallet, as its
+// distributor sees it.
+export type CustomerTopUp = {
+  amount: number
+  money: number
+  payment_method: string
+  status: string
+  create_time: number
+  complete_time: number
+}
+
+export async function listCustomerTopUps(
+  customerId: number,
+  params: { page: number; pageSize: number }
+): Promise<PagedResponse<CustomerTopUp>> {
+  const qs = new URLSearchParams()
+  qs.set('p', String(params.page))
+  qs.set('page_size', String(params.pageSize))
+  const res = await api.get<ApiResp<PagedResponse<CustomerTopUp>>>(
+    `/api/reseller/customers/${customerId}/topups?${qs.toString()}`
+  )
+  return unwrap(res, 'Failed to load payments')
+}
+
+// --- Commission on customers that top up directly ---
+
+export type ResellerEarnings = {
+  // Commission of months not closed yet.
+  accruing: number
+  // Closed but kept back while a card payment can still be charged back.
+  held: number
+  payable: number
+  adjustments: number
+  // What the next payout settles: payable plus adjustments.
+  due: number
+  paid: number
+}
+
+export type ResellerSettlementItem = {
+  id: number
+  period: string
+  customer_org_id: number
+  customer_name?: string
+  charged_quota: number
+  cost_quota: number
+  commission_quota: number
+  release_at: number
+  status: 'held' | 'payable' | 'paid'
+}
+
+export type ResellerSettlementAdjustment = {
+  id: number
+  customer_name?: string
+  customer_org_id: number
+  type: 'chargeback' | 'late_usage' | 'manual'
+  period: string
+  quota: number
+  remark: string
+  created_time: number
+}
+
+export type ResellerPayoutRow = {
+  id: number
+  quota: number
+  money: number
+  currency: string
+  method: 'bank' | 'crypto' | 'wallet_debit'
+  reference: string
+  invoice_no: string
+  paid_time: number
+}
+
+export async function getResellerEarnings(): Promise<ResellerEarnings> {
+  const res = await api.get<ApiResp<ResellerEarnings>>('/api/reseller/earnings')
+  return unwrap(res, 'Failed to load earnings')
+}
+
+async function resellerPage<T>(path: string): Promise<T[]> {
+  const res = await api.get<ApiResp<PagedResponse<T>>>(
+    `${path}?p=1&page_size=100`
+  )
+  return unwrap(res, 'Failed to load earnings').items ?? []
+}
+
+export function listResellerSettlements(): Promise<ResellerSettlementItem[]> {
+  return resellerPage('/api/reseller/settlements')
+}
+
+export function listResellerSettlementAdjustments(): Promise<
+  ResellerSettlementAdjustment[]
+> {
+  return resellerPage('/api/reseller/settlements/adjustments')
+}
+
+export function listResellerPayouts(): Promise<ResellerPayoutRow[]> {
+  return resellerPage('/api/reseller/payouts')
 }

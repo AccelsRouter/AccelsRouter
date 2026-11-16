@@ -155,6 +155,9 @@ type RelayInfo struct {
 	OrgWorkspaceId    int
 	ResellerOrgId     int
 	OrgWholesaleRatio float64
+	// OrgDirectPay: the paying org is a reseller's customer that pays the
+	// platform itself, so the margin over wholesale is the reseller's commission.
+	OrgDirectPay bool
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)

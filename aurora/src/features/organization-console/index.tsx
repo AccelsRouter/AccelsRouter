@@ -40,6 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SectionPageLayout } from '@/components/layout'
 import { OrgKeysPanel } from '@/features/org-keys'
+import { PendingBindings } from '@/features/reseller-binding/pending-bindings'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { AccountsTab } from './accounts-tab'
 import { myOrgKeysApi } from './api'
@@ -47,6 +48,7 @@ import {
   exportMyOrgLogs,
   getOrgContext,
   leaveMyOrganization,
+  leaveMyReseller,
   listOrgLogs,
 } from './api'
 import { getOrgSelf } from './api'
@@ -93,6 +95,7 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
     staleTime: 60_000,
   })
   const isResellerCustomer = orgContext?.is_reseller_customer ?? false
+  const resellerName = orgContext?.reseller_name ?? ''
   // A plain member manages only its own keys; owners and admins get the
   // management tabs (the backing endpoints are owner/admin-only anyway).
   const canManage = self?.role !== 'member'
@@ -101,6 +104,23 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
   // party and can only be removed by the platform admin.
   const queryClient = useQueryClient()
   const [leaveOpen, setLeaveOpen] = useState(false)
+  // The owner of a customer that tops up its own wallet may take it out from
+  // under its distributor: the balance is its own money.
+  const canLeaveReseller =
+    isResellerCustomer &&
+    self?.role === 'owner' &&
+    self.funding_mode === 'direct'
+  const [leaveResellerOpen, setLeaveResellerOpen] = useState(false)
+  const leaveReseller = useMutation({
+    mutationFn: leaveMyReseller,
+    onSuccess: () => {
+      setLeaveResellerOpen(false)
+      toast.success(t('Your organization is now a direct client.'))
+      void queryClient.invalidateQueries({ queryKey: ['org-self'] })
+      void queryClient.invalidateQueries({ queryKey: ['org-context'] })
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
   const leave = useMutation({
     mutationFn: leaveMyOrganization,
     onSuccess: () => {
@@ -121,9 +141,19 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
             <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
           </div>
         ) : !self ? (
-          <ApplyPanel />
+          <div className='flex flex-col gap-5'>
+            <PendingBindings canApply />
+            <ApplyPanel />
+          </div>
         ) : (
           <div className='flex flex-col gap-5'>
+            <PendingBindings
+              canApply={
+                self.type === 'enterprise' &&
+                !isResellerCustomer &&
+                self.role === 'owner'
+              }
+            />
             <div className='border-border/60 bg-muted/30 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4'>
               <div className='flex flex-col gap-1'>
                 <div className='flex items-center gap-2'>
@@ -134,7 +164,9 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
                     {self.type === 'reseller'
                       ? t('Reseller')
                       : isResellerCustomer
-                        ? t('Customer')
+                        ? t('Customer of {{reseller}}', {
+                            reseller: resellerName,
+                          })
                         : t('Enterprise')}
                   </Badge>
                   <Badge
@@ -148,6 +180,19 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
                 {self.price_group && (
                   <span className='text-muted-foreground text-xs'>
                     {t('Price Group')}: {self.price_group}
+                  </span>
+                )}
+                {isResellerCustomer && (
+                  <span className='text-muted-foreground max-w-2xl text-xs'>
+                    {self.funding_mode === 'direct'
+                      ? t(
+                          'This organization is a customer of the distributor {{reseller}}, which sets its prices and available models. Its wallet holds what the organization itself has paid in.',
+                          { reseller: resellerName }
+                        )
+                      : t(
+                          'This organization is a customer of the distributor {{reseller}}, which sets its prices and available models and allocates its credit.',
+                          { reseller: resellerName }
+                        )}
                   </span>
                 )}
               </div>
@@ -171,15 +216,52 @@ export function OrganizationConsole({ initialTab }: { initialTab?: string }) {
                     {t('Leave organization')}
                   </Button>
                 )}
+                {canLeaveReseller && (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    className='gap-1.5'
+                    onClick={() => setLeaveResellerOpen(true)}
+                  >
+                    <LogOut className='h-3.5 w-3.5' />
+                    {t('Leave distributor')}
+                  </Button>
+                )}
               </div>
             </div>
+            <ConfirmDialog
+              open={leaveResellerOpen}
+              onOpenChange={setLeaveResellerOpen}
+              title={t('Leave the distributor {{reseller}}?', {
+                reseller: resellerName,
+              })}
+              desc={t(
+                '{{org}} stops being a customer of {{reseller}} and becomes a direct client of the platform. It keeps its balance, members and API keys. The discounts and model limits set by {{reseller}} no longer apply, and usage is charged at list price from then on. This cannot be undone.',
+                { org: self.name, reseller: resellerName }
+              )}
+              destructive
+              isLoading={leaveReseller.isPending}
+              confirmText={t('Leave {{reseller}}', { reseller: resellerName })}
+              handleConfirm={() => leaveReseller.mutate()}
+            />
             <ConfirmDialog
               open={leaveOpen}
               onOpenChange={setLeaveOpen}
               title={t('Leave this organization?')}
-              desc={t(
-                'You lose access to its wallet, models and shared keys. Keys you created stay on your own account but are no longer paid by the organization. Rejoining requires a new invitation.'
-              )}
+              desc={
+                (isResellerCustomer
+                  ? t(
+                      '{{org}} is a customer of the distributor {{reseller}}.',
+                      {
+                        org: self.name,
+                        reseller: resellerName,
+                      }
+                    ) + ' '
+                  : '') +
+                t(
+                  'You lose access to its wallet, models and shared keys. Keys you created stay on your own account but are no longer paid by the organization. Rejoining requires a new invitation.'
+                )
+              }
               destructive
               isLoading={leave.isPending}
               confirmText={t('Leave')}

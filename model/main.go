@@ -387,6 +387,13 @@ func migrateDB() error {
 		&ModelFingerprint{},
 		&UpstreamIdentityResult{},
 		&ResellerCustomerLink{},
+		&ResellerBindRequest{},
+		&ResellerJoinCode{},
+		&OrgTopUp{},
+		&ResellerSettlementItem{},
+		&ResellerSettlementAdjustment{},
+		&ResellerPayout{},
+		&FinanceBalanceSnapshot{},
 		&ResellerRouting{},
 		&ResellerAdmin{},
 		&UserChannel{},
@@ -420,6 +427,9 @@ func migrateDB() error {
 		return err
 	}
 	if err := backfillResellerAdmins(); err != nil {
+		return err
+	}
+	if err := backfillCustomerOrgOwners(); err != nil {
 		return err
 	}
 	if err := EncryptExistingByokKeys(); err != nil {

@@ -122,7 +122,7 @@ func TestResellerConsoleIncludesOwnKeyTraffic(t *testing.T) {
 	require.NoError(t, UpdateOrganizationFields(reseller.Id, map[string]interface{}{
 		"wholesale_ratios": `{"claude-opus-4-8":0.8}`,
 	}))
-	customer, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", 400, 1)
+	customer, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", "", 400, 1)
 	require.NoError(t, err)
 
 	ownWs := &Workspace{OrgId: reseller.Id, Name: "Default"}
@@ -192,9 +192,9 @@ func TestResellerConsoleIncludesOwnKeyTraffic(t *testing.T) {
 
 	// Rollup: an own-key row written before own calls were tagged (reseller_org_id
 	// 0, org_id = reseller) and one written after (tagged) both count once.
-	require.NoError(t, RecordOrgUsageDaily(now, reseller.Id, ownWs.Id, 0, 7601, "claude-opus-4-8", 1000, 800, 0, 10, 20))
-	require.NoError(t, RecordOrgUsageDaily(now, reseller.Id, ownWs.Id, reseller.Id, 7601, "deepseek-v4-pro", 300, 300, 300, 5, 5))
-	require.NoError(t, RecordOrgUsageDaily(now, customer.Id, custWs.Id, reseller.Id, 7602, "claude-opus-4-8", 500, 500, 400, 7, 7))
+	require.NoError(t, RecordOrgUsageDaily(now, reseller.Id, ownWs.Id, 0, 7601, "claude-opus-4-8", 1000, 800, 0, 0, 10, 20))
+	require.NoError(t, RecordOrgUsageDaily(now, reseller.Id, ownWs.Id, reseller.Id, 7601, "deepseek-v4-pro", 300, 300, 300, 0, 5, 5))
+	require.NoError(t, RecordOrgUsageDaily(now, customer.Id, custWs.Id, reseller.Id, 7602, "claude-opus-4-8", 500, 500, 400, 0, 7, 7))
 	report, err := GetResellerUsageFromDaily(reseller.Id, now-10, now+10)
 	require.NoError(t, err)
 	assert.EqualValues(t, 3, report.TotalRequests)
@@ -211,7 +211,7 @@ func TestResellerConsoleIncludesOwnKeyTraffic(t *testing.T) {
 func TestUserOrgRelations(t *testing.T) {
 	migrateOrgTables(t)
 	reseller := mustCreateOrg(t, "Rel Reseller", OrgTypeReseller, 0)
-	cust, err := CreateResellerCustomer(reseller.Id, "Rel Customer", "retail", 100, 1)
+	cust, err := CreateResellerCustomer(reseller.Id, "Rel Customer", "retail", "", 100, 1)
 	require.NoError(t, err)
 	enterprise := mustCreateOrg(t, "Rel Enterprise", OrgTypeEnterprise, 0)
 	require.NoError(t, DB.Create(&ResellerAdmin{UserId: 8101, ResellerOrgId: reseller.Id, Status: OrgStatusActive}).Error)

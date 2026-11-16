@@ -62,6 +62,9 @@ export function SystemBrand(props: SystemBrandProps) {
   })
   const brandName = orgContext?.brand_name?.trim()
   const brandLogo = orgContext?.brand_logo?.trim()
+  // A customer of a distributor that set no brand still sees the platform
+  // brand; the note beside it says whose customer the organization is.
+  const servedBy = brandName ? '' : (orgContext?.reseller_name ?? '')
 
   const variant = props.variant ?? 'sidebar'
   const name =
@@ -92,7 +95,17 @@ export function SystemBrand(props: SystemBrandProps) {
             <span className='truncate text-sm font-semibold'>{name}</span>
           </>
         ) : (
-          <img src='/logo-wordmark.png' alt={name} className='h-4 w-auto' />
+          <>
+            <img src='/logo-wordmark.png' alt={name} className='h-4 w-auto' />
+            {servedBy && (
+              <span
+                className='text-muted-foreground hidden truncate text-xs @min-[22rem]/system-brand:inline'
+                title={t('Served by {{reseller}}', { reseller: servedBy })}
+              >
+                {t('Served by {{reseller}}', { reseller: servedBy })}
+              </span>
+            )}
+          </>
         )}
       </Link>
     )

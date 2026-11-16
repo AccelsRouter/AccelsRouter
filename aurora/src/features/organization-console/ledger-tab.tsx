@@ -53,8 +53,12 @@ export function LedgerTab({
 } = {}) {
   const { t } = useTranslation()
 
-  const typeLabel = (type: string) =>
-    type === 'purchase'
+  const typeLabel = (type: string) => {
+    if (type === 'topup') return t('Online top-up')
+    if (type === 'chargeback') return t('Payment reversed')
+    if (type === 'clawback') return t('Settlement debit')
+    if (type === 'transfer') return t('Personal balance moved in')
+    return type === 'purchase'
       ? t('Purchase')
       : type === 'allocate'
         ? t('Allocate')
@@ -63,6 +67,7 @@ export function LedgerTab({
           : type === 'debit'
             ? t('Platform debit')
             : type || '-'
+  }
   const orgLabel = (id: number, name?: string) =>
     name || (id > 0 ? `#${id}` : t('Platform'))
   // Human sentence for a row, from the viewer's side when known.
@@ -90,6 +95,22 @@ export function LedgerTab({
     }
     if (e.type === 'debit') {
       return t('Debited by the platform from {{name}}', { name: from })
+    }
+    if (e.type === 'topup') {
+      return t('Paid online into {{name}}', { name: to })
+    }
+    if (e.type === 'transfer') {
+      return t('Personal balance of its owner moved into {{name}}', {
+        name: to,
+      })
+    }
+    if (e.type === 'chargeback') {
+      return t('An online payment into {{name}} was reversed', { name: from })
+    }
+    if (e.type === 'clawback') {
+      return t('Commission owed back to the platform, taken from {{name}}', {
+        name: from,
+      })
     }
     return `${from} → ${to}`
   }
@@ -148,9 +169,12 @@ export function LedgerTab({
                 <Td>
                   <Badge
                     variant={
-                      e.type === 'revoke' || e.type === 'debit'
+                      e.type === 'revoke' ||
+                      e.type === 'debit' ||
+                      e.type === 'chargeback' ||
+                      e.type === 'clawback'
                         ? 'destructive'
-                        : e.type === 'purchase'
+                        : e.type === 'purchase' || e.type === 'topup'
                           ? 'default'
                           : 'secondary'
                     }
