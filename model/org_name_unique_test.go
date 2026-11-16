@@ -24,9 +24,9 @@ func TestOrganizationNamesAreUnique(t *testing.T) {
 	}
 
 	// A distributor cannot provision a customer named like itself or another org.
-	_, err := CreateResellerCustomer(reseller.Id, "acme reseller", "retail", 100, 1)
+	_, err := CreateResellerCustomer(reseller.Id, "acme reseller", "retail", "", 100, 1)
 	assert.ErrorIs(t, err, ErrOrgNameTaken)
-	cust, err := CreateResellerCustomer(reseller.Id, "Acme Customer", "retail", 100, 1)
+	cust, err := CreateResellerCustomer(reseller.Id, "Acme Customer", "retail", "", 100, 1)
 	require.NoError(t, err)
 
 	// Applications: an existing org's name is refused, and so is a name that
@@ -60,7 +60,7 @@ func TestProvisionedCustomerAccountLifecycle(t *testing.T) {
 	migrateOrgTables(t)
 	require.NoError(t, DB.AutoMigrate(&User{}))
 	reseller := mustCreateOrg(t, "Prov Reseller", OrgTypeReseller, 1000)
-	cust, err := CreateResellerCustomer(reseller.Id, "Prov Customer", "retail", 100, 1)
+	cust, err := CreateResellerCustomer(reseller.Id, "Prov Customer", "retail", "", 100, 1)
 	require.NoError(t, err)
 
 	inv, user, err := ProvisionCustomerAccount(cust.Id, "  Zhong.Sheng@Example.com ", 1)

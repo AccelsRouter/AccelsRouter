@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -163,4 +164,89 @@ func TestOrgWalletFundingPreConsumeGatesBalance(t *testing.T) {
 	require.NoError(t, funding.Refund())
 	assert.Equal(t, 100, walletOf(1))
 	assert.Equal(t, 0, funding.consumed)
+}
+
+// A reseller's customer that pays the platform itself is charged from its own
+// wallet alone: the reseller's wallet is never reserved from, settled against
+// or refunded to, even when it is empty, and the margin over the wholesale
+// price lands in the usage rollup as the reseller's commission (negative when
+// the customer's discount sits below the wholesale ratio).
+func TestDirectPayCustomerLeavesResellerWalletAlone(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Organization{}, &model.OrgAccount{}, &model.Workspace{}, &model.OrgUsageDaily{}))
+	previousDB, previousRedis := model.DB, common.RedisEnabled
+	previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
+	model.DB, common.RedisEnabled = db, false
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	t.Cleanup(func() {
+		model.DB, common.RedisEnabled = previousDB, previousRedis
+		common.SetDatabaseTypes(previousMain, previousLog)
+		require.NoError(t, sqlDB.Close())
+	})
+	require.NoError(t, db.Create(&model.Organization{Id: 1, Name: "customer", Type: model.OrgTypeEnterprise, Status: model.OrgStatusActive, WalletQuota: 1000, FundingMode: model.OrgFundingDirect}).Error)
+	require.NoError(t, db.Create(&model.Organization{Id: 2, Name: "reseller", Type: model.OrgTypeReseller, Status: model.OrgStatusActive}).Error)
+
+	walletOf := func(id int) int {
+		var org model.Organization
+		require.NoError(t, db.First(&org, id).Error)
+		return org.WalletQuota
+	}
+	rollup := func() model.OrgUsageDaily {
+		var rows []model.OrgUsageDaily
+		require.NoError(t, db.Find(&rows).Error)
+		require.Len(t, rows, 1)
+		return rows[0]
+	}
+
+	funding := &OrgWalletFunding{orgId: 1, userId: 7, discountRatio: 0.9, resellerOrgId: 2, wholesaleRatio: 0.8, directPay: true}
+	require.NoError(t, funding.PreConsume(500), "an empty reseller wallet does not stop a customer that pays for itself")
+	assert.Equal(t, 1000-450, walletOf(1))
+	assert.Equal(t, 0, walletOf(2))
+	require.NoError(t, funding.Settle(100))
+	assert.Equal(t, 1000-540, walletOf(1))
+	assert.Equal(t, 0, walletOf(2))
+	require.NoError(t, funding.Refund())
+	assert.Equal(t, 1000, walletOf(1))
+	assert.Equal(t, 0, walletOf(2))
+	assert.True(t, funding.Snapshot().DirectPay, "a task settles the way its submission was funded")
+
+	// The settled request: customer price 900, wholesale 800, commission 100.
+	recordOrgUsageDaily(&relaycommon.RelayInfo{
+		UserId: 7, OriginModelName: "claude-opus", OrgId: 1, ResellerOrgId: 2,
+		OrgDiscountRatio: 0.9, OrgWholesaleRatio: 0.8, OrgDirectPay: true,
+	}, 1000, 10, 20)
+	row := rollup()
+	assert.Equal(t, int64(900), row.ChargedQuota)
+	assert.Equal(t, int64(800), row.CostQuota)
+	assert.Equal(t, int64(100), row.CommissionQuota)
+
+	// A prepaid customer's margin never passes through the platform.
+	require.NoError(t, db.Where("1 = 1").Delete(&model.OrgUsageDaily{}).Error)
+	recordOrgUsageDaily(&relaycommon.RelayInfo{
+		UserId: 7, OriginModelName: "claude-opus", OrgId: 1, ResellerOrgId: 2,
+		OrgDiscountRatio: 0.9, OrgWholesaleRatio: 0.8,
+	}, 1000, 10, 20)
+	assert.Equal(t, int64(0), rollup().CommissionQuota)
+
+	// A task's later settlement moves the commission with the amounts, and a
+	// discount below the wholesale ratio makes it negative.
+	require.NoError(t, db.Where("1 = 1").Delete(&model.OrgUsageDaily{}).Error)
+	task := &model.Task{UserId: 7, Quota: 1000, SubmitTime: 1_700_000_000}
+	task.Properties.OriginModelName = "seedance-2-5"
+	task.PrivateData.BillingSource = BillingSourceOrgWallet
+	task.PrivateData.OrgFunding = &model.TaskOrgFunding{
+		OrgId: 1, UserId: 7, DiscountRatio: 0.7,
+		ResellerOrgId: 2, WholesaleRatio: 0.8, DirectPay: true,
+	}
+	require.NoError(t, taskAdjustFunding(task, 100))
+	assert.Equal(t, 1000-70, walletOf(1))
+	assert.Equal(t, 0, walletOf(2))
+	row = rollup()
+	assert.Equal(t, int64(70), row.ChargedQuota)
+	assert.Equal(t, int64(80), row.CostQuota)
+	assert.Equal(t, int64(-10), row.CommissionQuota)
 }

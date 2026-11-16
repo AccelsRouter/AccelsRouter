@@ -17,7 +17,7 @@ func migrateOrgTables(t *testing.T) {
 	require.NoError(t, DB.AutoMigrate(
 		&Organization{}, &OrgAccount{}, &CreditLedger{}, &Workspace{}, &WorkspaceToken{}, &OrgChannel{},
 		&OrgApplication{}, &OrgInvitation{}, &OrgSsoDomain{}, &OrgAuditLog{}, &ResellerCustomerLink{},
-		&ResellerAdmin{},
+		&ResellerAdmin{}, &OrgTopUp{},
 	))
 	// isolate between tests
 	DB.Exec("DELETE FROM organizations")
@@ -31,6 +31,7 @@ func migrateOrgTables(t *testing.T) {
 	DB.Exec("DELETE FROM org_audit_logs")
 	DB.Exec("DELETE FROM reseller_customer_links")
 	DB.Exec("DELETE FROM reseller_admins")
+	DB.Exec("DELETE FROM org_top_ups")
 }
 
 // The audit trail is append-only, scoped per org, and returned newest-first.
@@ -297,7 +298,7 @@ func TestGetWorkspaceBillingInfo(t *testing.T) {
 func TestGetWorkspaceBillingInfoCarriesResellerStatus(t *testing.T) {
 	migrateOrgTables(t)
 	reseller := mustCreateOrg(t, "acme-reseller", OrgTypeReseller, 1000)
-	cust, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", 400, 1)
+	cust, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", "", 400, 1)
 	require.NoError(t, err)
 	ws := &Workspace{OrgId: cust.Id, Name: "prod"}
 	require.NoError(t, CreateWorkspace(ws))
@@ -342,16 +343,16 @@ func TestResellerCustomers(t *testing.T) {
 	enterprise := mustCreateOrg(t, "not-a-reseller", OrgTypeEnterprise, 1000)
 
 	// Only a reseller can create customers.
-	_, err := CreateResellerCustomer(enterprise.Id, "cust-x", "default", 100, 1)
+	_, err := CreateResellerCustomer(enterprise.Id, "cust-x", "default", "", 100, 1)
 	require.Error(t, err)
 
 	// Initial allocation must be positive. Route-2: it's a spending-cap grant, no
 	// longer bounded by the reseller wallet, so an "over-wallet" amount succeeds.
-	_, err = CreateResellerCustomer(reseller.Id, "cust-x", "retail", 0, 1)
+	_, err = CreateResellerCustomer(reseller.Id, "cust-x", "retail", "", 0, 1)
 	require.Error(t, err)
 
 	// Happy path: customer org created, granted its cap, relationship established.
-	cust, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", 400, 1)
+	cust, err := CreateResellerCustomer(reseller.Id, "customer-one", "retail", "", 400, 1)
 	require.NoError(t, err)
 	require.NotNil(t, cust)
 	assert.Equal(t, OrgTypeEnterprise, cust.Type)
@@ -658,9 +659,9 @@ func TestOrgKeysAreDisabledWhenTheirTieEnds(t *testing.T) {
 func TestCustomerGrantIsBoundedAndCostStaysWithTheReseller(t *testing.T) {
 	migrateOrgTables(t)
 	reseller := mustCreateOrg(t, "bounded reseller", OrgTypeReseller, 1000)
-	_, err := CreateResellerCustomer(reseller.Id, "too much", "default", common.MaxWalletQuota+1, 1)
+	_, err := CreateResellerCustomer(reseller.Id, "too much", "default", "", common.MaxWalletQuota+1, 1)
 	require.Error(t, err)
-	customer, err := CreateResellerCustomer(reseller.Id, "bounded customer", "default", 400, 1)
+	customer, err := CreateResellerCustomer(reseller.Id, "bounded customer", "default", "", 400, 1)
 	require.NoError(t, err)
 	require.Error(t, GrantCustomerQuota(reseller.Id, customer.Id, common.MaxWalletQuota+1, 1, ""))
 	require.Error(t, GrantCustomerQuota(reseller.Id, customer.Id, common.MaxWalletQuota, 1, ""), "400 held plus the limit is over the limit")
@@ -679,4 +680,140 @@ func TestCustomerGrantIsBoundedAndCostStaysWithTheReseller(t *testing.T) {
 	assert.Equal(t, OrgUsageBucket{Key: "m", Quota: 1000, RetailQuota: 900}, report.ByModel[0])
 	assert.Zero(t, report.ByMember[0].CostQuota)
 	assert.EqualValues(t, 900, report.TotalRetailQuota, "what the customer paid stays")
+}
+
+// A customer that pays the platform itself: only a reseller the platform has
+// allowed can open one, it starts empty, the reseller can neither allocate to
+// nor reclaim from its wallet, and an online payment by one of its members
+// lands in the organization's wallet, never in the member's own balance.
+func TestDirectFundedCustomerTopsUpItsOwnWallet(t *testing.T) {
+	migrateOrgTables(t)
+	truncateTables(t)
+	oldQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 500
+	t.Cleanup(func() { common.QuotaPerUnit = oldQuotaPerUnit })
+
+	reseller := mustCreateOrg(t, "acme-reseller", OrgTypeReseller, 1000)
+	_, err := CreateResellerCustomer(reseller.Id, "direct-one", "default", OrgFundingDirect, 0, 1)
+	require.ErrorIs(t, err, ErrDirectPayNotGranted)
+	require.NoError(t, UpdateOrganizationFields(reseller.Id, map[string]any{"direct_pay_enabled": true}))
+	_, err = CreateResellerCustomer(reseller.Id, "direct-one", "default", OrgFundingDirect, 100, 1)
+	require.ErrorIs(t, err, ErrCustomerFundsItself, "a self-funded customer takes no initial allocation")
+	customer, err := CreateResellerCustomer(reseller.Id, "direct-one", "default", OrgFundingDirect, 0, 1)
+	require.NoError(t, err)
+	assert.Equal(t, OrgFundingDirect, customer.FundingMode)
+	assert.Equal(t, 0, customer.WalletQuota)
+	isCustomer, err := IsResellerCustomer(reseller.Id, customer.Id)
+	require.NoError(t, err)
+	assert.True(t, isCustomer)
+
+	require.ErrorIs(t, GrantCustomerQuota(reseller.Id, customer.Id, 50, 1, ""), ErrCustomerFundsItself)
+	require.ErrorIs(t, RevokeCustomerQuota(reseller.Id, customer.Id, 50, 1, ""), ErrCustomerFundsItself)
+
+	payer := insertUserForPaymentGuardTest(t, 811, 7)
+	require.NoError(t, AttachOrgAccount(&OrgAccount{OrgId: customer.Id, UserId: payer.Id, Relation: OrgRelationCustomer, Role: OrgRoleOwner}))
+	orgId, role, err := DirectFundedOrgOfUser(payer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, customer.Id, orgId)
+	assert.Equal(t, OrgRoleOwner, role)
+
+	since := common.GetTimestamp()
+	order := createEpayTestOrder(t, payer.Id, "EPAYORGTOPUP", PaymentProviderEpay, common.TopUpStatusPending)
+	require.NoError(t, RecordOrgTopUpOrders(customer.Id, payer.Id, since))
+	require.NoError(t, RecordOrgTopUpOrders(customer.Id, payer.Id, since), "noting an order twice changes nothing")
+
+	_, err = RechargeEpay(order.TradeNo, "alipay", "127.0.0.1")
+	require.NoError(t, err)
+	fresh, err := GetOrganizationById(customer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 2*500, fresh.WalletQuota, "the payment lands in the organization's wallet")
+	assert.Equal(t, 7, getUserQuotaForPaymentGuardTest(t, payer.Id), "the payer's own balance is untouched")
+	_, err = RechargeEpay(order.TradeNo, "alipay", "127.0.0.1")
+	require.NoError(t, err)
+	fresh, err = GetOrganizationById(customer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 2*500, fresh.WalletQuota, "a repeated notification credits nothing")
+
+	ledger, _, err := ListOrgLedger(customer.Id, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, ledger, 1)
+	assert.Equal(t, LedgerTypeTopUp, ledger[0].Type)
+	assert.Equal(t, 2*500, ledger[0].Quota)
+	assert.Equal(t, payer.Id, ledger[0].OperatorId)
+	assert.Equal(t, order.TradeNo, ledger[0].TradeNo, "the ledger row names the order it came from")
+
+	orders, total, err := ListOrgTopUps(customer.Id, 0, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, orders, 1)
+	assert.Equal(t, order.TradeNo, orders[0].TradeNo)
+	assert.Equal(t, common.TopUpStatusSuccess, orders[0].Status)
+
+	// A member of an ordinary organization keeps topping up a personal balance.
+	enterprise := mustCreateOrg(t, "plain-enterprise", OrgTypeEnterprise, 0)
+	member := &User{Id: 812, Username: "plain_member", Status: common.UserStatusEnabled, AffCode: "plain-member"}
+	require.NoError(t, DB.Create(member).Error)
+	require.NoError(t, AttachOrgAccount(&OrgAccount{OrgId: enterprise.Id, UserId: member.Id, Relation: OrgRelationMember, Role: OrgRoleOwner}))
+	personal := createEpayTestOrder(t, member.Id, "EPAYPERSONAL", PaymentProviderEpay, common.TopUpStatusPending)
+	_, err = RechargeEpay(personal.TradeNo, "alipay", "127.0.0.1")
+	require.NoError(t, err)
+	assert.Equal(t, 2*500, getUserQuotaForPaymentGuardTest(t, member.Id))
+
+	// The customer's calls are paid from its own wallet: the billing info of a
+	// key in one of its workspaces says so.
+	ws := &Workspace{OrgId: customer.Id, Name: "prod"}
+	require.NoError(t, CreateWorkspace(ws))
+	require.NoError(t, BindTokenToWorkspace(customer.Id, ws.Id, 778))
+	info, err := GetWorkspaceBillingInfo(778)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.Equal(t, reseller.Id, info.ResellerOrgId)
+	assert.True(t, info.DirectPay)
+
+	// A payment the channel reverses comes back out of the organization's
+	// wallet as far as the wallet still holds it, never out of the payer's own
+	// balance, and the wallet does not go below zero.
+	reversible := TopUp{UserId: payer.Id, Amount: 3, Money: 15, TradeNo: "WGORGTOPUP", PaymentMethod: PaymentMethodWonderGate, PaymentProvider: PaymentProviderWonderGate, CreateTime: common.GetTimestamp(), Status: common.TopUpStatusPending}
+	require.NoError(t, DB.Create(&reversible).Error)
+	require.NoError(t, RecordOrgTopUpOrders(customer.Id, payer.Id, since))
+	require.NoError(t, RechargeWonderGate(reversible.TradeNo, "127.0.0.1"))
+	fresh, err = GetOrganizationById(customer.Id)
+	require.NoError(t, err)
+	require.Equal(t, 5*500, fresh.WalletQuota)
+	require.NoError(t, DecreaseOrgQuota(customer.Id, 4*500), "most of the wallet is spent before the reversal")
+	require.NoError(t, ReverseWonderGateTopUp(reversible.TradeNo, "127.0.0.1"))
+	fresh, err = GetOrganizationById(customer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 0, fresh.WalletQuota, "the wallet gives back what it holds and stops at zero")
+	assert.Equal(t, 7, getUserQuotaForPaymentGuardTest(t, payer.Id))
+	ledger, _, err = ListOrgLedger(customer.Id, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, ledger, 3)
+	assert.Equal(t, LedgerTypeChargeback, ledger[0].Type)
+	assert.Equal(t, 500, ledger[0].Quota)
+	assert.Equal(t, reversible.TradeNo, ledger[0].TradeNo)
+	require.NoError(t, PlatformCreditOrg(customer.Id, 2*500, 1, "restore", "test"))
+
+	// Leaving the reseller does not shut the customer down: it keeps its
+	// money and keys, loses the reseller's offer, and still pays for itself.
+	require.NoError(t, UpdateOrganizationFields(customer.Id, map[string]any{"retail_discounts": `{"claude":0.9}`, "allowed_models": `["claude-opus"]`}))
+	disabled, err := RemoveResellerCustomer(reseller.Id, customer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 0, disabled)
+	fresh, err = GetOrganizationById(customer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, OrgStatusActive, fresh.Status)
+	assert.Equal(t, 2*500, fresh.WalletQuota)
+	assert.Equal(t, OrgFundingDirect, fresh.FundingMode)
+	assert.Empty(t, fresh.RetailDiscounts)
+	assert.Empty(t, fresh.AllowedModels)
+	assert.False(t, IsCustomerOrg(customer.Id))
+	info, err = GetWorkspaceBillingInfo(778)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.Zero(t, info.ResellerOrgId)
+	assert.False(t, info.DirectPay, "no reseller is owed anything once the customer has left")
+	orgId, _, err = DirectFundedOrgOfUser(payer.Id)
+	require.NoError(t, err)
+	assert.Equal(t, customer.Id, orgId, "its members' payments still go to its wallet")
 }

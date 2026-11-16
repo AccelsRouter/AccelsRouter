@@ -48,6 +48,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { SectionPageLayout } from '@/components/layout'
@@ -538,6 +539,7 @@ function EditOrgDialog(props: {
     version: number
   }>({ map: {}, version: 0 })
   const [allowedModels, setAllowedModels] = useState('')
+  const [directPay, setDirectPay] = useState(false)
   const [loadedId, setLoadedId] = useState<number | null>(null)
   const isReseller = org?.type === 'reseller'
   // Reseller edit is tabbed (basics / pricing & offerable models / upstream
@@ -566,6 +568,7 @@ function EditOrgDialog(props: {
     setRatioSeed({ map: org.wholesale_ratios ?? {}, version: 0 })
     setWholesaleValid(true)
     setAllowedModels(parseModelsField(org.allowed_models).join('\n'))
+    setDirectPay(org.direct_pay_enabled ?? false)
     setTab('basics')
     setCovered([])
     setBoundCount(0)
@@ -629,6 +632,7 @@ function EditOrgDialog(props: {
                 .split(/[\n,]/)
                 .map((m) => m.trim())
                 .filter(Boolean),
+              direct_pay_enabled: directPay,
             }
           : {}),
       }),
@@ -688,6 +692,24 @@ function EditOrgDialog(props: {
           </span>
         )}
       </Field>
+      {isReseller && (
+        <label className='border-border/60 flex items-start justify-between gap-3 rounded-md border p-3'>
+          <span className='flex flex-col gap-0.5'>
+            <span className='text-sm font-medium'>
+              {t('Customers may top up directly')}
+            </span>
+            <span className='text-muted-foreground text-xs'>
+              {t(
+                'Lets this distributor open customers that pay the platform online themselves. Their calls are charged to their own wallet, and the distributor earns the margin over its wholesale price as commission.'
+              )}
+            </span>
+          </span>
+          <Switch
+            checked={directPay}
+            onCheckedChange={(c) => setDirectPay(Boolean(c))}
+          />
+        </label>
+      )}
       <Field label={t('Remark')}>
         <Textarea
           value={remark}

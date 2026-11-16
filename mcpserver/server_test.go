@@ -88,7 +88,7 @@ func seedReseller(t *testing.T) (reseller, customer *model.Organization) {
 	require.NoError(t, model.DB.Create(reseller).Error)
 	require.NoError(t, model.DB.Create(&model.ResellerAdmin{UserId: 7, ResellerOrgId: reseller.Id, Status: model.OrgStatusActive}).Error)
 	var err error
-	customer, err = model.CreateResellerCustomer(reseller.Id, "customer-one", "retail", 500_000, 7)
+	customer, err = model.CreateResellerCustomer(reseller.Id, "customer-one", "retail", "", 500_000, 7)
 	require.NoError(t, err)
 	return reseller, customer
 }
@@ -403,9 +403,9 @@ func TestResellerUsageReportsProfitAcrossCustomers(t *testing.T) {
 	reseller, customer := seedReseller(t)
 	now := common.GetTimestamp()
 	// standard 1,000,000 ($2), customer paid 900,000 ($1.80), cost 800,000 ($1.60)
-	require.NoError(t, model.RecordOrgUsageDaily(now-3600, customer.Id, 0, reseller.Id, 9, "claude-opus", 1_000_000, 900_000, 800_000, 100, 50))
+	require.NoError(t, model.RecordOrgUsageDaily(now-3600, customer.Id, 0, reseller.Id, 9, "claude-opus", 1_000_000, 900_000, 800_000, 0, 100, 50))
 	// Outside a 7-day window: must not count.
-	require.NoError(t, model.RecordOrgUsageDaily(now-10*86400, customer.Id, 0, reseller.Id, 9, "claude-opus", 5_000_000, 5_000_000, 5_000_000, 1, 1))
+	require.NoError(t, model.RecordOrgUsageDaily(now-10*86400, customer.Id, 0, reseller.Id, 9, "claude-opus", 5_000_000, 5_000_000, 5_000_000, 0, 1, 1))
 	session := connect(t, newTestEngine(t), "sk-test")
 
 	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "reseller-usage", Arguments: map[string]any{"days": 7}})

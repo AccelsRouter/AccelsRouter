@@ -66,6 +66,17 @@ type OrgWalletFunding struct {
 	resellerOrgId    int
 	wholesaleRatio   float64
 	resellerConsumed int
+	// directPay marks a reseller's customer that pays the platform itself: the
+	// customer wallet holds its own payments and covers the whole call, so the
+	// reseller's wallet is never touched. resellerOrgId and wholesaleRatio stay
+	// set, because the usage rollup still records the wholesale price and the
+	// margin over it as the reseller's commission.
+	directPay bool
+}
+
+// debitsReseller reports whether a call also draws on the reseller's wallet.
+func (o *OrgWalletFunding) debitsReseller() bool {
+	return o.resellerOrgId > 0 && !o.directPay
 }
 
 func (o *OrgWalletFunding) Source() string { return BillingSourceOrgWallet }
@@ -82,6 +93,7 @@ func (o *OrgWalletFunding) Snapshot() *model.TaskOrgFunding {
 		WholesaleRatio:   o.wholesaleRatio,
 		Consumed:         o.consumed,
 		ResellerConsumed: o.resellerConsumed,
+		DirectPay:        o.directPay,
 	}
 }
 
@@ -95,6 +107,7 @@ func OrgWalletFundingFromSnapshot(snapshot *model.TaskOrgFunding) *OrgWalletFund
 		wholesaleRatio:   snapshot.WholesaleRatio,
 		consumed:         snapshot.Consumed,
 		resellerConsumed: snapshot.ResellerConsumed,
+		directPay:        snapshot.DirectPay,
 	}
 }
 
@@ -163,7 +176,7 @@ func (o *OrgWalletFunding) PreConsume(stdAmount int) error {
 	// 4. Reseller cost balance reserve (route-2 two-pool). The reseller pays the
 	// platform at the per-model wholesale ratio. On failure, unwind the customer
 	// wallet reserve and both budget counters so nothing is left charged.
-	if o.resellerOrgId > 0 {
+	if o.debitsReseller() {
 		wAmount := o.wholesaleCharge(stdAmount)
 		if wAmount > 0 {
 			reservedR, rErr := model.TryReserveOrgQuota(o.resellerOrgId, wAmount)
@@ -227,7 +240,7 @@ func (o *OrgWalletFunding) Settle(stdDelta int) error {
 	}
 	// Reseller cost balance (wholesale side) — route-2. Mirrors the customer
 	// adjustment on the reseller wallet; resellerConsumed tracks it for Refund.
-	if o.resellerOrgId > 0 {
+	if o.debitsReseller() {
 		wDelta := o.wholesaleCharge(stdDelta)
 		if wDelta != 0 {
 			o.resellerConsumed += wDelta
@@ -259,7 +272,7 @@ func (o *OrgWalletFunding) Refund() error {
 		o.consumed = 0
 	}
 	// Reseller cost balance (route-2): return the reserved wholesale amount.
-	if o.resellerOrgId > 0 && o.resellerConsumed > 0 {
+	if o.debitsReseller() && o.resellerConsumed > 0 {
 		if err := model.IncreaseOrgQuota(o.resellerOrgId, o.resellerConsumed); err != nil {
 			return err
 		}
@@ -300,7 +313,9 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 	// A reseller's customers stop with the reseller: while the owning reseller is
 	// suspended, none of its customer orgs may consume, regardless of their own
 	// status or wallet. Resumes automatically once the reseller is active again.
-	if info.ResellerOrgId > 0 && info.ResellerOrgStatus != model.OrgStatusActive {
+	// A customer that pays the platform itself is spending its own money and
+	// keeps running.
+	if info.ResellerOrgId > 0 && !info.DirectPay && info.ResellerOrgStatus != model.OrgStatusActive {
 		return nil, types.NewErrorWithStatusCode(
 			fmt.Errorf("所属分销商已被暂停"),
 			types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
@@ -346,6 +361,7 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 	relayInfo.OrgWorkspaceId = info.WorkspaceId
 	relayInfo.ResellerOrgId = info.ResellerOrgId
 	relayInfo.OrgWholesaleRatio = wholesaleRatio
+	relayInfo.OrgDirectPay = info.DirectPay
 	if info.OrgType == model.OrgTypeReseller {
 		// The reseller's OWN call is reseller traffic in the reports: tag the
 		// rollup row with the reseller itself and record its cost = the wholesale
@@ -362,6 +378,7 @@ func tryOrgBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preC
 			discountRatio:  discountRatio,
 			resellerOrgId:  info.ResellerOrgId,
 			wholesaleRatio: wholesaleRatio,
+			directPay:      info.DirectPay,
 		},
 	}
 	if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {

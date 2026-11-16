@@ -21,6 +21,7 @@ Organization console API client. Wraps /api/organization/* endpoints used
 by an org owner/admin to manage their own organization.
 */
 import { api } from '@/lib/api'
+import { getServerMessage } from '@/lib/server-error-message'
 import type {
   ApplyResult,
   InvitationPreview,
@@ -47,14 +48,17 @@ type ApiResp<T> = {
   data?: T
 }
 
+// A refusal's text in the reader's language where the server sent a
+// translatable message, otherwise as the server wrote it.
 function unwrap<T>(res: { data?: ApiResp<T> }, fallback: string): T {
   if (!res.data?.success || res.data.data == null)
-    throw new Error(res.data?.message || fallback)
+    throw new Error(getServerMessage(res.data) || fallback)
   return res.data.data
 }
 
 function assertOk(res: { data?: ApiResp<unknown> }, fallback: string): void {
-  if (!res.data?.success) throw new Error(res.data?.message || fallback)
+  if (!res.data?.success)
+    throw new Error(getServerMessage(res.data) || fallback)
 }
 
 // Returns null when the caller does not manage an organization (backend
@@ -84,6 +88,10 @@ export type OrgContext = {
   // barred from BYOK, so the UI hides that entry for them.
   is_reseller_party: boolean
   org_type: string
+  // 'direct' when the organization pays the platform itself: its wallet is
+  // topped up online, by its owner and admins (can_top_up_org).
+  org_funding_mode: string
+  can_top_up_org: boolean
   // White-label brand a reseller customer sees in place of the platform brand.
   brand_name: string
   brand_logo: string
@@ -95,6 +103,8 @@ const EMPTY_ORG_CONTEXT: OrgContext = {
   is_reseller_customer: false,
   is_reseller_party: false,
   org_type: '',
+  org_funding_mode: '',
+  can_top_up_org: false,
   brand_name: '',
   brand_logo: '',
 }
@@ -905,6 +915,9 @@ export async function createCustomer(payload: {
   name: string
   price_group: string
   initial_quota: number
+  // 'direct': the customer tops up its own wallet online and takes no
+  // allocation. Left out for a customer the distributor allocates to.
+  funding_mode?: 'direct'
   owner_email?: string
 }): Promise<CreateCustomerResult> {
   const res = await api.post<ApiResp<CreateCustomerResult>>(
@@ -931,4 +944,28 @@ export async function listOrgSsoDomains(): Promise<SsoDomain[]> {
     '/api/organization/sso-domains'
   )
   return unwrap(res, 'Failed to load SSO domains')
+}
+
+// An online payment a self-funded customer made into its own wallet, as its
+// distributor sees it.
+export type CustomerTopUp = {
+  amount: number
+  money: number
+  payment_method: string
+  status: string
+  create_time: number
+  complete_time: number
+}
+
+export async function listCustomerTopUps(
+  customerId: number,
+  params: { page: number; pageSize: number }
+): Promise<PagedResponse<CustomerTopUp>> {
+  const qs = new URLSearchParams()
+  qs.set('p', String(params.page))
+  qs.set('page_size', String(params.pageSize))
+  const res = await api.get<ApiResp<PagedResponse<CustomerTopUp>>>(
+    `/api/reseller/customers/${customerId}/topups?${qs.toString()}`
+  )
+  return unwrap(res, 'Failed to load payments')
 }

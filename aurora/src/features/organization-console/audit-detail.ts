@@ -106,6 +106,13 @@ function settingChanges(
       case 'wholesale_ratio':
         changes.push(t('wholesale ratio set to {{value}}', { value }))
         break
+      case 'direct_pay_enabled':
+        changes.push(
+          value
+            ? t('customers may now top up directly')
+            : t('customers may no longer top up directly')
+        )
+        break
       case 'wholesale_ratios': {
         if (typeof value === 'number') {
           changes.push(t('{{n}} per-model wholesale ratios set', { n: value }))
@@ -297,6 +304,11 @@ export function auditDetailText(entry: OrgAuditLog, t: TFunction): string {
     case 'sso.domain.delete':
       return t('Removed an SSO domain')
     case 'customer.create':
+      if (values.funding === 'direct') {
+        return t('Created customer {{name}}, which tops up its own wallet', {
+          name: detail.replace(/ quota=\d+ funding=direct$/, ''),
+        })
+      }
       return t(
         'Created customer {{name}} with a starting balance of {{amount}}',
         {
@@ -354,6 +366,11 @@ export function auditDetailText(entry: OrgAuditLog, t: TFunction): string {
         target,
         n: Number(values.keys_disabled),
       })
+    case 'customer.release':
+      return t(
+        'Released customer {{target}} to the platform; it keeps its balance and keys',
+        { target }
+      )
     case 'reseller.brand':
       return detail
         ? t('Set the brand name to {{name}}', { name: detail })

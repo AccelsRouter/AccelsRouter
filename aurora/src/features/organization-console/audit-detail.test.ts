@@ -113,6 +113,24 @@ describe('auditDetailText', () => {
       'Created the key ci key in workspace prod'
     )
     assert.equal(
+      auditDetailText(
+        row('customer.create', 'org:9', 'acme labs quota=0 funding=direct'),
+        t
+      ),
+      'Created customer acme labs, which tops up its own wallet'
+    )
+    assert.equal(
+      auditDetailText(row('customer.release', 'org:9', '', 'acme'), t),
+      'Released customer acme to the platform; it keeps its balance and keys'
+    )
+    assert.equal(
+      auditDetailText(
+        row('org.update', 'org:6', '{"direct_pay_enabled":true}'),
+        t
+      ),
+      'Updated the organization settings: customers may now top up directly'
+    )
+    assert.equal(
       auditDetailText(row('some.new.action', 'x:1', 'raw detail'), t),
       'raw detail'
     )

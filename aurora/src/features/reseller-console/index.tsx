@@ -142,7 +142,10 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
                 <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
               </TabsList>
               <TabsContent value='customers' className='pt-4'>
-                <CustomersTab walletQuota={self.wallet_quota} />
+                <CustomersTab
+                  walletQuota={self.wallet_quota}
+                  directPayEnabled={self.direct_pay_enabled ?? false}
+                />
               </TabsContent>
               <TabsContent value='keys' className='pt-4'>
                 <OrgKeysPanel

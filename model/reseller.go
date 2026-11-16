@@ -200,13 +200,21 @@ type ResellerCustomer struct {
 	OwnerEmail string `json:"owner_email,omitempty"`
 }
 
+// ErrDirectPayNotGranted refuses a self-funded customer for a reseller the
+// platform has not allowed to open one.
+var ErrDirectPayNotGranted = common.NewMessage("Direct top-up is not enabled for this distributor")
+
+// ErrCustomerFundsItself refuses to grant to, or take back from, a customer
+// whose wallet holds its own payments.
+var ErrCustomerFundsItself = common.NewMessage("This customer tops up its own wallet, so quota cannot be allocated to it or reclaimed from it")
+
 // CreateResellerCustomer provisions a customer org (type enterprise, retail
-// price group) and seeds it with an initial allocation from the reseller's
-// wallet. The initial allocation both funds the customer and establishes the
-// ledger relationship that makes it appear in the reseller's customer list.
-// The customer starts ownerless (a reseller-managed shell); its owner is
-// onboarded separately via the invitation flow.
-func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQuota, operatorId int) (*Organization, error) {
+// price group). A prepaid customer (fundingMode "") is seeded with an initial
+// allocation from the reseller. A self-funded one (OrgFundingDirect) starts
+// empty and tops its wallet up itself, which the platform must have allowed
+// the reseller to offer. The customer starts ownerless (a reseller-managed
+// shell); its owner is onboarded separately via the invitation flow.
+func CreateResellerCustomer(resellerOrgId int, name, priceGroup, fundingMode string, initialQuota, operatorId int) (*Organization, error) {
 	reseller, err := GetOrganizationById(resellerOrgId)
 	if err != nil {
 		return nil, err
@@ -214,11 +222,24 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	if reseller == nil || reseller.Type != OrgTypeReseller {
 		return nil, errors.New("只有分销商组织可以创建客户")
 	}
-	if initialQuota <= 0 {
-		return nil, errors.New("初始划拨额度必须为正")
+	if fundingMode != "" && fundingMode != OrgFundingDirect {
+		return nil, errors.New("invalid funding mode")
 	}
-	if err := common.ValidateWalletQuota(initialQuota); err != nil {
-		return nil, err
+	direct := fundingMode == OrgFundingDirect
+	if direct {
+		if !reseller.DirectPayEnabled {
+			return nil, ErrDirectPayNotGranted
+		}
+		if initialQuota != 0 {
+			return nil, ErrCustomerFundsItself
+		}
+	} else {
+		if initialQuota <= 0 {
+			return nil, errors.New("初始划拨额度必须为正")
+		}
+		if err := common.ValidateWalletQuota(initialQuota); err != nil {
+			return nil, err
+		}
 	}
 	// Route-2: the initial allocation is a spending-cap grant to the customer, not
 	// a transfer funded from the reseller wallet (that wallet is the reseller's
@@ -226,7 +247,7 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	if priceGroup == "" {
 		priceGroup = "default"
 	}
-	customer := &Organization{Name: name, Type: OrgTypeEnterprise, PriceGroup: priceGroup}
+	customer := &Organization{Name: name, Type: OrgTypeEnterprise, PriceGroup: priceGroup, FundingMode: fundingMode}
 	if err := CreateOrganization(customer); err != nil {
 		return nil, err
 	}
@@ -234,6 +255,9 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup string, initialQ
 	if err := DB.Create(&ResellerCustomerLink{ResellerOrgId: resellerOrgId, CustomerOrgId: customer.Id, CreatedTime: common.GetTimestamp()}).Error; err != nil {
 		DB.Delete(&Organization{}, customer.Id)
 		return nil, err
+	}
+	if direct {
+		return customer, nil
 	}
 	// Grant the customer its initial spending cap (+ledger). On failure remove the
 	// orphan shell + link.
@@ -261,12 +285,21 @@ var ErrCustomerHoldsBalance = errors.New("该客户仍有未消耗额度，请�
 // self-funded direct enterprise. Its members keep their accounts. The
 // customer's allowance must already be zero (ErrCustomerHoldsBalance).
 // Returns how many keys were disabled.
+//
+// A customer that pays the platform itself is released instead: its wallet
+// holds its own money, so it keeps the balance and its keys and carries on as
+// the platform's own client at list price (releaseDirectFundedCustomer).
 func RemoveResellerCustomer(resellerOrgId, customerOrgId int) (int, error) {
 	var tokens []Token
+	released := false
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var customer Organization
 		if err := lockForUpdate(tx).Where("id = ?", customerOrgId).First(&customer).Error; err != nil {
 			return err
+		}
+		if customer.FundingMode == OrgFundingDirect {
+			released = true
+			return releaseDirectFundedCustomer(tx, resellerOrgId, customerOrgId)
 		}
 		if customer.WalletQuota != 0 {
 			return ErrCustomerHoldsBalance
@@ -298,6 +331,10 @@ func RemoveResellerCustomer(resellerOrgId, customerOrgId int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if released {
+		InvalidateOrgPayerCacheForOrg(customerOrgId)
+		return 0, nil
+	}
 	if err := invalidateTokensCache(tokens); err != nil {
 		common.SysError("failed to invalidate removed customer token cache: " + err.Error())
 	}
@@ -306,6 +343,23 @@ func RemoveResellerCustomer(resellerOrgId, customerOrgId int) (int, error) {
 	}
 	InvalidateOrgPayerCacheForOrg(customerOrgId)
 	return len(tokens), nil
+}
+
+// releaseDirectFundedCustomer unlinks a customer that pays the platform itself
+// from its reseller. The offer the reseller made goes with the link: the
+// discounts and the model allow-list are cleared, so the organization is
+// charged list price for whatever the platform serves it. Its balance, keys
+// and members are left as they are.
+func releaseDirectFundedCustomer(tx *gorm.DB, resellerOrgId, customerOrgId int) error {
+	res := tx.Where("reseller_org_id = ? AND customer_org_id = ?", resellerOrgId, customerOrgId).Delete(&ResellerCustomerLink{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return errors.New("该组织不是你的客户")
+	}
+	return tx.Model(&Organization{}).Where("id = ?", customerOrgId).
+		Updates(map[string]any{"retail_discounts": "", "allowed_models": "", "updated_time": common.GetTimestamp()}).Error
 }
 
 // ListResellerCustomers returns the reseller's linked customers, each with the

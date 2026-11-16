@@ -42,6 +42,9 @@ type createCustomerRequest struct {
 	Name         string `json:"name"`
 	PriceGroup   string `json:"price_group"`
 	InitialQuota int    `json:"initial_quota"`
+	// FundingMode "direct" opens a customer that tops up its own wallet
+	// online; empty is the prepaid customer the distributor allocates to.
+	FundingMode string `json:"funding_mode"`
 	// OwnerEmail, when given, invites the customer's operator in the same
 	// step: an unregistered email gets an account opened + activation link,
 	// a registered one a join invitation (see inviteCustomerOwner).
@@ -101,6 +104,12 @@ func CreateMyCustomer(c *gin.Context) {
 		common.ApiErrorMsg(c, "负责人邮箱格式无效")
 		return
 	}
+	direct := req.FundingMode == model.OrgFundingDirect
+	if direct {
+		// A self-funded customer starts empty; whatever the form sent as an
+		// initial allocation does not apply to it.
+		req.InitialQuota = 0
+	}
 	// As with a later allocation (AllocateFromMyOrg): a grant is a spending
 	// cap, not a transfer, but it never exceeds what the distributor holds.
 	if req.InitialQuota > reseller.WalletQuota {
@@ -110,12 +119,16 @@ func CreateMyCustomer(c *gin.Context) {
 	// A reseller customer always uses the default price group: its pricing is
 	// driven by the reseller's retail discounts, not a per-group base rate. The
 	// client field is ignored so it can never be assigned a divergent group.
-	customer, err := model.CreateResellerCustomer(reseller.Id, strings.TrimSpace(req.Name), "default", req.InitialQuota, c.GetInt("id"))
+	customer, err := model.CreateResellerCustomer(reseller.Id, strings.TrimSpace(req.Name), "default", req.FundingMode, req.InitialQuota, c.GetInt("id"))
 	if err != nil {
-		common.ApiErrorMsg(c, err.Error())
+		common.ApiError(c, err)
 		return
 	}
-	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.create", fmt.Sprintf("org:%d", customer.Id), fmt.Sprintf("%s quota=%d", customer.Name, req.InitialQuota))
+	detail := fmt.Sprintf("%s quota=%d", customer.Name, req.InitialQuota)
+	if direct {
+		detail += " funding=" + model.OrgFundingDirect
+	}
+	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.create", fmt.Sprintf("org:%d", customer.Id), detail)
 	resp := gin.H{"customer": customer}
 	if ownerEmail != "" {
 		// The org exists either way; an invite failure is reported, not fatal,
@@ -332,12 +345,22 @@ func RemoveMyCustomer(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// A customer that pays the platform itself is released, not shut down: it
+	// keeps its balance and keys and becomes the platform's own client.
+	released := false
+	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
+		released = customer.FundingMode == model.OrgFundingDirect
+	}
 	disabled, err := model.RemoveResellerCustomer(reseller.Id, customerId)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
-	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.remove", fmt.Sprintf("org:%d", customerId), fmt.Sprintf("keys_disabled=%d", disabled))
+	if released {
+		model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.release", fmt.Sprintf("org:%d", customerId), "")
+	} else {
+		model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.remove", fmt.Sprintf("org:%d", customerId), fmt.Sprintf("keys_disabled=%d", disabled))
+	}
 	common.ApiSuccess(c, gin.H{"keys_disabled": disabled})
 }
 
@@ -609,6 +632,10 @@ func GetMyOrgContext(c *gin.Context) {
 
 	isOrgMember := false
 	isResellerCustomer := false
+	// A self-funded organization's wallet is topped up online by its owner or
+	// admins; the wallet page shows them the payment form.
+	orgFundingMode := ""
+	canTopUpOrg := false
 	orgType := ""
 	brandName := ""
 	brandLogo := ""
@@ -617,6 +644,10 @@ func GetMyOrgContext(c *gin.Context) {
 		if org, err := model.GetOrganizationById(acc.OrgId); err == nil && org != nil {
 			orgType = org.Type
 			isResellerCustomer = model.IsCustomerOrg(org.Id)
+			orgFundingMode = org.FundingMode
+			canTopUpOrg = org.FundingMode == model.OrgFundingDirect &&
+				acc.Status != model.OrgStatusSuspended &&
+				(acc.Role == model.OrgRoleOwner || acc.Role == model.OrgRoleAdmin)
 			// White-label: a customer sees its reseller's brand in place of the
 			// platform brand.
 			if isResellerCustomer {
@@ -641,6 +672,8 @@ func GetMyOrgContext(c *gin.Context) {
 		"is_reseller_customer": isResellerCustomer,
 		"is_reseller_party":    isResellerParty,
 		"org_type":             orgType,
+		"org_funding_mode":     orgFundingMode,
+		"can_top_up_org":       canTopUpOrg,
 		"brand_name":           brandName,
 		"brand_logo":           brandLogo,
 	})
@@ -708,7 +741,10 @@ func GetMyResellerOrg(c *gin.Context) {
 		"price_group":      reseller.PriceGroup,
 		"wholesale_ratio":  reseller.WholesaleRatio,
 		"wholesale_ratios": model.ParseRetailDiscounts(reseller.WholesaleRatios),
-		"is_owner":         true,
+		// Whether the platform lets this distributor open customers that top
+		// up their own wallet.
+		"direct_pay_enabled": reseller.DirectPayEnabled,
+		"is_owner":           true,
 	})
 }
 

@@ -45,6 +45,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
@@ -63,6 +65,7 @@ import {
 } from './api'
 import { CallRecords } from './call-records'
 import { CustomerOfferDialog } from './customer-offer-dialog'
+import { CustomerTopUps } from './customer-topups'
 import { Field, Td, Th, fmtTime } from './shared'
 import type {
   InvitationStatus,
@@ -75,7 +78,17 @@ function toUnix(date?: Date): number | undefined {
   return date ? Math.floor(date.getTime() / 1000) : undefined
 }
 
-export function CustomersTab(props: { walletQuota: number }) {
+// A customer that tops up its own wallet online: the balance is its own
+// money, so there is nothing for the distributor to allocate or reclaim.
+function fundsItself(customer: ResellerCustomer | null): boolean {
+  return customer?.org.funding_mode === 'direct'
+}
+
+export function CustomersTab(props: {
+  walletQuota: number
+  // The platform lets this distributor open customers that top up directly.
+  directPayEnabled: boolean
+}) {
   const { t } = useTranslation()
   const [createOpen, setCreateOpen] = useState(false)
   const [allocation, setAllocation] = useState<{
@@ -109,7 +122,29 @@ export function CustomersTab(props: { walletQuota: number }) {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
-  const removingBalance = removing?.org.wallet_quota ?? 0
+  // A self-funded customer leaves with its balance, so nothing blocks it.
+  const removingBalance = fundsItself(removing)
+    ? 0
+    : (removing?.org.wallet_quota ?? 0)
+  const removeDesc = (): string => {
+    const name = removing?.org.name ?? ''
+    if (fundsItself(removing)) {
+      return t(
+        '{{name}} is unlinked from you and stays with the platform as its own client: it keeps its balance and API keys, loses the discounts and model limits you set, and pays list price from then on. You earn nothing on what it uses afterwards. This cannot be undone.',
+        { name }
+      )
+    }
+    if (removingBalance > 0) {
+      return t(
+        'The customer still holds {{balance}}. Reclaim all of it with "Adjust quota" first: the allowance is a cap you granted, and any refund is settled between you and the customer.',
+        { balance: formatQuotaWithCurrency(removingBalance) }
+      )
+    }
+    return t(
+      '{{name}} is unlinked from you: its API keys are disabled and its organization suspended. Its members keep their accounts. This cannot be undone.',
+      { name }
+    )
+  }
 
   const customers = data ?? []
 
@@ -162,6 +197,11 @@ export function CustomersTab(props: { walletQuota: number }) {
                     <span className='text-muted-foreground ml-1 text-xs'>
                       #{c.org.id}
                     </span>
+                    {fundsItself(c) && (
+                      <Badge variant='outline' className='ml-2'>
+                        {t('Tops up directly')}
+                      </Badge>
+                    )}
                     {c.org.status !== 'active' && (
                       <Badge variant='destructive' className='ml-2'>
                         {t('Suspended')}
@@ -175,19 +215,23 @@ export function CustomersTab(props: { walletQuota: number }) {
                     {formatQuotaWithCurrency(c.org.wallet_quota)}
                   </Td>
                   <Td className='text-right tabular-nums'>
-                    {formatQuotaWithCurrency(c.net_allocated)}
+                    {fundsItself(c)
+                      ? '-'
+                      : formatQuotaWithCurrency(c.net_allocated)}
                   </Td>
                   <Td className='text-right'>
                     <div className='flex justify-end gap-2'>
-                      <Button
-                        size='sm'
-                        variant='outline'
-                        onClick={() =>
-                          setAllocation({ mode: 'allocate', customer: c })
-                        }
-                      >
-                        {t('Adjust quota')}
-                      </Button>
+                      {!fundsItself(c) && (
+                        <Button
+                          size='sm'
+                          variant='outline'
+                          onClick={() =>
+                            setAllocation({ mode: 'allocate', customer: c })
+                          }
+                        >
+                          {t('Adjust quota')}
+                        </Button>
+                      )}
                       <Button
                         size='sm'
                         variant='outline'
@@ -230,17 +274,7 @@ export function CustomersTab(props: { walletQuota: number }) {
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
         title={t('Remove this customer?')}
-        desc={
-          removingBalance > 0
-            ? t(
-                'The customer still holds {{balance}}. Reclaim all of it with "Adjust quota" first: the allowance is a cap you granted, and any refund is settled between you and the customer.',
-                { balance: formatQuotaWithCurrency(removingBalance) }
-              )
-            : t(
-                '{{name}} is unlinked from you: its API keys are disabled and its organization suspended. Its members keep their accounts. This cannot be undone.',
-                { name: removing?.org.name ?? '' }
-              )
-        }
+        desc={removeDesc()}
         destructive
         disabled={removingBalance > 0}
         isLoading={remove.isPending}
@@ -250,6 +284,7 @@ export function CustomersTab(props: { walletQuota: number }) {
 
       <CreateCustomerDialog
         open={createOpen}
+        directPayEnabled={props.directPayEnabled}
         onClose={() => setCreateOpen(false)}
         onShareLink={(customer) =>
           setInviteCustomer({ org: customer, net_allocated: 0 })
@@ -527,6 +562,8 @@ function CustomerInviteDialog(props: {
 
 function CreateCustomerDialog(props: {
   open: boolean
+  // Offer the choice of a customer that tops up its own wallet.
+  directPayEnabled: boolean
   onClose: () => void
   // Called when the operator was invited but no email went out, so the
   // distributor lands in the invite dialog where the link can be copied.
@@ -537,6 +574,7 @@ function CreateCustomerDialog(props: {
   const [name, setName] = useState('')
   const [initialQuota, setInitialQuota] = useState('')
   const [ownerEmail, setOwnerEmail] = useState('')
+  const [funding, setFunding] = useState<'prepaid' | 'direct'>('prepaid')
   const [loadedOpen, setLoadedOpen] = useState(false)
 
   // Reset the form each time the dialog is opened.
@@ -545,7 +583,9 @@ function CreateCustomerDialog(props: {
     setName('')
     setInitialQuota('')
     setOwnerEmail('')
+    setFunding('prepaid')
   }
+  const direct = props.directPayEnabled && funding === 'direct'
   if (!props.open && loadedOpen) setLoadedOpen(false)
 
   const emailTrimmed = ownerEmail.trim()
@@ -559,7 +599,8 @@ function CreateCustomerDialog(props: {
         // Customers are always on the default group; pricing comes from the
         // distributor's discounts, so the field is not shown.
         price_group: 'default',
-        initial_quota: quotaFromUSD(Number(initialQuota) || 0),
+        initial_quota: direct ? 0 : quotaFromUSD(Number(initialQuota) || 0),
+        funding_mode: direct ? 'direct' : undefined,
         owner_email: emailTrimmed || undefined,
       }),
     onSuccess: (res) => {
@@ -610,21 +651,74 @@ function CreateCustomerDialog(props: {
           <Field label={t('Name')}>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
-          <Field label={t('Initial amount (USD)')}>
-            <div className='relative'>
-              <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
-                $
-              </span>
-              <Input
-                type='number'
-                min={0}
-                step='0.01'
-                value={initialQuota}
-                onChange={(e) => setInitialQuota(e.target.value)}
-                className='pl-6'
-              />
-            </div>
-          </Field>
+          {props.directPayEnabled && (
+            <Field label={t('Who funds the wallet')}>
+              <RadioGroup
+                value={funding}
+                onValueChange={(value) =>
+                  setFunding(value === 'direct' ? 'direct' : 'prepaid')
+                }
+              >
+                <div className='flex items-start gap-2'>
+                  <RadioGroupItem
+                    id='customer-funding-prepaid'
+                    value='prepaid'
+                    className='mt-0.5'
+                  />
+                  <Label
+                    htmlFor='customer-funding-prepaid'
+                    className='flex flex-col items-start gap-0.5 font-normal'
+                  >
+                    <span className='text-sm font-medium'>
+                      {t('You allocate credit')}
+                    </span>
+                    <span className='text-muted-foreground text-xs'>
+                      {t(
+                        'You collect from the customer yourself and grant it a spending allowance; each call is paid from your wallet at your wholesale price.'
+                      )}
+                    </span>
+                  </Label>
+                </div>
+                <div className='flex items-start gap-2'>
+                  <RadioGroupItem
+                    id='customer-funding-direct'
+                    value='direct'
+                    className='mt-0.5'
+                  />
+                  <Label
+                    htmlFor='customer-funding-direct'
+                    className='flex flex-col items-start gap-0.5 font-normal'
+                  >
+                    <span className='text-sm font-medium'>
+                      {t('The customer tops up directly')}
+                    </span>
+                    <span className='text-muted-foreground text-xs'>
+                      {t(
+                        'The customer pays the platform online at the discounts you set, and you earn the margin over your wholesale price as commission. This cannot be changed after the customer is created.'
+                      )}
+                    </span>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </Field>
+          )}
+          {!direct && (
+            <Field label={t('Initial amount (USD)')}>
+              <div className='relative'>
+                <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
+                  $
+                </span>
+                <Input
+                  type='number'
+                  min={0}
+                  step='0.01'
+                  value={initialQuota}
+                  onChange={(e) => setInitialQuota(e.target.value)}
+                  className='pl-6'
+                />
+              </div>
+            </Field>
+          )}
           <Field label={t('Operator email (optional)')}>
             <Input
               type='email'
@@ -703,6 +797,9 @@ function CustomerUsageDialog(props: {
           <TabsList>
             <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
             <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
+            {fundsItself(customer) && (
+              <TabsTrigger value='payments'>{t('Payments')}</TabsTrigger>
+            )}
           </TabsList>
           <TabsContent value='usage' className='pt-4'>
             <div className='flex flex-col gap-4'>
@@ -727,6 +824,11 @@ function CustomerUsageDialog(props: {
               />
             )}
           </TabsContent>
+          {customer && fundsItself(customer) && (
+            <TabsContent value='payments' className='pt-4'>
+              <CustomerTopUps customerId={customer.org.id} />
+            </TabsContent>
+          )}
         </Tabs>
         <DialogFooter>
           <Button variant='outline' onClick={props.onClose}>

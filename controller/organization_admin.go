@@ -127,6 +127,9 @@ type adminUpdateOrgRequest struct {
 	WholesaleRatio  *float64            `json:"wholesale_ratio"`
 	WholesaleRatios *map[string]float64 `json:"wholesale_ratios"`
 	AllowedModels   *[]string           `json:"allowed_models"`
+	// DirectPayEnabled lets a reseller open customers that pay the platform
+	// themselves; it means nothing on any other organization.
+	DirectPayEnabled *bool `json:"direct_pay_enabled"`
 }
 
 // AdminUpdateOrganization — PUT /api/admin/organizations/:id
@@ -224,6 +227,13 @@ func AdminUpdateOrganization(c *gin.Context) {
 		}
 		fields["allowed_models"] = stored
 	}
+	if req.DirectPayEnabled != nil {
+		if before.Type != model.OrgTypeReseller {
+			common.ApiErrorT(c, "Direct top-up can only be enabled for a distributor")
+			return
+		}
+		fields["direct_pay_enabled"] = *req.DirectPayEnabled
+	}
 	if len(fields) == 0 {
 		common.ApiSuccess(c, nil)
 		return
@@ -272,6 +282,10 @@ func orgUpdateAuditDetail(before *model.Organization, fields map[string]any) str
 			}
 		case "wholesale_ratio":
 			if value != before.WholesaleRatio {
+				changes[key] = value
+			}
+		case "direct_pay_enabled":
+			if value != before.DirectPayEnabled {
 				changes[key] = value
 			}
 		case "wholesale_ratios":

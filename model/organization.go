@@ -32,6 +32,10 @@ const (
 	OrgStatusActive    = "active"
 	OrgStatusSuspended = "suspended"
 
+	// OrgFundingDirect is the FundingMode of a customer that pays the platform
+	// itself; see Organization.FundingMode.
+	OrgFundingDirect = "direct"
+
 	OrgRelationMember   = "member"
 	OrgRelationCustomer = "customer"
 
@@ -45,6 +49,13 @@ const (
 	// debit: the platform takes quota back out of an org wallet (correction,
 	// refund, admin "reduce"/"set" adjustment). Row: from org → to 0.
 	LedgerTypeDebit = "debit"
+	// LedgerTypeTopUp is an online payment a self-funded organization made
+	// into its own wallet (platform → org, like a purchase, but paid by the
+	// organization itself rather than recorded by an administrator).
+	LedgerTypeTopUp = "topup"
+	// LedgerTypeChargeback takes back a top-up the payment channel reversed
+	// (org → platform), as far as the wallet still holds it.
+	LedgerTypeChargeback = "chargeback"
 )
 
 // Organization is the paying entity for managed accounts. Deliberately has NO
@@ -83,6 +94,16 @@ type Organization struct {
 	// Stored as the raw JSON string; the parsed map is exposed to the frontend via
 	// the computed WholesaleRatioMap below (this raw field is not serialized).
 	WholesaleRatios string `json:"-" gorm:"type:text"`
+	// DirectPayEnabled lets a RESELLER org open customers that pay the platform
+	// themselves (FundingMode "direct"). Platform-set; off unless granted.
+	DirectPayEnabled bool `json:"direct_pay_enabled"`
+	// FundingMode says whose money a CUSTOMER org's wallet holds. Empty: the
+	// reseller grants it a spending cap and pays the platform per call. "direct"
+	// (OrgFundingDirect): the customer tops the wallet up online, each call is
+	// paid from it alone, and the reseller earns the margin as commission. Set
+	// when the customer is created and never changed; it outlives the link to
+	// the reseller, so a customer that leaves keeps paying for itself.
+	FundingMode string `json:"funding_mode" gorm:"type:varchar(16)"`
 	// BrandName / BrandLogo white-label a RESELLER org: its downstream customers
 	// see this name+logo in place of the platform brand. Reseller self-set (see
 	// Get/SetResellerBrand). Empty = fall back to the platform brand.
@@ -663,6 +684,11 @@ type WorkspaceBillingInfo struct {
 	// customer call while this is not active. Read from the reseller row already
 	// loaded for WholesaleRatios — no extra query; takes effect on the next call.
 	ResellerOrgStatus string
+	// DirectPay is set for a reseller's customer that pays the platform itself
+	// (FundingMode "direct"): its calls are paid from its own wallet alone, the
+	// reseller's wallet is not debited, and the margin over the wholesale price
+	// is recorded as the reseller's commission.
+	DirectPay bool
 }
 
 // GetWorkspaceBillingInfo resolves the org that pays for a token via its
@@ -715,6 +741,7 @@ func GetWorkspaceBillingInfo(tokenId int) (*WorkspaceBillingInfo, error) {
 	}
 	if resellerId > 0 {
 		info.ResellerOrgId = resellerId
+		info.DirectPay = org.FundingMode == OrgFundingDirect
 		if reseller, rErr := GetOrganizationById(resellerId); rErr == nil && reseller != nil {
 			info.WholesaleRatios = reseller.WholesaleRatios
 			info.ResellerOrgStatus = reseller.Status
@@ -899,6 +926,9 @@ func GrantCustomerQuota(resellerOrgId, customerOrgId, quota, operatorId int, rem
 		return err
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := refuseCustomerFundingItself(tx, customerOrgId); err != nil {
+			return err
+		}
 		// The balance after the grant stays within the wallet limit, so no
 		// sequence of grants can push the column out of range.
 		res := tx.Model(&Organization{}).
@@ -917,6 +947,21 @@ func GrantCustomerQuota(resellerOrgId, customerOrgId, quota, operatorId int, rem
 	})
 }
 
+// refuseCustomerFundingItself keeps a reseller's hands off the wallet of a
+// customer that pays for itself: that balance is the customer's money, not a
+// cap the reseller granted.
+func refuseCustomerFundingItself(tx *gorm.DB, customerOrgId int) error {
+	var customer Organization
+	err := tx.Select("funding_mode").Where("id = ?", customerOrgId).First(&customer).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if customer.FundingMode == OrgFundingDirect {
+		return ErrCustomerFundsItself
+	}
+	return nil
+}
+
 // RevokeCustomerQuota reduces a customer org's wallet cap (bounded by its
 // remaining balance) WITHOUT crediting the reseller's wallet — the mirror of
 // GrantCustomerQuota. A revoke ledger row (from customer → reseller) records it.
@@ -928,6 +973,9 @@ func RevokeCustomerQuota(resellerOrgId, customerOrgId, quota, operatorId int, re
 		return errors.New("cannot revoke from the same organization")
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := refuseCustomerFundingItself(tx, customerOrgId); err != nil {
+			return err
+		}
 		res := tx.Model(&Organization{}).
 			Where("id = ? AND wallet_quota >= ?", customerOrgId, quota).
 			Updates(map[string]interface{}{

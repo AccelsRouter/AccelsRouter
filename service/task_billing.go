@@ -185,9 +185,12 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 		// Keep the usage rollup in step with the wallets: the delta lands in the
 		// submission's bucket at the ratios that applied then.
 		charged := int64(funding.charge(delta))
-		resellerOrgId, cost := snapshot.ResellerOrgId, int64(0)
+		resellerOrgId, cost, commission := snapshot.ResellerOrgId, int64(0), int64(0)
 		if resellerOrgId > 0 {
 			cost = int64(funding.wholesaleCharge(delta))
+			if snapshot.DirectPay {
+				commission = charged - cost
+			}
 		} else if org, err := model.GetOrganizationById(snapshot.OrgId); err == nil && org != nil && org.Type == model.OrgTypeReseller {
 			// A reseller's own task is funded by a single debit (no reseller id
 			// in the snapshot), but the submission tagged its rollup row as
@@ -203,7 +206,7 @@ func taskAdjustFunding(task *model.Task, delta int) error {
 			return nil
 		}
 		if err := model.AdjustOrgUsageDaily(bucketAt, snapshot.OrgId, snapshot.WorkspaceId, resellerOrgId, snapshot.UserId,
-			taskModelName(task), int64(delta), charged, cost); err != nil {
+			taskModelName(task), int64(delta), charged, cost, commission); err != nil {
 			common.SysError("adjust org usage daily failed: " + err.Error())
 		}
 		return nil

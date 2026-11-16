@@ -37,6 +37,11 @@ export type OrgSelf = {
   // Reseller only: per-model wholesale ratios (the per-model cost basis; each
   // customer discount for a model must be >= its wholesale ratio).
   wholesale_ratios?: Record<string, number>
+  // Reseller only: the platform lets it open customers that top up their own
+  // wallet online.
+  direct_pay_enabled?: boolean
+  // 'direct' when this organization tops up its own wallet online.
+  funding_mode?: string
   is_owner: boolean
   // owner | admin | member — management tabs are owner/admin only.
   role?: string
@@ -203,6 +208,9 @@ export type ResellerCustomerOrg = {
   status: OrgStatus
   wallet_quota: number
   price_group: string
+  // 'direct': the customer tops up its own wallet online; the balance is its
+  // own money, so the distributor neither allocates to it nor reclaims from it.
+  funding_mode?: string
   created_time: number
 }
 

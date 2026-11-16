@@ -387,6 +387,7 @@ func migrateDB() error {
 		&ModelFingerprint{},
 		&UpstreamIdentityResult{},
 		&ResellerCustomerLink{},
+		&OrgTopUp{},
 		&ResellerRouting{},
 		&ResellerAdmin{},
 		&UserChannel{},

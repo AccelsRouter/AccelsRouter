@@ -182,6 +182,13 @@ func syncCreditUserQuotaCache(userId int, quota int, operation string) {
 	if quota <= 0 {
 		return
 	}
+	// Fork: the payment of a member of a self-funded organization went to the
+	// organization's wallet (creditTopUpQuota), so the personal balance did
+	// not grow; drop the cached copy instead of adding to it.
+	if orgId, _, err := DirectFundedOrgOfUser(userId); err != nil || orgId > 0 {
+		_ = invalidateUserCache(userId)
+		return
+	}
 	if err := cacheIncrUserQuota(userId, int64(quota)); err != nil {
 		common.SysLog(common.LogText("failed to sync %s credit to user quota cache: %s", operation, err.Error()))
 	}

@@ -510,11 +510,17 @@ func recordOrgUsageDaily(relayInfo *relaycommon.RelayInfo, quota, promptTokens, 
 			cost = int64(common.QuotaRound(float64(quota) * r))
 		}
 	}
+	// A customer that pays the platform itself: the platform keeps the wholesale
+	// part of what it paid and owes the rest to the reseller.
+	var commission int64
+	if relayInfo.OrgDirectPay && relayInfo.ResellerOrgId > 0 {
+		commission = charged - cost
+	}
 	if err := model.RecordOrgUsageDaily(
 		common.GetTimestamp(),
 		relayInfo.OrgId, relayInfo.OrgWorkspaceId, relayInfo.ResellerOrgId,
 		relayInfo.UserId, relayInfo.OriginModelName,
-		std, charged, cost, int64(promptTokens), int64(completionTokens),
+		std, charged, cost, commission, int64(promptTokens), int64(completionTokens),
 	); err != nil {
 		common.SysError("record org usage daily failed: " + err.Error())
 	}

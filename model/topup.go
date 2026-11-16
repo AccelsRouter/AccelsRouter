@@ -155,6 +155,14 @@ func ValidateTopUpQuotaCapacity(userId int, creditedQuota int) error {
 // Keeping the predicate and increment in one UPDATE prevents two
 // concurrent callbacks from both passing a separate read/check.
 func creditTopUpQuota(tx *gorm.DB, userId int, creditedQuota int, updates map[string]any) error {
+	// Fork: a member of an organization that pays for itself tops up the
+	// organization's wallet, not a personal balance (see creditOrgTopUp).
+	if orgId, _, err := directFundedOrgOfUser(tx, userId); err != nil {
+		return err
+	} else if orgId > 0 {
+		return creditOrgTopUp(tx, orgId, userId, creditedQuota, updates)
+	}
+
 	maxCurrentQuota, err := topUpQuotaMaxCurrent(creditedQuota)
 	if err != nil {
 		return err
@@ -874,6 +882,9 @@ func ReverseWonderGateTopUp(tradeNo string, callerIp string) (err error) {
 	}
 
 	var quotaToDeduct int
+	// What an organization's wallet could no longer give back of a payment
+	// that had gone to it: already spent, so the platform is out by this much.
+	orgShortfall := 0
 	topUp := &TopUp{}
 
 	refCol := "`trade_no`"
@@ -903,6 +914,14 @@ func ReverseWonderGateTopUp(tradeNo string, callerIp string) (err error) {
 		if err := tx.Save(topUp).Error; err != nil {
 			return err
 		}
+		// A payment that went to an organization's wallet comes back out of
+		// that wallet, not out of the payer's own balance.
+		if reversed, shortfall, err := reverseOrgTopUp(tx, tradeNo, quotaToDeduct); err != nil {
+			return err
+		} else if reversed {
+			orgShortfall = shortfall
+			return nil
+		}
 		return tx.Model(&User{}).Where("id = ?", topUp.UserId).
 			Update("quota", gorm.Expr("quota - ?", quotaToDeduct)).Error
 	})
@@ -911,6 +930,9 @@ func ReverseWonderGateTopUp(tradeNo string, callerIp string) (err error) {
 		return err
 	}
 
+	if orgShortfall > 0 {
+		common.SysError(fmt.Sprintf("wondergate reversal of %s: the organization wallet had already spent %d of the reversed amount", tradeNo, orgShortfall))
+	}
 	// The raw in-tx deduction bypasses the atomic cache-delta path; bust the
 	// cached snapshot so the corrected balance is visible immediately.
 	_ = invalidateUserCache(topUp.UserId)
