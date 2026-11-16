@@ -51,6 +51,12 @@ type OrgWalletFunding struct {
 	userId      int
 	workspaceId int // 0 = token not bound to a workspace
 	consumed    int // reserved org quota (for refund), in charged (discounted) units
+	// stdConsumed is the standard (list-price) quota reserved and settled so
+	// far. The wallets are charged up to charge(stdConsumed) in total, so a
+	// request's price is rounded once, on its whole amount — the figure the
+	// usage rollup records — and not once per reservation and settlement,
+	// which left the wallet a unit away from the books.
+	stdConsumed int
 	// discountRatio in (0,1] is the reseller's per-model-series retail discount
 	// for THIS request's model (1.0 = none). It scales what the org wallet and
 	// the member/workspace budget counters are charged, and nothing else — the
@@ -92,13 +98,14 @@ func (o *OrgWalletFunding) Snapshot() *model.TaskOrgFunding {
 		ResellerOrgId:    o.resellerOrgId,
 		WholesaleRatio:   o.wholesaleRatio,
 		Consumed:         o.consumed,
+		StdConsumed:      o.stdConsumed,
 		ResellerConsumed: o.resellerConsumed,
 		DirectPay:        o.directPay,
 	}
 }
 
 func OrgWalletFundingFromSnapshot(snapshot *model.TaskOrgFunding) *OrgWalletFunding {
-	return &OrgWalletFunding{
+	funding := &OrgWalletFunding{
 		orgId:            snapshot.OrgId,
 		userId:           snapshot.UserId,
 		workspaceId:      snapshot.WorkspaceId,
@@ -106,9 +113,19 @@ func OrgWalletFundingFromSnapshot(snapshot *model.TaskOrgFunding) *OrgWalletFund
 		resellerOrgId:    snapshot.ResellerOrgId,
 		wholesaleRatio:   snapshot.WholesaleRatio,
 		consumed:         snapshot.Consumed,
+		stdConsumed:      snapshot.StdConsumed,
 		resellerConsumed: snapshot.ResellerConsumed,
 		directPay:        snapshot.DirectPay,
 	}
+	// A task submitted before snapshots carried the standard amount: recover
+	// it from what the customer was charged.
+	if funding.stdConsumed == 0 && funding.consumed != 0 {
+		funding.stdConsumed = funding.consumed
+		if r := funding.discountRatio; r > 0 && r < 1 {
+			funding.stdConsumed = common.QuotaRound(float64(funding.consumed) / r)
+		}
+	}
+	return funding
 }
 
 // charge scales a standard quota amount by the retail discount, rounding
@@ -136,8 +153,19 @@ func (o *OrgWalletFunding) wholesaleCharge(amount int) int {
 }
 
 func (o *OrgWalletFunding) PreConsume(stdAmount int) error {
-	amount := o.charge(stdAmount)
+	if stdAmount <= 0 {
+		return nil
+	}
+	// One request never costs more than a single-request quota; past it the
+	// rounding below would saturate and reserve less than the request costs.
+	stdTotal := o.stdConsumed + stdAmount
+	if stdTotal > common.MaxQuota {
+		return errOrgWalletInsufficient
+	}
+	amount := o.charge(stdTotal) - o.consumed
 	if amount <= 0 {
+		// Too small to move the wallet yet; Settle charges the running total.
+		o.stdConsumed = stdTotal
 		return nil
 	}
 	// 1. Member budget gate.
@@ -177,7 +205,7 @@ func (o *OrgWalletFunding) PreConsume(stdAmount int) error {
 	// platform at the per-model wholesale ratio. On failure, unwind the customer
 	// wallet reserve and both budget counters so nothing is left charged.
 	if o.debitsReseller() {
-		wAmount := o.wholesaleCharge(stdAmount)
+		wAmount := o.wholesaleCharge(stdTotal) - o.resellerConsumed
 		if wAmount > 0 {
 			reservedR, rErr := model.TryReserveOrgQuota(o.resellerOrgId, wAmount)
 			if rErr == nil && !reservedR {
@@ -203,11 +231,14 @@ func (o *OrgWalletFunding) PreConsume(stdAmount int) error {
 	// pre-send delta reservations (image quantity / task retry), where the charge
 	// must add to what is already reserved so Refund/Settle unwind the full total.
 	o.consumed += amount
+	o.stdConsumed = stdTotal
 	return nil
 }
 
 func (o *OrgWalletFunding) Settle(stdDelta int) error {
-	delta := o.charge(stdDelta)
+	stdTotal := o.stdConsumed + stdDelta
+	o.stdConsumed = stdTotal
+	delta := o.charge(stdTotal) - o.consumed
 	// Customer wallet + budgets (retail side).
 	if delta != 0 {
 		// Track the charged amount so a later Refund (only reachable before Settle,
@@ -241,7 +272,7 @@ func (o *OrgWalletFunding) Settle(stdDelta int) error {
 	// Reseller cost balance (wholesale side) — route-2. Mirrors the customer
 	// adjustment on the reseller wallet; resellerConsumed tracks it for Refund.
 	if o.debitsReseller() {
-		wDelta := o.wholesaleCharge(stdDelta)
+		wDelta := o.wholesaleCharge(stdTotal) - o.resellerConsumed
 		if wDelta != 0 {
 			o.resellerConsumed += wDelta
 			if wDelta > 0 {
@@ -271,6 +302,7 @@ func (o *OrgWalletFunding) Refund() error {
 		}
 		o.consumed = 0
 	}
+	o.stdConsumed = 0
 	// Reseller cost balance (route-2): return the reserved wholesale amount.
 	if o.debitsReseller() && o.resellerConsumed > 0 {
 		if err := model.IncreaseOrgQuota(o.resellerOrgId, o.resellerConsumed); err != nil {

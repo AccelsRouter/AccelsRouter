@@ -164,6 +164,18 @@ func TestOrgWalletFundingPreConsumeGatesBalance(t *testing.T) {
 	require.NoError(t, funding.Refund())
 	assert.Equal(t, 100, walletOf(1))
 	assert.Equal(t, 0, funding.consumed)
+
+	// A discounted request is rounded once, on its whole standard amount, so
+	// the wallet moves by what the usage rollup records: 36 at 0.9 is 32, where
+	// rounding the reserve (5 -> 5) and the settlement (31 -> 28) apart took 33.
+	discounted := &OrgWalletFunding{orgId: 1, userId: 7, discountRatio: 0.9}
+	require.NoError(t, discounted.PreConsume(5))
+	assert.Equal(t, 95, walletOf(1))
+	require.NoError(t, discounted.Settle(31))
+	assert.Equal(t, 100-32, walletOf(1))
+	// A task settled later from its snapshot continues the same total.
+	require.NoError(t, OrgWalletFundingFromSnapshot(discounted.Snapshot()).Settle(-36))
+	assert.Equal(t, 100, walletOf(1))
 }
 
 // A reseller's customer that pays the platform itself is charged from its own
