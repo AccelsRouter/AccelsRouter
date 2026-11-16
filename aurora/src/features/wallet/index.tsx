@@ -104,13 +104,6 @@ export function Wallet(props: WalletProps) {
   const { status } = useStatus()
   const { currency } = useSystemConfig()
   const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
-  const formTopupInfo = useMemo(
-    () =>
-      orgFundsItself && topupInfo
-        ? { ...topupInfo, enable_redemption: false }
-        : topupInfo,
-    [orgFundsItself, topupInfo]
-  )
 
   // Calculate effective exchange rate - when display type is USD, use rate of 1
   const effectiveUsdExchangeRate = useMemo(() => {
@@ -354,7 +347,8 @@ export function Wallet(props: WalletProps) {
             >
               <div id='wallet-add-funds' className='scroll-mt-4'>
                 <RechargeFormCard
-                  topupInfo={formTopupInfo}
+                  topupInfo={topupInfo}
+                  hideRedemption={orgFundsItself}
                   presetAmounts={presetAmounts}
                   selectedPreset={selectedPreset}
                   onSelectPreset={handleSelectPreset}
