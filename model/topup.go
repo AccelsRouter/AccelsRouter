@@ -884,7 +884,7 @@ func ReverseWonderGateTopUp(tradeNo string, callerIp string) (err error) {
 	var quotaToDeduct int
 	// What an organization's wallet could no longer give back of a payment
 	// that had gone to it: already spent, so the platform is out by this much.
-	orgShortfall := 0
+	reversedOrgId, orgShortfall := 0, 0
 	topUp := &TopUp{}
 
 	refCol := "`trade_no`"
@@ -916,10 +916,10 @@ func ReverseWonderGateTopUp(tradeNo string, callerIp string) (err error) {
 		}
 		// A payment that went to an organization's wallet comes back out of
 		// that wallet, not out of the payer's own balance.
-		if reversed, shortfall, err := reverseOrgTopUp(tx, tradeNo, quotaToDeduct); err != nil {
+		if orgId, shortfall, err := reverseOrgTopUp(tx, tradeNo, quotaToDeduct); err != nil {
 			return err
-		} else if reversed {
-			orgShortfall = shortfall
+		} else if orgId > 0 {
+			reversedOrgId, orgShortfall = orgId, shortfall
 			return nil
 		}
 		return tx.Model(&User{}).Where("id = ?", topUp.UserId).
@@ -932,6 +932,10 @@ func ReverseWonderGateTopUp(tradeNo string, callerIp string) (err error) {
 
 	if orgShortfall > 0 {
 		common.SysError(fmt.Sprintf("wondergate reversal of %s: the organization wallet had already spent %d of the reversed amount", tradeNo, orgShortfall))
+		// The reseller gives back the commission it earned on that money.
+		if err := RecordChargebackAdjustment(reversedOrgId, tradeNo, orgShortfall); err != nil {
+			common.SysError("failed to record the chargeback against the reseller's commission: " + err.Error())
+		}
 	}
 	// The raw in-tx deduction bypasses the atomic cache-delta path; bust the
 	// cached snapshot so the corrected balance is visible immediately.

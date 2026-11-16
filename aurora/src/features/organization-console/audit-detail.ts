@@ -371,6 +371,22 @@ export function auditDetailText(entry: OrgAuditLog, t: TFunction): string {
         'Released customer {{target}} to the platform; it keeps its balance and keys',
         { target }
       )
+    case 'settlement.payout':
+      return t('Recorded a commission payout settling {{amount}}', {
+        amount: amount(values.quota),
+      })
+    case 'settlement.adjust':
+      return Number(values.quota) < 0
+        ? t('Took {{amount}} off the commission owed', {
+            amount: amount(values.quota),
+          })
+        : t('Added {{amount}} to the commission owed', {
+            amount: amount(values.quota),
+          })
+    case 'settlement.clawback':
+      return t('Took a commission debt of {{amount}} from the wallet', {
+        amount: amount(values.quota),
+      })
     case 'reseller.brand':
       return detail
         ? t('Set the brand name to {{name}}', { name: detail })

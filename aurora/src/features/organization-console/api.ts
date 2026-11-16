@@ -969,3 +969,77 @@ export async function listCustomerTopUps(
   )
   return unwrap(res, 'Failed to load payments')
 }
+
+// --- Commission on customers that top up directly ---
+
+export type ResellerEarnings = {
+  // Commission of months not closed yet.
+  accruing: number
+  // Closed but kept back while a card payment can still be charged back.
+  held: number
+  payable: number
+  adjustments: number
+  // What the next payout settles: payable plus adjustments.
+  due: number
+  paid: number
+}
+
+export type ResellerSettlementItem = {
+  id: number
+  period: string
+  customer_org_id: number
+  customer_name?: string
+  charged_quota: number
+  cost_quota: number
+  commission_quota: number
+  release_at: number
+  status: 'held' | 'payable' | 'paid'
+}
+
+export type ResellerSettlementAdjustment = {
+  id: number
+  customer_name?: string
+  customer_org_id: number
+  type: 'chargeback' | 'late_usage' | 'manual'
+  period: string
+  quota: number
+  remark: string
+  created_time: number
+}
+
+export type ResellerPayoutRow = {
+  id: number
+  quota: number
+  money: number
+  currency: string
+  method: 'bank' | 'crypto' | 'wallet_debit'
+  reference: string
+  invoice_no: string
+  paid_time: number
+}
+
+export async function getResellerEarnings(): Promise<ResellerEarnings> {
+  const res = await api.get<ApiResp<ResellerEarnings>>('/api/reseller/earnings')
+  return unwrap(res, 'Failed to load earnings')
+}
+
+async function resellerPage<T>(path: string): Promise<T[]> {
+  const res = await api.get<ApiResp<PagedResponse<T>>>(
+    `${path}?p=1&page_size=100`
+  )
+  return unwrap(res, 'Failed to load earnings').items ?? []
+}
+
+export function listResellerSettlements(): Promise<ResellerSettlementItem[]> {
+  return resellerPage('/api/reseller/settlements')
+}
+
+export function listResellerSettlementAdjustments(): Promise<
+  ResellerSettlementAdjustment[]
+> {
+  return resellerPage('/api/reseller/settlements/adjustments')
+}
+
+export function listResellerPayouts(): Promise<ResellerPayoutRow[]> {
+  return resellerPage('/api/reseller/payouts')
+}

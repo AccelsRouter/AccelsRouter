@@ -56,6 +56,7 @@ export function LedgerTab({
   const typeLabel = (type: string) => {
     if (type === 'topup') return t('Online top-up')
     if (type === 'chargeback') return t('Payment reversed')
+    if (type === 'clawback') return t('Settlement debit')
     return type === 'purchase'
       ? t('Purchase')
       : type === 'allocate'
@@ -99,6 +100,11 @@ export function LedgerTab({
     }
     if (e.type === 'chargeback') {
       return t('An online payment into {{name}} was reversed', { name: from })
+    }
+    if (e.type === 'clawback') {
+      return t('Commission owed back to the platform, taken from {{name}}', {
+        name: from,
+      })
     }
     return `${from} → ${to}`
   }
@@ -159,7 +165,8 @@ export function LedgerTab({
                     variant={
                       e.type === 'revoke' ||
                       e.type === 'debit' ||
-                      e.type === 'chargeback'
+                      e.type === 'chargeback' ||
+                      e.type === 'clawback'
                         ? 'destructive'
                         : e.type === 'purchase' || e.type === 'topup'
                           ? 'default'

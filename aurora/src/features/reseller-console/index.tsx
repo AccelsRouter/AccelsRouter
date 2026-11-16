@@ -47,6 +47,7 @@ import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CallableModelsTab } from '@/features/organization-console/callable-models-tab'
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
+import { EarningsTab } from './earnings-tab'
 import { ResellerRecordsTab } from './records-tab'
 import { ResellerTopUpDialog } from './reseller-topup-dialog'
 import { ResellerUsageTab } from './usage-tab'
@@ -138,6 +139,9 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
                 </TabsTrigger>
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
                 <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
+                {self.direct_pay_enabled && (
+                  <TabsTrigger value='earnings'>{t('Earnings')}</TabsTrigger>
+                )}
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
                 <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
               </TabsList>
@@ -172,6 +176,11 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
               <TabsContent value='records' className='pt-4'>
                 <ResellerRecordsTab />
               </TabsContent>
+              {self.direct_pay_enabled && (
+                <TabsContent value='earnings' className='pt-4'>
+                  <EarningsTab />
+                </TabsContent>
+              )}
               <TabsContent value='ledger' className='pt-4'>
                 <LedgerTab
                   fetchLedger={listResellerLedger}

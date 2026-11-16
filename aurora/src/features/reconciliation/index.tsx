@@ -58,6 +58,7 @@ import {
   type ReconMatrixRow,
   type ReconRow,
 } from './api'
+import { FinanceTab } from './finance-tab'
 import { UpstreamBillDialog } from './upstream-bill-dialog'
 
 function toUnix(d?: Date): number | undefined {
@@ -500,6 +501,7 @@ export function Reconciliation() {
                   <TabsTrigger value='group'>{t('By Group')}</TabsTrigger>
                   <TabsTrigger value='user'>{t('By Member')}</TabsTrigger>
                   <TabsTrigger value='reseller'>{t('Resellers')}</TabsTrigger>
+                  <TabsTrigger value='finance'>{t('Finance view')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value='model' className='pt-3'>
                   <DimTable
@@ -592,6 +594,9 @@ export function Reconciliation() {
                       </table>
                     </div>
                   )}
+                </TabsContent>
+                <TabsContent value='finance' className='pt-3'>
+                  <FinanceTab from={from} to={to} />
                 </TabsContent>
               </Tabs>
             </>

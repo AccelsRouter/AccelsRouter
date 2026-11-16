@@ -109,20 +109,21 @@ func orgOrderBeingCredited(tx *gorm.DB, orgId, userId int) (string, error) {
 }
 
 // reverseOrgTopUp takes a reversed payment back out of the organization's
-// wallet when that is where it went, and reports whether it did. The wallet
-// gives back what it still holds of the amount and never goes below zero; the
-// part already spent is returned as shortfall for the caller to account for.
-func reverseOrgTopUp(tx *gorm.DB, tradeNo string, quota int) (reversed bool, shortfall int, err error) {
+// wallet when that is where it went, and names that organization (0: the
+// payment was a personal one). The wallet gives back what it still holds of
+// the amount and never goes below zero; the part already spent is returned as
+// shortfall for the caller to account for.
+func reverseOrgTopUp(tx *gorm.DB, tradeNo string, quota int) (orgId int, shortfall int, err error) {
 	var credit CreditLedger
 	if err := tx.Where("trade_no = ? AND type = ?", tradeNo, LedgerTypeTopUp).Limit(1).Find(&credit).Error; err != nil {
-		return false, 0, err
+		return 0, 0, err
 	}
 	if credit.ToOrgId == 0 {
-		return false, 0, nil
+		return 0, 0, nil
 	}
 	var org Organization
 	if err := lockForUpdate(tx).Where("id = ?", credit.ToOrgId).First(&org).Error; err != nil {
-		return false, 0, err
+		return 0, 0, err
 	}
 	recovered := min(quota, max(org.WalletQuota, 0))
 	if recovered > 0 {
@@ -133,16 +134,16 @@ func reverseOrgTopUp(tx *gorm.DB, tradeNo string, quota int) (reversed bool, sho
 				"updated_time": common.GetTimestamp(),
 			})
 		if taken.Error != nil {
-			return false, 0, taken.Error
+			return 0, 0, taken.Error
 		}
 		if taken.RowsAffected != 1 {
-			return false, 0, errors.New("the organization wallet changed while the payment was being reversed; try again")
+			return 0, 0, errors.New("the organization wallet changed while the payment was being reversed; try again")
 		}
 		if err := insertLedger(tx, org.Id, 0, recovered, credit.OperatorId, LedgerTypeChargeback, tradeNo, ""); err != nil {
-			return false, 0, err
+			return 0, 0, err
 		}
 	}
-	return true, quota - recovered, nil
+	return org.Id, quota - recovered, nil
 }
 
 // RecordOrgTopUpOrders notes every payment order the user placed since the

@@ -209,6 +209,21 @@ func SetApiRouter(router *gin.Engine) {
 			reconRoute.POST("/upstream-bill", controller.AdminCompareUpstreamBill)
 			reconRoute.POST("/byteplus-bill", controller.AdminCompareBytePlusBill)
 			reconRoute.POST("/alibaba-bill", controller.AdminCompareAlibabaBill)
+			// The finance view: receipts, revenue, reseller payables, balances.
+			reconRoute.GET("/finance", controller.AdminGetFinanceReport)
+		}
+		// Reseller commission settlement: monthly items, corrections, payouts.
+		settlementRoute := apiRouter.Group("/admin")
+		settlementRoute.Use(middleware.AdminAuth())
+		{
+			settlementRoute.GET("/reseller-settlements", controller.AdminListResellerSettlements)
+			settlementRoute.GET("/reseller-settlements/export", controller.AdminExportResellerSettlements)
+			settlementRoute.POST("/reseller-settlements/close", middleware.CriticalRateLimit(), controller.AdminCloseResellerSettlements)
+			settlementRoute.POST("/reseller-settlements/clawback", middleware.CriticalRateLimit(), controller.AdminClawbackResellerDebt)
+			settlementRoute.GET("/reseller-adjustments", controller.AdminListResellerSettlementAdjustments)
+			settlementRoute.POST("/reseller-adjustments", middleware.CriticalRateLimit(), controller.AdminAddResellerSettlementAdjustment)
+			settlementRoute.GET("/reseller-payouts", controller.AdminListResellerPayouts)
+			settlementRoute.POST("/reseller-payouts", middleware.CriticalRateLimit(), controller.AdminRegisterResellerPayout)
 		}
 		// Upstream monitor: channel/model health history and price comparison.
 		// These show and exercise the channels, so they follow the channel
@@ -374,6 +389,12 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.PUT("/brand", controller.SetMyResellerBrand)
 			// Read-only audit trail of the reseller's operations on its customers.
 			resellerRoute.GET("/audit", controller.GetMyResellerAudit)
+			// Commission on customers that top up directly: what is accruing,
+			// held, payable and paid.
+			resellerRoute.GET("/earnings", controller.GetMyResellerEarnings)
+			resellerRoute.GET("/settlements", controller.ListMyResellerSettlements)
+			resellerRoute.GET("/settlements/adjustments", controller.ListMyResellerSettlementAdjustments)
+			resellerRoute.GET("/payouts", controller.ListMyResellerPayouts)
 			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/logs/export", controller.ExportMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/topups", controller.ListMyCustomerTopUps)

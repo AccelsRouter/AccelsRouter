@@ -148,6 +148,7 @@ type oudRow struct {
 	StandardQuota    int64
 	ChargedQuota     int64
 	CostQuota        int64
+	CommissionQuota  int64
 	Requests         int64
 	PromptTokens     int64
 	CompletionTokens int64
