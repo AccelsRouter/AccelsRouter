@@ -13,6 +13,7 @@ package model
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,6 +54,10 @@ var (
 	ErrBindOrgNotEligible  = common.NewMessage("Only an active enterprise organization on the standard price group can join a distributor")
 	ErrBindHasByok         = common.NewMessage("Remove the BYOK channels first: a distributor's customer cannot use its own upstream keys")
 	ErrBindOwnDistributor  = common.NewMessage("An administrator of this distributor cannot become its customer")
+	ErrBindIsDistributor   = common.NewMessage("An administrator of a distributor cannot become a distributor's customer")
+	ErrBindUserGroup       = common.NewMessage("Only an account on the standard user group can join a distributor")
+	ErrBindHasSubscription = common.NewMessage("An account with an active subscription cannot join a distributor until it ends")
+	ErrBindNegativeBalance = common.NewMessage("Settle your negative balance before joining a distributor")
 	ErrBindRequestPending  = common.NewMessage("There is already an open request; withdraw it or wait for its outcome")
 	ErrBindAlreadyInvited  = common.NewMessage("This address already has an open invitation from you")
 	ErrJoinCodeInvalid     = common.NewMessage("This distributor link is invalid or no longer accepts applications")
@@ -199,22 +204,48 @@ type BindCandidate struct {
 }
 
 // resolveBindCandidate finds what the user would bring to the reseller and
-// refuses what cannot be bound: an organization the user does not own, one
-// that is not an ordinary active enterprise, one that already has a reseller,
-// one with its own upstream keys, and the reseller's own administrators.
+// refuses what cannot be bound: whoever administers a reseller, this one or
+// another; an organization the user does not own, one that is not an ordinary
+// active enterprise, one that already has a reseller, one with its own
+// upstream keys; and a person on a user group of their own, with a
+// subscription still running, a negative balance, or upstream keys.
 func resolveBindCandidate(tx *gorm.DB, resellerOrgId, userId int) (*BindCandidate, error) {
-	var ownAdmin int64
-	if err := tx.Model(&ResellerAdmin{}).Where("user_id = ? AND reseller_org_id = ?", userId, resellerOrgId).Count(&ownAdmin).Error; err != nil {
+	var administers []int
+	if err := tx.Model(&ResellerAdmin{}).Where("user_id = ?", userId).Pluck("reseller_org_id", &administers).Error; err != nil {
 		return nil, err
 	}
-	if ownAdmin > 0 {
+	if slices.Contains(administers, resellerOrgId) {
 		return nil, ErrBindOwnDistributor
+	}
+	if len(administers) > 0 {
+		return nil, ErrBindIsDistributor
 	}
 	var accounts []OrgAccount
 	if err := tx.Where("user_id = ?", userId).Limit(1).Find(&accounts).Error; err != nil {
 		return nil, err
 	}
 	if len(accounts) == 0 {
+		// A subscription can put its holder on a group of its own, so it is
+		// named first.
+		var subscribed int64
+		if err := tx.Model(&UserSubscription{}).
+			Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", common.GetTimestamp()).
+			Count(&subscribed).Error; err != nil {
+			return nil, err
+		}
+		if subscribed > 0 {
+			return nil, ErrBindHasSubscription
+		}
+		var person User
+		if err := tx.Where("id = ?", userId).First(&person).Error; err != nil {
+			return nil, err
+		}
+		if person.Group != "" && person.Group != "default" {
+			return nil, ErrBindUserGroup
+		}
+		if person.Quota < 0 {
+			return nil, ErrBindNegativeBalance
+		}
 		var byok int64
 		if err := tx.Model(&UserChannel{}).Where("user_id = ?", userId).Count(&byok).Error; err != nil {
 			return nil, err

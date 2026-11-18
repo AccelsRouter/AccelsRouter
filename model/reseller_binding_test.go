@@ -170,6 +170,36 @@ func TestResellerBindingRefusals(t *testing.T) {
 	require.ErrorIs(t, err, ErrBindOwnDistributor)
 	require.NoError(t, DB.Where("user_id = ?", owner.Id).Delete(&ResellerAdmin{}).Error)
 
+	// Nor can whoever administers another reseller, with or without an
+	// organization of their own.
+	solo := f.user("bind-solo", 0)
+	soloInvite := f.invite(solo.Email)
+	for _, administrator := range []*User{owner, solo} {
+		require.NoError(t, DB.Create(&ResellerAdmin{UserId: administrator.Id, ResellerOrgId: plain.Id, Status: OrgStatusActive}).Error)
+	}
+	_, err = AcceptResellerBinding(ownerInvite.Code, owner.Id, "", false)
+	require.ErrorIs(t, err, ErrBindIsDistributor)
+	_, err = AcceptResellerBinding(soloInvite.Code, solo.Id, "", false)
+	require.ErrorIs(t, err, ErrBindIsDistributor)
+	require.NoError(t, DB.Where("reseller_org_id = ?", plain.Id).Delete(&ResellerAdmin{}).Error)
+
+	// A person joins only from the standard user group, with no subscription
+	// still running and no negative balance.
+	subscription := &UserSubscription{UserId: solo.Id, Status: "active", EndTime: time.Now().Add(time.Hour).Unix()}
+	require.NoError(t, DB.Create(subscription).Error)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", solo.Id).Update("group", "subscriber").Error)
+	_, err = AcceptResellerBinding(soloInvite.Code, solo.Id, "", false)
+	require.ErrorIs(t, err, ErrBindHasSubscription)
+	require.NoError(t, DB.Model(subscription).Update("end_time", time.Now().Add(-time.Hour).Unix()).Error)
+	_, err = AcceptResellerBinding(soloInvite.Code, solo.Id, "", false)
+	require.ErrorIs(t, err, ErrBindUserGroup, "an ended subscription does not hold them back; the group does")
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", solo.Id).Updates(map[string]any{"group": "default", "quota": -5}).Error)
+	_, err = AcceptResellerBinding(soloInvite.Code, solo.Id, "", false)
+	require.ErrorIs(t, err, ErrBindNegativeBalance)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", solo.Id).Update("quota", 0).Error)
+	_, err = ResellerBindOutlookFor(f.reseller.Id, solo.Id)
+	require.NoError(t, err, "nothing holds them back any more")
+
 	// An invitation nobody answered in time is gone, and is listed as expired.
 	require.NoError(t, DB.Model(&ResellerBindRequest{}).Where("id = ?", ownerInvite.Id).Update("expires_at", time.Now().Add(-time.Minute).Unix()).Error)
 	_, err = AcceptResellerBinding(ownerInvite.Code, owner.Id, "", false)
