@@ -29,7 +29,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { Loader2, Plus } from 'lucide-react'
+import { Loader2, Plus, UserPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
@@ -88,6 +88,9 @@ export function CustomersTab(props: {
   walletQuota: number
   // The platform lets this distributor open customers that top up directly.
   directPayEnabled: boolean
+  // Offered when the distributor may also take on an organization or a person
+  // that already has a platform account.
+  onInviteExisting?: () => void
 }) {
   const { t } = useTranslation()
   const [createOpen, setCreateOpen] = useState(false)
@@ -159,14 +162,27 @@ export function CustomersTab(props: {
             {formatQuotaWithCurrency(props.walletQuota)}
           </span>
         </div>
-        <Button
-          size='sm'
-          className='gap-1.5'
-          onClick={() => setCreateOpen(true)}
-        >
-          <Plus className='h-3.5 w-3.5' />
-          {t('New customer')}
-        </Button>
+        <div className='flex flex-wrap items-center gap-2'>
+          {props.onInviteExisting && (
+            <Button
+              size='sm'
+              variant='outline'
+              className='gap-1.5'
+              onClick={props.onInviteExisting}
+            >
+              <UserPlus className='h-3.5 w-3.5' />
+              {t('Invite an existing account')}
+            </Button>
+          )}
+          <Button
+            size='sm'
+            className='gap-1.5'
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className='h-3.5 w-3.5' />
+            {t('New customer')}
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (

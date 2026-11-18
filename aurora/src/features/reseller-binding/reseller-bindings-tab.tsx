@@ -1,7 +1,8 @@
 /*
-The distributor's side of taking on a customer that already exists: its join
-link, inviting an address with an offer, and the requests in both directions
-with the answers still owed.
+The distributor's side of taking on an organization or a person that already
+has a platform account, shown under its customer list: its join link, inviting
+an address with an offer, and the invitations and applications with the
+answers still owed.
 */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -37,10 +38,14 @@ import {
 import type { BindRequest } from './api'
 import { BindStatusBadge, OfferLine } from './status'
 
-export function ResellerBindingsTab() {
+// The invitation dialog is opened from the customer list's header as well, so
+// whether it is open belongs to the caller.
+export function ResellerBindingsSection(props: {
+  inviteOpen: boolean
+  onInviteOpenChange: (open: boolean) => void
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [inviteOpen, setInviteOpen] = useState(false)
   const [offerFor, setOfferFor] = useState<BindRequest | null>(null)
   const [closing, setClosing] = useState<BindRequest | null>(null)
   const [rotateOpen, setRotateOpen] = useState(false)
@@ -75,18 +80,29 @@ export function ResellerBindingsTab() {
     onError,
   })
 
-  const rows = requests.data ?? []
+  // A request that went through is a customer in the list above by now.
+  const rows = (requests.data ?? []).filter((r) => r.status !== 'completed')
   const link = joinCode.data ? joinLink(joinCode.data.code) : ''
 
   return (
-    <div className='flex flex-col gap-5'>
+    <section className='border-border/60 flex flex-col gap-4 border-t pt-5'>
+      <div className='flex max-w-3xl flex-col gap-1'>
+        <h3 className='text-sm font-semibold'>
+          {t('Bring in an organization or person already on the platform')}
+        </h3>
+        <p className='text-muted-foreground text-xs'>
+          {t(
+            'When they already use the platform there is no customer to create. Invite them by email, or hand out your join link for them to apply. They become your customer once both sides confirm, and top up their own wallet; the platform approves as well when they have paid it before.'
+          )}
+        </p>
+      </div>
       <div className='border-border/60 flex flex-col gap-3 rounded-lg border p-4'>
         <div className='flex flex-wrap items-start justify-between gap-3'>
           <div className='flex max-w-2xl flex-col gap-1'>
             <span className='text-sm font-medium'>{t('Your join link')}</span>
             <span className='text-muted-foreground text-xs'>
               {t(
-                'An organization or a person that already uses the platform opens this link to apply to become your customer. You answer with an offer, they confirm it, and the platform approves when they have paid it before. Customers joining this way top up their own wallet.'
+                'They open this link and apply; you answer with an offer and they confirm it.'
               )}
             </span>
           </div>
@@ -116,15 +132,16 @@ export function ResellerBindingsTab() {
 
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <span className='text-sm font-medium'>
-          {t('Requests to become your customer')}
+          {t('Invitations and applications')}
         </span>
         <Button
           size='sm'
+          variant='outline'
           className='gap-1.5'
-          onClick={() => setInviteOpen(true)}
+          onClick={() => props.onInviteOpenChange(true)}
         >
           <UserPlus className='h-3.5 w-3.5' />
-          {t('Invite an existing customer')}
+          {t('Invite an existing account')}
         </Button>
       </div>
 
@@ -133,11 +150,9 @@ export function ResellerBindingsTab() {
           <Loader2 className='text-muted-foreground h-5 w-5 animate-spin' />
         </div>
       ) : rows.length === 0 ? (
-        <div className='border-border/60 text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm'>
-          {t(
-            'No requests yet. Invite a customer by email, or share your join link.'
-          )}
-        </div>
+        <p className='text-muted-foreground text-sm'>
+          {t('No invitations or applications yet.')}
+        </p>
       ) : (
         <div className='border-border/60 overflow-x-auto rounded-lg border'>
           <table className='w-full text-sm'>
@@ -214,9 +229,9 @@ export function ResellerBindingsTab() {
       )}
 
       <OfferDialog
-        open={inviteOpen}
+        open={props.inviteOpen}
         applicant={null}
-        onClose={() => setInviteOpen(false)}
+        onClose={() => props.onInviteOpenChange(false)}
         onDone={reload}
       />
       <OfferDialog
@@ -250,7 +265,7 @@ export function ResellerBindingsTab() {
         isLoading={setJoin.isPending}
         handleConfirm={() => setJoin.mutate({ rotate: true })}
       />
-    </div>
+    </section>
   )
 }
 
@@ -324,7 +339,7 @@ function OfferDialog(props: {
                     props.applicant.customer_name ||
                     props.applicant.customer_email,
                 })
-              : t('Invite an existing customer')}
+              : t('Invite an existing account')}
           </DialogTitle>
           <DialogDescription>
             {props.applicant
