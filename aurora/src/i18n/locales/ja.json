@@ -116,7 +116,6 @@
     "Leave {{reseller}}": "{{reseller}} から離脱",
     "{{org}} is a customer of the distributor {{reseller}}.": "{{org}} は販売代理店 {{reseller}} の顧客です。",
     "{{org}} is a customer of the distributor {{reseller}}, which sets its prices.": "{{org}} は販売代理店 {{reseller}} の顧客で、価格は同代理店が設定します。",
-    "Served by {{reseller}}": "提供: {{reseller}}",
     "{{org}}, a customer of the distributor {{reseller}}, has opened an account for you. Set a password to sign in.": "販売代理店 {{reseller}} の顧客である {{org}} があなたのアカウントを開設しました。パスワードを設定してサインインしてください。",
     "The month must look like 2026-11": "月は 2026-11 の形式で入力してください",
     "This month has not ended yet, so it cannot be closed": "この月はまだ終わっていないため、締められません",

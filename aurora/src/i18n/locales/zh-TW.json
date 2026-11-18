@@ -115,7 +115,6 @@
     "Leave {{reseller}}": "脫離 {{reseller}}",
     "{{org}} is a customer of the distributor {{reseller}}.": "{{org}} 是分銷商 {{reseller}} 的客戶。",
     "{{org}} is a customer of the distributor {{reseller}}, which sets its prices.": "{{org}} 是分銷商 {{reseller}} 的客戶，價格由該分銷商設定。",
-    "Served by {{reseller}}": "由 {{reseller}} 提供服務",
     "{{org}}, a customer of the distributor {{reseller}}, has opened an account for you. Set a password to sign in.": "分銷商 {{reseller}} 的客戶 {{org}} 已為你開通帳號，設定密碼後即可登入。",
     "The month must look like 2026-11": "月份格式應為 2026-11",
     "This month has not ended yet, so it cannot be closed": "這個月還沒結束，暫時不能關帳",

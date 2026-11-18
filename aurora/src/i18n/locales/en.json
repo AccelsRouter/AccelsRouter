@@ -115,7 +115,6 @@
     "Leave {{reseller}}": "Leave {{reseller}}",
     "{{org}} is a customer of the distributor {{reseller}}.": "{{org}} is a customer of the distributor {{reseller}}.",
     "{{org}} is a customer of the distributor {{reseller}}, which sets its prices.": "{{org}} is a customer of the distributor {{reseller}}, which sets its prices.",
-    "Served by {{reseller}}": "Served by {{reseller}}",
     "{{org}}, a customer of the distributor {{reseller}}, has opened an account for you. Set a password to sign in.": "{{org}}, a customer of the distributor {{reseller}}, has opened an account for you. Set a password to sign in.",
     "The month must look like 2026-11": "The month must look like 2026-11",
     "This month has not ended yet, so it cannot be closed": "This month has not ended yet, so it cannot be closed",

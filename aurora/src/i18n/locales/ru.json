@@ -116,7 +116,6 @@
     "Leave {{reseller}}": "Уйти от {{reseller}}",
     "{{org}} is a customer of the distributor {{reseller}}.": "{{org}} — клиент дистрибьютора {{reseller}}.",
     "{{org}} is a customer of the distributor {{reseller}}, which sets its prices.": "{{org}} — клиент дистрибьютора {{reseller}}, который устанавливает для неё цены.",
-    "Served by {{reseller}}": "Обслуживается {{reseller}}",
     "{{org}}, a customer of the distributor {{reseller}}, has opened an account for you. Set a password to sign in.": "{{org}}, клиент дистрибьютора {{reseller}}, открыла для вас учётную запись. Задайте пароль, чтобы войти.",
     "The month must look like 2026-11": "Месяц должен иметь вид 2026-11",
     "This month has not ended yet, so it cannot be closed": "Этот месяц ещё не закончился, поэтому его нельзя закрыть",

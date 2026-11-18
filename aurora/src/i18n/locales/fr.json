@@ -116,7 +116,6 @@
     "Leave {{reseller}}": "Quitter {{reseller}}",
     "{{org}} is a customer of the distributor {{reseller}}.": "{{org}} est cliente du distributeur {{reseller}}.",
     "{{org}} is a customer of the distributor {{reseller}}, which sets its prices.": "{{org}} est cliente du distributeur {{reseller}}, qui fixe ses prix.",
-    "Served by {{reseller}}": "Service fourni par {{reseller}}",
     "{{org}}, a customer of the distributor {{reseller}}, has opened an account for you. Set a password to sign in.": "{{org}}, cliente du distributeur {{reseller}}, vous a ouvert un compte. Définissez un mot de passe pour vous connecter.",
     "The month must look like 2026-11": "Le mois doit être au format 2026-11",
     "This month has not ended yet, so it cannot be closed": "Ce mois n'est pas encore terminé et ne peut donc pas être clôturé",
