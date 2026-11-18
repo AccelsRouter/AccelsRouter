@@ -88,11 +88,11 @@ export function ResellerBindingsSection(props: {
     <section className='border-border/60 flex flex-col gap-4 border-t pt-5'>
       <div className='flex max-w-3xl flex-col gap-1'>
         <h3 className='text-sm font-semibold'>
-          {t('Bring in an organization or person already on the platform')}
+          {t('Bring in a registered account')}
         </h3>
         <p className='text-muted-foreground text-xs'>
           {t(
-            'When they already use the platform there is no customer to create. Invite them by email, or hand out your join link for them to apply. They become your customer once both sides confirm, and top up their own wallet; the platform approves as well when they have paid it before.'
+            'Turn an organization or person already registered into your customer, by email invitation or with your join link.'
           )}
         </p>
       </div>
