@@ -32,6 +32,8 @@ export type UserOrgRelation = {
   role?: string
   reseller_org_id?: number
   reseller_org_name?: string
+  // Wallet of the organization the user is an account of; it pays their calls.
+  wallet_quota?: number
 }
 
 export type Organization = {

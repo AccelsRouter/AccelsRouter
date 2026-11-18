@@ -220,6 +220,8 @@ func TestUserOrgRelations(t *testing.T) {
 	// Dual role: distributor admin who is also an enterprise member.
 	require.NoError(t, DB.Create(&ResellerAdmin{UserId: 8103, ResellerOrgId: reseller.Id, Status: OrgStatusActive}).Error)
 
+	require.NoError(t, DB.Model(&Organization{}).Where("id = ?", cust.Id).Update("wallet_quota", 4200).Error)
+
 	rels, err := UserOrgRelations([]int{8101, 8102, 8103, 8104})
 	require.NoError(t, err)
 
@@ -233,6 +235,9 @@ func TestUserOrgRelations(t *testing.T) {
 	assert.Equal(t, "admin", rels[8102][0].Role)
 	assert.Equal(t, reseller.Id, rels[8102][0].ResellerOrgId)
 	assert.Equal(t, "Rel Reseller", rels[8102][0].ResellerOrgName)
+	require.NotNil(t, rels[8102][0].WalletQuota, "a member's calls are paid from the organization's wallet")
+	assert.Equal(t, 4200, *rels[8102][0].WalletQuota)
+	assert.Nil(t, rels[8101][0].WalletQuota, "a distributor admin is not an account of the organization")
 
 	require.Len(t, rels[8103], 2, "distributor admin + enterprise member")
 	kinds := []string{rels[8103][0].Kind, rels[8103][1].Kind}
