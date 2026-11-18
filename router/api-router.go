@@ -409,6 +409,7 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.GET("/settlements", controller.ListMyResellerSettlements)
 			resellerRoute.GET("/settlements/adjustments", controller.ListMyResellerSettlementAdjustments)
 			resellerRoute.GET("/payouts", controller.ListMyResellerPayouts)
+			resellerRoute.GET("/customer-payments", controller.ListMyResellerCustomerPayments)
 			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/logs/export", controller.ExportMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/topups", controller.ListMyCustomerTopUps)

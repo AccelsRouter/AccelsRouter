@@ -48,6 +48,7 @@ import { CallableModelsTab } from '@/features/organization-console/callable-mode
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
 import { ResellerBindingsTab } from '@/features/reseller-binding/reseller-bindings-tab'
+import { CustomerPayments } from './customer-payments'
 import { EarningsTab } from './earnings-tab'
 import { ResellerRecordsTab } from './records-tab'
 import { ResellerTopUpDialog } from './reseller-topup-dialog'
@@ -193,11 +194,14 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
                 </TabsContent>
               )}
               <TabsContent value='ledger' className='pt-4'>
-                <LedgerTab
-                  fetchLedger={listResellerLedger}
-                  queryKey='reseller-ledger'
-                  selfOrgId={self.id}
-                />
+                <div className='flex flex-col gap-6'>
+                  <LedgerTab
+                    fetchLedger={listResellerLedger}
+                    queryKey='reseller-ledger'
+                    selfOrgId={self.id}
+                  />
+                  {self.direct_pay_enabled && <CustomerPayments />}
+                </div>
               </TabsContent>
               <TabsContent value='audit' className='pt-4'>
                 <AuditPanel

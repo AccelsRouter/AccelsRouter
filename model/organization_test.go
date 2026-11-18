@@ -758,6 +758,14 @@ func TestDirectFundedCustomerTopsUpItsOwnWallet(t *testing.T) {
 	assert.Equal(t, reseller.Id, fees[0].ResellerOrgId)
 	assert.Equal(t, customer.Id, fees[0].CustomerOrgId)
 	assert.Equal(t, "epay: 4% + $0", fees[0].Remark)
+	// The reseller reads the payment and its fee together.
+	payments, paid, err := ListResellerCustomerPayments(reseller.Id, 0, 10)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), paid)
+	assert.Equal(t, ResellerCustomerPayment{
+		TradeNo: order.TradeNo, CustomerOrgId: customer.Id, CustomerName: "direct-one", Provider: PaymentProviderEpay,
+		Quota: 1000, Fee: 40, CreatedTime: payments[0].CreatedTime,
+	}, *payments[0])
 
 	ledger, _, err := ListOrgLedger(customer.Id, 0, 10)
 	require.NoError(t, err)
@@ -826,6 +834,19 @@ func TestDirectFundedCustomerTopsUpItsOwnWallet(t *testing.T) {
 	fees = feesOf(reversible.TradeNo + "#back")
 	require.Len(t, fees, 1, "a reversed payment gives its fee back")
 	assert.Equal(t, int64(80), fees[0].Quota)
+	payments, paid, err = ListResellerCustomerPayments(reseller.Id, 0, 10)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), paid)
+	assert.Equal(t, reversible.TradeNo, payments[0].TradeNo, "newest first")
+	assert.Equal(t, int64(80), payments[0].Fee)
+	assert.True(t, payments[0].FeeReturned)
+	assert.True(t, payments[0].Reversed)
+	assert.False(t, payments[1].Reversed)
+	other := mustCreateOrg(t, "other-reseller", OrgTypeReseller, 0)
+	none, paid, err := ListResellerCustomerPayments(other.Id, 0, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), paid, "another reseller sees none of them")
+	assert.Empty(t, none)
 	fresh, err = GetOrganizationById(customer.Id)
 	require.NoError(t, err)
 	assert.Equal(t, 0, fresh.WalletQuota, "the wallet gives back what it holds and stops at zero")

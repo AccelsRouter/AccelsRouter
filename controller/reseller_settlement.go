@@ -57,6 +57,25 @@ func AdminSetAcquiringFees(c *gin.Context) {
 	common.ApiSuccess(c, saved)
 }
 
+// ListMyResellerCustomerPayments — GET /api/reseller/customer-payments
+// The payments the reseller's customers made into their own wallets, with the
+// fee each one cost the reseller.
+func ListMyResellerCustomerPayments(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	page := common.GetPageQuery(c)
+	payments, total, err := model.ListResellerCustomerPayments(reseller.Id, page.GetStartIdx(), page.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	page.SetTotal(int(total))
+	page.SetItems(payments)
+	common.ApiSuccess(c, page)
+}
+
 // ListMyResellerSettlements — GET /api/reseller/settlements
 func ListMyResellerSettlements(c *gin.Context) {
 	reseller, ok := callerReseller(c)

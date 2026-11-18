@@ -1000,7 +1000,7 @@ export type ResellerEarnings = {
   due: number
   paid: number
   // What a customer's top-up costs the reseller, by payment channel.
-  acquiring_fees?: AcquiringFeeSchedule
+  acquiring_fees: AcquiringFeeSchedule
 }
 
 export type ResellerSettlementItem = {
@@ -1035,6 +1035,33 @@ export type ResellerPayoutRow = {
   reference: string
   invoice_no: string
   paid_time: number
+}
+
+// One payment a customer made into its own wallet, and what it cost the
+// reseller in processing fee.
+export type ResellerCustomerPayment = {
+  trade_no: string
+  customer_org_id: number
+  customer_name: string
+  provider: string
+  quota: number
+  fee: number
+  fee_returned: boolean
+  reversed: boolean
+  created_time: number
+}
+
+export async function listResellerCustomerPayments(params: {
+  page: number
+  pageSize: number
+}): Promise<PagedResponse<ResellerCustomerPayment>> {
+  const qs = new URLSearchParams()
+  qs.set('p', String(params.page))
+  qs.set('page_size', String(params.pageSize))
+  const res = await api.get<ApiResp<PagedResponse<ResellerCustomerPayment>>>(
+    `/api/reseller/customer-payments?${qs.toString()}`
+  )
+  return unwrap(res, 'Failed to load payments')
 }
 
 export async function getResellerEarnings(): Promise<ResellerEarnings> {
