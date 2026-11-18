@@ -297,6 +297,8 @@ type ResellerSettlementSummary struct {
 	// Due is what a payout would settle now: Payable plus Adjustments.
 	Due  int64 `json:"due"`
 	Paid int64 `json:"paid"`
+	// AcquiringFees is the fee schedule in force, for the reseller's own view.
+	AcquiringFees *AcquiringFeeSchedule `json:"acquiring_fees,omitempty"`
 }
 
 // GetResellerSettlementSummary totals a reseller's commission as of now.

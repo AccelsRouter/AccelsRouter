@@ -699,7 +699,7 @@ function CreateCustomerDialog(props: {
                     </span>
                     <span className='text-muted-foreground text-xs'>
                       {t(
-                        'The customer pays the platform online at the discounts you set, and you earn the margin over your wholesale price as commission. This cannot be changed after the customer is created.'
+                        'The customer tops up with the platform at face value; a top-up carries no discount. Your discounts apply when it makes calls, and you earn what it pays for each call over your wholesale price as commission, less the payment processing fee on each of its top-ups. This cannot be changed after the customer is created.'
                       )}
                     </span>
                   </Label>

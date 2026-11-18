@@ -33,7 +33,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import type { UserOrgRelation } from '@/features/organizations-admin/types'
-import { getCurrencyDisplay } from '@/lib/currency'
+import { formatQuotaWithCurrency, getCurrencyDisplay } from '@/lib/currency'
 import { formatQuota } from '@/lib/format'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
@@ -193,7 +193,24 @@ export function useUsersColumns(
         header: `${t('Available Balance')} (${quotaUnit})`,
         cell: ({ row }) => {
           const user = row.original
-          return <UserQuotaCell remaining={user.quota} used={user.used_quota} />
+          // Fork: a member's calls are paid from the organization's wallet,
+          // so the personal balance alone reads as "no money".
+          const orgWallet = relations?.[user.id]?.find(
+            (r) => r.wallet_quota != null
+          )?.wallet_quota
+          return (
+            <div className='grid gap-y-1'>
+              <UserQuotaCell remaining={user.quota} used={user.used_quota} />
+              {orgWallet != null && (
+                <span className='text-muted-foreground flex items-baseline gap-1 text-xs tabular-nums'>
+                  <span>{t('Organization wallet')}</span>
+                  <span className='text-foreground'>
+                    {formatQuotaWithCurrency(orgWallet, { showSymbol: false })}
+                  </span>
+                </span>
+              )}
+            </div>
+          )
         },
         size: 180,
         minSize: 160,

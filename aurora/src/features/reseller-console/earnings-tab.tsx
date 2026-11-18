@@ -15,11 +15,14 @@ import {
   listResellerPayouts,
   listResellerSettlementAdjustments,
   listResellerSettlements,
-  type ResellerSettlementAdjustment,
   type ResellerSettlementItem,
 } from '@/features/organization-console/api'
 import { Td, Th, fmtTime } from '@/features/organization-console/shared'
-import { payoutMethodLabel } from '@/features/reconciliation/finance-api'
+import {
+  acquiringFeeScheduleText,
+  payoutMethodLabel,
+  settlementAdjustmentLabel,
+} from '@/features/reconciliation/finance-api'
 
 function quota(value: number): string {
   return formatQuotaWithCurrency(value, { digitsLarge: 2, digitsSmall: 4 })
@@ -65,12 +68,6 @@ export function EarningsTab() {
     )
   }
 
-  const adjustmentLabel: Record<ResellerSettlementAdjustment['type'], string> =
-    {
-      chargeback: t('Customer payment reversed'),
-      late_usage: t('Usage changed after the month was closed'),
-      manual: t('Correction by the platform'),
-    }
   const stats = [
     {
       label: t('Accruing this month'),
@@ -100,6 +97,11 @@ export function EarningsTab() {
         {t(
           'You earn commission on customers that top up directly: what they pay for each call, less your wholesale price. A month is closed on the 3rd of the next one. Commission of a customer who paid by card is held for 120 days in case the payment is reversed.'
         )}
+        {earnings.acquiring_fees &&
+          ` ${t(
+            'A payment processing fee is taken off your commission for each top-up of these customers: {{fees}}.',
+            { fees: acquiringFeeScheduleText(earnings.acquiring_fees) }
+          )}`}
       </p>
       <div className='border-border/60 grid grid-cols-2 divide-x overflow-hidden rounded-lg border md:grid-cols-4'>
         {stats.map((stat) => (
@@ -178,7 +180,7 @@ export function EarningsTab() {
                   <Td className='text-muted-foreground'>
                     {fmtTime(row.created_time)}
                   </Td>
-                  <Td>{adjustmentLabel[row.type]}</Td>
+                  <Td>{settlementAdjustmentLabel(row.type, row.quota, t)}</Td>
                   <Td>{row.customer_org_id ? row.customer_name : '-'}</Td>
                   <Td
                     className={`text-right tabular-nums ${row.quota < 0 ? 'text-destructive' : ''}`}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"slices"
@@ -208,13 +209,26 @@ func customVendorCardTiers(row model.CustomVendorPrice) []larknotify.VendorPrice
 	if len(tiers) == 0 {
 		tiers = []customVendorTier{{Input: price.Input, Output: price.Output, CacheRead: price.CacheRead}}
 	}
-	// A task model shows its first usage price, with what it is charged per.
+	// A task model is priced per usage fact, under the conditions of each
+	// tier (resolution, video input, ...); both are named as the plugin does.
 	if tiers[0].Usage != nil {
-		unit := "per image"
-		if _, tokens := tiers[0].Usage["tokens"]; tokens {
-			unit = "per 1M video tokens"
+		lines := make([]larknotify.VendorPriceTier, 0, len(tiers))
+		for _, tier := range tiers {
+			conditions := make([]string, 0, len(tier.When))
+			for _, key := range slices.Sorted(maps.Keys(tier.When)) {
+				conditions = append(conditions, key+"="+tier.When[key])
+			}
+			prices := make([]string, 0, len(tier.Usage))
+			for _, key := range slices.Sorted(maps.Keys(tier.Usage)) {
+				unit := key
+				if key == "tokens" {
+					unit = "per 1M video tokens"
+				}
+				prices = append(prices, unit+" $"+strconv.FormatFloat(tier.Usage[key], 'f', -1, 64))
+			}
+			lines = append(lines, larknotify.VendorPriceTier{Range: strings.Join(conditions, ", "), Text: strings.Join(prices, " · ")})
 		}
-		return []larknotify.VendorPriceTier{{Range: unit, Input: price.Input}}
+		return lines
 	}
 	lines := make([]larknotify.VendorPriceTier, 0, len(tiers))
 	for i, tier := range tiers {
@@ -242,9 +256,21 @@ func (s *customVendorChangeSummary) add(source, modelName string, old, next mode
 	} else {
 		s.Applied++
 	}
+	before, after := customVendorCardTiers(old), customVendorCardTiers(next)
+	// A task model has a tier per condition and usually moves in one or two of
+	// them: the card shows the tiers that differ, not the whole list twice.
+	if len(after) > 0 && after[0].Text != "" {
+		differs := func(tier larknotify.VendorPriceTier, others []larknotify.VendorPriceTier) bool {
+			return !slices.Contains(others, tier)
+		}
+		changedBefore := slices.DeleteFunc(slices.Clone(before), func(tier larknotify.VendorPriceTier) bool { return !differs(tier, after) })
+		changedAfter := slices.DeleteFunc(slices.Clone(after), func(tier larknotify.VendorPriceTier) bool { return !differs(tier, before) })
+		if len(changedBefore)+len(changedAfter) > 0 {
+			before, after = changedBefore, changedAfter
+		}
+	}
 	s.Report.Changes = append(s.Report.Changes, larknotify.VendorPriceChange{
-		Kind: kind, Model: modelName, Source: source,
-		Old: customVendorCardTiers(old), New: customVendorCardTiers(next),
+		Kind: kind, Model: modelName, Source: source, Old: before, New: after,
 	})
 }
 

@@ -17,7 +17,7 @@ func migrateOrgTables(t *testing.T) {
 	require.NoError(t, DB.AutoMigrate(
 		&Organization{}, &OrgAccount{}, &CreditLedger{}, &Workspace{}, &WorkspaceToken{}, &OrgChannel{},
 		&OrgApplication{}, &OrgInvitation{}, &OrgSsoDomain{}, &OrgAuditLog{}, &ResellerCustomerLink{},
-		&ResellerAdmin{}, &OrgTopUp{}, &OrgUsageDaily{},
+		&ResellerAdmin{}, &OrgTopUp{}, &OrgUsageDaily{}, &ResellerSettlementAdjustment{},
 	))
 	// isolate between tests
 	DB.Exec("DELETE FROM organizations")
@@ -33,6 +33,7 @@ func migrateOrgTables(t *testing.T) {
 	DB.Exec("DELETE FROM reseller_customer_links")
 	DB.Exec("DELETE FROM reseller_admins")
 	DB.Exec("DELETE FROM org_top_ups")
+	DB.Exec("DELETE FROM reseller_settlement_adjustments")
 }
 
 // The audit trail is append-only, scoped per org, and returned newest-first.
@@ -744,6 +745,20 @@ func TestDirectFundedCustomerTopsUpItsOwnWallet(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2*500, fresh.WalletQuota, "a repeated notification credits nothing")
 
+	// Collecting the payment costs the reseller a fee, 4% unless the channel
+	// has its own, booked once against what it is owed; the wallet got it all.
+	feesOf := func(ref string) []ResellerSettlementAdjustment {
+		var fees []ResellerSettlementAdjustment
+		require.NoError(t, DB.Where("type = ? AND ref = ?", SettlementAdjustAcquiringFee, ref).Find(&fees).Error)
+		return fees
+	}
+	fees := feesOf(order.TradeNo)
+	require.Len(t, fees, 1, "a repeated notification charges no second fee")
+	assert.Equal(t, int64(-40), fees[0].Quota)
+	assert.Equal(t, reseller.Id, fees[0].ResellerOrgId)
+	assert.Equal(t, customer.Id, fees[0].CustomerOrgId)
+	assert.Equal(t, "epay: 4% + $0", fees[0].Remark)
+
 	ledger, _, err := ListOrgLedger(customer.Id, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, ledger, 1)
@@ -783,6 +798,19 @@ func TestDirectFundedCustomerTopsUpItsOwnWallet(t *testing.T) {
 	// A payment the channel reverses comes back out of the organization's
 	// wallet as far as the wallet still holds it, never out of the payer's own
 	// balance, and the wallet does not go below zero.
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	if common.OptionMap == nil {
+		common.OptionMap = map[string]string{}
+	}
+	t.Cleanup(func() { delete(common.OptionMap, AcquiringFeeOptionKey) })
+	require.Error(t, SaveAcquiringFeeSchedule(AcquiringFeeSchedule{Default: AcquiringFee{Rate: 0.6}}), "a rate above one half is refused")
+	require.Error(t, SaveAcquiringFeeSchedule(AcquiringFeeSchedule{Default: AcquiringFee{Rate: 0.04, Fixed: -1}}))
+	require.Error(t, SaveAcquiringFeeSchedule(AcquiringFeeSchedule{Providers: map[string]AcquiringFee{"paypal": {Rate: 0.03}}}), "only a known channel has a fee")
+	assert.Equal(t, 0.04, GetAcquiringFeeSchedule().Default.Rate, "a refused schedule changes nothing")
+	require.NoError(t, SaveAcquiringFeeSchedule(AcquiringFeeSchedule{
+		Default:   AcquiringFee{Rate: 0.04},
+		Providers: map[string]AcquiringFee{PaymentProviderWonderGate: {Rate: 0.02, Fixed: 0.1}},
+	}))
 	reversible := TopUp{UserId: payer.Id, Amount: 3, Money: 15, TradeNo: "WGORGTOPUP", PaymentMethod: PaymentMethodWonderGate, PaymentProvider: PaymentProviderWonderGate, CreateTime: common.GetTimestamp(), Status: common.TopUpStatusPending}
 	require.NoError(t, DB.Create(&reversible).Error)
 	require.NoError(t, RecordOrgTopUpOrders(customer.Id, payer.Id, since))
@@ -790,8 +818,14 @@ func TestDirectFundedCustomerTopsUpItsOwnWallet(t *testing.T) {
 	fresh, err = GetOrganizationById(customer.Id)
 	require.NoError(t, err)
 	require.Equal(t, 5*500, fresh.WalletQuota)
+	fees = feesOf(reversible.TradeNo)
+	require.Len(t, fees, 1)
+	assert.Equal(t, int64(-80), fees[0].Quota, "2% of 1500 plus a fixed 0.1 USD, which is 50")
 	require.NoError(t, DecreaseOrgQuota(customer.Id, 4*500), "most of the wallet is spent before the reversal")
 	require.NoError(t, ReverseWonderGateTopUp(reversible.TradeNo, "127.0.0.1"))
+	fees = feesOf(reversible.TradeNo + "#back")
+	require.Len(t, fees, 1, "a reversed payment gives its fee back")
+	assert.Equal(t, int64(80), fees[0].Quota)
 	fresh, err = GetOrganizationById(customer.Id)
 	require.NoError(t, err)
 	assert.Equal(t, 0, fresh.WalletQuota, "the wallet gives back what it holds and stops at zero")

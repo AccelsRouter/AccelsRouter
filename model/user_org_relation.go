@@ -12,6 +12,9 @@ type UserOrgRelation struct {
 	Role            string `json:"role,omitempty"` // owner | admin | member (org accounts)
 	ResellerOrgId   int    `json:"reseller_org_id,omitempty"`
 	ResellerOrgName string `json:"reseller_org_name,omitempty"`
+	// WalletQuota is the wallet of the organization the user is an account of,
+	// which is what pays for that user's calls. Absent for a distributor admin.
+	WalletQuota *int `json:"wallet_quota,omitempty"`
 }
 
 // UserOrgRelations batch-resolves the organization ties of the given users
@@ -56,7 +59,7 @@ func UserOrgRelations(userIds []int) (map[int][]UserOrgRelation, error) {
 			ids = append(ids, id)
 		}
 		var orgs []Organization
-		if err := DB.Select("id", "name", "type").Where("id IN ?", ids).Find(&orgs).Error; err != nil {
+		if err := DB.Select("id", "name", "type", "wallet_quota").Where("id IN ?", ids).Find(&orgs).Error; err != nil {
 			return nil, err
 		}
 		for _, o := range orgs {
@@ -75,7 +78,7 @@ func UserOrgRelations(userIds []int) (map[int][]UserOrgRelation, error) {
 	}
 	for _, a := range accounts {
 		org := orgById[a.OrgId]
-		rel := UserOrgRelation{Kind: "member", OrgId: a.OrgId, OrgName: org.Name, OrgType: org.Type, Role: a.Role}
+		rel := UserOrgRelation{Kind: "member", OrgId: a.OrgId, OrgName: org.Name, OrgType: org.Type, Role: a.Role, WalletQuota: &org.WalletQuota}
 		if rid, ok := resellerOf[a.OrgId]; ok && rid > 0 {
 			rel.Kind = "customer"
 			rel.ResellerOrgId = rid
