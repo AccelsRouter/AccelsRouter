@@ -95,13 +95,9 @@ export function EarningsTab() {
     <div className='flex flex-col gap-4'>
       <p className='text-muted-foreground text-sm'>
         {t(
-          'You earn commission on customers that top up directly: what they pay for each call, less your wholesale price. A month is closed on the 3rd of the next one. Commission of a customer who paid by card is held for 120 days in case the payment is reversed.'
+          'You earn commission on customers that top up directly: what they pay for each call, less your wholesale price, less the payment processing fee on each of their top-ups, currently {{fees}}. A month is closed on the 3rd of the next one.',
+          { fees: acquiringFeeScheduleText(earnings.acquiring_fees) }
         )}
-        {earnings.acquiring_fees &&
-          ` ${t(
-            'A payment processing fee is taken off your commission for each top-up of these customers: {{fees}}.',
-            { fees: acquiringFeeScheduleText(earnings.acquiring_fees) }
-          )}`}
       </p>
       <div className='border-border/60 grid grid-cols-2 divide-x overflow-hidden rounded-lg border md:grid-cols-4'>
         {stats.map((stat) => (

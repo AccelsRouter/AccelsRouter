@@ -47,7 +47,8 @@ import { AuditPanel } from '@/features/organization-console/audit-panel'
 import { CallableModelsTab } from '@/features/organization-console/callable-models-tab'
 import { CustomersTab } from '@/features/organization-console/customers-tab'
 import { LedgerTab } from '@/features/organization-console/ledger-tab'
-import { ResellerBindingsTab } from '@/features/reseller-binding/reseller-bindings-tab'
+import { ResellerBindingsSection } from '@/features/reseller-binding/reseller-bindings-tab'
+import { CustomerPayments } from './customer-payments'
 import { EarningsTab } from './earnings-tab'
 import { ResellerRecordsTab } from './records-tab'
 import { ResellerTopUpDialog } from './reseller-topup-dialog'
@@ -58,6 +59,7 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
   const [tab, setTab] = useState(initialTab || 'customers')
   const [auditPage, setAuditPage] = useState(1)
   const [topUpOpen, setTopUpOpen] = useState(false)
+  const [inviteExistingOpen, setInviteExistingOpen] = useState(false)
   const [allocationMode, setAllocationMode] = useState<AllocationMode | null>(
     null
   )
@@ -141,21 +143,29 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
                 <TabsTrigger value='usage'>{t('Usage')}</TabsTrigger>
                 <TabsTrigger value='records'>{t('Call Records')}</TabsTrigger>
                 {self.direct_pay_enabled && (
-                  <TabsTrigger value='bindings'>
-                    {t('Existing customers')}
-                  </TabsTrigger>
-                )}
-                {self.direct_pay_enabled && (
                   <TabsTrigger value='earnings'>{t('Earnings')}</TabsTrigger>
                 )}
                 <TabsTrigger value='ledger'>{t('Ledger')}</TabsTrigger>
                 <TabsTrigger value='audit'>{t('Audit')}</TabsTrigger>
               </TabsList>
               <TabsContent value='customers' className='pt-4'>
-                <CustomersTab
-                  walletQuota={self.wallet_quota}
-                  directPayEnabled={self.direct_pay_enabled ?? false}
-                />
+                <div className='flex flex-col gap-6'>
+                  <CustomersTab
+                    walletQuota={self.wallet_quota}
+                    directPayEnabled={self.direct_pay_enabled ?? false}
+                    onInviteExisting={
+                      self.direct_pay_enabled
+                        ? () => setInviteExistingOpen(true)
+                        : undefined
+                    }
+                  />
+                  {self.direct_pay_enabled && (
+                    <ResellerBindingsSection
+                      inviteOpen={inviteExistingOpen}
+                      onInviteOpenChange={setInviteExistingOpen}
+                    />
+                  )}
+                </div>
               </TabsContent>
               <TabsContent value='keys' className='pt-4'>
                 <OrgKeysPanel
@@ -183,21 +193,19 @@ export function ResellerConsole({ initialTab }: { initialTab?: string }) {
                 <ResellerRecordsTab />
               </TabsContent>
               {self.direct_pay_enabled && (
-                <TabsContent value='bindings' className='pt-4'>
-                  <ResellerBindingsTab />
-                </TabsContent>
-              )}
-              {self.direct_pay_enabled && (
                 <TabsContent value='earnings' className='pt-4'>
                   <EarningsTab />
                 </TabsContent>
               )}
               <TabsContent value='ledger' className='pt-4'>
-                <LedgerTab
-                  fetchLedger={listResellerLedger}
-                  queryKey='reseller-ledger'
-                  selfOrgId={self.id}
-                />
+                <div className='flex flex-col gap-6'>
+                  <LedgerTab
+                    fetchLedger={listResellerLedger}
+                    queryKey='reseller-ledger'
+                    selfOrgId={self.id}
+                  />
+                  {self.direct_pay_enabled && <CustomerPayments />}
+                </div>
               </TabsContent>
               <TabsContent value='audit' className='pt-4'>
                 <AuditPanel

@@ -413,6 +413,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/reseller/settlements":                                accessTokenAnyRule,
 	"GET /api/reseller/settlements/adjustments":                    accessTokenAnyRule,
 	"GET /api/reseller/payouts":                                    accessTokenAnyRule,
+	"GET /api/reseller/customer-payments":                          accessTokenAnyRule,
 	"GET /api/reseller/wallet":                                     accessTokenAnyRule,
 	"GET /api/user/:id/channel-bindings":                           accessTokenScopeRule("user:read"),
 	"GET /api/user/export":                                         accessTokenScopeRule("user:read"),
