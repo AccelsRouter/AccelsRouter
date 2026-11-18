@@ -23,6 +23,10 @@ by an org owner/admin to manage their own organization.
 import { api } from '@/lib/api'
 import { getServerMessage } from '@/lib/server-error-message'
 import type {
+  AcquiringFeeSchedule,
+  SettlementAdjustmentType,
+} from '@/features/reconciliation/finance-api'
+import type {
   ApplyResult,
   InvitationPreview,
   OrgAccount,
@@ -995,6 +999,8 @@ export type ResellerEarnings = {
   // What the next payout settles: payable plus adjustments.
   due: number
   paid: number
+  // What a customer's top-up costs the reseller, by payment channel.
+  acquiring_fees?: AcquiringFeeSchedule
 }
 
 export type ResellerSettlementItem = {
@@ -1013,7 +1019,7 @@ export type ResellerSettlementAdjustment = {
   id: number
   customer_name?: string
   customer_org_id: number
-  type: 'chargeback' | 'late_usage' | 'manual'
+  type: SettlementAdjustmentType
   period: string
   quota: number
   remark: string

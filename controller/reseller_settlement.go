@@ -27,7 +27,34 @@ func GetMyResellerEarnings(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// The reseller sees what collecting its customers' payments costs it.
+	fees := model.GetAcquiringFeeSchedule()
+	summary.AcquiringFees = &fees
 	common.ApiSuccess(c, summary)
+}
+
+// AdminGetAcquiringFees — GET /api/admin/reseller-acquiring-fees
+// What a payment into a self-funded customer's wallet costs its reseller, by
+// payment channel.
+func AdminGetAcquiringFees(c *gin.Context) {
+	common.ApiSuccess(c, gin.H{"schedule": model.GetAcquiringFeeSchedule(), "providers": model.AcquiringFeeProviders})
+}
+
+// AdminSetAcquiringFees — PUT /api/admin/reseller-acquiring-fees
+// Replaces the fee schedule for payments completed from now on.
+func AdminSetAcquiringFees(c *gin.Context) {
+	var schedule model.AcquiringFeeSchedule
+	if err := c.ShouldBindJSON(&schedule); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if err := model.SaveAcquiringFeeSchedule(schedule); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	saved := model.GetAcquiringFeeSchedule()
+	common.SysLog(fmt.Sprintf("acquiring fee schedule changed by user %d: default %v, channels %v", c.GetInt("id"), saved.Default, saved.Providers))
+	common.ApiSuccess(c, saved)
 }
 
 // ListMyResellerSettlements — GET /api/reseller/settlements

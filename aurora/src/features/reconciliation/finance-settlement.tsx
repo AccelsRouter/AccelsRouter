@@ -3,7 +3,7 @@ What the platform owes each distributor for its direct top-up customers, and
 the work finance does on it: close a month, record a payout already made,
 correct an amount, or take a debt out of the distributor's wallet.
 */
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import {
   keepPreviousData,
   useMutation,
@@ -30,15 +30,23 @@ import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
+  acquiringFeeScheduleText,
   addSettlementAdjustment,
   clawbackResellerDebt,
   closeSettlementPeriod,
   exportSettlementItems,
+  getAcquiringFees,
   listPayouts,
+  listSettlementAdjustments,
   listSettlementItems,
+  paymentChannelName,
   payoutMethodLabel,
   registerOrgChargeback,
   registerPayout,
+  saveAcquiringFees,
+  settlementAdjustmentLabel,
+  type AcquiringFee,
+  type AcquiringFeeSchedule,
   type FinancePayableRow,
   type SettlementItem,
 } from './finance-api'
@@ -58,6 +66,183 @@ function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+// The day of a moment where the reader is, as a date input holds it.
+function localDate(moment: Date): string {
+  const month = String(moment.getMonth() + 1).padStart(2, '0')
+  const dayOfMonth = String(moment.getDate()).padStart(2, '0')
+  return `${moment.getFullYear()}-${month}-${dayOfMonth}`
+}
+
+// One row of the fee form: what the administrator typed, as text. A channel
+// row left empty follows the default.
+type FeeDraft = { rate: string; fixed: string }
+
+function followsDefault(draft: FeeDraft): boolean {
+  return draft.rate.trim() === '' && draft.fixed.trim() === ''
+}
+
+function feeDraft(fee: AcquiringFee | undefined): FeeDraft {
+  if (!fee) return { rate: '', fixed: '' }
+  return {
+    rate: String(Number((fee.rate * 100).toFixed(4))),
+    fixed: String(fee.fixed),
+  }
+}
+
+function AcquiringFeesDialog(props: {
+  open: boolean
+  schedule: AcquiringFeeSchedule
+  providers: string[]
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [base, setBase] = useState<FeeDraft>(feeDraft(props.schedule.default))
+  const [channels, setChannels] = useState<Record<string, FeeDraft>>({})
+  const [wasOpen, setWasOpen] = useState(false)
+
+  if (props.open !== wasOpen) {
+    setWasOpen(props.open)
+    if (props.open) {
+      setBase(feeDraft(props.schedule.default))
+      setChannels(
+        Object.fromEntries(
+          props.providers.map((provider) => [
+            provider,
+            feeDraft(props.schedule.providers[provider]),
+          ])
+        )
+      )
+    }
+  }
+
+  const feeOf = (draft: FeeDraft): AcquiringFee => ({
+    rate: Number(draft.rate || 0) / 100,
+    fixed: Number(draft.fixed || 0),
+  })
+  const inRange = (draft: FeeDraft) => {
+    const fee = feeOf(draft)
+    return (
+      fee.rate >= 0 && fee.rate <= 0.5 && fee.fixed >= 0 && fee.fixed <= 100
+    )
+  }
+  const valid =
+    base.rate.trim() !== '' &&
+    inRange(base) &&
+    Object.values(channels).every(inRange)
+
+  const save = useMutation({
+    mutationFn: () =>
+      saveAcquiringFees({
+        default: feeOf(base),
+        providers: Object.fromEntries(
+          Object.entries(channels)
+            .filter(([, draft]) => !followsDefault(draft))
+            .map(([provider, draft]) => [provider, feeOf(draft)])
+        ),
+      }),
+    onSuccess: () => {
+      toast.success(t('Processing fees saved'))
+      queryClient.invalidateQueries({ queryKey: ['admin-acquiring-fees'] })
+      props.onClose()
+    },
+    onError: (e) => toast.error(errorText(e)),
+  })
+
+  const rows: { key: string; label: string; draft: FeeDraft }[] = [
+    { key: '', label: t('Default'), draft: base },
+    ...props.providers.map((provider) => ({
+      key: provider,
+      label: paymentChannelName(provider),
+      draft: channels[provider] ?? { rate: '', fixed: '' },
+    })),
+  ]
+  const change = (key: string, draft: FeeDraft) => {
+    if (key === '') setBase(draft)
+    else setChannels({ ...channels, [key]: draft })
+  }
+
+  return (
+    <Dialog open={props.open} onOpenChange={(open) => !open && props.onClose()}>
+      <DialogContent className='sm:max-w-md'>
+        <DialogHeader>
+          <DialogTitle>{t('Processing fees')}</DialogTitle>
+          <DialogDescription>
+            {t(
+              'What a top-up of a customer that pays for itself costs its distributor: a share of the payment plus a fixed amount, taken off the distributor account when the payment completes. A channel left empty uses the default. A change applies to payments completed from then on.'
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className='grid grid-cols-[1fr_7rem_8rem] items-center gap-x-2 gap-y-2'>
+          <span className='text-muted-foreground text-xs'>
+            {t('Payment channel')}
+          </span>
+          <span className='text-muted-foreground text-xs'>
+            {t('Share of the payment (%)')}
+          </span>
+          <span className='text-muted-foreground text-xs'>
+            {t('Fixed fee (USD)')}
+          </span>
+          {rows.map((row) => (
+            <Fragment key={row.key}>
+              <span className='text-sm'>{row.label}</span>
+              <Input
+                type='number'
+                min={0}
+                max={50}
+                step='0.01'
+                aria-label={`${row.label} ${t('Share of the payment (%)')}`}
+                placeholder={
+                  row.key === ''
+                    ? ''
+                    : followsDefault(row.draft)
+                      ? base.rate
+                      : '0'
+                }
+                value={row.draft.rate}
+                onChange={(e) =>
+                  change(row.key, { ...row.draft, rate: e.target.value })
+                }
+              />
+              <Input
+                type='number'
+                min={0}
+                max={100}
+                step='0.01'
+                aria-label={`${row.label} ${t('Fixed fee (USD)')}`}
+                placeholder={
+                  followsDefault(row.draft) ? base.fixed || '0' : '0'
+                }
+                value={row.draft.fixed}
+                onChange={(e) =>
+                  change(row.key, { ...row.draft, fixed: e.target.value })
+                }
+              />
+            </Fragment>
+          ))}
+        </div>
+        <DialogFooter className='gap-2'>
+          <Button
+            variant='outline'
+            onClick={props.onClose}
+            disabled={save.isPending}
+          >
+            {t('Cancel')}
+          </Button>
+          <Button
+            onClick={() => save.mutate()}
+            disabled={!valid || save.isPending}
+            className='gap-1.5'
+          >
+            {save.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
+            {t('Save')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function FinanceSettlement(props: { payables: FinancePayableRow[] }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -67,11 +252,19 @@ export function FinanceSettlement(props: { payables: FinancePayableRow[] }) {
   const [debiting, setDebiting] = useState<FinancePayableRow | null>(null)
   const [reversedOrder, setReversedOrder] = useState('')
   const [confirmReversal, setConfirmReversal] = useState(false)
+  const [editingFees, setEditingFees] = useState(false)
+  const { data: fees } = useQuery({
+    queryKey: ['admin-acquiring-fees'],
+    queryFn: getAcquiringFees,
+  })
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['admin-finance-report'] })
     queryClient.invalidateQueries({ queryKey: ['admin-settlement-items'] })
     queryClient.invalidateQueries({ queryKey: ['admin-reseller-payouts'] })
+    queryClient.invalidateQueries({
+      queryKey: ['admin-settlement-adjustments'],
+    })
   }
 
   const close = useMutation({
@@ -132,6 +325,23 @@ export function FinanceSettlement(props: { payables: FinancePayableRow[] }) {
           {t(
             'Commission on customers that top up directly: the customer price less the wholesale price of what they used. Opening and closing are as of the ends of this period; held and due are as of now. A month is closed on the 3rd of the next one, and a customer who paid by card has its commission held for 120 days.'
           )}
+        </p>
+        <p className='text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs'>
+          <span>
+            {t(
+              'Each top-up of such a customer also takes a payment processing fee off the distributor account, listed under adjustments: {{fees}}.',
+              { fees: fees ? acquiringFeeScheduleText(fees.schedule) : '…' }
+            )}
+          </span>
+          <Button
+            size='sm'
+            variant='outline'
+            className='h-6 px-2 text-xs'
+            disabled={!fees}
+            onClick={() => setEditingFees(true)}
+          >
+            {t('Processing fees')}
+          </Button>
         </p>
       </div>
 
@@ -272,8 +482,17 @@ export function FinanceSettlement(props: { payables: FinancePayableRow[] }) {
       </div>
 
       <SettlementItems period={period} />
+      <Adjustments />
       <Payouts />
 
+      {fees && (
+        <AcquiringFeesDialog
+          open={editingFees}
+          schedule={fees.schedule}
+          providers={fees.providers}
+          onClose={() => setEditingFees(false)}
+        />
+      )}
       <PayoutDialog
         row={paying}
         onClose={() => setPaying(null)}
@@ -386,6 +605,70 @@ function SettlementItems(props: { period: string }) {
   )
 }
 
+// What moved a distributor's account outside the monthly items, newest first:
+// processing fees, reversed payments, late usage and corrections.
+function Adjustments() {
+  const { t } = useTranslation()
+  const { data } = useQuery({
+    queryKey: ['admin-settlement-adjustments'],
+    queryFn: () => listSettlementAdjustments({ page: 1, pageSize: 50 }),
+  })
+  const rows = data?.items ?? []
+  if (rows.length === 0) return null
+  return (
+    <div className='border-border/60 max-h-[300px] overflow-auto rounded-md border'>
+      <table className='w-full text-sm'>
+        <thead className='bg-muted/40 text-muted-foreground sticky top-0 text-xs'>
+          <tr>
+            <th className={`${cell} text-left font-medium`}>{t('Created')}</th>
+            <th className={`${cell} text-left font-medium`}>
+              {t('Distributor')}
+            </th>
+            <th className={`${cell} text-left font-medium`}>
+              {t('Adjustment')}
+            </th>
+            <th className={`${cell} text-left font-medium`}>{t('Customer')}</th>
+            <th className={`${right} font-medium`}>{t('Amount')}</th>
+            <th className={`${cell} text-left font-medium`}>{t('Remark')}</th>
+            <th className={`${cell} text-left font-medium`}>{t('Status')}</th>
+          </tr>
+        </thead>
+        <tbody className='divide-border/60 divide-y'>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td className={`${cell} text-muted-foreground`}>
+                {day(row.created_time)}
+              </td>
+              <td className={cell}>{row.reseller_name}</td>
+              <td className={cell}>
+                {settlementAdjustmentLabel(row.type, row.quota, t)}
+              </td>
+              <td className={cell}>
+                {row.customer_org_id ? row.customer_name : '-'}
+              </td>
+              <td
+                className={`${right} ${row.quota < 0 ? 'text-destructive' : ''}`}
+              >
+                {quota(row.quota)}
+              </td>
+              <td className={`${cell} text-muted-foreground`}>
+                {row.remark || '-'}
+              </td>
+              <td className={cell}>
+                {row.payout_id ? (
+                  <Badge variant='secondary'>{t('Already settled')}</Badge>
+                ) : (
+                  <Badge variant='outline'>{t('Not settled')}</Badge>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function Payouts() {
   const { t } = useTranslation()
   const { data } = useQuery({
@@ -454,6 +737,7 @@ function PayoutDialog(props: {
   const [reference, setReference] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
   const [remark, setRemark] = useState('')
+  const [paidOn, setPaidOn] = useState('')
   const [loadedFor, setLoadedFor] = useState<number | null>(null)
 
   const row = props.row
@@ -465,6 +749,7 @@ function PayoutDialog(props: {
     setReference('')
     setInvoiceNo('')
     setRemark('')
+    setPaidOn(localDate(new Date()))
   }
   if (!row && loadedFor !== null) setLoadedFor(null)
 
@@ -478,6 +763,8 @@ function PayoutDialog(props: {
         reference: reference.trim(),
         invoice_no: invoiceNo.trim(),
         remark: remark.trim(),
+        // Noon of the chosen day; the server brings a later moment back to now.
+        paid_time: Math.floor(new Date(`${paidOn}T12:00:00`).getTime() / 1000),
       }),
     onSuccess: () => {
       toast.success(t('Payout recorded'))
@@ -486,7 +773,12 @@ function PayoutDialog(props: {
     },
     onError: (e) => toast.error(errorText(e)),
   })
-  const valid = Number(money) > 0 && reference.trim() !== ''
+  const today = localDate(new Date())
+  const valid =
+    Number(money) > 0 &&
+    reference.trim() !== '' &&
+    paidOn !== '' &&
+    paidOn <= today
 
   return (
     <Dialog open={!!row} onOpenChange={(open) => !open && props.onClose()}>
@@ -523,6 +815,15 @@ function PayoutDialog(props: {
                 onChange={(e) => setCurrency(e.target.value)}
               />
             </div>
+          </div>
+          <div className='flex flex-col gap-1.5'>
+            <Label className='text-xs'>{t('Paid on')}</Label>
+            <Input
+              type='date'
+              max={today}
+              value={paidOn}
+              onChange={(e) => setPaidOn(e.target.value)}
+            />
           </div>
           <div className='flex flex-col gap-1.5'>
             <Label className='text-xs'>{t('Method')}</Label>

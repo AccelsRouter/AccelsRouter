@@ -3,6 +3,7 @@ The finance view of the reconciliation page, and the settlement of reseller
 commission behind its payables block: monthly items, corrections and payouts.
 */
 import { api } from '@/lib/api'
+import { formatNumber } from '@/lib/format'
 import { getServerMessage } from '@/lib/server-error-message'
 
 type ApiResp<T> = { success: boolean; message?: string; data?: T }
@@ -112,13 +113,77 @@ export type SettlementItem = {
   status: 'held' | 'payable' | 'paid'
 }
 
+export type SettlementAdjustmentType =
+  | 'chargeback'
+  | 'late_usage'
+  | 'manual'
+  | 'acquiring_fee'
+
+// What an adjustment is, in the reader's language. A positive acquiring fee
+// is one given back because its payment was reversed.
+export function settlementAdjustmentLabel(
+  type: SettlementAdjustmentType,
+  quota: number,
+  t: (key: string) => string
+): string {
+  if (type === 'chargeback') return t('Customer payment reversed')
+  if (type === 'late_usage')
+    return t('Usage changed after the month was closed')
+  if (type === 'manual') return t('Correction by the platform')
+  return quota > 0
+    ? t('Processing fee returned: payment reversed')
+    : t('Payment processing fee on a top-up')
+}
+
+// What collecting one payment costs: rate of its amount (0.04 is 4%) plus a
+// fixed amount in US dollars.
+export type AcquiringFee = { rate: number; fixed: number }
+
+export type AcquiringFeeSchedule = {
+  default: AcquiringFee
+  providers: Record<string, AcquiringFee>
+}
+
+const paymentChannelNames: Record<string, string> = {
+  epay: 'Epay',
+  stripe: 'Stripe',
+  creem: 'Creem',
+  waffo: 'Waffo',
+  waffo_pancake: 'Waffo Pancake',
+  wondergate: 'WonderGate',
+}
+
+export function paymentChannelName(provider: string): string {
+  return paymentChannelNames[provider] ?? provider
+}
+
+// "4% + $0.3", or just the part that is not zero.
+export function acquiringFeeText(fee: AcquiringFee): string {
+  const rate = `${formatNumber(fee.rate * 100)}%`
+  if (fee.fixed <= 0) return rate
+  const fixed = `$${formatNumber(fee.fixed)}`
+  return fee.rate > 0 ? `${rate} + ${fixed}` : fixed
+}
+
+// The whole schedule in one line: the default, then the channels that differ.
+export function acquiringFeeScheduleText(
+  schedule: AcquiringFeeSchedule
+): string {
+  const channels = Object.entries(schedule.providers ?? {}).map(
+    ([provider, fee]) =>
+      `${paymentChannelName(provider)} ${acquiringFeeText(fee)}`
+  )
+  const base = acquiringFeeText(schedule.default)
+  return channels.length > 0 ? `${base} (${channels.join(', ')})` : base
+}
+
 export type SettlementAdjustment = {
   id: number
   reseller_org_id: number
   customer_org_id: number
   reseller_name?: string
   customer_name?: string
-  type: 'chargeback' | 'late_usage' | 'manual'
+  type: SettlementAdjustmentType
   period: string
   quota: number
   remark: string
@@ -230,12 +295,34 @@ export async function registerPayout(payload: {
   reference: string
   invoice_no: string
   remark: string
+  // Unix seconds of the day the money was sent.
+  paid_time: number
 }): Promise<ResellerPayout> {
   const res = await api.post<ApiResp<ResellerPayout>>(
     '/api/admin/reseller-payouts',
     payload
   )
   return unwrap(res, 'Failed to record the payout')
+}
+
+export async function getAcquiringFees(): Promise<{
+  schedule: AcquiringFeeSchedule
+  providers: string[]
+}> {
+  const res = await api.get<
+    ApiResp<{ schedule: AcquiringFeeSchedule; providers: string[] }>
+  >('/api/admin/reseller-acquiring-fees')
+  return unwrap(res, 'Failed to load the processing fees')
+}
+
+export async function saveAcquiringFees(
+  schedule: AcquiringFeeSchedule
+): Promise<AcquiringFeeSchedule> {
+  const res = await api.put<ApiResp<AcquiringFeeSchedule>>(
+    '/api/admin/reseller-acquiring-fees',
+    schedule
+  )
+  return unwrap(res, 'Failed to save the processing fees')
 }
 
 export async function addSettlementAdjustment(payload: {

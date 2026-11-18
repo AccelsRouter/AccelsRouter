@@ -224,6 +224,8 @@ func SetApiRouter(router *gin.Engine) {
 			settlementRoute.POST("/reseller-adjustments", middleware.CriticalRateLimit(), controller.AdminAddResellerSettlementAdjustment)
 			settlementRoute.GET("/reseller-payouts", controller.AdminListResellerPayouts)
 			settlementRoute.POST("/reseller-payouts", middleware.CriticalRateLimit(), controller.AdminRegisterResellerPayout)
+			settlementRoute.GET("/reseller-acquiring-fees", controller.AdminGetAcquiringFees)
+			settlementRoute.PUT("/reseller-acquiring-fees", middleware.CriticalRateLimit(), controller.AdminSetAcquiringFees)
 		}
 		// Upstream monitor: channel/model health history and price comparison.
 		// These show and exercise the channels, so they follow the channel

@@ -82,7 +82,10 @@ func creditOrgTopUp(tx *gorm.DB, orgId, userId, quota int, userUpdates map[strin
 	if err != nil {
 		return err
 	}
-	return insertLedger(tx, 0, orgId, quota, userId, LedgerTypeTopUp, tradeNo, "")
+	if err := insertLedger(tx, 0, orgId, quota, userId, LedgerTypeTopUp, tradeNo, ""); err != nil {
+		return err
+	}
+	return chargeAcquiringFee(tx, orgId, tradeNo, quota)
 }
 
 // orgOrderBeingCredited names the payment order a credit to the organization's
@@ -120,6 +123,9 @@ func reverseOrgTopUp(tx *gorm.DB, tradeNo string) (orgId int, shortfall int, err
 	}
 	if credit.ToOrgId == 0 {
 		return 0, 0, nil
+	}
+	if err := returnAcquiringFee(tx, tradeNo); err != nil {
+		return 0, 0, err
 	}
 	// What comes back is what the payment put in.
 	quota := credit.Quota
