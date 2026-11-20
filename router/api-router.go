@@ -729,5 +729,8 @@ func SetApiRouter(router *gin.Engine) {
 			deploymentsRoute.POST("/:id/extend", controller.ExtendDeployment)
 			deploymentsRoute.DELETE("/:id", controller.DeleteDeployment)
 		}
+
+		// Fork: supplier management (供应商管理), opt-in per admin through supplier.*.
+		registerSupplierRoutes(apiRouter)
 	}
 }

@@ -157,8 +157,9 @@ func TestSetUserPermissionsStoresOnlyOverrides(t *testing.T) {
 		ResourceTaskPlugin: {
 			ActionBind: false,
 		},
-		ResourceAudit: {ActionRead: false},
-		ResourceBd:    {ActionRead: false, ActionWrite: false, ActionManage: false},
+		ResourceAudit:    {ActionRead: false},
+		ResourceBd:       {ActionRead: false, ActionWrite: false, ActionManage: false},
+		ResourceSupplier: {ActionRead: false, ActionWrite: false},
 	}, ExplicitUserPermissions(42))
 	assert.Equal(t, PermissionsMap{
 		ResourceChannel: {
@@ -190,8 +191,9 @@ func TestSetUserPermissionsStoresOnlyOverrides(t *testing.T) {
 		ResourceTaskPlugin: {
 			ActionBind: false,
 		},
-		ResourceAudit: {ActionRead: false},
-		ResourceBd:    {ActionRead: false, ActionWrite: false, ActionManage: false},
+		ResourceAudit:    {ActionRead: false},
+		ResourceBd:       {ActionRead: false, ActionWrite: false, ActionManage: false},
+		ResourceSupplier: {ActionRead: false, ActionWrite: false},
 	}, ExplicitUserPermissions(42))
 	assert.Empty(t, ExplicitUserOverrides(42))
 }
@@ -321,4 +323,21 @@ func TestTaskPluginBindIsRootOnlyUntilGranted(t *testing.T) {
 	_, err = enforcer.RemovePolicy(RoleSubject(BuiltInRoleAdmin), ResourceTaskPlugin, ActionBind, EffectAllow)
 	require.NoError(t, err)
 	assert.False(t, Can(2, common.RoleAdminUser, TaskPluginBind))
+}
+
+func TestSupplierAccessNeedsAnExplicitGrant(t *testing.T) {
+	db := newAuthzTestDB(t)
+	require.NoError(t, Init(db))
+
+	for _, permission := range []Permission{SupplierRead, SupplierWrite} {
+		assert.False(t, Can(2, common.RoleAdminUser, permission), "admins get no supplier access by default")
+		assert.True(t, Can(1, common.RoleRootUser, permission))
+	}
+
+	require.NoError(t, SetUserPermissions(2, PermissionsMap{ResourceSupplier: {ActionRead: true}}))
+	require.NoError(t, ReloadPolicy())
+	assert.True(t, Can(2, common.RoleAdminUser, SupplierRead))
+	assert.False(t, Can(2, common.RoleAdminUser, SupplierWrite), "read does not imply write")
+	assert.False(t, Can(3, common.RoleAdminUser, SupplierRead), "a grant applies to that account only")
+	assert.False(t, Can(2, common.RoleCommonUser, SupplierRead), "a common user cannot hold supplier access")
 }

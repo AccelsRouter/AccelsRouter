@@ -413,6 +413,12 @@ func migrateDB() error {
 		&CustomVendorPriceChange{},
 		&CustomVendorPriceSource{},
 		&CustomChannelPrice{},
+		&Supplier{},
+		&SupplierModel{},
+		&SupplierContract{},
+		&SupplierContractSeq{},
+		&SupplierAttachment{},
+		&SupplierModelSearchLog{},
 	)
 	if err != nil {
 		return err

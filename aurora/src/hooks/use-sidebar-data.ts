@@ -24,8 +24,10 @@ import {
   Building2,
   ClipboardList,
   CreditCard,
+  Factory,
   FileText,
   FlaskConical,
+  GitCompareArrows,
   Handshake,
   Gauge,
   Key,
@@ -117,6 +119,16 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
       hasPermission(
         s.auth.user,
         ADMIN_PERMISSION_RESOURCES.BD,
+        ADMIN_PERMISSION_ACTIONS.READ
+      )
+  )
+  // Supplier management is opt-in per admin (supplier.read in the permission editor).
+  const canSeeSuppliers = useAuthStore(
+    (s) =>
+      (s.auth.user?.role ?? ROLE.GUEST) >= ROLE.ADMIN &&
+      hasPermission(
+        s.auth.user,
+        ADMIN_PERMISSION_RESOURCES.SUPPLIER,
         ADMIN_PERMISSION_ACTIONS.READ
       )
   )
@@ -310,6 +322,28 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
         title: t('Personal'),
         items: personalItems,
       },
+      // Supplier management is its own section above Admin, shown only to
+      // admins granted supplier.read.
+      ...(canSeeSuppliers
+        ? [
+            {
+              id: 'suppliers',
+              title: t('Supplier Management'),
+              items: [
+                {
+                  title: t('Supplier records'),
+                  url: '/suppliers',
+                  icon: Factory,
+                } as NavItem,
+                {
+                  title: t('Compare by model'),
+                  url: '/suppliers/models',
+                  icon: GitCompareArrows,
+                } as NavItem,
+              ],
+            },
+          ]
+        : []),
       {
         id: 'admin',
         title: t('Admin'),
