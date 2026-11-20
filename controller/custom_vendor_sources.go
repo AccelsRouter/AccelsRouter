@@ -192,8 +192,10 @@ func parseCustomGooglePricing(page []byte, now time.Time) (map[string]customVend
 			price.Tiers = []customVendorTier{base}
 		}
 		for _, id := range ids {
-			if _, taken := prices[id[1]]; !taken {
-				prices[id[1]] = price
+			// The page writes one model as its API resource name, "models/<id>".
+			name := strings.TrimPrefix(id[1], "models/")
+			if _, taken := prices[name]; !taken {
+				prices[name] = price
 			}
 		}
 	}
