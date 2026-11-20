@@ -68,7 +68,6 @@ import {
   adminListOrgAudit,
   adminListOrgCustomers,
   adminListOrgLogs,
-  createOrganization,
   creditOrganization,
   attachOrgAccount,
   deleteSsoDomain,
@@ -80,6 +79,7 @@ import {
   updateOrganization,
 } from './api'
 import { ApplicationsPanel } from './applications'
+import { CreateOrgDialog } from './create-org-dialog'
 import { RoutingPanel } from './routing-panel'
 import type {
   CreditOrgPayload,
@@ -377,131 +377,6 @@ export function OrganizationsAdmin() {
         <UsageDialog org={usageOrg} onClose={() => setUsageOrg(null)} />
       </SectionPageLayout.Content>
     </SectionPageLayout>
-  )
-}
-
-function CreateOrgDialog(props: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSaved: () => void
-}) {
-  const { t } = useTranslation()
-  const [name, setName] = useState('')
-  const [type, setType] = useState<OrgType>('enterprise')
-  const [priceGroup, setPriceGroup] = useState('')
-  const [ownerUserId, setOwnerUserId] = useState('')
-  const [remark, setRemark] = useState('')
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      createOrganization({
-        name: name.trim(),
-        type,
-        price_group: type === 'reseller' ? 'default' : priceGroup.trim(),
-        owner_user_id: Number(ownerUserId) || 0,
-        remark: remark.trim(),
-      }),
-    onSuccess: () => {
-      toast.success(t('Organization created'))
-      props.onSaved()
-      reset()
-      props.onOpenChange(false)
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
-  })
-
-  const reset = () => {
-    setName('')
-    setType('enterprise')
-    setPriceGroup('')
-    setOwnerUserId('')
-    setRemark('')
-  }
-
-  const canSubmit = name.trim().length > 0 && Number(ownerUserId) > 0
-
-  return (
-    <Dialog
-      open={props.open}
-      onOpenChange={(o) => {
-        if (!o) reset()
-        props.onOpenChange(o)
-      }}
-    >
-      <DialogContent className='sm:max-w-md'>
-        <DialogHeader>
-          <DialogTitle>{t('New Organization')}</DialogTitle>
-          <DialogDescription>
-            {t('Create an enterprise or reseller organization.')}
-          </DialogDescription>
-        </DialogHeader>
-        <div className='flex flex-col gap-3'>
-          <Field label={t('Name')}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label={t('Type')}>
-            <NativeSelect
-              className='w-full'
-              value={type}
-              onChange={(e) => setType(e.target.value as OrgType)}
-            >
-              <NativeSelectOption value='enterprise'>
-                {t('Enterprise')}
-              </NativeSelectOption>
-              <NativeSelectOption value='reseller'>
-                {t('Reseller')}
-              </NativeSelectOption>
-            </NativeSelect>
-          </Field>
-          <Field label={t('Owner User ID')}>
-            <Input
-              type='number'
-              value={ownerUserId}
-              onChange={(e) => setOwnerUserId(e.target.value)}
-            />
-          </Field>
-          <Field label={t('Price Group')}>
-            <Input
-              value={type === 'reseller' ? 'default' : priceGroup}
-              onChange={(e) => setPriceGroup(e.target.value)}
-              disabled={type === 'reseller'}
-              readOnly={type === 'reseller'}
-            />
-            {type === 'reseller' && (
-              <span className='text-muted-foreground text-xs'>
-                {t(
-                  'Fixed to "default"; distributor pricing is driven by the wholesale ratio.'
-                )}
-              </span>
-            )}
-          </Field>
-          <Field label={t('Remark')}>
-            <Textarea
-              value={remark}
-              onChange={(e) => setRemark(e.target.value)}
-              rows={2}
-            />
-          </Field>
-        </div>
-        <DialogFooter className='gap-2'>
-          <Button
-            variant='outline'
-            onClick={() => props.onOpenChange(false)}
-            disabled={mutation.isPending}
-          >
-            {t('Cancel')}
-          </Button>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={!canSubmit || mutation.isPending}
-            className='gap-1.5'
-          >
-            {mutation.isPending && <Loader2 className='h-4 w-4 animate-spin' />}
-            {t('Create')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 

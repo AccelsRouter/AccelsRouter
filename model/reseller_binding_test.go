@@ -345,3 +345,86 @@ func TestBindingAPersonOpensTheirOrganization(t *testing.T) {
 	require.NoError(t, DB.Where("to_org_id = ? AND type = ?", wallet.Id, LedgerTypeTransfer).First(&moved).Error)
 	assert.Equal(t, 4200, moved.Quota)
 }
+
+// The platform opens an organization for a registered user without an
+// application, with everything an approved application would do, and closes
+// what the change makes moot.
+func TestPlatformOpensAnOrganizationForAUser(t *testing.T) {
+	f := newBindFixture(t)
+	require.NoError(t, DB.Exec("DELETE FROM tokens").Error)
+
+	// A person becomes the owner of a new enterprise. Their own balance stays.
+	person := f.user("opened-enterprise", 700)
+	app := &OrgApplication{UserId: person.Id, Type: OrgTypeEnterprise, OrgName: "Asked For Co"}
+	require.NoError(t, CreateOrgApplication(app))
+	code, err := GetResellerJoinCode(f.reseller.Id)
+	require.NoError(t, err)
+	joining, err := ApplyToReseller(code.Code, person.Id, "")
+	require.NoError(t, err)
+
+	org, err := OpenOrganizationForUser(person.Id, 1, " Opened Co ", OrgTypeEnterprise, "vip", "by sales")
+	require.NoError(t, err)
+	assert.Equal(t, "Opened Co", org.Name)
+	assert.Equal(t, OrgTypeEnterprise, org.Type)
+	assert.Equal(t, "vip", org.PriceGroup)
+	assert.Equal(t, person.Id, org.OwnerUserId)
+	assert.Equal(t, 0, org.WalletQuota)
+	acc, err := GetOrgAccountByUser(person.Id)
+	require.NoError(t, err)
+	require.NotNil(t, acc)
+	assert.Equal(t, org.Id, acc.OrgId)
+	assert.Equal(t, OrgRoleOwner, acc.Role)
+	var after User
+	require.NoError(t, DB.First(&after, person.Id).Error)
+	assert.Equal(t, 700, after.Quota, "the personal balance is not moved")
+
+	// The pending application for this type is answered by it, and the request
+	// to join a reseller as a person is withdrawn.
+	gotApp, err := GetOrgApplicationById(app.Id)
+	require.NoError(t, err)
+	assert.Equal(t, OrgApplicationApproved, gotApp.Status)
+	assert.Equal(t, org.Id, gotApp.OrgId)
+	gotReq, err := GetResellerBindRequestById(joining.Id)
+	require.NoError(t, err)
+	assert.Equal(t, BindStatusRevoked, gotReq.Status)
+
+	// A user who already belongs to an organization is refused, as is a name
+	// already taken and a disabled user.
+	_, err = OpenOrganizationForUser(person.Id, 1, "Second Co", OrgTypeEnterprise, "", "")
+	require.Error(t, err)
+	other := f.user("opened-other", 0)
+	_, err = OpenOrganizationForUser(other.Id, 1, "opened co", OrgTypeEnterprise, "", "")
+	require.ErrorIs(t, err, ErrOrgNameTaken)
+	disabled := f.user("opened-disabled", 0)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", disabled.Id).Update("status", common.UserStatusDisabled).Error)
+	_, err = OpenOrganizationForUser(disabled.Id, 1, "Disabled Co", OrgTypeEnterprise, "", "")
+	require.Error(t, err)
+	_, err = OpenOrganizationForUser(999999, 1, "Nobody Co", OrgTypeEnterprise, "", "")
+	require.Error(t, err)
+
+	// A person becomes the administrator of a new reseller: pinned to the
+	// default price group, no paying account, personal keys stopped.
+	seller := f.user("opened-reseller", 300)
+	key := &Token{UserId: seller.Id, Key: "opened-reseller-key", Name: "own", Status: common.TokenStatusEnabled}
+	require.NoError(t, DB.Create(key).Error)
+	reseller, err := OpenOrganizationForUser(seller.Id, 1, "Opened Reseller", OrgTypeReseller, "vip", "")
+	require.NoError(t, err)
+	assert.Equal(t, OrgDefaultPriceGroup, reseller.PriceGroup)
+	adminOrg, err := GetResellerAdminOrg(seller.Id)
+	require.NoError(t, err)
+	require.NotNil(t, adminOrg)
+	assert.Equal(t, reseller.Id, adminOrg.Id)
+	sellerAcc, err := GetOrgAccountByUser(seller.Id)
+	require.NoError(t, err)
+	assert.Nil(t, sellerAcc)
+	var stopped Token
+	require.NoError(t, DB.First(&stopped, key.Id).Error)
+	assert.Equal(t, common.TokenStatusDisabled, stopped.Status)
+
+	// One reseller per administrator; the roles are decoupled, so the owner of
+	// an enterprise can still be given a reseller.
+	_, err = OpenOrganizationForUser(seller.Id, 1, "Opened Reseller 2", OrgTypeReseller, "", "")
+	require.Error(t, err)
+	_, err = OpenOrganizationForUser(person.Id, 1, "Owners Reseller", OrgTypeReseller, "", "")
+	require.NoError(t, err)
+}

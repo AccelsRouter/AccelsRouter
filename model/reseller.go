@@ -201,6 +201,9 @@ type ResellerCustomer struct {
 	// Members is how many accounts the customer org has: its operator and the
 	// members the customer added itself.
 	Members int `json:"members"`
+	// Discounts is what the reseller gives this customer per model series;
+	// empty means list price.
+	Discounts map[string]float64 `json:"discounts"`
 }
 
 // ErrDirectPayNotGranted refuses a self-funded customer for a reseller the
@@ -446,6 +449,7 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 			NetAllocated: net,
 			OwnerEmail:   emails[ownerByOrg[link.CustomerOrgId]],
 			Members:      membersByOrg[link.CustomerOrgId],
+			Discounts:    ParseRetailDiscounts(org.RetailDiscounts),
 		})
 	}
 	return out, nil

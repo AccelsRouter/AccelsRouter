@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Open an organization": "Открыть организацию",
+    "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "Открывает организацию для зарегистрированного пользователя, который становится её владельцем. Личный баланс пользователя сохраняется; кошелёк организации изначально пуст.",
+    "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "Владелец становится администратором дистрибьютора, а его личные API-ключи отключаются: дистрибьютор использует ключи, созданные в своей консоли.",
+    "Customer discounts": "Скидки клиента",
     "All vendors": "Все поставщики",
     "Initial amount (USD, optional)": "Начальная сумма (USD, необязательно)",
     "Export customers": "Экспорт клиентов",

@@ -248,6 +248,7 @@ export function CustomerOfferDialog(props: {
         queryKey: ['customer-pricing', customer?.org.id],
       })
       queryClient.invalidateQueries({ queryKey: ['org-customer-usage'] })
+      queryClient.invalidateQueries({ queryKey: ['org-customers'] })
       props.onClose()
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),

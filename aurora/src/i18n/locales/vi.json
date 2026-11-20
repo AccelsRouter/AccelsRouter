@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Open an organization": "Mở tổ chức",
+    "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "Mở một tổ chức cho người dùng đã đăng ký; người đó trở thành chủ sở hữu. Số dư cá nhân của người dùng được giữ nguyên; ví của tổ chức bắt đầu từ số không.",
+    "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "Chủ sở hữu trở thành quản trị viên của nhà phân phối và các khóa API cá nhân của họ bị vô hiệu hóa: nhà phân phối dùng khóa tạo trong bảng điều khiển của mình.",
+    "Customer discounts": "Chiết khấu cho khách hàng",
     "All vendors": "Tất cả nhà cung cấp",
     "Initial amount (USD, optional)": "Số tiền ban đầu (USD, không bắt buộc)",
     "Export customers": "Xuất danh sách khách hàng",

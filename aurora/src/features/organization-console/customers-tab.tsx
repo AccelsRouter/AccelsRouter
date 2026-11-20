@@ -49,6 +49,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { OfferLine } from '@/features/reseller-binding/status'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
 import {
@@ -216,6 +217,7 @@ export function CustomersTab(props: {
                 <Th>{t('Name')}</Th>
                 <Th>{t('Owner')}</Th>
                 <Th className='text-right'>{t('Members')}</Th>
+                <Th>{t('Customer discounts')}</Th>
                 <Th className='text-right'>{t('Wallet Balance')}</Th>
                 <Th className='text-right'>{t('Net Allocated')}</Th>
                 <Th className='text-right'>{t('Action')}</Th>
@@ -244,6 +246,9 @@ export function CustomersTab(props: {
                     {c.owner_email || '-'}
                   </Td>
                   <Td className='text-right tabular-nums'>{c.members ?? 0}</Td>
+                  <Td>
+                    <OfferLine discounts={c.discounts ?? {}} />
+                  </Td>
                   <Td className='text-right tabular-nums'>
                     {formatQuotaWithCurrency(c.org.wallet_quota)}
                   </Td>

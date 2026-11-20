@@ -1,5 +1,9 @@
 {
   "translation": {
+    "Open an organization": "開通組織",
+    "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "為已註冊用戶開通組織，該用戶成為組織擁有者。用戶的個人餘額保持不變，組織錢包從零開始。",
+    "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "擁有者將成為該分銷商的管理員，其個人 API 金鑰會被停用：分銷商使用在分銷商控制台建立的金鑰。",
+    "Customer discounts": "客戶折扣",
     "Charged (9%)": "收取（9%）",
     "Not charged": "不收取",
     "Supplier records": "供應商檔案",

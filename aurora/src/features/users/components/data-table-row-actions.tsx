@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   Link2,
   CreditCard,
+  Building2,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -61,6 +62,8 @@ import {
 import { getUserActionMessage } from '../lib'
 import type { User } from '../types'
 import { UserBindingDialog } from './dialogs/user-binding-dialog'
+// Fork: the platform opens an organization for this user.
+import { CreateOrgDialog } from '@/features/organizations-admin/create-org-dialog'
 import { useUsers } from './users-provider'
 
 const MANAGE_ACTION_TITLES: Record<AdminUserManageAction, string> = {
@@ -88,6 +91,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
+  const [orgDialogOpen, setOrgDialogOpen] = useState(false) // Fork
 
   const handleEdit = () => {
     setCurrentRow(user)
@@ -275,6 +279,20 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           </DropdownMenuShortcut>
         </DropdownMenuItem>
 
+        {/* Fork: make this user the owner of a new organization. */}
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
+            setOrgDialogOpen(true)
+          }}
+          disabled={user.status !== USER_STATUS.ENABLED}
+        >
+          {t('Open an organization')}
+          <DropdownMenuShortcut>
+            <Building2 size={16} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
+
         <DropdownMenuSeparator />
 
         <DropdownMenuItem
@@ -353,6 +371,17 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         onOpenChange={setSubscriptionsDialogOpen}
         user={{ id: user.id, username: user.username }}
         onSuccess={triggerRefresh}
+      />
+
+      {/* Fork */}
+      <CreateOrgDialog
+        open={orgDialogOpen}
+        onOpenChange={setOrgDialogOpen}
+        onSaved={triggerRefresh}
+        owner={{
+          id: user.id,
+          label: `${user.email || user.username} #${user.id}`,
+        }}
       />
     </div>
   )

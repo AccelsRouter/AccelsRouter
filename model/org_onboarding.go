@@ -190,62 +190,9 @@ func ApproveOrgApplication(appId, reviewerId int, priceGroup, note string) (*Org
 		if app.Status != OrgApplicationPending {
 			return errors.New("申请已被处理")
 		}
-		// Re-run the type-specific duplication guard inside the transaction.
-		// Reseller admin is decoupled from the paying OrgAccount, so a reseller
-		// approval is NOT blocked by an existing enterprise membership.
-		if app.Type == OrgTypeReseller {
-			var already int64
-			if err := tx.Model(&ResellerAdmin{}).Where("user_id = ?", app.UserId).Count(&already).Error; err != nil {
-				return err
-			}
-			if already > 0 {
-				return errors.New("申请人已是分销商管理员")
-			}
-		} else {
-			var managed int64
-			if err := tx.Model(&OrgAccount{}).Where("user_id = ?", app.UserId).Count(&managed).Error; err != nil {
-				return err
-			}
-			if managed > 0 {
-				return errors.New("申请人已归属某个组织")
-			}
-		}
-		// Re-check at approval: another org may have taken the name since the
-		// application was filed.
-		if taken, err := orgNameTaken(tx, app.OrgName, 0); err != nil {
+		newOrg, err := openOrganizationFor(tx, app.UserId, app.OrgName, app.Type, priceGroup, "")
+		if err != nil {
 			return err
-		} else if taken {
-			return ErrOrgNameTaken
-		}
-		newOrg := &Organization{
-			Name:        app.OrgName,
-			Type:        app.Type,
-			Status:      OrgStatusActive,
-			PriceGroup:  priceGroup,
-			OwnerUserId: app.UserId,
-			CreatedTime: common.GetTimestamp(),
-			UpdatedTime: common.GetTimestamp(),
-		}
-		if err := tx.Create(newOrg).Error; err != nil {
-			return err
-		}
-		if newOrg.Type == OrgTypeReseller {
-			// A reseller admin is a management role, not a paying OrgAccount:
-			// the applicant keeps its single-payer slot free (so it can also be
-			// an enterprise member). See model/reseller_admin.go.
-			if err := tx.Create(&ResellerAdmin{
-				UserId: app.UserId, ResellerOrgId: newOrg.Id, Status: OrgStatusActive, CreatedTime: common.GetTimestamp(),
-			}).Error; err != nil {
-				return err
-			}
-		} else {
-			ownerAcc := &OrgAccount{
-				OrgId: newOrg.Id, UserId: app.UserId, Relation: OrgRelationMember, Role: OrgRoleOwner,
-				Status: OrgStatusActive, PeriodKey: currentPeriodKey(), CreatedTime: common.GetTimestamp(),
-			}
-			if err := tx.Create(ownerAcc).Error; err != nil {
-				return err
-			}
 		}
 		if err := tx.Model(&OrgApplication{}).Where("id = ?", appId).Updates(map[string]interface{}{
 			"status":       OrgApplicationApproved,
@@ -262,14 +209,146 @@ func ApproveOrgApplication(appId, reviewerId int, priceGroup, note string) (*Org
 	if err != nil {
 		return nil, err
 	}
-	InvalidateOrgPayerCache(org.OwnerUserId)
-	if org.Type == OrgTypeReseller {
-		// A reseller admin consumes only through reseller keys (reseller wallet,
-		// wholesale price, reseller route): its personal keys stop here.
-		if _, dErr := DisablePersonalTokens(org.OwnerUserId); dErr != nil {
-			common.SysError(fmt.Sprintf("disable personal tokens for reseller admin %d failed: %s", org.OwnerUserId, dErr.Error()))
+	settleOpenedOrganization(org)
+	return org, nil
+}
+
+// openOrganizationFor creates an organization and makes the user its owner:
+// the owner account of an enterprise, the administrator of a reseller. It
+// refuses a user who already holds that role, and a name already taken. The
+// roles are decoupled: reseller admin is not a paying OrgAccount, so an
+// enterprise member may open a reseller and a reseller admin an enterprise.
+func openOrganizationFor(tx *gorm.DB, userId int, name, orgType, priceGroup, remark string) (*Organization, error) {
+	if orgType == OrgTypeReseller {
+		var already int64
+		if err := tx.Model(&ResellerAdmin{}).Where("user_id = ?", userId).Count(&already).Error; err != nil {
+			return nil, err
+		}
+		if already > 0 {
+			return nil, errors.New("该用户已是分销商管理员")
+		}
+	} else {
+		var managed int64
+		if err := tx.Model(&OrgAccount{}).Where("user_id = ?", userId).Count(&managed).Error; err != nil {
+			return nil, err
+		}
+		if managed > 0 {
+			return nil, errors.New("该用户已归属某个组织")
 		}
 	}
+	// Checked here, not only on applying: another organization may have taken
+	// the name since.
+	if taken, err := orgNameTaken(tx, name, 0); err != nil {
+		return nil, err
+	} else if taken {
+		return nil, ErrOrgNameTaken
+	}
+	now := common.GetTimestamp()
+	org := &Organization{
+		Name:        name,
+		Type:        orgType,
+		Status:      OrgStatusActive,
+		PriceGroup:  priceGroup,
+		OwnerUserId: userId,
+		Remark:      remark,
+		CreatedTime: now,
+		UpdatedTime: now,
+	}
+	if err := tx.Create(org).Error; err != nil {
+		return nil, err
+	}
+	if orgType == OrgTypeReseller {
+		// A reseller admin is a management role, not a paying OrgAccount: the
+		// user keeps its single-payer slot free. See model/reseller_admin.go.
+		if err := tx.Create(&ResellerAdmin{
+			UserId: userId, ResellerOrgId: org.Id, Status: OrgStatusActive, CreatedTime: now,
+		}).Error; err != nil {
+			return nil, err
+		}
+		return org, nil
+	}
+	if err := tx.Create(&OrgAccount{
+		OrgId: org.Id, UserId: userId, Relation: OrgRelationMember, Role: OrgRoleOwner,
+		Status: OrgStatusActive, PeriodKey: currentPeriodKey(), CreatedTime: now,
+	}).Error; err != nil {
+		return nil, err
+	}
+	return org, nil
+}
+
+// settleOpenedOrganization is what follows a committed openOrganizationFor.
+func settleOpenedOrganization(org *Organization) {
+	InvalidateOrgPayerCache(org.OwnerUserId)
+	if org.Type != OrgTypeReseller {
+		return
+	}
+	// A reseller admin consumes only through reseller keys (reseller wallet,
+	// wholesale price, reseller route): its personal keys stop here.
+	if _, dErr := DisablePersonalTokens(org.OwnerUserId); dErr != nil {
+		common.SysError(fmt.Sprintf("disable personal tokens for reseller admin %d failed: %s", org.OwnerUserId, dErr.Error()))
+	}
+}
+
+// OpenOrganizationForUser is the platform opening an organization for a
+// registered user without an application: the user becomes the owner of a new
+// enterprise or the administrator of a new reseller, exactly as an approved
+// application would make them. The user's own balance stays where it is. What
+// the change makes moot is closed with it: the user's pending application for
+// this type is marked approved, and requests to join a reseller as a person
+// are withdrawn, since the user now owns an organization or is a reseller.
+func OpenOrganizationForUser(userId, operatorId int, name, orgType, priceGroup, remark string) (*Organization, error) {
+	name = strings.TrimSpace(name)
+	if err := ValidateOrgName(name); err != nil {
+		return nil, err
+	}
+	if orgType != OrgTypeEnterprise && orgType != OrgTypeReseller {
+		return nil, errors.New("invalid organization type")
+	}
+	if priceGroup == "" || orgType == OrgTypeReseller {
+		// A reseller is priced by its wholesale ratios, not by a group.
+		priceGroup = OrgDefaultPriceGroup
+	}
+	var org *Organization
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx).Select("id", "status").Where("id = ?", userId).First(&user).Error; err != nil {
+			return errors.New("owner user not found")
+		}
+		if user.Status != common.UserStatusEnabled {
+			return errors.New("该用户已被禁用")
+		}
+		opened, err := openOrganizationFor(tx, userId, name, orgType, priceGroup, remark)
+		if err != nil {
+			return err
+		}
+		now := common.GetTimestamp()
+		if err := tx.Model(&OrgApplication{}).
+			Where("user_id = ? AND type = ? AND status = ?", userId, orgType, OrgApplicationPending).
+			Updates(map[string]interface{}{
+				"status":       OrgApplicationApproved,
+				"reviewer_id":  operatorId,
+				"review_note":  "opened by the platform",
+				"org_id":       opened.Id,
+				"processed_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if err := openBindRequests(tx).
+			Where("customer_user_id = ? AND customer_org_id = 0", userId).
+			Updates(map[string]interface{}{
+				"status":       BindStatusRevoked,
+				"review_note":  "the account was opened as an organization by the platform",
+				"processed_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		org = opened
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	settleOpenedOrganization(org)
 	return org, nil
 }
 
