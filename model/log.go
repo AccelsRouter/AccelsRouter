@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -372,6 +373,9 @@ type RecordConsumeLogParams struct {
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	// Upstream monitor: a completed request is a successful upstream outcome.
 	RecordUpstreamOutcome(params.ChannelId, params.ModelName, true, int64(params.UseTimeSeconds)*1000, "")
+	// Request plugin report hooks read what the request settled, whether or
+	// not consume logs are kept.
+	common.SetContextKey(c, constant.ContextKeyConsumeLog, &params)
 	if !common.LogConsumeEnabled {
 		return
 	}
