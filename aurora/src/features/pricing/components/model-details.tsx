@@ -70,6 +70,7 @@ import {
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
+import { withBasePricing } from '../lib/plugin-pricing'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import {
   getTaskEnumFields,
@@ -932,18 +933,20 @@ export interface ModelDetailsContentProps {
 export function ModelDetailsContent(props: ModelDetailsContentProps) {
   const { t } = useTranslation()
   const showRechargePrice = props.showRechargePrice ?? false
+  // The group pricing tabs list a model-level base price beside the plugin
+  // prices.
+  const baseModel = useMemo(() => withBasePricing(props.model), [props.model])
 
   const isDynamic =
-    props.model.billing_mode === 'tiered_expr' &&
-    Boolean(props.model.billing_expr)
+    baseModel.billing_mode === 'tiered_expr' && Boolean(baseModel.billing_expr)
 
-  const simpleTaskPricing = hasSimpleTaskPricing(props.model)
+  const simpleTaskPricing = hasSimpleTaskPricing(baseModel)
   const taskTiers = getTaskPricingDisplayTiers(
-    props.model.billing_expr,
-    props.model.billing_usage_schema
+    baseModel.billing_expr,
+    baseModel.billing_usage_schema
   )
   const showBasePrices =
-    !props.model.billing_usage_schema ||
+    !baseModel.billing_usage_schema ||
     simpleTaskPricing ||
     taskTiers.length === 0
 
@@ -975,7 +978,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             <SectionTitle>{t('Pricing')}</SectionTitle>
             {showBasePrices && (
               <PriceSection
-                model={props.model}
+                model={baseModel}
                 priceRate={props.priceRate}
                 usdExchangeRate={props.usdExchangeRate}
                 tokenUnit={props.tokenUnit}
@@ -984,8 +987,8 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             )}
             {isDynamic && !simpleTaskPricing && (
               <DynamicPricingBreakdown
-                billingExpr={props.model.billing_expr}
-                usageSchema={props.model.billing_usage_schema}
+                billingExpr={baseModel.billing_expr}
+                usageSchema={baseModel.billing_usage_schema}
                 taskPriceOptions={{
                   showRechargePrice,
                   priceRate: props.priceRate,

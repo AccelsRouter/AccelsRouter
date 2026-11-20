@@ -57,6 +57,7 @@ import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_auth
 import { Route as AuthenticatedProfileIndexRouteImport } from './routes/_authenticated/profile/index'
 import { Route as AuthenticatedReconciliationIndexRouteImport } from './routes/_authenticated/reconciliation/index'
 import { Route as AuthenticatedRedemptionCodesIndexRouteImport } from './routes/_authenticated/redemption-codes/index'
+import { Route as AuthenticatedRequestProcessingIndexRouteImport } from './routes/_authenticated/request-processing/index'
 import { Route as AuthenticatedResellerIndexRouteImport } from './routes/_authenticated/reseller/index'
 import { Route as AuthenticatedSecurityIndexRouteImport } from './routes/_authenticated/security/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
@@ -89,6 +90,7 @@ import { Route as AuthenticatedSystemSettingsSecuritySectionRouteImport } from '
 import { Route as AuthenticatedSystemSettingsSiteIndexRouteImport } from './routes/_authenticated/system-settings/site/index'
 import { Route as AuthenticatedSystemSettingsSiteSectionRouteImport } from './routes/_authenticated/system-settings/site/$section'
 import { Route as AuthenticatedSystemSettingsTopupsIndexRouteImport } from './routes/_authenticated/system-settings/topups/index'
+import { Route as AuthenticatedOauthPluginKeyCallbackRouteImport } from './routes/_authenticated/oauth/plugin/$key/callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -345,6 +347,12 @@ const AuthenticatedRedemptionCodesIndexRoute =
     path: '/redemption-codes/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedRequestProcessingIndexRoute =
+  AuthenticatedRequestProcessingIndexRouteImport.update({
+    id: '/request-processing/',
+    path: '/request-processing/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedResellerIndexRoute =
   AuthenticatedResellerIndexRouteImport.update({
     id: '/reseller/',
@@ -535,6 +543,12 @@ const AuthenticatedSystemSettingsTopupsIndexRoute =
     path: '/topups/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
   } as any)
+const AuthenticatedOauthPluginKeyCallbackRoute =
+  AuthenticatedOauthPluginKeyCallbackRouteImport.update({
+    id: '/oauth/plugin/$key/callback',
+    path: '/oauth/plugin/$key/callback',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -585,6 +599,7 @@ export interface FileRoutesByFullPath {
   '/profile/': typeof AuthenticatedProfileIndexRoute
   '/reconciliation/': typeof AuthenticatedReconciliationIndexRoute
   '/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/request-processing/': typeof AuthenticatedRequestProcessingIndexRoute
   '/reseller/': typeof AuthenticatedResellerIndexRoute
   '/security/': typeof AuthenticatedSecurityIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
@@ -615,6 +630,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/security/': typeof AuthenticatedSystemSettingsSecurityIndexRoute
   '/system-settings/site/': typeof AuthenticatedSystemSettingsSiteIndexRoute
   '/system-settings/topups/': typeof AuthenticatedSystemSettingsTopupsIndexRoute
+  '/oauth/plugin/$key/callback': typeof AuthenticatedOauthPluginKeyCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -664,6 +680,7 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileIndexRoute
   '/reconciliation': typeof AuthenticatedReconciliationIndexRoute
   '/redemption-codes': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/request-processing': typeof AuthenticatedRequestProcessingIndexRoute
   '/reseller': typeof AuthenticatedResellerIndexRoute
   '/security': typeof AuthenticatedSecurityIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
@@ -694,6 +711,7 @@ export interface FileRoutesByTo {
   '/system-settings/security': typeof AuthenticatedSystemSettingsSecurityIndexRoute
   '/system-settings/site': typeof AuthenticatedSystemSettingsSiteIndexRoute
   '/system-settings/topups': typeof AuthenticatedSystemSettingsTopupsIndexRoute
+  '/oauth/plugin/$key/callback': typeof AuthenticatedOauthPluginKeyCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -747,6 +765,7 @@ export interface FileRoutesById {
   '/_authenticated/profile/': typeof AuthenticatedProfileIndexRoute
   '/_authenticated/reconciliation/': typeof AuthenticatedReconciliationIndexRoute
   '/_authenticated/redemption-codes/': typeof AuthenticatedRedemptionCodesIndexRoute
+  '/_authenticated/request-processing/': typeof AuthenticatedRequestProcessingIndexRoute
   '/_authenticated/reseller/': typeof AuthenticatedResellerIndexRoute
   '/_authenticated/security/': typeof AuthenticatedSecurityIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
@@ -777,6 +796,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/security/': typeof AuthenticatedSystemSettingsSecurityIndexRoute
   '/_authenticated/system-settings/site/': typeof AuthenticatedSystemSettingsSiteIndexRoute
   '/_authenticated/system-settings/topups/': typeof AuthenticatedSystemSettingsTopupsIndexRoute
+  '/_authenticated/oauth/plugin/$key/callback': typeof AuthenticatedOauthPluginKeyCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -829,6 +849,7 @@ export interface FileRouteTypes {
     | '/profile/'
     | '/reconciliation/'
     | '/redemption-codes/'
+    | '/request-processing/'
     | '/reseller/'
     | '/security/'
     | '/subscriptions/'
@@ -859,6 +880,7 @@ export interface FileRouteTypes {
     | '/system-settings/security/'
     | '/system-settings/site/'
     | '/system-settings/topups/'
+    | '/oauth/plugin/$key/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -908,6 +930,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reconciliation'
     | '/redemption-codes'
+    | '/request-processing'
     | '/reseller'
     | '/security'
     | '/subscriptions'
@@ -938,6 +961,7 @@ export interface FileRouteTypes {
     | '/system-settings/security'
     | '/system-settings/site'
     | '/system-settings/topups'
+    | '/oauth/plugin/$key/callback'
   id:
     | '__root__'
     | '/'
@@ -990,6 +1014,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile/'
     | '/_authenticated/reconciliation/'
     | '/_authenticated/redemption-codes/'
+    | '/_authenticated/request-processing/'
     | '/_authenticated/reseller/'
     | '/_authenticated/security/'
     | '/_authenticated/subscriptions/'
@@ -1020,6 +1045,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/security/'
     | '/_authenticated/system-settings/site/'
     | '/_authenticated/system-settings/topups/'
+    | '/_authenticated/oauth/plugin/$key/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1382,6 +1408,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRedemptionCodesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/request-processing/': {
+      id: '/_authenticated/request-processing/'
+      path: '/request-processing'
+      fullPath: '/request-processing/'
+      preLoaderRoute: typeof AuthenticatedRequestProcessingIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/reseller/': {
       id: '/_authenticated/reseller/'
       path: '/reseller'
@@ -1606,6 +1639,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSystemSettingsTopupsIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
     }
+    '/_authenticated/oauth/plugin/$key/callback': {
+      id: '/_authenticated/oauth/plugin/$key/callback'
+      path: '/oauth/plugin/$key/callback'
+      fullPath: '/oauth/plugin/$key/callback'
+      preLoaderRoute: typeof AuthenticatedOauthPluginKeyCallbackRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -1733,6 +1773,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProfileIndexRoute: typeof AuthenticatedProfileIndexRoute
   AuthenticatedReconciliationIndexRoute: typeof AuthenticatedReconciliationIndexRoute
   AuthenticatedRedemptionCodesIndexRoute: typeof AuthenticatedRedemptionCodesIndexRoute
+  AuthenticatedRequestProcessingIndexRoute: typeof AuthenticatedRequestProcessingIndexRoute
   AuthenticatedResellerIndexRoute: typeof AuthenticatedResellerIndexRoute
   AuthenticatedSecurityIndexRoute: typeof AuthenticatedSecurityIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
@@ -1742,6 +1783,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
+  AuthenticatedOauthPluginKeyCallbackRoute: typeof AuthenticatedOauthPluginKeyCallbackRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -1770,6 +1812,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedReconciliationIndexRoute: AuthenticatedReconciliationIndexRoute,
   AuthenticatedRedemptionCodesIndexRoute:
     AuthenticatedRedemptionCodesIndexRoute,
+  AuthenticatedRequestProcessingIndexRoute:
+    AuthenticatedRequestProcessingIndexRoute,
   AuthenticatedResellerIndexRoute: AuthenticatedResellerIndexRoute,
   AuthenticatedSecurityIndexRoute: AuthenticatedSecurityIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
@@ -1779,6 +1823,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
+  AuthenticatedOauthPluginKeyCallbackRoute:
+    AuthenticatedOauthPluginKeyCallbackRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
