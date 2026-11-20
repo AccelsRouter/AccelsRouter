@@ -135,7 +135,11 @@ func newRelayHarness(t *testing.T) *relayHarness {
 	require.NoError(t, i18n.Init())
 	ratio_setting.InitRatioSettings()
 	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}, &model.Log{}, &model.Option{}, &model.Task{}, &model.QuotaData{},
-		&model.UserSubscription{}, &model.SubscriptionPreConsumeRecord{}, &model.UserAccessToken{}))
+		&model.UserSubscription{}, &model.SubscriptionPreConsumeRecord{}, &model.UserAccessToken{},
+		// Fork: the relay path looks up BYOK channels, model priorities and the
+		// organization a key bills to.
+		&model.UserChannel{}, &model.OrgChannel{}, &model.ChannelModel{},
+		&model.WorkspaceToken{}, &model.OrgAccount{}, &model.Organization{}, &model.SystemTask{}))
 	previousMemory, previousLog, previousBatch, previousTimeout := common.MemoryCacheEnabled, common.LogConsumeEnabled, common.BatchUpdateEnabled, constant.StreamingTimeout
 	common.MemoryCacheEnabled, common.LogConsumeEnabled, common.BatchUpdateEnabled, constant.StreamingTimeout = true, true, false, 30
 	t.Cleanup(func() {
