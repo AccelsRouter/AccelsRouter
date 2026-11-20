@@ -122,18 +122,27 @@ function FormLabel({
 
 function FormControl({
   children,
+  describedBy,
   ...props
-}: { children: React.ReactElement } & Record<string, unknown>) {
+}: {
+  children: React.ReactElement
+  describedBy?: string
+} & Record<string, unknown>) {
   const { error, formItemId, formDescriptionId, formMessageId } = useFormField()
+  const ariaDescribedBy = [
+    formDescriptionId,
+    error ? formMessageId : undefined,
+    describedBy,
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return useRender({
     render: children,
     props: {
       'data-slot': 'form-control',
       id: formItemId,
-      'aria-describedby': !error
-        ? `${formDescriptionId}`
-        : `${formDescriptionId} ${formMessageId}`,
+      'aria-describedby': ariaDescribedBy,
       'aria-invalid': !!error,
       ...props,
     },
