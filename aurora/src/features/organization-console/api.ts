@@ -827,14 +827,16 @@ export async function exportOrgUsage(
 
 // Download a CSV the backend streams (auth via axios, so a plain anchor would
 // not authenticate); reused by the per-request call-record exports.
-async function downloadCsv(url: string, filename: string): Promise<void> {
+async function downloadFile(
+  url: string,
+  filename: string,
+  type = 'text/csv;charset=utf-8'
+): Promise<void> {
   const res = await api.get(url, {
     responseType: 'blob',
     skipErrorHandler: true,
   })
-  const blob = new Blob([res.data as BlobPart], {
-    type: 'text/csv;charset=utf-8',
-  })
+  const blob = new Blob([res.data as BlobPart], { type })
   const objUrl = window.URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = objUrl
@@ -845,12 +847,14 @@ async function downloadCsv(url: string, filename: string): Promise<void> {
   window.URL.revokeObjectURL(objUrl)
 }
 
-// Every customer of the distributor in one file: funding, owner, balance,
-// discounts, models and what it has paid.
+// Every customer of the distributor in one spreadsheet: funding, owner,
+// balance, what it has paid, and a row for each model it can call with the
+// discount on it.
 export async function exportCustomers(): Promise<void> {
-  await downloadCsv(
+  await downloadFile(
     '/api/reseller/customers/export',
-    `customers_${Date.now()}.csv`
+    `customers_${Date.now()}.xlsx`,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   )
 }
 
@@ -859,7 +863,7 @@ export async function exportCustomerLogs(
   from?: number,
   to?: number
 ): Promise<void> {
-  await downloadCsv(
+  await downloadFile(
     `/api/reseller/customers/${orgId}/logs/export${usageRangeQuery(from, to)}`,
     `call_records_${orgId}_${Date.now()}.csv`
   )
@@ -869,7 +873,7 @@ export async function exportMyOrgLogs(
   from?: number,
   to?: number
 ): Promise<void> {
-  await downloadCsv(
+  await downloadFile(
     `/api/organization/logs/export${usageRangeQuery(from, to)}`,
     `call_records_${Date.now()}.csv`
   )
@@ -884,7 +888,7 @@ export async function exportAdminOrgLogs(
   let url = `/api/admin/organizations/${orgId}/logs/export${usageRangeQuery(from, to)}`
   if (customerId)
     url += `${url.includes('?') ? '&' : '?'}customer_id=${customerId}`
-  await downloadCsv(url, `call_records_${orgId}_${Date.now()}.csv`)
+  await downloadFile(url, `call_records_${orgId}_${Date.now()}.csv`)
 }
 
 // A reseller's own aggregated call records (across its customers, or one when
@@ -916,7 +920,7 @@ export async function exportResellerLogs(
   let url = `/api/organization/reseller/logs/export${usageRangeQuery(from, to)}`
   if (customerId)
     url += `${url.includes('?') ? '&' : '?'}customer_id=${customerId}`
-  await downloadCsv(url, `call_records_${Date.now()}.csv`)
+  await downloadFile(url, `call_records_${Date.now()}.csv`)
 }
 
 // --- Reseller downstream customers ---
