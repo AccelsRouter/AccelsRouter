@@ -10,6 +10,7 @@ package model
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -201,9 +202,32 @@ type ResellerCustomer struct {
 	// Members is how many accounts the customer org has: its operator and the
 	// members the customer added itself.
 	Members int `json:"members"`
-	// Discounts is what the reseller gives this customer per model series;
-	// empty means list price.
-	Discounts map[string]float64 `json:"discounts"`
+	// Models is what the customer can call and the reseller's discount on each
+	// (1 is list price). Filled by the customer list.
+	Models []ResellerCustomerModel `json:"models"`
+}
+
+// ResellerCustomerModel is one model a customer can call, at the ratio of the
+// list price the reseller gives it.
+type ResellerCustomerModel struct {
+	Name     string  `json:"name"`
+	Discount float64 `json:"discount"`
+}
+
+// CustomerCallableModels lists what a customer can call out of the catalog its
+// reseller may offer, each with the reseller's discount on it: the customer's
+// own selection, or the whole catalog when it has none.
+func CustomerCallableModels(customer *Organization, catalog []string) []ResellerCustomerModel {
+	own := customer.AllowedModelList()
+	discounts := ParseRetailDiscounts(customer.RetailDiscounts)
+	out := make([]ResellerCustomerModel, 0, len(catalog))
+	for _, name := range catalog {
+		if len(own) > 0 && !slices.Contains(own, name) {
+			continue
+		}
+		out = append(out, ResellerCustomerModel{Name: name, Discount: RetailDiscountFor(name, discounts)})
+	}
+	return out
 }
 
 // ErrDirectPayNotGranted refuses a self-funded customer for a reseller the
@@ -449,7 +473,6 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 			NetAllocated: net,
 			OwnerEmail:   emails[ownerByOrg[link.CustomerOrgId]],
 			Members:      membersByOrg[link.CustomerOrgId],
-			Discounts:    ParseRetailDiscounts(org.RetailDiscounts),
 		})
 	}
 	return out, nil

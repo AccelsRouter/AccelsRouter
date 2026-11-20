@@ -3,7 +3,7 @@
     "Open an organization": "Open an organization",
     "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.",
     "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.",
-    "Customer discounts": "Customer discounts",
+    "Callable models": "Callable models",
     "All vendors": "All vendors",
     "{{count}} added": "{{count}} added",
     "A community plugin cannot use the key of the built-in plugin {{key}}": "A community plugin cannot use the key of the built-in plugin {{key}}",

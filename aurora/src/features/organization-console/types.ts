@@ -223,9 +223,9 @@ export type ResellerCustomer = {
   owner_email?: string
   // Accounts in the customer org: its operator and the members it added.
   members?: number
-  // What the distributor gives this customer per model series (0.85 is 15%
-  // off); empty means list price.
-  discounts?: Record<string, number> | null
+  // What the customer can call, each with the distributor's discount on it
+  // as a ratio of the list price (0.85 is 15% off, 1 is list price).
+  models?: { name: string; discount: number }[] | null
 }
 
 // A JIT-provisioning email-domain mapping. New members whose email matches an

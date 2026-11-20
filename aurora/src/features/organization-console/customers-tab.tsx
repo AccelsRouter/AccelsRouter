@@ -44,12 +44,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { OfferLine } from '@/features/reseller-binding/status'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
 import {
@@ -217,7 +221,7 @@ export function CustomersTab(props: {
                 <Th>{t('Name')}</Th>
                 <Th>{t('Owner')}</Th>
                 <Th className='text-right'>{t('Members')}</Th>
-                <Th>{t('Customer discounts')}</Th>
+                <Th className='text-right'>{t('Callable models')}</Th>
                 <Th className='text-right'>{t('Wallet Balance')}</Th>
                 <Th className='text-right'>{t('Net Allocated')}</Th>
                 <Th className='text-right'>{t('Action')}</Th>
@@ -246,8 +250,8 @@ export function CustomersTab(props: {
                     {c.owner_email || '-'}
                   </Td>
                   <Td className='text-right tabular-nums'>{c.members ?? 0}</Td>
-                  <Td>
-                    <OfferLine discounts={c.discounts ?? {}} />
+                  <Td className='text-right'>
+                    <CallableModels models={c.models ?? []} />
                   </Td>
                   <Td className='text-right tabular-nums'>
                     {formatQuotaWithCurrency(c.org.wallet_quota)}
@@ -878,5 +882,47 @@ function CustomerUsageDialog(props: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// How many models a customer can call; hovering lists each with the discount
+// the distributor gives on it.
+function CallableModels(props: {
+  models: { name: string; discount: number }[]
+}) {
+  const { t } = useTranslation()
+  if (props.models.length === 0) return <span>0</span>
+  return (
+    <HoverCard>
+      <HoverCardTrigger
+        delay={100}
+        render={
+          <button
+            type='button'
+            className='decoration-muted-foreground/60 cursor-default tabular-nums underline decoration-dotted underline-offset-4'
+          />
+        }
+      >
+        {props.models.length}
+      </HoverCardTrigger>
+      <HoverCardContent
+        align='end'
+        className='max-h-80 w-80 overflow-y-auto p-0 text-left'
+      >
+        <ul className='divide-border/60 divide-y text-xs'>
+          {props.models.map((m) => (
+            <li
+              key={m.name}
+              className='flex items-center justify-between gap-3 px-3 py-1.5'
+            >
+              <span className='min-w-0 break-all'>{m.name}</span>
+              <span className='text-muted-foreground shrink-0 tabular-nums'>
+                {m.discount < 1 ? `×${m.discount.toFixed(2)}` : t('List price')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </HoverCardContent>
+    </HoverCard>
   )
 }

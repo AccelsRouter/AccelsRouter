@@ -217,6 +217,18 @@ func ListMyCustomers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// What each customer can call, out of what the reseller may offer its
+	// price group.
+	catalogs := map[string][]string{}
+	for _, customer := range customers {
+		group := customer.Org.PriceGroup
+		catalog, ok := catalogs[group]
+		if !ok {
+			catalog = resellerOfferableModels(reseller, group)
+			catalogs[group] = catalog
+		}
+		customer.Models = model.CustomerCallableModels(customer.Org, catalog)
+	}
 	common.ApiSuccess(c, customers)
 }
 

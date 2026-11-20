@@ -329,6 +329,7 @@ export function CustomerOfferDialog(props: {
                 {vendors.length > 1 && (
                   <NativeSelect
                     size='sm'
+                    className='shrink-0'
                     aria-label={t('Vendor')}
                     value={vendor}
                     onChange={(e) => setVendor(e.target.value)}

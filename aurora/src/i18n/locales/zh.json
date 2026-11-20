@@ -3,7 +3,7 @@
     "Open an organization": "开通组织",
     "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "为已注册用户开通组织，该用户成为组织所有者。用户的个人余额保持不变，组织钱包从零开始。",
     "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "所有者将成为该分销商的管理员，其个人 API 密钥会被停用：分销商使用在分销商控制台创建的密钥。",
-    "Customer discounts": "客户折扣",
+    "Callable models": "可用模型",
     "Charged (9%)": "收取（9%）",
     "Not charged": "不收取",
     "Supplier records": "供应商档案",
