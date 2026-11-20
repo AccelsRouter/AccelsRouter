@@ -86,17 +86,14 @@ type adminCreateOrgRequest struct {
 }
 
 // AdminCreateOrganization — POST /api/admin/organizations
+// With an owner, this opens the organization for that registered user the way
+// an approved application would: the user becomes its owner (enterprise) or
+// its administrator (reseller), with everything that follows from it.
 func AdminCreateOrganization(c *gin.Context) {
 	var req adminCreateOrgRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ApiError(c, err)
 		return
-	}
-	if req.OwnerId > 0 {
-		if u, err := model.GetUserById(req.OwnerId, false); err != nil || u == nil {
-			common.ApiErrorMsg(c, "owner user not found")
-			return
-		}
 	}
 	// A reseller's pricing is driven by its wholesale ratio, not a base-rate
 	// group, so reseller orgs are pinned to the default price group.
@@ -104,16 +101,25 @@ func AdminCreateOrganization(c *gin.Context) {
 	if req.Type == model.OrgTypeReseller {
 		priceGroup = "default"
 	}
-	org := &model.Organization{
-		Name:        req.Name,
-		Type:        req.Type,
-		PriceGroup:  priceGroup,
-		OwnerUserId: req.OwnerId,
-		Remark:      req.Remark,
-	}
-	if err := model.CreateOrganization(org); err != nil {
-		common.ApiErrorMsg(c, err.Error())
-		return
+	var org *model.Organization
+	if req.OwnerId > 0 {
+		opened, err := model.OpenOrganizationForUser(req.OwnerId, c.GetInt("id"), req.Name, req.Type, priceGroup, req.Remark)
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		org = opened
+	} else {
+		org = &model.Organization{
+			Name:       req.Name,
+			Type:       req.Type,
+			PriceGroup: priceGroup,
+			Remark:     req.Remark,
+		}
+		if err := model.CreateOrganization(org); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
 	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "org.create", fmt.Sprintf("org:%d", org.Id), fmt.Sprintf("%s (%s)", org.Name, org.Type))
 	common.ApiSuccess(c, org)

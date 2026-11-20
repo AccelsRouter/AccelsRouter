@@ -11,10 +11,12 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
+	"github.com/xuri/excelize/v2"
 )
 
 // callerReseller resolves the caller's reseller org via the reseller-admin
@@ -85,6 +87,131 @@ func inviteCustomerOwner(c *gin.Context, reseller, customer *model.Organization,
 	return gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": false}, nil
 }
 
+// customersWithModels lists the reseller's customers, each with what it can
+// call out of what the reseller may offer its price group.
+func customersWithModels(reseller *model.Organization) ([]*model.ResellerCustomer, error) {
+	customers, err := model.ListResellerCustomers(reseller.Id)
+	if err != nil {
+		return nil, err
+	}
+	catalogs := map[string][]string{}
+	for _, customer := range customers {
+		group := customer.Org.PriceGroup
+		catalog, ok := catalogs[group]
+		if !ok {
+			catalog = resellerOfferableModels(reseller, group)
+			catalogs[group] = catalog
+		}
+		customer.Models = model.CustomerCallableModels(customer.Org, catalog)
+	}
+	return customers, nil
+}
+
+// customersWorkbook lays the customers out as a spreadsheet: one row for each
+// model a customer can call, with the customer's own columns merged over its
+// rows. paid is what each customer has paid for calls, by organization.
+func customersWorkbook(customers []*model.ResellerCustomer, paid map[int]int64) (*excelize.File, error) {
+	const sheet = "Customers"
+	f := excelize.NewFile()
+	if err := f.SetSheetName("Sheet1", sheet); err != nil {
+		return nil, err
+	}
+	header := []any{
+		"Customer", "ID", "Funding", "Status", "Owner email", "Members", "Wallet balance (USD)",
+		"Net allocated (USD)", "Paid for calls (USD)", "Created", "Model", "Discount (1 = list price)",
+	}
+	if err := f.SetSheetRow(sheet, "A1", &header); err != nil {
+		return nil, err
+	}
+	bold, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		return nil, err
+	}
+	top, err := f.NewStyle(&excelize.Style{Alignment: &excelize.Alignment{Vertical: "top"}})
+	if err != nil {
+		return nil, err
+	}
+	// The customer's own columns end at J; K and L are per model.
+	const lastOwnColumn = 'J'
+	usd := func(quota int64) float64 { return float64(quota) / common.QuotaPerUnit }
+	row := 2
+	for _, customer := range customers {
+		org := customer.Org
+		own := []any{
+			org.Name, org.Id, "allowance from you", org.Status, customer.OwnerEmail, customer.Members,
+			usd(int64(org.WalletQuota)), usd(int64(customer.NetAllocated)), usd(paid[org.Id]),
+			time.Unix(org.CreatedTime, 0).UTC().Format("2006-01-02"),
+		}
+		if org.FundingMode == model.OrgFundingDirect {
+			// Its balance is its own money: nothing is allocated to it.
+			own[2], own[7] = "tops up directly", nil
+		}
+		first := row
+		if err := f.SetSheetRow(sheet, fmt.Sprintf("A%d", first), &own); err != nil {
+			return nil, err
+		}
+		for _, m := range customer.Models {
+			if err := f.SetSheetRow(sheet, fmt.Sprintf("K%d", row), &[]any{m.Name, m.Discount}); err != nil {
+				return nil, err
+			}
+			row++
+		}
+		// A customer that can call nothing still takes a row.
+		last := max(row-1, first)
+		row = last + 1
+		for column := 'A'; column <= lastOwnColumn && last > first; column++ {
+			if err := f.MergeCell(sheet, fmt.Sprintf("%c%d", column, first), fmt.Sprintf("%c%d", column, last)); err != nil {
+				return nil, err
+			}
+		}
+		if err := f.SetCellStyle(sheet, fmt.Sprintf("A%d", first), fmt.Sprintf("%c%d", lastOwnColumn, last), top); err != nil {
+			return nil, err
+		}
+	}
+	if err := f.SetCellStyle(sheet, "A1", "L1", bold); err != nil {
+		return nil, err
+	}
+	if err := f.SetPanes(sheet, &excelize.Panes{Freeze: true, YSplit: 1, TopLeftCell: "A2", ActivePane: "bottomLeft"}); err != nil {
+		return nil, err
+	}
+	for column, width := range map[string]float64{"A": 24, "C": 20, "E": 28, "G": 20, "H": 20, "I": 20, "J": 12, "K": 36, "L": 24} {
+		if err := f.SetColWidth(sheet, column, column, width); err != nil {
+			return nil, err
+		}
+	}
+	return f, nil
+}
+
+// ExportMyCustomers — GET /api/reseller/customers/export
+// Every customer of the distributor as a spreadsheet: how it is funded, who
+// runs it, what it holds and has paid, and each model it can call with the
+// discount on it.
+func ExportMyCustomers(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	customers, err := customersWithModels(reseller)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	paid, err := model.ResellerCustomerPaid(reseller.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	book, err := customersWorkbook(customers, paid)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	defer book.Close()
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename=\"customers.xlsx\"")
+	_ = book.Write(c.Writer)
+}
+
 // CreateMyCustomer — POST /api/organization/customers
 func CreateMyCustomer(c *gin.Context) {
 	reseller, ok := callerReseller(c)
@@ -149,7 +276,7 @@ func ListMyCustomers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	customers, err := model.ListResellerCustomers(reseller.Id)
+	customers, err := customersWithModels(reseller)
 	if err != nil {
 		common.ApiError(c, err)
 		return

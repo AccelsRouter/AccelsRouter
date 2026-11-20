@@ -414,6 +414,9 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	for _, name := range []string{"gemini-3.1-flash-tts-preview", "gemini-3.5-transcribe", "gemini-3.1-flash-image", "gemini-embedding-001"} {
 		assert.NotContains(t, google, name)
 	}
+	// One model is written as its API resource name; it is catalogued by its id.
+	assertCustomVendorPrice(t, google, "genie-4", 1.5, 9)
+	assert.NotContains(t, google, "models/genie-4")
 	later, err := parseCustomGooglePricing(customVendorFixture(t, "google.md"), time.Date(2026, 12, 1, 12, 0, 0, 0, time.UTC))
 	require.NoError(t, err)
 	assertCustomVendorPrice(t, later, "gemini-4-argon", 4, 20)

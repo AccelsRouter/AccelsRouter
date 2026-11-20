@@ -402,6 +402,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"GET /api/reseller/customers/:id/logs":                         accessTokenAnyRule,
 	"GET /api/reseller/customers/:id/logs/export":                  accessTokenAnyRule,
 	"GET /api/reseller/customers/:id/topups":                       accessTokenAnyRule,
+	"GET /api/reseller/customers/export":                           accessTokenAnyRule,
 	"GET /api/reseller/audit":                                      accessTokenAnyRule,
 	"GET /api/reseller/bind-requests":                              accessTokenAnyRule,
 	"GET /api/reseller/join-code":                                  accessTokenAnyRule,

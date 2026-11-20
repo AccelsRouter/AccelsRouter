@@ -9,6 +9,7 @@ export const ADMIN_PERMISSION_RESOURCES = {
   AUDIT: 'audit',
   BD: 'bd',
   CHANNEL: 'channel',
+  SUPPLIER: 'supplier',
   TASK_PLUGIN: 'task_plugin',
 } as const
 

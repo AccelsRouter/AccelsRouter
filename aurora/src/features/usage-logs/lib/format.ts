@@ -537,6 +537,17 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'redemption.update': 'Updated a redemption code',
   'redemption.delete': 'Deleted a redemption code',
   'redemption.delete_invalid': 'Deleted invalid redemption codes',
+  // Suppliers
+  'supplier.create': 'Created supplier {{name}} ({{code}})',
+  'supplier.update': 'Updated supplier {{name}} ({{code}})',
+  'supplier.delete': 'Deleted supplier {{name}} ({{code}})',
+  'supplier.contract.create': 'Created supplier contract {{contract_no}}',
+  'supplier.contract.update': 'Updated supplier contract {{contract_no}}',
+  'supplier.contract.void': 'Voided supplier contract {{contract_no}}',
+  'supplier.contract.set_current':
+    'Set {{contract_no}} as the current supplier contract',
+  'supplier.attachment.upload': 'Uploaded supplier attachment {{file_name}}',
+  'supplier.attachment.delete': 'Deleted supplier attachment {{file_name}}',
   // Prefill groups
   'prefill_group.create': 'Created a prefill group',
   'prefill_group.update': 'Updated a prefill group',

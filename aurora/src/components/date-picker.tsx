@@ -28,6 +28,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import dayjs from '@/lib/dayjs'
+import { cn } from '@/lib/utils'
 
 const calendarLocales = {
   en: enUS,
@@ -43,12 +44,23 @@ type DatePickerProps = {
   selected: Date | undefined
   onSelect: (date: Date | undefined) => void
   placeholder?: string
+  /** Defaults to disabling future dates and dates before 1900. */
+  isDateDisabled?: (date: Date) => boolean
+  className?: string
+  id?: string
+}
+
+function isPastDateOutOfRange(date: Date): boolean {
+  return date > new Date() || date < new Date('1900-01-01')
 }
 
 export function DatePicker({
   selected,
   onSelect,
   placeholder,
+  isDateDisabled = isPastDateOutOfRange,
+  className,
+  id,
 }: DatePickerProps) {
   const { t, i18n } = useTranslation()
   const placeholderText = placeholder ?? t('Pick a date')
@@ -59,9 +71,13 @@ export function DatePicker({
       <PopoverTrigger
         render={
           <Button
+            id={id}
             variant='outline'
             data-empty={!selected}
-            className='data-[empty=true]:text-muted-foreground w-[240px] justify-start text-start font-normal'
+            className={cn(
+              'data-[empty=true]:text-muted-foreground w-[240px] justify-start text-start font-normal',
+              className
+            )}
           />
         }
       >
@@ -79,9 +95,7 @@ export function DatePicker({
           selected={selected}
           onSelect={onSelect}
           locale={calendarLocale}
-          disabled={(date: Date) =>
-            date > new Date() || date < new Date('1900-01-01')
-          }
+          disabled={isDateDisabled}
         />
       </PopoverContent>
     </Popover>

@@ -410,6 +410,7 @@ func SetApiRouter(router *gin.Engine) {
 			resellerRoute.GET("/settlements/adjustments", controller.ListMyResellerSettlementAdjustments)
 			resellerRoute.GET("/payouts", controller.ListMyResellerPayouts)
 			resellerRoute.GET("/customer-payments", controller.ListMyResellerCustomerPayments)
+			resellerRoute.GET("/customers/export", controller.ExportMyCustomers)
 			resellerRoute.GET("/customers/:id/logs", controller.GetMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/logs/export", controller.ExportMyCustomerLogs)
 			resellerRoute.GET("/customers/:id/topups", controller.ListMyCustomerTopUps)
@@ -739,5 +740,8 @@ func SetApiRouter(router *gin.Engine) {
 			deploymentsRoute.POST("/:id/extend", controller.ExtendDeployment)
 			deploymentsRoute.DELETE("/:id", controller.DeleteDeployment)
 		}
+
+		// Fork: supplier management (供应商管理), opt-in per admin through supplier.*.
+		registerSupplierRoutes(apiRouter)
 	}
 }

@@ -61,6 +61,9 @@ import { Route as AuthenticatedRequestProcessingIndexRouteImport } from './route
 import { Route as AuthenticatedResellerIndexRouteImport } from './routes/_authenticated/reseller/index'
 import { Route as AuthenticatedSecurityIndexRouteImport } from './routes/_authenticated/security/index'
 import { Route as AuthenticatedSubscriptionsIndexRouteImport } from './routes/_authenticated/subscriptions/index'
+import { Route as AuthenticatedSuppliersIndexRouteImport } from './routes/_authenticated/suppliers/index'
+import { Route as AuthenticatedSuppliersModelsRouteImport } from './routes/_authenticated/suppliers/models'
+import { Route as AuthenticatedSuppliersNewRouteImport } from './routes/_authenticated/suppliers/new'
 import { Route as AuthenticatedSystemInfoIndexRouteImport } from './routes/_authenticated/system-info/index'
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
 import { Route as AuthenticatedTaskPluginsIndexRouteImport } from './routes/_authenticated/task-plugins/index'
@@ -71,6 +74,8 @@ import { Route as AuthenticatedUsageLogsAuditRouteImport } from './routes/_authe
 import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedWalletIndexRouteImport } from './routes/_authenticated/wallet/index'
 import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$modelId/index'
+import { Route as AuthenticatedSuppliersSupplierIdIndexRouteImport } from './routes/_authenticated/suppliers/$supplierId/index'
+import { Route as AuthenticatedSuppliersSupplierIdEditRouteImport } from './routes/_authenticated/suppliers/$supplierId/edit'
 import { Route as AuthenticatedSystemSettingsAuthIndexRouteImport } from './routes/_authenticated/system-settings/auth/index'
 import { Route as AuthenticatedSystemSettingsAuthSectionRouteImport } from './routes/_authenticated/system-settings/auth/$section'
 import { Route as AuthenticatedSystemSettingsBillingIndexRouteImport } from './routes/_authenticated/system-settings/billing/index'
@@ -371,6 +376,24 @@ const AuthenticatedSubscriptionsIndexRoute =
     path: '/subscriptions/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedSuppliersIndexRoute =
+  AuthenticatedSuppliersIndexRouteImport.update({
+    id: '/suppliers/',
+    path: '/suppliers/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSuppliersModelsRoute =
+  AuthenticatedSuppliersModelsRouteImport.update({
+    id: '/suppliers/models',
+    path: '/suppliers/models',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSuppliersNewRoute =
+  AuthenticatedSuppliersNewRouteImport.update({
+    id: '/suppliers/new',
+    path: '/suppliers/new',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSystemInfoIndexRoute =
   AuthenticatedSystemInfoIndexRouteImport.update({
     id: '/system-info/',
@@ -429,6 +452,18 @@ const PricingModelIdIndexRoute = PricingModelIdIndexRouteImport.update({
   path: '/pricing/$modelId/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSuppliersSupplierIdIndexRoute =
+  AuthenticatedSuppliersSupplierIdIndexRouteImport.update({
+    id: '/suppliers/$supplierId/',
+    path: '/suppliers/$supplierId/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSuppliersSupplierIdEditRoute =
+  AuthenticatedSuppliersSupplierIdEditRouteImport.update({
+    id: '/suppliers/$supplierId/edit',
+    path: '/suppliers/$supplierId/edit',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSystemSettingsAuthIndexRoute =
   AuthenticatedSystemSettingsAuthIndexRouteImport.update({
     id: '/auth/',
@@ -584,6 +619,8 @@ export interface FileRoutesByFullPath {
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/organization/bind': typeof AuthenticatedOrganizationBindRoute
   '/organization/join': typeof AuthenticatedOrganizationJoinRoute
+  '/suppliers/models': typeof AuthenticatedSuppliersModelsRoute
+  '/suppliers/new': typeof AuthenticatedSuppliersNewRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
   '/bd/': typeof AuthenticatedBdIndexRoute
@@ -603,6 +640,7 @@ export interface FileRoutesByFullPath {
   '/reseller/': typeof AuthenticatedResellerIndexRoute
   '/security/': typeof AuthenticatedSecurityIndexRoute
   '/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
+  '/suppliers/': typeof AuthenticatedSuppliersIndexRoute
   '/system-info/': typeof AuthenticatedSystemInfoIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/task-plugins/': typeof AuthenticatedTaskPluginsIndexRoute
@@ -611,6 +649,7 @@ export interface FileRoutesByFullPath {
   '/users/': typeof AuthenticatedUsersIndexRoute
   '/wallet/': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
+  '/suppliers/$supplierId/edit': typeof AuthenticatedSuppliersSupplierIdEditRoute
   '/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
   '/system-settings/billing/$section': typeof AuthenticatedSystemSettingsBillingSectionRoute
   '/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
@@ -620,6 +659,7 @@ export interface FileRoutesByFullPath {
   '/system-settings/request-policies/$section': typeof AuthenticatedSystemSettingsRequestPoliciesSectionRoute
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
+  '/suppliers/$supplierId/': typeof AuthenticatedSuppliersSupplierIdIndexRoute
   '/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -665,6 +705,8 @@ export interface FileRoutesByTo {
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/organization/bind': typeof AuthenticatedOrganizationBindRoute
   '/organization/join': typeof AuthenticatedOrganizationJoinRoute
+  '/suppliers/models': typeof AuthenticatedSuppliersModelsRoute
+  '/suppliers/new': typeof AuthenticatedSuppliersNewRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
   '/bd': typeof AuthenticatedBdIndexRoute
@@ -684,6 +726,7 @@ export interface FileRoutesByTo {
   '/reseller': typeof AuthenticatedResellerIndexRoute
   '/security': typeof AuthenticatedSecurityIndexRoute
   '/subscriptions': typeof AuthenticatedSubscriptionsIndexRoute
+  '/suppliers': typeof AuthenticatedSuppliersIndexRoute
   '/system-info': typeof AuthenticatedSystemInfoIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
   '/task-plugins': typeof AuthenticatedTaskPluginsIndexRoute
@@ -692,6 +735,7 @@ export interface FileRoutesByTo {
   '/users': typeof AuthenticatedUsersIndexRoute
   '/wallet': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId': typeof PricingModelIdIndexRoute
+  '/suppliers/$supplierId/edit': typeof AuthenticatedSuppliersSupplierIdEditRoute
   '/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
   '/system-settings/billing/$section': typeof AuthenticatedSystemSettingsBillingSectionRoute
   '/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
@@ -701,6 +745,7 @@ export interface FileRoutesByTo {
   '/system-settings/request-policies/$section': typeof AuthenticatedSystemSettingsRequestPoliciesSectionRoute
   '/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
+  '/suppliers/$supplierId': typeof AuthenticatedSuppliersSupplierIdIndexRoute
   '/system-settings/auth': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/system-settings/billing': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/system-settings/content': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -750,6 +795,8 @@ export interface FileRoutesById {
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/organization/bind': typeof AuthenticatedOrganizationBindRoute
   '/_authenticated/organization/join': typeof AuthenticatedOrganizationJoinRoute
+  '/_authenticated/suppliers/models': typeof AuthenticatedSuppliersModelsRoute
+  '/_authenticated/suppliers/new': typeof AuthenticatedSuppliersNewRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
   '/_authenticated/bd/': typeof AuthenticatedBdIndexRoute
@@ -769,6 +816,7 @@ export interface FileRoutesById {
   '/_authenticated/reseller/': typeof AuthenticatedResellerIndexRoute
   '/_authenticated/security/': typeof AuthenticatedSecurityIndexRoute
   '/_authenticated/subscriptions/': typeof AuthenticatedSubscriptionsIndexRoute
+  '/_authenticated/suppliers/': typeof AuthenticatedSuppliersIndexRoute
   '/_authenticated/system-info/': typeof AuthenticatedSystemInfoIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/_authenticated/task-plugins/': typeof AuthenticatedTaskPluginsIndexRoute
@@ -777,6 +825,7 @@ export interface FileRoutesById {
   '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
   '/_authenticated/wallet/': typeof AuthenticatedWalletIndexRoute
   '/pricing/$modelId/': typeof PricingModelIdIndexRoute
+  '/_authenticated/suppliers/$supplierId/edit': typeof AuthenticatedSuppliersSupplierIdEditRoute
   '/_authenticated/system-settings/auth/$section': typeof AuthenticatedSystemSettingsAuthSectionRoute
   '/_authenticated/system-settings/billing/$section': typeof AuthenticatedSystemSettingsBillingSectionRoute
   '/_authenticated/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
@@ -786,6 +835,7 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/request-policies/$section': typeof AuthenticatedSystemSettingsRequestPoliciesSectionRoute
   '/_authenticated/system-settings/security/$section': typeof AuthenticatedSystemSettingsSecuritySectionRoute
   '/_authenticated/system-settings/site/$section': typeof AuthenticatedSystemSettingsSiteSectionRoute
+  '/_authenticated/suppliers/$supplierId/': typeof AuthenticatedSuppliersSupplierIdIndexRoute
   '/_authenticated/system-settings/auth/': typeof AuthenticatedSystemSettingsAuthIndexRoute
   '/_authenticated/system-settings/billing/': typeof AuthenticatedSystemSettingsBillingIndexRoute
   '/_authenticated/system-settings/content/': typeof AuthenticatedSystemSettingsContentIndexRoute
@@ -834,6 +884,8 @@ export interface FileRouteTypes {
     | '/models/$section'
     | '/organization/bind'
     | '/organization/join'
+    | '/suppliers/models'
+    | '/suppliers/new'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
     | '/bd/'
@@ -853,6 +905,7 @@ export interface FileRouteTypes {
     | '/reseller/'
     | '/security/'
     | '/subscriptions/'
+    | '/suppliers/'
     | '/system-info/'
     | '/system-settings/'
     | '/task-plugins/'
@@ -861,6 +914,7 @@ export interface FileRouteTypes {
     | '/users/'
     | '/wallet/'
     | '/pricing/$modelId/'
+    | '/suppliers/$supplierId/edit'
     | '/system-settings/auth/$section'
     | '/system-settings/billing/$section'
     | '/system-settings/content/$section'
@@ -870,6 +924,7 @@ export interface FileRouteTypes {
     | '/system-settings/request-policies/$section'
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
+    | '/suppliers/$supplierId/'
     | '/system-settings/auth/'
     | '/system-settings/billing/'
     | '/system-settings/content/'
@@ -915,6 +970,8 @@ export interface FileRouteTypes {
     | '/models/$section'
     | '/organization/bind'
     | '/organization/join'
+    | '/suppliers/models'
+    | '/suppliers/new'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
     | '/bd'
@@ -934,6 +991,7 @@ export interface FileRouteTypes {
     | '/reseller'
     | '/security'
     | '/subscriptions'
+    | '/suppliers'
     | '/system-info'
     | '/system-settings'
     | '/task-plugins'
@@ -942,6 +1000,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/wallet'
     | '/pricing/$modelId'
+    | '/suppliers/$supplierId/edit'
     | '/system-settings/auth/$section'
     | '/system-settings/billing/$section'
     | '/system-settings/content/$section'
@@ -951,6 +1010,7 @@ export interface FileRouteTypes {
     | '/system-settings/request-policies/$section'
     | '/system-settings/security/$section'
     | '/system-settings/site/$section'
+    | '/suppliers/$supplierId'
     | '/system-settings/auth'
     | '/system-settings/billing'
     | '/system-settings/content'
@@ -999,6 +1059,8 @@ export interface FileRouteTypes {
     | '/_authenticated/models/$section'
     | '/_authenticated/organization/bind'
     | '/_authenticated/organization/join'
+    | '/_authenticated/suppliers/models'
+    | '/_authenticated/suppliers/new'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/usage-logs/audit'
     | '/_authenticated/bd/'
@@ -1018,6 +1080,7 @@ export interface FileRouteTypes {
     | '/_authenticated/reseller/'
     | '/_authenticated/security/'
     | '/_authenticated/subscriptions/'
+    | '/_authenticated/suppliers/'
     | '/_authenticated/system-info/'
     | '/_authenticated/system-settings/'
     | '/_authenticated/task-plugins/'
@@ -1026,6 +1089,7 @@ export interface FileRouteTypes {
     | '/_authenticated/users/'
     | '/_authenticated/wallet/'
     | '/pricing/$modelId/'
+    | '/_authenticated/suppliers/$supplierId/edit'
     | '/_authenticated/system-settings/auth/$section'
     | '/_authenticated/system-settings/billing/$section'
     | '/_authenticated/system-settings/content/$section'
@@ -1035,6 +1099,7 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/request-policies/$section'
     | '/_authenticated/system-settings/security/$section'
     | '/_authenticated/system-settings/site/$section'
+    | '/_authenticated/suppliers/$supplierId/'
     | '/_authenticated/system-settings/auth/'
     | '/_authenticated/system-settings/billing/'
     | '/_authenticated/system-settings/content/'
@@ -1436,6 +1501,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSubscriptionsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/suppliers/': {
+      id: '/_authenticated/suppliers/'
+      path: '/suppliers'
+      fullPath: '/suppliers/'
+      preLoaderRoute: typeof AuthenticatedSuppliersIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/suppliers/models': {
+      id: '/_authenticated/suppliers/models'
+      path: '/suppliers/models'
+      fullPath: '/suppliers/models'
+      preLoaderRoute: typeof AuthenticatedSuppliersModelsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/suppliers/new': {
+      id: '/_authenticated/suppliers/new'
+      path: '/suppliers/new'
+      fullPath: '/suppliers/new'
+      preLoaderRoute: typeof AuthenticatedSuppliersNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/system-info/': {
       id: '/_authenticated/system-info/'
       path: '/system-info'
@@ -1505,6 +1591,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/pricing/$modelId/'
       preLoaderRoute: typeof PricingModelIdIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/suppliers/$supplierId/': {
+      id: '/_authenticated/suppliers/$supplierId/'
+      path: '/suppliers/$supplierId'
+      fullPath: '/suppliers/$supplierId/'
+      preLoaderRoute: typeof AuthenticatedSuppliersSupplierIdIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/suppliers/$supplierId/edit': {
+      id: '/_authenticated/suppliers/$supplierId/edit'
+      path: '/suppliers/$supplierId/edit'
+      fullPath: '/suppliers/$supplierId/edit'
+      preLoaderRoute: typeof AuthenticatedSuppliersSupplierIdEditRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/system-settings/auth/': {
       id: '/_authenticated/system-settings/auth/'
@@ -1758,6 +1858,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedOrganizationBindRoute: typeof AuthenticatedOrganizationBindRoute
   AuthenticatedOrganizationJoinRoute: typeof AuthenticatedOrganizationJoinRoute
+  AuthenticatedSuppliersModelsRoute: typeof AuthenticatedSuppliersModelsRoute
+  AuthenticatedSuppliersNewRoute: typeof AuthenticatedSuppliersNewRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedUsageLogsAuditRoute: typeof AuthenticatedUsageLogsAuditRoute
   AuthenticatedBdIndexRoute: typeof AuthenticatedBdIndexRoute
@@ -1777,12 +1879,15 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedResellerIndexRoute: typeof AuthenticatedResellerIndexRoute
   AuthenticatedSecurityIndexRoute: typeof AuthenticatedSecurityIndexRoute
   AuthenticatedSubscriptionsIndexRoute: typeof AuthenticatedSubscriptionsIndexRoute
+  AuthenticatedSuppliersIndexRoute: typeof AuthenticatedSuppliersIndexRoute
   AuthenticatedSystemInfoIndexRoute: typeof AuthenticatedSystemInfoIndexRoute
   AuthenticatedTaskPluginsIndexRoute: typeof AuthenticatedTaskPluginsIndexRoute
   AuthenticatedUpstreamIndexRoute: typeof AuthenticatedUpstreamIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWalletIndexRoute: typeof AuthenticatedWalletIndexRoute
+  AuthenticatedSuppliersSupplierIdEditRoute: typeof AuthenticatedSuppliersSupplierIdEditRoute
+  AuthenticatedSuppliersSupplierIdIndexRoute: typeof AuthenticatedSuppliersSupplierIdIndexRoute
   AuthenticatedOauthPluginKeyCallbackRoute: typeof AuthenticatedOauthPluginKeyCallbackRoute
 }
 
@@ -1796,6 +1901,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedOrganizationBindRoute: AuthenticatedOrganizationBindRoute,
   AuthenticatedOrganizationJoinRoute: AuthenticatedOrganizationJoinRoute,
+  AuthenticatedSuppliersModelsRoute: AuthenticatedSuppliersModelsRoute,
+  AuthenticatedSuppliersNewRoute: AuthenticatedSuppliersNewRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedUsageLogsAuditRoute: AuthenticatedUsageLogsAuditRoute,
   AuthenticatedBdIndexRoute: AuthenticatedBdIndexRoute,
@@ -1817,12 +1924,17 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedResellerIndexRoute: AuthenticatedResellerIndexRoute,
   AuthenticatedSecurityIndexRoute: AuthenticatedSecurityIndexRoute,
   AuthenticatedSubscriptionsIndexRoute: AuthenticatedSubscriptionsIndexRoute,
+  AuthenticatedSuppliersIndexRoute: AuthenticatedSuppliersIndexRoute,
   AuthenticatedSystemInfoIndexRoute: AuthenticatedSystemInfoIndexRoute,
   AuthenticatedTaskPluginsIndexRoute: AuthenticatedTaskPluginsIndexRoute,
   AuthenticatedUpstreamIndexRoute: AuthenticatedUpstreamIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
   AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
   AuthenticatedWalletIndexRoute: AuthenticatedWalletIndexRoute,
+  AuthenticatedSuppliersSupplierIdEditRoute:
+    AuthenticatedSuppliersSupplierIdEditRoute,
+  AuthenticatedSuppliersSupplierIdIndexRoute:
+    AuthenticatedSuppliersSupplierIdIndexRoute,
   AuthenticatedOauthPluginKeyCallbackRoute:
     AuthenticatedOauthPluginKeyCallbackRoute,
 }

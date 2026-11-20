@@ -40,6 +40,10 @@ func TestResellerCommissionSettlement(t *testing.T) {
 	require.NoError(t, RecordOrgUsageDaily(inOctober, steady.Id, 0, reseller.Id, 7, "claude-opus", 1000, 900, 800, 100, 1, 1))
 	require.NoError(t, RecordOrgUsageDaily(inOctober, carded.Id, 0, reseller.Id, 8, "claude-opus", 2000, 1900, 1600, 300, 1, 1))
 	require.NoError(t, RecordOrgUsageDaily(inOctober, prepaid.Id, 0, reseller.Id, 9, "claude-opus", 500, 450, 400, 0, 1, 1))
+	// The customer export states what each customer has paid for its calls.
+	paid, err := ResellerCustomerPaid(reseller.Id)
+	require.NoError(t, err)
+	assert.Equal(t, map[int]int64{steady.Id: 900, carded.Id: 1900, prepaid.Id: 450}, paid)
 	// carded-co paid by card ten days before the month ended.
 	require.NoError(t, DB.Create(&TopUp{UserId: 8, Amount: 5, Money: 5, TradeNo: "STRIPE-CARDED", PaymentMethod: PaymentMethodStripe, PaymentProvider: PaymentProviderStripe, CreateTime: end - 10*86400, CompleteTime: end - 10*86400, Status: common.TopUpStatusSuccess}).Error)
 	require.NoError(t, DB.Create(&OrgTopUp{TradeNo: "STRIPE-CARDED", OrgId: carded.Id, UserId: 8, CreatedTime: end - 10*86400}).Error)

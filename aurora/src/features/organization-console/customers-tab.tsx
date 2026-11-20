@@ -29,7 +29,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { Loader2, Plus, UserPlus } from 'lucide-react'
+import { Download, Loader2, Plus, UserPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
@@ -44,6 +44,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '@/components/ui/hover-card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -53,6 +58,7 @@ import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/com
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
 import {
   createCustomer,
+  exportCustomers,
   getCustomerUsage,
   inviteCustomerOwner,
   listCustomerInvitations,
@@ -150,6 +156,10 @@ export function CustomersTab(props: {
   }
 
   const customers = data ?? []
+  const exporting = useMutation({
+    mutationFn: exportCustomers,
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
 
   return (
     <div className='flex flex-col gap-4'>
@@ -163,6 +173,16 @@ export function CustomersTab(props: {
           </span>
         </div>
         <div className='flex flex-wrap items-center gap-2'>
+          <Button
+            size='sm'
+            variant='outline'
+            className='gap-1.5'
+            disabled={exporting.isPending || customers.length === 0}
+            onClick={() => exporting.mutate()}
+          >
+            <Download className='h-3.5 w-3.5' />
+            {t('Export customers')}
+          </Button>
           {props.onInviteExisting && (
             <Button
               size='sm'
@@ -201,6 +221,7 @@ export function CustomersTab(props: {
                 <Th>{t('Name')}</Th>
                 <Th>{t('Owner')}</Th>
                 <Th className='text-right'>{t('Members')}</Th>
+                <Th className='text-right'>{t('Callable models')}</Th>
                 <Th className='text-right'>{t('Wallet Balance')}</Th>
                 <Th className='text-right'>{t('Net Allocated')}</Th>
                 <Th className='text-right'>{t('Action')}</Th>
@@ -229,6 +250,9 @@ export function CustomersTab(props: {
                     {c.owner_email || '-'}
                   </Td>
                   <Td className='text-right tabular-nums'>{c.members ?? 0}</Td>
+                  <Td className='text-right'>
+                    <CallableModels models={c.models ?? []} />
+                  </Td>
                   <Td className='text-right tabular-nums'>
                     {formatQuotaWithCurrency(c.org.wallet_quota)}
                   </Td>
@@ -724,7 +748,7 @@ function CreateCustomerDialog(props: {
             </Field>
           )}
           {!direct && (
-            <Field label={t('Initial amount (USD)')}>
+            <Field label={t('Initial amount (USD, optional)')}>
               <div className='relative'>
                 <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
                   $
@@ -858,5 +882,47 @@ function CustomerUsageDialog(props: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// How many models a customer can call; hovering lists each with the discount
+// the distributor gives on it.
+function CallableModels(props: {
+  models: { name: string; discount: number }[]
+}) {
+  const { t } = useTranslation()
+  if (props.models.length === 0) return <span>0</span>
+  return (
+    <HoverCard>
+      <HoverCardTrigger
+        delay={100}
+        render={
+          <button
+            type='button'
+            className='decoration-muted-foreground/60 cursor-default tabular-nums underline decoration-dotted underline-offset-4'
+          />
+        }
+      >
+        {props.models.length}
+      </HoverCardTrigger>
+      <HoverCardContent
+        align='end'
+        className='max-h-80 w-80 overflow-y-auto p-0 text-left'
+      >
+        <ul className='divide-border/60 divide-y text-xs'>
+          {props.models.map((m) => (
+            <li
+              key={m.name}
+              className='flex items-center justify-between gap-3 px-3 py-1.5'
+            >
+              <span className='min-w-0 break-all'>{m.name}</span>
+              <span className='text-muted-foreground shrink-0 tabular-nums'>
+                {m.discount < 1 ? `×${m.discount.toFixed(2)}` : t('List price')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </HoverCardContent>
+    </HoverCard>
   )
 }

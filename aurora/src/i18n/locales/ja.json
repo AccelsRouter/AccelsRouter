@@ -1,5 +1,12 @@
 {
   "translation": {
+    "Open an organization": "組織を開設",
+    "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "登録済みユーザーのために組織を開設し、そのユーザーが所有者になります。ユーザー個人の残高はそのまま残り、組織のウォレットは残高ゼロから始まります。",
+    "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "所有者はこの販売代理店の管理者になり、個人の API キーは無効になります。販売代理店はコンソールで作成したキーを使用します。",
+    "Callable models": "利用可能なモデル",
+    "All vendors": "すべてのベンダー",
+    "Initial amount (USD, optional)": "初期金額（USD、任意）",
+    "Export customers": "顧客をエクスポート",
     "{{count}} added": "{{count}} 件追加済み",
     "A community plugin cannot use the key of the built-in plugin {{key}}": "コミュニティプラグインは組み込みプラグイン {{key}} のキーを使えません",
     "A community plugin's key must start with its author's GitHub name and an underscore, like alice_foo": "コミュニティプラグインのキーは、作者の GitHub ユーザー名とアンダースコアで始める必要があります（例: alice_foo）",

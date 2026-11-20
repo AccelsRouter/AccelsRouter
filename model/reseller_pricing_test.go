@@ -81,3 +81,28 @@ func TestApplyRetailDiscounts(t *testing.T) {
 	assert.Equal(t, int64(1100), report.TotalRetailQuota)
 	assert.Equal(t, int64(1000), report.ByModel[0].Quota, "standard billed quota unchanged")
 }
+
+// What a customer can call is its own selection out of the reseller's catalog,
+// or the whole catalog when it has none, each model at the reseller's discount.
+func TestCustomerCallableModels(t *testing.T) {
+	catalog := []string{"gpt-4o", "gpt-4o-mini", "claude-sonnet-5", "deepseek-chat"}
+	discounts, err := MarshalRetailDiscounts(map[string]float64{"gpt-": 0.9, "gpt-4o-mini": 0.8})
+	require.NoError(t, err)
+
+	open := &Organization{RetailDiscounts: discounts}
+	assert.Equal(t, []ResellerCustomerModel{
+		{Name: "gpt-4o", Discount: 0.9},
+		{Name: "gpt-4o-mini", Discount: 0.8},
+		{Name: "claude-sonnet-5", Discount: 1},
+		{Name: "deepseek-chat", Discount: 1},
+	}, CustomerCallableModels(open, catalog))
+
+	// A selected model the reseller may no longer offer is not callable.
+	picked := &Organization{RetailDiscounts: discounts, AllowedModels: `["gpt-4o-mini","deepseek-chat","retired-model"]`}
+	assert.Equal(t, []ResellerCustomerModel{
+		{Name: "gpt-4o-mini", Discount: 0.8},
+		{Name: "deepseek-chat", Discount: 1},
+	}, CustomerCallableModels(picked, catalog))
+
+	assert.Empty(t, CustomerCallableModels(&Organization{}, nil))
+}
