@@ -29,7 +29,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { Loader2, Plus, UserPlus } from 'lucide-react'
+import { Download, Loader2, Plus, UserPlus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuotaWithCurrency, quotaFromUSD } from '@/lib/currency'
@@ -53,6 +53,7 @@ import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/com
 import { AllocationDialog, type AllocationMode } from './allocation-dialog'
 import {
   createCustomer,
+  exportCustomers,
   getCustomerUsage,
   inviteCustomerOwner,
   listCustomerInvitations,
@@ -150,6 +151,10 @@ export function CustomersTab(props: {
   }
 
   const customers = data ?? []
+  const exporting = useMutation({
+    mutationFn: exportCustomers,
+    onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
+  })
 
   return (
     <div className='flex flex-col gap-4'>
@@ -163,6 +168,16 @@ export function CustomersTab(props: {
           </span>
         </div>
         <div className='flex flex-wrap items-center gap-2'>
+          <Button
+            size='sm'
+            variant='outline'
+            className='gap-1.5'
+            disabled={exporting.isPending || customers.length === 0}
+            onClick={() => exporting.mutate()}
+          >
+            <Download className='h-3.5 w-3.5' />
+            {t('Export customers')}
+          </Button>
           {props.onInviteExisting && (
             <Button
               size='sm'
@@ -724,7 +739,7 @@ function CreateCustomerDialog(props: {
             </Field>
           )}
           {!direct && (
-            <Field label={t('Initial amount (USD)')}>
+            <Field label={t('Initial amount (USD, optional)')}>
               <div className='relative'>
                 <span className='text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm'>
                   $

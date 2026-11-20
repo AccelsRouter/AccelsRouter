@@ -6,11 +6,15 @@
 package controller
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -83,6 +87,65 @@ func inviteCustomerOwner(c *gin.Context, reseller, customer *model.Organization,
 	emailed := sendOrgInvitationEmail(inv.InvitedEmail, orgNameForInvitee(customer), inv.Code)
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.invite", fmt.Sprintf("org:%d", customer.Id), inv.InvitedEmail)
 	return gin.H{"code": inv.Code, "invited_email": inv.InvitedEmail, "expires_at": inv.ExpiresAt, "emailed": emailed, "provisioned": false}, nil
+}
+
+// ExportMyCustomers — GET /api/reseller/customers/export
+// Every customer of the distributor as a CSV: how it is funded, who runs it,
+// what it holds, the discounts and models it was given, and what it has paid.
+func ExportMyCustomers(c *gin.Context) {
+	reseller, ok := callerReseller(c)
+	if !ok {
+		return
+	}
+	customers, err := model.ListResellerCustomers(reseller.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	paid, err := model.ResellerCustomerPaid(reseller.Id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// A customer that was given no list of its own may call what the
+	// distributor may offer.
+	offered := "all models"
+	if models := reseller.AllowedModelList(); len(models) > 0 {
+		offered = strings.Join(models, "; ")
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=\"customers.csv\"")
+	// The byte-order mark lets spreadsheet programs read names that are not ASCII.
+	_, _ = c.Writer.WriteString("\xEF\xBB\xBF")
+	w := csv.NewWriter(c.Writer)
+	defer w.Flush()
+	usd := func(quota int64) string { return fmt.Sprintf("%.6f", float64(quota)/common.QuotaPerUnit) }
+	_ = w.Write([]string{"Customer", "ID", "Funding", "Status", "Owner email", "Members", "Wallet balance (USD)", "Net allocated (USD)", "Discounts", "Models", "Paid for calls (USD)", "Created"})
+	for _, customer := range customers {
+		org := customer.Org
+		funding, allocated := "allowance from you", usd(int64(customer.NetAllocated))
+		if org.FundingMode == model.OrgFundingDirect {
+			funding, allocated = "tops up directly", ""
+		}
+		discounts := model.ParseRetailDiscounts(org.RetailDiscounts)
+		priced := make([]string, 0, len(discounts))
+		for _, token := range slices.Sorted(maps.Keys(discounts)) {
+			priced = append(priced, token+" x"+strconv.FormatFloat(discounts[token], 'f', -1, 64))
+		}
+		discountText := "list price"
+		if len(priced) > 0 {
+			discountText = strings.Join(priced, "; ")
+		}
+		models := offered
+		if own := org.AllowedModelList(); len(own) > 0 {
+			models = strings.Join(own, "; ")
+		}
+		_ = w.Write([]string{
+			csvSafe(org.Name), strconv.Itoa(org.Id), funding, org.Status, csvSafe(customer.OwnerEmail),
+			strconv.Itoa(customer.Members), usd(int64(org.WalletQuota)), allocated, csvSafe(discountText), csvSafe(models),
+			usd(paid[org.Id]), time.Unix(org.CreatedTime, 0).UTC().Format("2006-01-02"),
+		})
+	}
 }
 
 // CreateMyCustomer — POST /api/organization/customers

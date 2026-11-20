@@ -7,7 +7,7 @@ Each discount row shows its floor live, computed against the models selected
 above (the whole catalog when nothing is selected). Saved as one atomic offer.
 Model names only — no channel/upstream information is ever exposed here.
 */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -23,7 +23,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { ratioForModel } from '@/components/model-ratio-rows'
+import { usePricingData } from '@/features/pricing/hooks'
 import {
   getCustomerModels,
   getCustomerPricing,
@@ -34,6 +36,10 @@ import type { ResellerCustomer } from './types'
 
 type Row = { token: string; ratio: string }
 
+// The vendor filter's two values that are not a vendor's name.
+const ANY_VENDOR = '__any__'
+const NO_VENDOR = '__none__'
+
 export function CustomerOfferDialog(props: {
   customer: ResellerCustomer | null
   onClose: () => void
@@ -43,6 +49,7 @@ export function CustomerOfferDialog(props: {
   const customer = props.customer
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
+  const [vendor, setVendor] = useState(ANY_VENDOR)
   const [rows, setRows] = useState<Row[]>([])
   const [loadedId, setLoadedId] = useState<number | null>(null)
 
@@ -80,6 +87,7 @@ export function CustomerOfferDialog(props: {
       new Set(modelsQuery.data.allowed.filter((m) => assignable.has(m)))
     )
     setFilter('')
+    setVendor(ANY_VENDOR)
     const seeded = Object.entries(pricingQuery.data).map(([token, ratio]) => ({
       token,
       ratio: String(ratio),
@@ -88,6 +96,21 @@ export function CustomerOfferDialog(props: {
   }
 
   const catalog = modelsQuery.data?.catalog ?? []
+  // Which vendor makes each model, from the public price list. A model the
+  // list does not name a vendor for is filed under "Other".
+  const pricing = usePricingData(!!customer)
+  const vendorOf = useMemo(
+    () =>
+      new Map(
+        pricing.models.map((m) => [m.model_name, m.vendor_name ?? NO_VENDOR])
+      ),
+    [pricing.models]
+  )
+  const vendorOfModel = (m: string) => vendorOf.get(m) ?? NO_VENDOR
+  const vendors = [...new Set(catalog.map(vendorOfModel))]
+    .filter((name) => name !== NO_VENDOR)
+    .sort((a, b) => a.localeCompare(b))
+  const hasUnnamed = catalog.some((m) => vendorOfModel(m) === NO_VENDOR)
   const offerable = modelsQuery.data?.offerable ?? []
   // Saved for this customer but no longer in the catalog: dropped on save.
   const noLongerAssignable = (modelsQuery.data?.allowed ?? []).filter(
@@ -230,11 +253,12 @@ export function CustomerOfferDialog(props: {
     onError: (e) => toast.error(e instanceof Error ? e.message : String(e)),
   })
 
-  const shown = filter.trim()
-    ? catalog.filter((m) =>
-        m.toLowerCase().includes(filter.trim().toLowerCase())
-      )
-    : catalog
+  const keyword = filter.trim().toLowerCase()
+  const shown = catalog.filter(
+    (m) =>
+      (keyword === '' || m.toLowerCase().includes(keyword)) &&
+      (vendor === ANY_VENDOR || vendorOfModel(m) === vendor)
+  )
   const toggle = (m: string) =>
     setSelected((prev) => {
       const next = new Set(prev)
@@ -301,18 +325,50 @@ export function CustomerOfferDialog(props: {
                   placeholder={t('Filter models')}
                   className='h-8'
                 />
+                {vendors.length > 1 && (
+                  <NativeSelect
+                    size='sm'
+                    aria-label={t('Vendor')}
+                    value={vendor}
+                    onChange={(e) => setVendor(e.target.value)}
+                  >
+                    <NativeSelectOption value={ANY_VENDOR}>
+                      {t('All vendors')}
+                    </NativeSelectOption>
+                    {vendors.map((name) => (
+                      <NativeSelectOption key={name} value={name}>
+                        {name}
+                      </NativeSelectOption>
+                    ))}
+                    {hasUnnamed && (
+                      <NativeSelectOption value={NO_VENDOR}>
+                        {t('Other')}
+                      </NativeSelectOption>
+                    )}
+                  </NativeSelect>
+                )}
+                {/* Both act on the models listed below, so a vendor or a
+                    search can be taken or dropped as a whole. */}
                 <div className='flex gap-2 whitespace-nowrap'>
                   <Button
                     size='sm'
                     variant='ghost'
-                    onClick={() => setSelected(new Set(catalog))}
+                    onClick={() =>
+                      setSelected((prev) => new Set([...prev, ...shown]))
+                    }
                   >
                     {t('All')}
                   </Button>
                   <Button
                     size='sm'
                     variant='ghost'
-                    onClick={() => setSelected(new Set())}
+                    onClick={() =>
+                      setSelected((prev) => {
+                        const next = new Set(prev)
+                        for (const m of shown) next.delete(m)
+                        return next
+                      })
+                    }
                   >
                     {t('None')}
                   </Button>

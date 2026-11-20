@@ -1,5 +1,8 @@
 {
   "translation": {
+    "All vendors": "すべてのベンダー",
+    "Initial amount (USD, optional)": "初期金額（USD、任意）",
+    "Export customers": "顧客をエクスポート",
     "{{count}} added": "{{count}} 件追加済み",
     "A community plugin cannot use the key of the built-in plugin {{key}}": "コミュニティプラグインは組み込みプラグイン {{key}} のキーを使えません",
     "A community plugin's key must start with its author's GitHub name and an underscore, like alice_foo": "コミュニティプラグインのキーは、作者の GitHub ユーザー名とアンダースコアで始める必要があります（例: alice_foo）",

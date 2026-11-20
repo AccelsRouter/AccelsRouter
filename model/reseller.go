@@ -236,10 +236,11 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup, fundingMode str
 		if initialQuota != 0 {
 			return nil, ErrCustomerFundsItself
 		}
-	} else {
-		if initialQuota <= 0 {
-			return nil, errors.New("初始划拨额度必须为正")
-		}
+	} else if initialQuota < 0 {
+		return nil, errors.New("初始划拨额度不能为负")
+	} else if initialQuota > 0 {
+		// The initial allocation is optional: a customer may start empty and be
+		// granted its allowance later.
 		if err := common.ValidateWalletQuota(initialQuota); err != nil {
 			return nil, err
 		}
@@ -259,7 +260,7 @@ func CreateResellerCustomer(resellerOrgId int, name, priceGroup, fundingMode str
 		DB.Delete(&Organization{}, customer.Id)
 		return nil, err
 	}
-	if direct {
+	if direct || initialQuota == 0 {
 		return customer, nil
 	}
 	// Grant the customer its initial spending cap (+ledger). On failure remove the
@@ -448,6 +449,27 @@ func ListResellerCustomers(resellerOrgId int) ([]*ResellerCustomer, error) {
 		})
 	}
 	return out, nil
+}
+
+// ResellerCustomerPaid totals what each customer has paid for its calls while
+// it was this reseller's, by customer organization.
+func ResellerCustomerPaid(resellerOrgId int) (map[int]int64, error) {
+	var rows []struct {
+		OrgId   int
+		Charged int64
+	}
+	err := DB.Model(&OrgUsageDaily{}).
+		Select("org_id, COALESCE(SUM(charged_quota), 0) AS charged").
+		Where("reseller_org_id = ? AND org_id <> ?", resellerOrgId, resellerOrgId).
+		Group("org_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	paid := make(map[int]int64, len(rows))
+	for _, row := range rows {
+		paid[row.OrgId] = row.Charged
+	}
+	return paid, nil
 }
 
 // IsResellerCustomer authorizes a reseller to fund/view a customer: true only

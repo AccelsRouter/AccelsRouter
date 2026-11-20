@@ -1,5 +1,8 @@
 {
   "translation": {
+    "All vendors": "Tous les fournisseurs",
+    "Initial amount (USD, optional)": "Montant initial (USD, facultatif)",
+    "Export customers": "Exporter les clients",
     "{{count}} added": "{{count}} ajouté(s)",
     "A community plugin cannot use the key of the built-in plugin {{key}}": "Un plugin communautaire ne peut pas reprendre la clé du plugin intégré {{key}}",
     "A community plugin's key must start with its author's GitHub name and an underscore, like alice_foo": "La clé d'un plugin communautaire doit commencer par le nom GitHub de son auteur suivi d'un tiret bas, par exemple alice_foo",

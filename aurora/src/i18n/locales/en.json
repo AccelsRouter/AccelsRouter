@@ -1,5 +1,6 @@
 {
   "translation": {
+    "All vendors": "All vendors",
     "{{count}} added": "{{count}} added",
     "A community plugin cannot use the key of the built-in plugin {{key}}": "A community plugin cannot use the key of the built-in plugin {{key}}",
     "A community plugin's key must start with its author's GitHub name and an underscore, like alice_foo": "A community plugin's key must start with its author's GitHub name and an underscore, like alice_foo",
@@ -7987,7 +7988,8 @@
     "Recharge Amount": "Recharge Amount",
     "Recharge Amount (USD)": "Recharge Amount (USD)",
     "Amount (USD)": "Amount (USD)",
-    "Initial amount (USD)": "Initial amount (USD)",
+    "Initial amount (USD, optional)": "Initial amount (USD, optional)",
+    "Export customers": "Export customers",
     "Recommended": "Recommended",
     "Recommended actions": "Recommended actions",
     "Recommended to keep this high to avoid upstream throttling.": "Recommended to keep this high to avoid upstream throttling.",

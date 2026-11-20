@@ -845,6 +845,15 @@ async function downloadCsv(url: string, filename: string): Promise<void> {
   window.URL.revokeObjectURL(objUrl)
 }
 
+// Every customer of the distributor in one file: funding, owner, balance,
+// discounts, models and what it has paid.
+export async function exportCustomers(): Promise<void> {
+  await downloadCsv(
+    '/api/reseller/customers/export',
+    `customers_${Date.now()}.csv`
+  )
+}
+
 export async function exportCustomerLogs(
   orgId: number,
   from?: number,

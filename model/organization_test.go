@@ -348,9 +348,10 @@ func TestResellerCustomers(t *testing.T) {
 	_, err := CreateResellerCustomer(enterprise.Id, "cust-x", "default", "", 100, 1)
 	require.Error(t, err)
 
-	// Initial allocation must be positive. Route-2: it's a spending-cap grant, no
-	// longer bounded by the reseller wallet, so an "over-wallet" amount succeeds.
-	_, err = CreateResellerCustomer(reseller.Id, "cust-x", "retail", "", 0, 1)
+	// Initial allocation is optional but never negative. Route-2: it's a
+	// spending-cap grant, no longer bounded by the reseller wallet, so an
+	// "over-wallet" amount succeeds.
+	_, err = CreateResellerCustomer(reseller.Id, "cust-x", "retail", "", -1, 1)
 	require.Error(t, err)
 
 	// Happy path: customer org created, granted its cap, relationship established.
@@ -884,6 +885,15 @@ func TestDirectFundedCustomerTopsUpItsOwnWallet(t *testing.T) {
 	require.NoError(t, err)
 	allowance, err := CreateResellerCustomer(reseller.Id, "prepaid-one", "default", "", 100, 1)
 	require.NoError(t, err)
+	// The initial allocation is optional; a customer may start with nothing.
+	empty, err := CreateResellerCustomer(reseller.Id, "prepaid-empty", "default", "", 0, 1)
+	require.NoError(t, err)
+	assert.Equal(t, 0, empty.WalletQuota)
+	granted, err := NetAllocatedBetween(reseller.Id, empty.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 0, granted)
+	_, err = CreateResellerCustomer(reseller.Id, "prepaid-negative", "default", "", -1, 1)
+	require.Error(t, err)
 	_, err = LeaveReseller(allowance.Id)
 	require.ErrorIs(t, err, ErrCannotLeaveReseller)
 	left, err := LeaveReseller(leaver.Id)

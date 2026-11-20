@@ -1,5 +1,8 @@
 {
   "translation": {
+    "All vendors": "Все поставщики",
+    "Initial amount (USD, optional)": "Начальная сумма (USD, необязательно)",
+    "Export customers": "Экспорт клиентов",
     "{{count}} added": "Добавлено: {{count}}",
     "A community plugin cannot use the key of the built-in plugin {{key}}": "Плагин сообщества не может использовать ключ встроенного плагина {{key}}",
     "A community plugin's key must start with its author's GitHub name and an underscore, like alice_foo": "Ключ плагина сообщества должен начинаться с имени автора на GitHub и подчёркивания, например alice_foo",

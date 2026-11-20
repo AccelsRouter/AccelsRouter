@@ -1,5 +1,8 @@
 {
   "translation": {
+    "All vendors": "Tất cả nhà cung cấp",
+    "Initial amount (USD, optional)": "Số tiền ban đầu (USD, không bắt buộc)",
+    "Export customers": "Xuất danh sách khách hàng",
     "{{count}} added": "Đã thêm {{count}}",
     "A community plugin cannot use the key of the built-in plugin {{key}}": "Plugin cộng đồng không được dùng khóa của plugin tích hợp sẵn {{key}}",
     "A community plugin's key must start with its author's GitHub name and an underscore, like alice_foo": "Khóa của plugin cộng đồng phải bắt đầu bằng tên GitHub của tác giả và dấu gạch dưới, ví dụ alice_foo",
