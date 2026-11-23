@@ -125,9 +125,13 @@ func TestCustomChannelPricesOfBaiduModelService(t *testing.T) {
 		assert.Equal(t, want, customChannelVendorSource(host), host)
 	}
 
+	require.NoError(t, db.AutoMigrate(&model.QuotaData{}))
+	text, images := 7.5, 30.0
 	for name, price := range map[string]customVendorPrice{
 		"claude-opus-5":  customVendorTestPrice(5, 25),
 		"gemini-3-flash": customVendorTestPrice(0.5, 3),
+		// Image output has a price of its own.
+		"nano-banana": {Provider: "test", Input: 1.5, Output: &text, Tiers: []customVendorTier{{Input: 1.5, Output: &text, ImageOutput: &images}}},
 	} {
 		row := customVendorRowFromPrice(name, "anthropic", price, 100)
 		require.NoError(t, db.Create(&row).Error)
@@ -136,15 +140,30 @@ func TestCustomChannelPricesOfBaiduModelService(t *testing.T) {
 	mapping := `{"flash":"gemini-3-flash"}`
 	require.NoError(t, db.Create(&model.Channel{
 		Id: 21, Name: "vod", Type: 14, Key: "k", Status: common.ChannelStatusEnabled, BaseURL: &base,
-		Models: "claude-opus-5,flash,not-in-the-catalog", ModelMapping: &mapping,
+		Models: "claude-opus-5,claude-opus-5-20261101,flash,nano-banana,not-in-the-catalog", ModelMapping: &mapping,
 	}).Error)
 
 	changed, err := recordCustomChannelPrices(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, 2, changed)
+	assert.Equal(t, 4, changed)
 	var rows []model.CustomChannelPrice
 	require.NoError(t, db.Where("channel_id = ?", 21).Order("model_name").Find(&rows).Error)
-	require.Len(t, rows, 2)
-	assert.Equal(t, []string{"claude-opus-5", "gemini-3-flash"}, []string{rows[0].ModelName, rows[1].ModelName})
+	require.Len(t, rows, 4)
+	// A dated snapshot costs what its model does.
+	assert.Equal(t, []string{"claude-opus-5", "claude-opus-5-20261101", "gemini-3-flash", "nano-banana"}, []string{rows[0].ModelName, rows[1].ModelName, rows[2].ModelName, rows[3].ModelName})
 	assert.Contains(t, rows[0].Pricing, "p * 5")
+	assert.Equal(t, rows[0].Pricing, rows[1].Pricing)
+	assert.Contains(t, rows[3].Pricing, "img_o * 30")
+
+	// The hourly record does not tell image output from text output: the
+	// expected cost runs from all of it as text to all of it as images.
+	hour := rows[3].EffectiveAt - rows[3].EffectiveAt%3600 + 3600
+	require.NoError(t, db.Create(&model.QuotaData{ModelName: "nano-banana", CreatedAt: hour, ChannelID: 21, Count: 1, Quota: 100, TokenUsed: 1002000, PromptTokens: 1000000, CompletionTokens: 2000}).Error)
+	utc := 0
+	report, err := model.CompareUpstreamBill(21, []model.UpstreamBillEntry{{Wall: hour, Model: "nano-banana", Requests: 1, Cost: 1.56}}, &utc, 0, nil)
+	require.NoError(t, err)
+	require.Len(t, report.Rows, 1)
+	require.NotNil(t, report.Rows[0].Expected)
+	assert.InDelta(t, 1.5+0.015, report.Rows[0].Expected.Lowest, 1e-9)
+	assert.InDelta(t, 1.5+0.06, report.Rows[0].Expected.Highest, 1e-9)
 }

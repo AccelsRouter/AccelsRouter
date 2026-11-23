@@ -35,6 +35,9 @@ var (
 	customArkAmount    = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)?`)
 	// The date a model snapshot's ID ends with, as in doubao-seed-2-1-pro-260715.
 	customArkSnapshotDate = regexp.MustCompile(`-[0-9]{6}$`)
+	// customSnapshotDate is how the other vendors date a snapshot of a model:
+	// -YYYYMMDD, -YYYY-MM-DD or -MMDD. A snapshot costs what its model does.
+	customSnapshotDate = regexp.MustCompile(`-(?:[0-9]{8}|[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{4})$`)
 	// An amount that follows a colon ("≤ 261 万像素：0.30"), which leaves the
 	// pixel counts and ordinals of a cell out; and a cell that is one amount.
 	customArkLabelledAmount = regexp.MustCompile(`[:：]\s*\$?\s*([0-9]+(?:\.[0-9]+)?)`)

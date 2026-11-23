@@ -22,16 +22,19 @@ const (
 // requests whose facts equal When. "input_images_after_first" prices every
 // input image but the first.
 type customVendorTier struct {
-	Upper      float64            `json:"upper"`
-	Input      float64            `json:"input"`
-	Output     *float64           `json:"output"`
-	CacheRead  *float64           `json:"cache_read"`
-	CacheWrite *float64           `json:"cache_write,omitempty"`
-	AudioInput *float64           `json:"audio_input,omitempty"`
-	ImageInput *float64           `json:"image_input,omitempty"`
-	Band       string             `json:"band,omitempty"`
-	Usage      map[string]float64 `json:"usage,omitempty"`
-	When       map[string]string  `json:"when,omitempty"`
+	Upper      float64  `json:"upper"`
+	Input      float64  `json:"input"`
+	Output     *float64 `json:"output"`
+	CacheRead  *float64 `json:"cache_read"`
+	CacheWrite *float64 `json:"cache_write,omitempty"`
+	AudioInput *float64 `json:"audio_input,omitempty"`
+	ImageInput *float64 `json:"image_input,omitempty"`
+	// ImageOutput is the price of image output tokens where the vendor prices
+	// them apart from text output.
+	ImageOutput *float64           `json:"image_output,omitempty"`
+	Band        string             `json:"band,omitempty"`
+	Usage       map[string]float64 `json:"usage,omitempty"`
+	When        map[string]string  `json:"when,omitempty"`
 }
 
 type customVendorPrice struct {

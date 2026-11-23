@@ -36,7 +36,7 @@ const customVendorDeepSeekPeak = `weekday("Asia/Shanghai") >= 1 && weekday("Asia
 // write price is cc; without one, names containing "claude" carry Anthropic's
 // published multiples of the base input price (1.25x for 5 minutes, 2x for 1
 // hour), which the billing engine separates for those names. A separate audio
-// input price is ai.
+// input price is ai, a separate image output price img_o.
 func customVendorTierBody(name string, tier customVendorTier) (string, bool) {
 	if tier.Output == nil || tier.Input <= 0 || !validCustomVendorNumber(tier.Input) || !validCustomVendorNumber(*tier.Output) {
 		return "", false
@@ -56,6 +56,9 @@ func customVendorTierBody(name string, tier customVendorTier) (string, bool) {
 	}
 	if tier.ImageInput != nil && validCustomVendorNumber(*tier.ImageInput) {
 		body += " + img * " + customVendorPriceText(*tier.ImageInput)
+	}
+	if tier.ImageOutput != nil && validCustomVendorNumber(*tier.ImageOutput) {
+		body += " + img_o * " + customVendorPriceText(*tier.ImageOutput)
 	}
 	return body, true
 }

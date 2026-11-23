@@ -139,6 +139,9 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 			if !found {
 				row, found = listed[source+"\n"+customArkSnapshotDate.ReplaceAllString(name, "")]
 			}
+			if !found && source == customChannelListPriceSource {
+				row, found = listed[source+"\n"+customSnapshotDate.ReplaceAllString(name, "")]
+			}
 			if !found {
 				continue
 			}

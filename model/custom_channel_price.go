@@ -123,7 +123,8 @@ var customChannelUsageFacts = map[string]string{
 // (the input length of each call, a video's resolution), so the cost is the
 // range between the cheapest and the dearest those could make it; lowest and
 // highest are equal where the price does not depend on them. Cached input is
-// taken as part of the recorded input. ok is false for a price that cannot be
+// taken as part of the recorded input, and an output that may be images at
+// their own price ranges from none of it to all of it. ok is false for a price that cannot be
 // applied to the record at all.
 func customChannelCost(pricing map[string]any, usage customChannelUsage, name string) (lowest, highest float64, ok bool) {
 	number := func(key string) (float64, bool) {
@@ -218,11 +219,21 @@ func customChannelCost(pricing map[string]any, usage customChannelUsage, name st
 				lengths = append(lengths, value+1)
 			}
 		}
+		// The record does not tell image output from the rest of the output:
+		// none of it at the least, all of it at the most.
+		outputs := []billingexpr.TokenParams{params}
+		if billingexpr.UsedVars(expression)["img_o"] {
+			images := params
+			images.C, images.ImgO = 0, params.C
+			outputs = append(outputs, images)
+		}
 		for _, length := range lengths {
-			params.Len = length
-			if cost, valid := run(params, nil); valid {
-				// A token expression yields USD per 1M tokens times tokens.
-				costs = append(costs, cost/1e6)
+			for _, output := range outputs {
+				output.Len = length
+				if cost, valid := run(output, nil); valid {
+					// A token expression yields USD per 1M tokens times tokens.
+					costs = append(costs, cost/1e6)
+				}
 			}
 		}
 	}

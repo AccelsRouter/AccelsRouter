@@ -395,8 +395,9 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	assertCustomVendorPrice(t, deepseek, "deepseek-v4-flash-vision-exp", 0.3, 1.2)
 
 	// Gemini: a price with an effective date follows the date, prompt-length
-	// tiers and a separate audio input price are kept, and models priced per
-	// minute, per image or by output modality are left out.
+	// tiers, a separate audio input price and a separate image output price
+	// are kept, and models priced per minute, per image or by audio output are
+	// left out.
 	google, err := parseCustomGooglePricing(customVendorFixture(t, "google.md"), time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC))
 	require.NoError(t, err)
 	assertCustomVendorPrice(t, google, "gemini-4-argon", 2, 10)
@@ -411,7 +412,14 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	assertCustomVendorPrice(t, google, "gemini-2.5-flash", 0.3, 2.5)
 	require.Len(t, google["gemini-2.5-flash"].Tiers, 1)
 	assert.Equal(t, 1.0, *google["gemini-2.5-flash"].Tiers[0].AudioInput)
-	for _, name := range []string{"gemini-3.1-flash-tts-preview", "gemini-3.5-transcribe", "gemini-3.1-flash-image", "gemini-embedding-001"} {
+	assertCustomVendorPrice(t, google, "gemini-3.1-flash-image", 0.5, 3)
+	require.Len(t, google["gemini-3.1-flash-image"].Tiers, 1)
+	require.NotNil(t, google["gemini-3.1-flash-image"].Tiers[0].ImageOutput)
+	assert.Equal(t, 60.0, *google["gemini-3.1-flash-image"].Tiers[0].ImageOutput)
+	imageExpr, offered := customVendorSyncExpr("gemini-3.1-flash-image", google["gemini-3.1-flash-image"])
+	require.True(t, offered)
+	assert.Equal(t, `tier("base", p * 0.5 + c * 3 + img_o * 60)`, imageExpr)
+	for _, name := range []string{"gemini-3.1-flash-tts-preview", "gemini-3.5-transcribe", "gemini-embedding-001"} {
 		assert.NotContains(t, google, name)
 	}
 	// One model is written as its API resource name; it is catalogued by its id.
