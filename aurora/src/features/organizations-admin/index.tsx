@@ -678,7 +678,14 @@ function EditOrgDialog(props: {
           </DialogTitle>
         </DialogHeader>
         {isReseller ? (
-          <Tabs value={tab} onValueChange={(v) => setTab(v as EditTab)}>
+          // min-w-0: the dialog is a grid, and without it the widest thing
+          // inside (the routing table, which scrolls in its own box) sets the
+          // width of everything and the whole dialog scrolls sideways.
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab(v as EditTab)}
+            className='min-w-0'
+          >
             <TabsList>
               <TabsTrigger value='basics'>{t('Basics')}</TabsTrigger>
               <TabsTrigger value='reseller' className='gap-1.5'>
