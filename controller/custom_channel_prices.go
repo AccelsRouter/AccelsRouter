@@ -22,9 +22,15 @@ import (
 // list to a func(name string, data map[string]any).
 const customUpstreamPriceSinkKey = "custom_upstream_price_sink"
 
+// customChannelListPriceSource stands for the catalog's resolved price of a
+// model: each vendor's own list price, a manual entry first.
+const customChannelListPriceSource = "*"
+
 // customChannelVendorSource names the vendor price catalog source that lists
 // what a channel pointed at a vendor's own API is charged, or "" for a channel
-// of another kind.
+// of another kind. Baidu's model service (the AIGC endpoints of its VOD
+// product) publishes no price list of its own to read: it resells other
+// vendors' models at each vendor's list price.
 func customChannelVendorSource(baseURL string) string {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
@@ -36,6 +42,8 @@ func customChannelVendorSource(baseURL string) string {
 		return "byteplus"
 	case strings.HasSuffix(host, ".volces.com"):
 		return "volcengine"
+	case strings.HasSuffix(host, ".bcevod.com"), strings.HasPrefix(host, "vod") && strings.HasSuffix(host, ".baidubce.com"):
+		return customChannelListPriceSource
 	}
 	return ""
 }
@@ -44,8 +52,8 @@ func customChannelVendorSource(baseURL string) string {
 // the models it serves, under the names the upstream knows them by, and
 // returns how many prices changed. A channel's own price list is read the way
 // the price sync reads it; a model that list leaves out on a channel pointed
-// at ByteDance's own API takes the vendor list price. A channel whose list
-// cannot be read keeps its recorded prices.
+// at ByteDance's own API, or at Baidu's model service, takes the vendor list
+// price. A channel whose list cannot be read keeps its recorded prices.
 func recordCustomChannelPrices(ctx context.Context) (int, error) {
 	// Platform channels only: a BYOK channel's address is its owner's choice
 	// and its price list says nothing about what the platform pays.
@@ -56,6 +64,10 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 	var upstreams []dto.UpstreamDTO
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled || !strings.HasPrefix(channel.GetBaseURL(), "http") {
+			continue
+		}
+		// Baidu's model service serves no price list to ask for.
+		if customChannelVendorSource(channel.GetBaseURL()) == customChannelListPriceSource {
 			continue
 		}
 		upstream := dto.UpstreamDTO{ID: channel.Id, Name: channel.Name, BaseURL: channel.GetBaseURL()}
@@ -84,9 +96,16 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 	if err := model.DB.Where("source IN ?", []string{"byteplus", "volcengine"}).Find(&catalog).Error; err != nil {
 		return 0, err
 	}
-	listed := make(map[string]model.CustomVendorPrice, len(catalog))
+	listed := make(map[string]customVendorPrice, len(catalog))
 	for _, row := range catalog {
-		listed[row.Source+"\n"+row.ModelName] = row
+		listed[row.Source+"\n"+row.ModelName] = customVendorPriceFromRow(row)
+	}
+	resolved, _, err := resolveCustomVendorPrices()
+	if err != nil {
+		return 0, err
+	}
+	for name, price := range resolved {
+		listed[customChannelListPriceSource+"\n"+name] = price
 	}
 
 	now := common.GetTimestamp()
@@ -123,7 +142,7 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 			if !found {
 				continue
 			}
-			if expr, ok := customVendorSyncExpr(name, customVendorPriceFromRow(row)); ok {
+			if expr, ok := customVendorSyncExpr(name, row); ok {
 				prices[name] = map[string]any{
 					billing_setting.BillingModeField: billing_setting.BillingModeTieredExpr,
 					billing_setting.BillingExprField: expr,

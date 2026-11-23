@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Compare an upstream's exported bill (.xlsx, CSV, or a .zip of CSV files such as the per-task usage export of Baidu's model service; one call per row) with what this channel recorded, per model. Other channels with the same address and key are on the same upstream account and are compared together.": "Сравнивает экспортированный счёт апстрима (.xlsx, CSV или .zip с файлами CSV, например экспорт использования по задачам сервиса моделей Baidu; один вызов на строку) с записями этого канала по моделям. Другие каналы с тем же адресом и ключом относятся к той же учётной записи апстрима и сравниваются вместе.",
+    "This export is aggregated by time and names no model; export the per-task detail instead": "Этот экспорт агрегирован по времени и не содержит названий моделей; экспортируйте детализацию по задачам",
     "Open an organization": "Открыть организацию",
     "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "Открывает организацию для зарегистрированного пользователя, который становится её владельцем. Личный баланс пользователя сохраняется; кошелёк организации изначально пуст.",
     "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "Владелец становится администратором дистрибьютора, а его личные API-ключи отключаются: дистрибьютор использует ключи, созданные в своей консоли.",

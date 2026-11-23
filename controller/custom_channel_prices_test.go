@@ -108,3 +108,43 @@ func TestCustomChannelPricesAreRecordedAndPriceTheBill(t *testing.T) {
 	assert.InDelta(t, 8.44+0.5, report.Expected.Lowest, 1e-9)
 	assert.InDelta(t, 8.44+2, report.Expected.Highest, 1e-9)
 }
+
+// A channel pointed at Baidu's model service is charged each vendor's list
+// price: its models take the catalog's price under the name the upstream
+// knows them by, and nothing is asked of the upstream itself.
+func TestCustomChannelPricesOfBaiduModelService(t *testing.T) {
+	db := setupCustomVendorCatalogDB(t)
+	require.NoError(t, db.AutoMigrate(&model.CustomChannelPrice{}))
+	for host, want := range map[string]string{
+		"https://eos-sg.aigc.exp.bcevod.com":      customChannelListPriceSource,
+		"https://vod.gz.baidubce.com/v3":          customChannelListPriceSource,
+		"https://qianfan.baidubce.com/v2":         "",
+		"https://ark.ap-southeast.bytepluses.com": "byteplus",
+		"https://api.example.com":                 "",
+	} {
+		assert.Equal(t, want, customChannelVendorSource(host), host)
+	}
+
+	for name, price := range map[string]customVendorPrice{
+		"claude-opus-5":  customVendorTestPrice(5, 25),
+		"gemini-3-flash": customVendorTestPrice(0.5, 3),
+	} {
+		row := customVendorRowFromPrice(name, "anthropic", price, 100)
+		require.NoError(t, db.Create(&row).Error)
+	}
+	base := "https://eos-sg.aigc.exp.bcevod.com"
+	mapping := `{"flash":"gemini-3-flash"}`
+	require.NoError(t, db.Create(&model.Channel{
+		Id: 21, Name: "vod", Type: 14, Key: "k", Status: common.ChannelStatusEnabled, BaseURL: &base,
+		Models: "claude-opus-5,flash,not-in-the-catalog", ModelMapping: &mapping,
+	}).Error)
+
+	changed, err := recordCustomChannelPrices(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 2, changed)
+	var rows []model.CustomChannelPrice
+	require.NoError(t, db.Where("channel_id = ?", 21).Order("model_name").Find(&rows).Error)
+	require.Len(t, rows, 2)
+	assert.Equal(t, []string{"claude-opus-5", "gemini-3-flash"}, []string{rows[0].ModelName, rows[1].ModelName})
+	assert.Contains(t, rows[0].Pricing, "p * 5")
+}

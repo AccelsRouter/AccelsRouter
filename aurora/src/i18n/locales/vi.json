@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Compare an upstream's exported bill (.xlsx, CSV, or a .zip of CSV files such as the per-task usage export of Baidu's model service; one call per row) with what this channel recorded, per model. Other channels with the same address and key are on the same upstream account and are compared together.": "So sánh hóa đơn đã xuất của nhà cung cấp thượng nguồn (.xlsx, CSV, hoặc .zip chứa các tệp CSV như bản xuất mức sử dụng theo tác vụ của dịch vụ mô hình Baidu; mỗi dòng một lần gọi) với bản ghi của kênh này, theo từng mô hình. Các kênh khác có cùng địa chỉ và khóa thuộc cùng một tài khoản thượng nguồn và được so sánh chung.",
+    "This export is aggregated by time and names no model; export the per-task detail instead": "Bản xuất này được tổng hợp theo thời gian và không ghi tên mô hình; hãy xuất chi tiết theo tác vụ",
     "Open an organization": "Mở tổ chức",
     "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "Mở một tổ chức cho người dùng đã đăng ký; người đó trở thành chủ sở hữu. Số dư cá nhân của người dùng được giữ nguyên; ví của tổ chức bắt đầu từ số không.",
     "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "Chủ sở hữu trở thành quản trị viên của nhà phân phối và các khóa API cá nhân của họ bị vô hiệu hóa: nhà phân phối dùng khóa tạo trong bảng điều khiển của mình.",

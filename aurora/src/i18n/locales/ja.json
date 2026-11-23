@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Compare an upstream's exported bill (.xlsx, CSV, or a .zip of CSV files such as the per-task usage export of Baidu's model service; one call per row) with what this channel recorded, per model. Other channels with the same address and key are on the same upstream account and are compared together.": "上流からエクスポートした請求書（.xlsx、CSV、または Baidu モデルサービスのタスク明細利用量エクスポートのような CSV を含む .zip。1 行が 1 回の呼び出し）を、このチャネルの記録とモデルごとに照合します。アドレスとキーが同じ他のチャネルは同じ上流アカウントに属するため、まとめて照合されます。",
+    "This export is aggregated by time and names no model; export the per-task detail instead": "このエクスポートは時間単位で集計されており、モデル名が含まれていません。タスク明細をエクスポートしてください",
     "Open an organization": "組織を開設",
     "Opens an organization for a registered user, who becomes its owner. The user keeps their own balance; the organization starts with an empty wallet.": "登録済みユーザーのために組織を開設し、そのユーザーが所有者になります。ユーザー個人の残高はそのまま残り、組織のウォレットは残高ゼロから始まります。",
     "The owner becomes the administrator of the distributor, and their personal API keys are disabled: a distributor uses keys created in its console.": "所有者はこの販売代理店の管理者になり、個人の API キーは無効になります。販売代理店はコンソールで作成したキーを使用します。",

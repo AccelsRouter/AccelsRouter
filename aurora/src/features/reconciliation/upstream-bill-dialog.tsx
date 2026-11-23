@@ -32,12 +32,12 @@ import { useTranslation } from 'react-i18next'
 import { formatQuotaWithCurrency, usdFromQuota } from '@/lib/currency'
 import dayjs from '@/lib/dayjs'
 import { formatNumber } from '@/lib/format'
-import { Dialog } from '@/components/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { Dialog } from '@/components/dialog'
 import { getChannels } from '@/features/channels/api'
 import {
   compareAlibabaBill,
@@ -302,7 +302,9 @@ function ComparisonTable(props: { report: UpstreamBillReport; rate: number }) {
                   ) : (
                     <span className='inline-flex flex-col items-end tabular-nums'>
                       <span>{formatNumber(r.ours.requests)}</span>
-                      <span className='text-muted-foreground text-[11px]'>-</span>
+                      <span className='text-muted-foreground text-[11px]'>
+                        -
+                      </span>
                     </span>
                   )}
                 </td>
@@ -523,7 +525,7 @@ export function UpstreamBillDialog(props: {
   // What each bill source compares, as the dialog's description.
   const descriptions: Record<BillSource, string> = {
     file: t(
-      "Compare an upstream's exported bill (.xlsx or CSV, one call per row) with what this channel recorded, per model."
+      "Compare an upstream's exported bill (.xlsx, CSV, or a .zip of CSV files such as the per-task usage export of Baidu's model service; one call per row) with what this channel recorded, per model. Other channels with the same address and key are on the same upstream account and are compared together."
     ),
     byteplus: t(
       'Pull one month of the BytePlus split bill over its billing API (5-minute settlement windows; request counts come from its usage statistics) and compare it with what this channel recorded, per model. Model versions (-YYMMDD) are folded into the product the bill names; cached input counts as input on both sides.'
@@ -677,7 +679,7 @@ export function UpstreamBillDialog(props: {
             <Input
               id='upstream-bill-file'
               type='file'
-              accept='.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv'
+              accept='.xlsx,.csv,.zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/zip'
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </Field>
@@ -728,7 +730,7 @@ export function UpstreamBillDialog(props: {
       {report && (
         <div className='space-y-2'>
           <p className='text-muted-foreground text-xs'>
-            {report.channel} ·{' '}
+            {[report.channel, ...(report.also_channels ?? [])].join(' + ')} ·{' '}
             {dayjs(report.from * 1000).format('YYYY-MM-DD HH:mm')} ~{' '}
             {dayjs((report.to + 3600) * 1000).format('YYYY-MM-DD HH:mm')} ·{' '}
             {zoneLabel(report.offset_minutes)}{' '}

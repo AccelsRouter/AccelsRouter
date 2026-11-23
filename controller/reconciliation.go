@@ -152,8 +152,15 @@ func AdminCompareUpstreamBill(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// An exported bill is the account's: every channel on that account is
+	// compared with it.
+	sameAccount, err := model.UpstreamAccountChannels(channelId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	_, adminOffset := time.Now().In(reconLocation(c)).Zone()
-	report, err := model.CompareUpstreamBill(channelId, entries, pinned, adminOffset/60, nil)
+	report, err := model.CompareUpstreamBill(channelId, entries, pinned, adminOffset/60, nil, sameAccount...)
 	if err != nil {
 		common.ApiError(c, err)
 		return
