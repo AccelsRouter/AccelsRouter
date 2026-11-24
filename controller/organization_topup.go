@@ -91,6 +91,7 @@ func LeaveMyReseller(c *gin.Context) {
 	}
 	model.RecordOrgAudit(resellerOrgId, c.GetInt("id"), "customer.left", fmt.Sprintf("org:%d", org.Id), "")
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "reseller.leave", fmt.Sprintf("org:%d", resellerOrgId), "")
+	model.NotifyOrgAdmins(resellerOrgId, 0, orgNotice("Organization {{org}} left and is no longer your customer", org, 0))
 	common.ApiSuccess(c, nil)
 }
 
@@ -118,5 +119,8 @@ func AdminRegisterOrgChargeback(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(orgId, c.GetInt("id"), "topup.chargeback", fmt.Sprintf("org:%d", orgId), fmt.Sprintf("trade=%s spent=%d", tradeNo, shortfall))
+	if org, err := model.GetOrganizationById(orgId); err == nil && org != nil {
+		model.NotifyOrgAdmins(orgId, c.GetInt("id"), orgNotice("A payment into the wallet of organization {{org}} was reversed by the payment channel, order {{order}}", org, 0, map[string]any{"order": tradeNo}))
+	}
 	common.ApiSuccess(c, gin.H{"org_id": orgId, "spent": shortfall})
 }

@@ -175,6 +175,10 @@ func RecordLog(userId int, logType int, content *common.Message) {
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return
 	}
+	// Fork: a top-up record also reaches the user's notifications.
+	if logType == LogTypeTopup {
+		NotifyUsers([]int{userId}, content)
+	}
 	username, _ := GetUsernameById(userId, false)
 	other := NewLogOther()
 	log := &Log{
@@ -276,6 +280,8 @@ func RecordOperationAuditLog(logUserId, actorRole int, content string, ip string
 }
 
 func RecordTopupLog(userId int, content *common.Message, callerIp string, paymentMethod string, callbackPaymentMethod string) {
+	// Fork: a top-up record also reaches the user's notifications.
+	NotifyUsers([]int{userId}, content)
 	username, _ := GetUsernameById(userId, false)
 	other := NewLogOther()
 	other.MergeAdmin(map[string]any{

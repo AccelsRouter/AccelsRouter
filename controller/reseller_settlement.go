@@ -306,6 +306,9 @@ func AdminRegisterResellerPayout(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(req.ResellerOrgId, c.GetInt("id"), "settlement.payout", fmt.Sprintf("org:%d", req.ResellerOrgId), fmt.Sprintf("quota=%d payout=%d", payout.Quota, payout.Id))
+	model.NotifyOrgAdmins(req.ResellerOrgId, c.GetInt("id"), common.NewMessage("A commission payout of {{amount}} was registered, reference {{reference}}", map[string]any{
+		"amount": strings.TrimSpace(fmt.Sprintf("%s %s", strconv.FormatFloat(payout.Money, 'f', -1, 64), payout.Currency)), "reference": payout.Reference,
+	}))
 	common.ApiSuccess(c, payout)
 }
 

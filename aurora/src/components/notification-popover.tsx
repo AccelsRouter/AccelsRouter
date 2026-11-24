@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
-import { Bell, Megaphone } from 'lucide-react'
+import { Bell, Inbox, Megaphone } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { RichContent } from '@/components/rich-content'
@@ -40,6 +40,9 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+// Fork: the user's own notifications are a third tab.
+import { MyNotifications } from '@/features/notifications/my-notifications'
+import { useMyNotifications } from '@/features/notifications/use-my-notifications'
 import { getAnnouncementColorClass } from '@/lib/colors'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
@@ -56,8 +59,8 @@ interface NotificationPopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   unreadCount: number
-  activeTab: 'notice' | 'announcements'
-  onTabChange: (tab: 'notice' | 'announcements') => void
+  activeTab: 'notice' | 'announcements' | 'messages'
+  onTabChange: (tab: 'notice' | 'announcements' | 'messages') => void
   notice: string
   announcements: AnnouncementItem[]
   loading: boolean
@@ -302,6 +305,7 @@ export function NotificationPopover({
   className,
 }: NotificationPopoverProps) {
   const { t } = useTranslation()
+  const personal = useMyNotifications()
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger
@@ -341,7 +345,18 @@ export function NotificationPopover({
           value={activeTab}
           onValueChange={onTabChange as (value: string) => void}
         >
-          <TabsList className='grid w-full grid-cols-2'>
+          <TabsList
+            className={cn(
+              'grid w-full',
+              personal.signedIn ? 'grid-cols-3' : 'grid-cols-2'
+            )}
+          >
+            {personal.signedIn ? (
+              <TabsTrigger value='messages' className='gap-1.5'>
+                <Inbox className='size-3.5' />
+                {t('Messages')}
+              </TabsTrigger>
+            ) : null}
             <TabsTrigger value='notice' className='gap-1.5'>
               <Bell className='size-3.5' />
               {t('Notice')}
@@ -351,6 +366,10 @@ export function NotificationPopover({
               {t('Timeline')}
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value='messages' className='mt-2'>
+            <MyNotifications />
+          </TabsContent>
 
           <TabsContent value='notice' className='mt-2'>
             <NoticeContent notice={notice} loading={loading} t={t} />

@@ -475,14 +475,16 @@ func RemoveMyCustomer(c *gin.Context) {
 	}
 	// A customer that pays the platform itself is released, not shut down: it
 	// keeps its balance and keys and becomes the platform's own client.
-	released := false
-	if customer, err := model.GetOrganizationById(customerId); err == nil && customer != nil {
-		released = customer.FundingMode == model.OrgFundingDirect
-	}
+	customer, _ := model.GetOrganizationById(customerId)
+	released := customer != nil && customer.FundingMode == model.OrgFundingDirect
 	disabled, err := model.RemoveResellerCustomer(reseller.Id, customerId)
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
+	}
+	if customer != nil {
+		model.NotifyOrgAdmins(customerId, 0, orgNotice("{{reseller}} ended its relationship with organization {{org}}", customer, 0,
+			map[string]any{"reseller": model.ResellerLabelOfOrg(reseller)}))
 	}
 	if released {
 		model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "customer.release", fmt.Sprintf("org:%d", customerId), "")
