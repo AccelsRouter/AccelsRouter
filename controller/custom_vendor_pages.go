@@ -44,6 +44,10 @@ var customVendorPageSources = []customVendorPageSource{
 	// ByteDance: the international site in USD, the mainland China site in CNY.
 	{Name: "byteplus", URL: "https://docs.byteplus.com/docs/en/modelark/model-pricing.md", Parse: parseCustomBytePlusVendorPricing},
 	{Name: "volcengine", URL: "https://docs.volcengine.com/docs/zh/ark/model-pricing.md", Parse: parseCustomVolcenginePricing},
+	// Tencent: the mainland China site in CNY, its own models only.
+	{Name: "tencent", URL: customVendorTencentURL, Parse: func(page []byte) (map[string]customVendorPrice, error) {
+		return parseCustomTencentPricing(page, time.Now())
+	}},
 }
 
 // Caption is the last line of text above the table, such as its heading.

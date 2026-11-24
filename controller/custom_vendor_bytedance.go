@@ -45,6 +45,15 @@ var (
 	customArkResolution     = regexp.MustCompile(`(?i)\b([0-9]{3,4}p|4k)\b`)
 )
 
+// customVendorCNYPerUSD is the rate set for vendor prices listed in CNY; ok is
+// false while it is not set.
+func customVendorCNYPerUSD() (rate float64, ok bool) {
+	common.OptionMapRWMutex.RLock()
+	rate, err := strconv.ParseFloat(strings.TrimSpace(common.OptionMap[customVendorCNYPerUSDOption]), 64)
+	common.OptionMapRWMutex.RUnlock()
+	return rate, err == nil && rate > 0 && !math.IsNaN(rate) && !math.IsInf(rate, 0)
+}
+
 // customArkTierRow is one row of a pricing table: a model's prices up to upper
 // input tokens, 0 when the row has no input-length condition.
 type customArkTierRow struct {
@@ -378,10 +387,8 @@ func parseCustomBytePlusVendorPricing(page []byte) (map[string]customVendorPrice
 // (CNY per USD). Only doubao models are kept. The page writes a version as
 // "2.1" while model IDs write "2-1", so each model answers to both.
 func parseCustomVolcenginePricing(page []byte) (map[string]customVendorPrice, error) {
-	common.OptionMapRWMutex.RLock()
-	rate, err := strconv.ParseFloat(strings.TrimSpace(common.OptionMap[customVendorCNYPerUSDOption]), 64)
-	common.OptionMapRWMutex.RUnlock()
-	if err != nil || rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+	rate, ok := customVendorCNYPerUSD()
+	if !ok {
 		return nil, errors.New("Volcengine lists prices in CNY: set the CNY per USD rate for vendor prices under Billing > Upstream pricing config")
 	}
 	provider := fmt.Sprintf("%s (CNY at %s per USD)", customVendorVolcengineProvider, strconv.FormatFloat(rate, 'f', -1, 64))
