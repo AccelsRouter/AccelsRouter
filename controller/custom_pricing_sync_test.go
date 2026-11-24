@@ -167,6 +167,9 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 {"type":"video_ratio_720p","price":"0.05","price_unit":"Per second","time_band":"standard"},
 {"type":"video_ratio_1080p","price":"0.075","price_unit":"Per second","time_band":"standard"}]}]},
 {"model":"happyhorse-1.0-t2v","provider":"happyhorse","prices":[{"range_name":"Default","prices":[
+{"type":"video_ratio_720p","price":"0.14","price_unit":"Per second","time_band":"standard"},
+{"type":"video_ratio_1080p","price":"0.24","price_unit":"Per second","time_band":"standard"}]}]},
+{"model":"unserved-video-1","provider":"happyhorse","prices":[{"range_name":"Default","prices":[
 {"type":"video_ratio_720p","price":"0.14","price_unit":"Per second","time_band":"standard"}]}]},
 {"model":"free-input-only","prices":[{"range_name":"Default","prices":[
 {"type":"input_token","price":"0","price_unit":"Per 1M tokens","time_band":null}]}]}]}}`
@@ -187,13 +190,15 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 	assert.Equal(t, video, exprs["wan3.0-video"])
 	assert.Empty(t, customBillingExprError("wan3.0-video", video))
 	assert.Equal(t, `tier("base", u("seconds") * 0.1)`, exprs["wanx2.1-t2v-plus"])
+	// The vod-baidu-task plugin serves HappyHorse and meters its seconds by resolution.
+	assert.Equal(t, `u("resolution") == "720P" ? tier("720P", u("seconds") * 0.14) : tier("1080P", u("seconds") * 0.24)`, exprs["happyhorse-1.0-t2v"])
 	assert.Equal(t, map[string]string{
-		"peaky":              "time-of-day prices without both a peak and an off-peak input and output price",
-		"qwen-timed":         "priced by time of day, and the peak hours are only known for DeepSeek models",
-		"free-input-only":    "no input and output token price",
-		"wan2.7-t2v":         "Model Studio lists no per-second price for 1080P",
-		"wan2.6-i2v-flash":   "the plugin also prices this model by audio, and Model Studio lists per-second prices by resolution only",
-		"happyhorse-1.0-t2v": "priced per second of video, and no task plugin on this gateway meters the seconds of this model",
+		"peaky":            "time-of-day prices without both a peak and an off-peak input and output price",
+		"qwen-timed":       "priced by time of day, and the peak hours are only known for DeepSeek models",
+		"free-input-only":  "no input and output token price",
+		"wan2.7-t2v":       "Model Studio lists no per-second price for 1080P",
+		"wan2.6-i2v-flash": "the plugin also prices this model by audio, and Model Studio lists per-second prices by resolution only",
+		"unserved-video-1": "priced per second of video, and no task plugin on this gateway meters the seconds of this model",
 	}, got[customPricingSkippedField])
 }
 
