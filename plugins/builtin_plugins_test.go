@@ -163,7 +163,8 @@ func TestBuiltInTaskPluginResponsesAndUsageContracts(t *testing.T) {
 	}
 	// Every other directory holds a request processing plugin, which has no
 	// task part.
-	allKeys := slices.Concat(expectedKeys, slices.Collect(maps.Keys(requestPluginHooks)))
+	// Fork: baidu-vod is a provider plugin, with relay routes and no task part.
+	allKeys := slices.Concat(expectedKeys, []string{"baidu-vod"}, slices.Collect(maps.Keys(requestPluginHooks)))
 	slices.Sort(allKeys)
 	assert.Equal(t, allKeys, actualKeys)
 
