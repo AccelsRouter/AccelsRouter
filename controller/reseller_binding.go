@@ -5,6 +5,7 @@
 package controller
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"html"
@@ -166,6 +167,9 @@ func InviteExistingCustomer(c *gin.Context) {
 	}
 	emailed := sendResellerBindEmail(bind.InvitedEmail, model.ResellerLabelOfOrg(reseller), bind.Code)
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "bind.invite", fmt.Sprintf("bind:%d", bind.Id), bind.InvitedEmail)
+	if invited, err := model.GetUniqueUserByEmail(bind.InvitedEmail); err == nil {
+		model.NotifyUsers([]int{invited.Id}, resellerBindNotice("{{reseller}} invites you to become its customer", bind))
+	}
 	// The link only works for the invited address's own account, so handing it
 	// to the reseller when no mail could be sent gives nothing away.
 	code := ""
@@ -199,6 +203,7 @@ func OfferToBindApplicant(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "bind.offer", fmt.Sprintf("bind:%d", bind.Id), "")
+	model.NotifyUsers([]int{bind.CustomerUserId}, resellerBindNotice("{{reseller}} answered your application with an offer for you to confirm", bind))
 	common.ApiSuccess(c, nil)
 }
 
@@ -216,6 +221,7 @@ func CloseMyResellerBindRequest(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(reseller.Id, c.GetInt("id"), "bind."+bind.Status, fmt.Sprintf("bind:%d", bind.Id), "")
+	model.NotifyUsers([]int{bind.CustomerUserId}, resellerBindNotice("{{reseller}} closed your request to become its customer", bind))
 	common.ApiSuccess(c, nil)
 }
 
@@ -350,6 +356,7 @@ func ApplyToJoinReseller(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(bind.ResellerOrgId, c.GetInt("id"), "bind.apply", fmt.Sprintf("bind:%d", bind.Id), "")
+	model.NotifyOrgAdmins(bind.ResellerOrgId, 0, resellerBindNotice("{{user}} applied to become your customer", bind))
 	common.ApiSuccess(c, gin.H{"id": bind.Id, "status": bind.Status})
 }
 
@@ -385,7 +392,24 @@ func AcceptResellerBindOffer(c *gin.Context) {
 		return
 	}
 	recordResellerBindOutcome(bind, c.GetInt("id"), "bind.accept")
+	if bind.Status == model.BindStatusPendingPlatform {
+		model.NotifyOrgAdmins(bind.ResellerOrgId, 0, resellerBindNotice("{{user}} accepted your offer; the platform is reviewing it", bind))
+		model.NotifyPlatformAdmins(resellerBindNotice("Binding {{user}} to distributor {{reseller}} awaits review", bind))
+	} else {
+		model.NotifyOrgAdmins(bind.ResellerOrgId, 0, resellerBindNotice("{{user}} accepted your offer and is now your customer", bind))
+	}
 	common.ApiSuccess(c, gin.H{"id": bind.Id, "status": bind.Status, "org_id": bind.CustomerOrgId})
+}
+
+// resellerBindNotice words a notification about a request to bind a customer:
+// sentence may name the reseller as {{reseller}} and the customer side as
+// {{user}}.
+func resellerBindNotice(sentence string, bind *model.ResellerBindRequest) *common.Message {
+	params := map[string]any{"user": cmp.Or(model.UserDisplayLabelsByIds([]int{bind.CustomerUserId})[bind.CustomerUserId], bind.InvitedEmail)}
+	if reseller, err := model.GetOrganizationById(bind.ResellerOrgId); err == nil && reseller != nil {
+		params["reseller"] = model.ResellerLabelOfOrg(reseller)
+	}
+	return common.NewMessage(sentence, params)
 }
 
 // recordResellerBindOutcome writes a step of a request to the reseller's audit
@@ -411,6 +435,7 @@ func CloseMyResellerBinding(c *gin.Context) {
 		return
 	}
 	recordResellerBindOutcome(bind, c.GetInt("id"), "bind.decline")
+	model.NotifyOrgAdmins(bind.ResellerOrgId, 0, resellerBindNotice("{{user}} closed the request to become your customer", bind))
 	common.ApiSuccess(c, nil)
 }
 
@@ -467,5 +492,11 @@ func reviewResellerBindRequest(c *gin.Context, id int, approve bool) {
 		return
 	}
 	recordResellerBindOutcome(bind, c.GetInt("id"), "bind.review")
+	toCustomer, toReseller := "The platform declined your binding to distributor {{reseller}}", "The platform declined {{user}} as your customer"
+	if approve {
+		toCustomer, toReseller = "The platform approved your binding to distributor {{reseller}}", "The platform approved {{user}} as your customer"
+	}
+	model.NotifyUsers([]int{bind.CustomerUserId}, resellerBindNotice(toCustomer, bind))
+	model.NotifyOrgAdmins(bind.ResellerOrgId, 0, resellerBindNotice(toReseller, bind))
 	common.ApiSuccess(c, gin.H{"status": bind.Status})
 }

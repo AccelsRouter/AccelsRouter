@@ -159,7 +159,8 @@ func customVendorIsLargeJump(old, next model.CustomVendorPrice) bool {
 	for i := range before {
 		a, b := before[i], after[i]
 		if large(&a.Input, &b.Input) || large(a.Output, b.Output) || large(a.CacheRead, b.CacheRead) ||
-			large(a.CacheWrite, b.CacheWrite) || large(a.AudioInput, b.AudioInput) || large(a.ImageInput, b.ImageInput) {
+			large(a.CacheWrite, b.CacheWrite) || large(a.AudioInput, b.AudioInput) || large(a.ImageInput, b.ImageInput) ||
+			large(a.ImageCacheRead, b.ImageCacheRead) || large(a.ImageOutput, b.ImageOutput) {
 			return true
 		}
 		for unit, price := range a.Usage {
@@ -539,14 +540,19 @@ func resolveCustomVendorPrices() (map[string]customVendorPrice, map[string]bool,
 		}
 	}
 	// ByteDance prices a model family once; a snapshot this gateway serves
-	// (doubao-seed-2-1-pro-260715) carries its family's price.
+	// (doubao-seed-2-1-pro-260715) carries its family's price. So does a dated
+	// snapshot of another vendor's model (claude-opus-4-5-20251101).
 	for _, name := range model.GetEnabledModels() {
-		family := customArkSnapshotDate.ReplaceAllString(name, "")
-		price, listed := prices[family]
-		if _, own := prices[name]; own || !listed {
+		if _, own := prices[name]; own {
 			continue
 		}
-		if strings.HasPrefix(price.Provider, customVendorBytePlusProvider) || strings.HasPrefix(price.Provider, customVendorVolcengineProvider) {
+		family := customArkSnapshotDate.ReplaceAllString(name, "")
+		price, listed := prices[family]
+		if listed && (strings.HasPrefix(price.Provider, customVendorBytePlusProvider) || strings.HasPrefix(price.Provider, customVendorVolcengineProvider)) {
+			prices[name] = price
+			continue
+		}
+		if price, listed := prices[customSnapshotDate.ReplaceAllString(name, "")]; listed {
 			prices[name] = price
 		}
 	}

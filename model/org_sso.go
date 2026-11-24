@@ -154,5 +154,6 @@ func AutoProvisionOrgMembership(user *User, provider string) (bool, error) {
 		}
 		return false, err
 	}
+	NotifyOrgAdmins(org.Id, user.Id, common.NewMessage("{{user}} joined organization {{org}}", map[string]any{"user": user.Email, "org": org.Name}))
 	return true, nil
 }

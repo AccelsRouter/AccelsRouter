@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 )
@@ -36,7 +37,8 @@ const customVendorDeepSeekPeak = `weekday("Asia/Shanghai") >= 1 && weekday("Asia
 // write price is cc; without one, names containing "claude" carry Anthropic's
 // published multiples of the base input price (1.25x for 5 minutes, 2x for 1
 // hour), which the billing engine separates for those names. A separate audio
-// input price is ai.
+// input price is ai, a separate image output price img_o, a separate price of
+// image input img and of cached image input img_cr.
 func customVendorTierBody(name string, tier customVendorTier) (string, bool) {
 	if tier.Output == nil || tier.Input <= 0 || !validCustomVendorNumber(tier.Input) || !validCustomVendorNumber(*tier.Output) {
 		return "", false
@@ -56,6 +58,12 @@ func customVendorTierBody(name string, tier customVendorTier) (string, bool) {
 	}
 	if tier.ImageInput != nil && validCustomVendorNumber(*tier.ImageInput) {
 		body += " + img * " + customVendorPriceText(*tier.ImageInput)
+	}
+	if tier.ImageCacheRead != nil && validCustomVendorNumber(*tier.ImageCacheRead) {
+		body += " + img_cr * " + customVendorPriceText(*tier.ImageCacheRead)
+	}
+	if tier.ImageOutput != nil && validCustomVendorNumber(*tier.ImageOutput) {
+		body += " + img_o * " + customVendorPriceText(*tier.ImageOutput)
 	}
 	return body, true
 }
@@ -234,8 +242,30 @@ func customVendorSyncExpr(name string, price customVendorPrice) (string, bool) {
 	return expr, true
 }
 
+// customSameTokenPrice reports two unconditional token expressions that charge
+// the same for every kind of token, however they name their tier and order
+// their terms.
+func customSameTokenPrice(a, b string) bool {
+	if strings.Contains(a, "?") || strings.Contains(b, "?") || !maps.Equal(billingexpr.UsedVars(a), billingexpr.UsedVars(b)) {
+		return false
+	}
+	for _, sample := range []billingexpr.TokenParams{
+		{P: 1}, {C: 1}, {CR: 1}, {CC: 1}, {CC1h: 1}, {CC12h: 1}, {Img: 1}, {ImgCR: 1}, {ImgO: 1}, {AI: 1}, {AO: 1},
+		{P: 2, C: 3, CR: 5, CC: 7, CC1h: 11, CC12h: 13, Img: 17, ImgCR: 19, ImgO: 23, AI: 29, AO: 31},
+	} {
+		left, _, leftErr := billingexpr.RunExpr(a, sample)
+		right, _, rightErr := billingexpr.RunExpr(b, sample)
+		if leftErr != nil || rightErr != nil || math.Abs(left-right) > 1e-9 {
+			return false
+		}
+	}
+	return true
+}
+
 // customVendorPricingSyncData serves the catalog's resolved prices (a manual
-// entry first, then the vendor's own source) to the price sync.
+// entry first, then the vendor's own source) to the price sync. A model
+// already charged the vendor's price is served in the wording it has, so the
+// sync reports no difference for it.
 func customVendorPricingSyncData() (map[string]any, error) {
 	prices, _, err := resolveCustomVendorPrices()
 	if err != nil {
@@ -250,6 +280,9 @@ func customVendorPricingSyncData() (map[string]any, error) {
 		expr, ok := customVendorSyncExpr(name, price)
 		if !ok {
 			continue
+		}
+		if current, set := billing_setting.GetBillingExpr(name); set && customSameTokenPrice(current, expr) {
+			expr = current
 		}
 		modes[name] = billing_setting.BillingModeTieredExpr
 		exprs[name] = expr

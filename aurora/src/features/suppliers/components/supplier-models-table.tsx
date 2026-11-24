@@ -27,9 +27,12 @@ import {
   SUPPLIER_MODEL_SOURCE_VARIANTS,
   optionLabel,
 } from '../constants'
-import type { SupplierModel } from '../types'
+import type { SupplierChannelView, SupplierModel } from '../types'
 
-export function SupplierModelsTable(props: { models: SupplierModel[] }) {
+export function SupplierModelsTable(props: {
+  models: SupplierModel[]
+  channels?: SupplierChannelView[]
+}) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   return (
@@ -49,7 +52,7 @@ export function SupplierModelsTable(props: { models: SupplierModel[] }) {
         },
         {
           id: 'source',
-          header: t('Source'),
+          header: t('Nature'),
           cell: (row: SupplierModel) => {
             const label = optionLabel(SUPPLIER_MODEL_SOURCE_OPTIONS, row.source)
             return label ? (
@@ -61,6 +64,19 @@ export function SupplierModelsTable(props: { models: SupplierModel[] }) {
             ) : (
               '—'
             )
+          },
+        },
+        {
+          id: 'channel',
+          header: t('Channel'),
+          cell: (row: SupplierModel) => {
+            if (!row.channel_id) return '—'
+            const channel = props.channels?.find(
+              (c) => c.channel_id === row.channel_id
+            )
+            return channel?.name
+              ? `#${row.channel_id} ${channel.name}`
+              : `#${row.channel_id}`
           },
         },
         {

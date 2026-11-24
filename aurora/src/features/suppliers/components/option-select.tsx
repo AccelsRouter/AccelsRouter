@@ -43,6 +43,8 @@ type OptionSelectProps = {
   id?: string
   ariaLabel?: string
   className?: string
+  /** Labels are shown as given (names, numbers) instead of as i18n keys. */
+  literalLabels?: boolean
 }
 
 /**
@@ -53,7 +55,7 @@ export function OptionSelect(props: OptionSelectProps) {
   const { t } = useTranslation()
   const items = props.options.map((option) => ({
     value: option.value,
-    label: t(option.label),
+    label: props.literalLabels ? option.label : t(option.label),
   }))
   if (props.clearable) {
     items.unshift({ value: CLEAR_VALUE, label: t('Not set') })

@@ -167,6 +167,9 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 {"type":"video_ratio_720p","price":"0.05","price_unit":"Per second","time_band":"standard"},
 {"type":"video_ratio_1080p","price":"0.075","price_unit":"Per second","time_band":"standard"}]}]},
 {"model":"happyhorse-1.0-t2v","provider":"happyhorse","prices":[{"range_name":"Default","prices":[
+{"type":"video_ratio_720p","price":"0.14","price_unit":"Per second","time_band":"standard"},
+{"type":"video_ratio_1080p","price":"0.24","price_unit":"Per second","time_band":"standard"}]}]},
+{"model":"unserved-video-1","provider":"happyhorse","prices":[{"range_name":"Default","prices":[
 {"type":"video_ratio_720p","price":"0.14","price_unit":"Per second","time_band":"standard"}]}]},
 {"model":"free-input-only","prices":[{"range_name":"Default","prices":[
 {"type":"input_token","price":"0","price_unit":"Per 1M tokens","time_band":null}]}]}]}}`
@@ -187,13 +190,15 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 	assert.Equal(t, video, exprs["wan3.0-video"])
 	assert.Empty(t, customBillingExprError("wan3.0-video", video))
 	assert.Equal(t, `tier("base", u("seconds") * 0.1)`, exprs["wanx2.1-t2v-plus"])
+	// The vod-baidu-task plugin serves HappyHorse and meters its seconds by resolution.
+	assert.Equal(t, `u("resolution") == "720P" ? tier("720P", u("seconds") * 0.14) : tier("1080P", u("seconds") * 0.24)`, exprs["happyhorse-1.0-t2v"])
 	assert.Equal(t, map[string]string{
-		"peaky":              "time-of-day prices without both a peak and an off-peak input and output price",
-		"qwen-timed":         "priced by time of day, and the peak hours are only known for DeepSeek models",
-		"free-input-only":    "no input and output token price",
-		"wan2.7-t2v":         "Model Studio lists no per-second price for 1080P",
-		"wan2.6-i2v-flash":   "the plugin also prices this model by audio, and Model Studio lists per-second prices by resolution only",
-		"happyhorse-1.0-t2v": "priced per second of video, and no task plugin on this gateway meters the seconds of this model",
+		"peaky":            "time-of-day prices without both a peak and an off-peak input and output price",
+		"qwen-timed":       "priced by time of day, and the peak hours are only known for DeepSeek models",
+		"free-input-only":  "no input and output token price",
+		"wan2.7-t2v":       "Model Studio lists no per-second price for 1080P",
+		"wan2.6-i2v-flash": "the plugin also prices this model by audio, and Model Studio lists per-second prices by resolution only",
+		"unserved-video-1": "priced per second of video, and no task plugin on this gateway meters the seconds of this model",
 	}, got[customPricingSkippedField])
 }
 
@@ -395,8 +400,9 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	assertCustomVendorPrice(t, deepseek, "deepseek-v4-flash-vision-exp", 0.3, 1.2)
 
 	// Gemini: a price with an effective date follows the date, prompt-length
-	// tiers and a separate audio input price are kept, and models priced per
-	// minute, per image or by output modality are left out.
+	// tiers, a separate audio input price and a separate image output price
+	// are kept, and models priced per minute, per image or by audio output are
+	// left out.
 	google, err := parseCustomGooglePricing(customVendorFixture(t, "google.md"), time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC))
 	require.NoError(t, err)
 	assertCustomVendorPrice(t, google, "gemini-4-argon", 2, 10)
@@ -411,7 +417,14 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	assertCustomVendorPrice(t, google, "gemini-2.5-flash", 0.3, 2.5)
 	require.Len(t, google["gemini-2.5-flash"].Tiers, 1)
 	assert.Equal(t, 1.0, *google["gemini-2.5-flash"].Tiers[0].AudioInput)
-	for _, name := range []string{"gemini-3.1-flash-tts-preview", "gemini-3.5-transcribe", "gemini-3.1-flash-image", "gemini-embedding-001"} {
+	assertCustomVendorPrice(t, google, "gemini-3.1-flash-image", 0.5, 3)
+	require.Len(t, google["gemini-3.1-flash-image"].Tiers, 1)
+	require.NotNil(t, google["gemini-3.1-flash-image"].Tiers[0].ImageOutput)
+	assert.Equal(t, 60.0, *google["gemini-3.1-flash-image"].Tiers[0].ImageOutput)
+	imageExpr, offered := customVendorSyncExpr("gemini-3.1-flash-image", google["gemini-3.1-flash-image"])
+	require.True(t, offered)
+	assert.Equal(t, `tier("base", p * 0.5 + c * 3 + img_o * 60)`, imageExpr)
+	for _, name := range []string{"gemini-3.1-flash-tts-preview", "gemini-3.5-transcribe", "gemini-embedding-001"} {
 		assert.NotContains(t, google, name)
 	}
 	// One model is written as its API resource name; it is catalogued by its id.
@@ -463,7 +476,11 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	defer router.Close()
 	own, err := fetchCustomOpenAIVendorPrices(t.Context(), router.Client(), router.URL+"/models")
 	require.NoError(t, err)
-	assert.Len(t, own, 2)
+	// The image models OpenRouter does not list come with the two it does.
+	assert.Len(t, own, 2+len(customOpenAIImageModels))
+	imageExpr, ok := customVendorSyncExpr("gpt-image-2.6-flare", own["gpt-image-2.6-flare"])
+	require.True(t, ok)
+	assert.Equal(t, `tier("base", p * 5 + c * 30 + cr * 1.25 + img * 8 + img_cr * 2)`, imageExpr)
 	assertCustomVendorPrice(t, own, "gpt-x", 4, 20)
 	require.Len(t, own["gpt-x"].Tiers, 2)
 	assert.Equal(t, 8.0, own["gpt-x"].Tiers[1].Input)
@@ -547,10 +564,18 @@ func TestCustomBillingExprErrorFlagsUnservedUsageExpressions(t *testing.T) {
 func TestCustomCharacterExpressionConversion(t *testing.T) {
 	var errors, conversions map[string]string
 	candidate := map[string]any{billing_setting.BillingModeField: billing_setting.BillingModeTieredExpr, billing_setting.BillingExprField: `u("characters") / 10000 * 0.4412`}
-	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", candidate)
+	customRecordBillingExprError(&errors, &conversions, "aigc", "other-tts-1", candidate)
 	assert.Empty(t, errors)
 	assert.Equal(t, `tier("base", p * 44.12)`, candidate[billing_setting.BillingExprField])
 	assert.Equal(t, `u("characters") / 10000 * 0.4412`, conversions["aigc"])
+	// seed-tts-2.0 is served by the doubao plugin, which meters characters, so
+	// its task price is kept as the upstream has it.
+	errors, conversions = nil, nil
+	served := map[string]any{billing_setting.BillingExprField: `u("characters") / 10000 * 0.4412`}
+	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", served)
+	assert.Empty(t, errors)
+	assert.Empty(t, conversions)
+	assert.Equal(t, `u("characters") / 10000 * 0.4412`, served[billing_setting.BillingExprField])
 
 	assert.Equal(t, `tier("base", p * 50)`, customConvertCharacterExpr(`tier("base", u("characters") * 0.00005)`))
 	assert.Equal(t, `tier("base", p * 0)`, customConvertCharacterExpr(`u("characters") * 0`))
@@ -565,7 +590,7 @@ func TestCustomCharacterExpressionConversion(t *testing.T) {
 		assert.Empty(t, customConvertCharacterExpr(expression), name)
 	}
 	errors, conversions = nil, nil
-	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", map[string]any{billing_setting.BillingExprField: `tier("base", 0.01 + u("characters") * 0.00005)`})
+	customRecordBillingExprError(&errors, &conversions, "aigc", "other-tts-1", map[string]any{billing_setting.BillingExprField: `tier("base", 0.01 + u("characters") * 0.00005)`})
 	assert.Contains(t, errors, "aigc")
 	assert.Empty(t, conversions)
 }

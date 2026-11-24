@@ -33,7 +33,9 @@ export interface SupplierFields {
   tech_contact: string
   status: string
   grade: string
+  /** Name snapshot of the owner (or free text of older records). */
   owner: string
+  owner_id: number
   onboard_date: string
   sign_entity: string
   gst_applicable: boolean | null
@@ -67,6 +69,8 @@ export interface SupplierModel {
   tpm: number | null
   enabled: boolean
   remark: string
+  /** The bound channel this row was pulled from; 0 when typed in. */
+  channel_id: number
 }
 
 /** Amounts are decimal strings with at most two places, e.g. "1200.50". */
@@ -99,6 +103,8 @@ export interface SupplierContract extends SupplierContractTerms {
   voided_time: number
   created_time: number
   updated_time: number
+  /** Supplier model rows this contract covers. */
+  model_ids: number[]
 }
 
 export interface SupplierAttachment {
@@ -125,6 +131,49 @@ export interface SupplierDetail extends Supplier {
   contracts: SupplierContract[]
   attachments: SupplierAttachment[]
   missing_fields: string[]
+  channels: SupplierChannelView[]
+}
+
+export interface SupplierChannelView {
+  channel_id: number
+  name: string
+  type: number
+  status: number
+  model_count: number
+}
+
+export interface SupplierChannelOption {
+  channel_id: number
+  name: string
+  status: number
+  /** Supplier the channel is bound to; 0 when free. */
+  supplier_id: number
+}
+
+export interface SupplierMeta {
+  owners: { id: number; name: string }[]
+  models: string[]
+  variants: string[]
+  channels: SupplierChannelOption[]
+}
+
+export interface SupplierBrief {
+  id: number
+  code: string
+  legal_name: string
+  short_name: string
+  status: string
+  exact: boolean
+}
+
+export interface SupplierChannelOffer {
+  channel_id: number
+  supplier_id: number
+  supplier_name: string
+  model_name: string
+  variant: string
+  source: string
+  discount_pct: number | null
 }
 
 export interface SupplierStats {
@@ -176,4 +225,5 @@ export type SupplierContractPayload = SupplierContractTerms & {
   business_line: string
   contract_type: string
   parent_contract_id: number
+  model_ids: number[]
 }

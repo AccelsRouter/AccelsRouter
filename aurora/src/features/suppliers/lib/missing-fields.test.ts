@@ -34,6 +34,7 @@ const complete: SupplierFields = {
   status: 'active',
   grade: '',
   owner: 'Sam',
+  owner_id: 0,
   onboard_date: '',
   sign_entity: 'sg',
   gst_applicable: false,
@@ -57,6 +58,7 @@ const model: SupplierModel = {
   tpm: null,
   enabled: true,
   remark: '',
+  channel_id: 0,
 }
 
 describe('supplierMissingFields', () => {

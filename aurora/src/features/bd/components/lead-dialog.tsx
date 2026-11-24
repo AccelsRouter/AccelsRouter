@@ -35,6 +35,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
 import { createModel } from '@/features/models/api'
+import { SupplierArchiveLink } from '@/features/suppliers/components/supplier-archive-link'
 import {
   deleteBdLead,
   saveBdLead,
@@ -330,6 +331,15 @@ export function LeadDialog(props: {
                 }
                 autoFocus
               />
+              {/* Fork: link a purchase lead to its supplier record */}
+              {isBuy && (
+                <SupplierArchiveLink
+                  company={f.company}
+                  ownerId={Number(f.owner_id) || 0}
+                  models={f.models}
+                  isNew={!lead}
+                />
+              )}
             </Field>
 
             <div className='flex flex-col gap-2 sm:col-span-2'>

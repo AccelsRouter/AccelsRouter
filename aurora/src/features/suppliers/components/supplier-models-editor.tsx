@@ -16,10 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type Control, useFieldArray } from 'react-hook-form'
+import { useMemo } from 'react'
+import {
+  type Control,
+  type ControllerRenderProps,
+  useFieldArray,
+} from 'react-hook-form'
 import { Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { ComboboxInput } from '@/components/ui/combobox-input'
 import {
   FormControl,
   FormField,
@@ -30,7 +36,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { TitledCard } from '@/components/ui/titled-card'
+import { SuggestInput } from '@/features/bd/components/suggest-input'
+import { fuzzyModels, MODEL_CLASS_KEYS } from '@/features/bd/lib'
 import { SUPPLIER_MODEL_SOURCE_OPTIONS } from '../constants'
+import { useSupplierMeta } from '../hooks/use-supplier-meta'
 import { BLANK_MODEL_ROW, type SupplierFormValues } from '../lib/supplier-form'
 import { OptionSelect } from './option-select'
 
@@ -47,10 +56,25 @@ export function SupplierModelsEditor(props: {
   control: Control<SupplierFormValues>
 }) {
   const { t } = useTranslation()
+  // keyName must not be "id": rows carry their database id under that name.
   const { fields, append, remove } = useFieldArray({
     control: props.control,
     name: 'models',
+    keyName: 'key',
   })
+  const { meta } = useSupplierMeta()
+  // Same choices as the BD lead form: the system model list, and variant
+  // notes from the usual set plus those already in use.
+  const modelOptions = useMemo(
+    () => meta.models.map((name) => ({ value: name, label: name })),
+    [meta.models]
+  )
+  const variantOptions = [
+    ...new Set([...MODEL_CLASS_KEYS.map((k) => t(k)), ...meta.variants]),
+  ]
+  const channelNames = new Map(
+    meta.channels.map((channel) => [channel.channel_id, channel.name])
+  )
 
   const textColumns: {
     key: ModelTextField
@@ -105,11 +129,16 @@ export function SupplierModelsEditor(props: {
       <div className='flex flex-col gap-3'>
         {fields.map((row, index) => (
           <fieldset
-            key={row.id}
+            key={row.key}
             className='grid grid-cols-2 gap-3 rounded-lg border p-3 md:grid-cols-4 xl:grid-cols-10'
           >
             <legend className='text-muted-foreground px-1 text-xs'>
               {t('Model row {{row}}', { row: index + 1 })}
+              {row.channel_id > 0 &&
+                ` · ${t('From channel {{name}}', {
+                  name:
+                    channelNames.get(row.channel_id) ?? `#${row.channel_id}`,
+                })}`}
             </legend>
             {textColumns.map((column) => (
               <FormField
@@ -131,13 +160,13 @@ export function SupplierModelsEditor(props: {
                       )}
                     </FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
+                      <ModelRowInput
+                        column={column.key}
+                        field={field}
                         placeholder={column.placeholder}
-                        inputMode={column.numeric ? 'decimal' : undefined}
-                        className={
-                          column.key === 'model_name' ? 'font-mono' : undefined
-                        }
+                        numeric={column.numeric}
+                        modelOptions={modelOptions}
+                        variantOptions={variantOptions}
                       />
                     </FormControl>
                     <FormMessage />
@@ -151,7 +180,7 @@ export function SupplierModelsEditor(props: {
               render={({ field }) => (
                 <FormItem className='col-span-2 xl:col-span-1'>
                   <FormLabel className='text-xs'>
-                    {t('Source')}
+                    {t('Nature')}
                     <span className='text-destructive'>*</span>
                   </FormLabel>
                   <OptionSelect
@@ -200,5 +229,55 @@ export function SupplierModelsEditor(props: {
         )}
       </div>
     </TitledCard>
+  )
+}
+
+/** The input of one model-row cell: the model list for the model name, the
+ * usual notes for the variant, and plain text for everything else. */
+function ModelRowInput(props: {
+  column: ModelTextField
+  field: ControllerRenderProps<SupplierFormValues>
+  placeholder?: string
+  numeric?: boolean
+  modelOptions: { value: string; label: string }[]
+  variantOptions: string[]
+}) {
+  const { t } = useTranslation()
+  const value = String(props.field.value ?? '')
+  if (props.column === 'model_name') {
+    return (
+      <ComboboxInput
+        value={value}
+        onValueChange={props.field.onChange}
+        options={props.modelOptions}
+        filterOptions={fuzzyModels}
+        allowCustomValue
+        placeholder={t('Search the model list')}
+        emptyText='No matching model in the model list'
+        className='font-mono'
+      />
+    )
+  }
+  if (props.column === 'variant') {
+    return (
+      <SuggestInput
+        name={props.field.name}
+        value={value}
+        onChange={props.field.onChange}
+        onBlur={props.field.onBlur}
+        options={props.variantOptions}
+        placeholder={props.placeholder}
+      />
+    )
+  }
+  return (
+    <Input
+      name={props.field.name}
+      value={value}
+      onChange={props.field.onChange}
+      onBlur={props.field.onBlur}
+      placeholder={props.placeholder}
+      inputMode={props.numeric ? 'decimal' : undefined}
+    />
   )
 }

@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -121,6 +122,70 @@ type SupplierContract struct {
 	UpdatedBy        int            `json:"updated_by"`
 	CreatedTime      int64          `json:"created_time" gorm:"type:bigint"`
 	UpdatedTime      int64          `json:"updated_time" gorm:"type:bigint"`
+	// ModelIds are the supplier model rows the contract covers.
+	ModelIds []int `json:"model_ids" gorm:"-"`
+}
+
+// SupplierContractModel links a contract to a supplier model row it covers.
+type SupplierContractModel struct {
+	Id              int `json:"id"`
+	ContractId      int `json:"contract_id" gorm:"uniqueIndex:uk_supplier_contract_model,priority:1"`
+	SupplierModelId int `json:"supplier_model_id" gorm:"uniqueIndex:uk_supplier_contract_model,priority:2;index"`
+}
+
+// setSupplierContractModels replaces the models a contract covers. Every id
+// must be a model row of the contract's supplier.
+func setSupplierContractModels(tx *gorm.DB, c *SupplierContract, modelIDs []int) error {
+	ids := slices.Compact(slices.Sorted(slices.Values(modelIDs)))
+	if len(ids) > 0 {
+		var owned int64
+		if err := tx.Model(&SupplierModel{}).Where("supplier_id = ? AND id IN ?", c.SupplierId, ids).Count(&owned).Error; err != nil {
+			return err
+		}
+		if int(owned) != len(ids) {
+			return supplierInvalid("Pick models from this supplier's model list")
+		}
+	}
+	if err := tx.Where("contract_id = ?", c.Id).Delete(&SupplierContractModel{}).Error; err != nil {
+		return err
+	}
+	links := make([]SupplierContractModel, 0, len(ids))
+	for _, id := range ids {
+		links = append(links, SupplierContractModel{ContractId: c.Id, SupplierModelId: id})
+	}
+	if len(links) > 0 {
+		if err := tx.Create(&links).Error; err != nil {
+			return err
+		}
+	}
+	c.ModelIds = ids
+	return nil
+}
+
+// fillSupplierContractModels loads the covered model ids of contracts.
+func fillSupplierContractModels(db *gorm.DB, contracts []SupplierContract) error {
+	if len(contracts) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(contracts))
+	for i := range contracts {
+		ids = append(ids, contracts[i].Id)
+		contracts[i].ModelIds = []int{}
+	}
+	var links []SupplierContractModel
+	if err := db.Where("contract_id IN ?", ids).Order("supplier_model_id").Find(&links).Error; err != nil {
+		return err
+	}
+	byContract := map[int][]int{}
+	for _, link := range links {
+		byContract[link.ContractId] = append(byContract[link.ContractId], link.SupplierModelId)
+	}
+	for i := range contracts {
+		if covered, ok := byContract[contracts[i].Id]; ok {
+			contracts[i].ModelIds = covered
+		}
+	}
+	return nil
 }
 
 // SupplierContractSeq counts main contract numbers per direction and year.
@@ -144,7 +209,6 @@ func (c *SupplierContract) MissingFields() []string {
 		{"currency", c.Currency == ""},
 		{"pay_mode", c.PayMode == ""},
 		{"prepaid_amount", c.isPrepaid() && c.PrepaidAmount == nil},
-		{"remaining_amount", c.isPrepaid() && c.RemainingAmount == nil},
 	}
 	missing := make([]string, 0)
 	for _, field := range required {
@@ -344,7 +408,10 @@ func CreateSupplierContract(supplierID int, input *SupplierContract, operatorID 
 			return err
 		}
 		c.IsCurrent = currentCount == 0
-		return tx.Create(c).Error
+		if err := tx.Create(c).Error; err != nil {
+			return err
+		}
+		return setSupplierContractModels(tx, c, input.ModelIds)
 	})
 	if err != nil {
 		return nil, err
@@ -389,6 +456,17 @@ func UpdateSupplierContract(id int, input *SupplierContract, operatorID int) (be
 		terms := []string{"start_date", "end_date", "auto_renew", "notice_period", "currency", "pay_mode", "payment_term", "rebate_rule", "prepaid_amount", "remaining_amount", "low_balance_pct", "sla_terms", "remark", "updated_by", "updated_time"}
 		if err := tx.Model(&SupplierContract{Id: id}).Select(terms).Updates(c).Error; err != nil {
 			return err
+		}
+		covered := []SupplierContract{previous}
+		if err := fillSupplierContractModels(tx, covered); err != nil {
+			return err
+		}
+		previous.ModelIds, c.ModelIds = covered[0].ModelIds, covered[0].ModelIds
+		// A request without model_ids leaves the covered models as they are.
+		if input.ModelIds != nil {
+			if err := setSupplierContractModels(tx, c, input.ModelIds); err != nil {
+				return err
+			}
 		}
 		before, after = &previous, c
 		return nil

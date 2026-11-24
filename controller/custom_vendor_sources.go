@@ -28,7 +28,8 @@ var (
 	customGoogleAmount    = regexp.MustCompile(`\$([0-9][0-9,]*(?:\.[0-9]+)?)`)
 	customGoogleModality  = regexp.MustCompile(`^\$[0-9.,]+\s*\(([^)]*)\)`)
 	customGoogleEffective = regexp.MustCompile(`(through|starting) ([A-Z][a-z]+ [0-9]{1,2}, [0-9]{4})`)
-	customGoogleNonToken  = regexp.MustCompile(`(?i)/min|\((?:audio|images?|video)\)|per image`)
+	customGoogleNonToken  = regexp.MustCompile(`(?i)/min|\((?:audio|video)\)|per image`)
+	customGoogleAside     = regexp.MustCompile(`(?i)equivalent`)
 )
 
 // customGoogleAmounts is the prices one cell states for one kind of token: a
@@ -39,18 +40,26 @@ type customGoogleAmounts struct {
 	Above float64
 }
 
+// customGooglePricedPart is a cell without its markup and without the aside
+// that restates a token price per image or per second ("Equivalent to ...").
+func customGooglePricedPart(cell string) string {
+	cell = strings.Join(strings.Fields(strings.ReplaceAll(customGoogleTag.ReplaceAllString(cell, " "), `\`, " ")), " ")
+	if aside := customGoogleAside.FindStringIndex(cell); aside != nil {
+		cell = cell[:aside[0]]
+	}
+	return cell
+}
+
 // customGoogleCellPrices reads a "Paid Tier" cell of the Gemini pricing page.
 // A cell lists one price per condition: a modality in parentheses, a prompt
 // length ("prompts <= 200k tokens"), and an effective date ("through November
 // 30, 2026" / "starting December 1, 2026"). Prices not per token (storage per
 // hour, per image, per minute) are left out, as is everything after
-// "Equivalent to". It returns the text price and the audio price in effect on
-// day; ok is false when the cell cannot be read exactly.
-func customGoogleCellPrices(cell string, day time.Time) (text, audio *customGoogleAmounts, ok bool) {
-	cell = strings.Join(strings.Fields(strings.ReplaceAll(customGoogleTag.ReplaceAllString(cell, " "), `\`, " ")), " ")
-	if cut := strings.Index(cell, "Equivalent"); cut >= 0 {
-		cell = cell[:cut]
-	}
+// "Equivalent to". It returns the text price, the audio price and the price
+// of images in effect on day; ok is false when the cell cannot be read
+// exactly.
+func customGoogleCellPrices(cell string, day time.Time) (text, audio, image *customGoogleAmounts, ok bool) {
+	cell = customGooglePricedPart(cell)
 	starts := customGoogleAmount.FindAllStringSubmatchIndex(cell, -1)
 	for i, match := range starts {
 		end := len(cell)
@@ -63,13 +72,13 @@ func customGoogleCellPrices(cell string, day time.Time) (text, audio *customGoog
 		}
 		amount, err := strconv.ParseFloat(strings.ReplaceAll(cell[match[2]:match[3]], ",", ""), 64)
 		if err != nil {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
 		in := true
 		for _, effective := range customGoogleEffective.FindAllStringSubmatch(clause, -1) {
 			date, err := time.Parse("January 2, 2006", effective[2])
 			if err != nil {
-				return nil, nil, false
+				return nil, nil, nil, false
 			}
 			if (effective[1] == "through" && day.After(date)) || (effective[1] == "starting" && day.Before(date)) {
 				in = false
@@ -80,10 +89,14 @@ func customGoogleCellPrices(cell string, day time.Time) (text, audio *customGoog
 		}
 		target := &text
 		if label := customGoogleModality.FindStringSubmatch(clause); label != nil && !strings.Contains(strings.ToLower(label[1]), "text") {
-			if !strings.Contains(strings.ToLower(label[1]), "audio") {
-				return nil, nil, false
+			switch kind := strings.ToLower(strings.TrimSpace(label[1])); {
+			case strings.Contains(kind, "audio"):
+				target = &audio
+			case kind == "images" || kind == "image":
+				target = &image
+			default:
+				return nil, nil, nil, false
 			}
-			target = &audio
 		}
 		if *target == nil {
 			*target = &customGoogleAmounts{}
@@ -94,39 +107,39 @@ func customGoogleCellPrices(cell string, day time.Time) (text, audio *customGoog
 		switch {
 		case !strings.Contains(clause, "prompt"):
 			if amounts.Base != 0 || amounts.Upper != 0 {
-				return nil, nil, false
+				return nil, nil, nil, false
 			}
 			amounts.Base = amount
 		case below != nil:
 			upper, valid := customTierTokens(below)
 			if !valid || amounts.Base != 0 {
-				return nil, nil, false
+				return nil, nil, nil, false
 			}
 			amounts.Base, amounts.Upper = amount, upper
 		case above != nil:
 			if amounts.Above != 0 {
-				return nil, nil, false
+				return nil, nil, nil, false
 			}
 			amounts.Above = amount
 		default:
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
 	}
-	for _, amounts := range []*customGoogleAmounts{text, audio} {
+	for _, amounts := range []*customGoogleAmounts{text, audio, image} {
 		if amounts != nil && (amounts.Base <= 0 || (amounts.Upper > 0) != (amounts.Above > 0)) {
-			return nil, nil, false
+			return nil, nil, nil, false
 		}
 	}
-	return text, audio, true
+	return text, audio, image, true
 }
 
 // parseCustomGooglePricing reads the Gemini Developer API pricing page: one
 // section per model, whose first table is the standard paid tier. Only token
 // prices that can be read exactly are kept: text input, output, context
-// caching, prompt-length tiers and a separate audio input price. Models
-// priced per minute, per image or by output modality (live, transcription,
-// TTS, image generation) are left out. Prices with an effective date follow
-// the Pacific date of now.
+// caching, prompt-length tiers, a separate audio input price, and a separate
+// price for image output tokens next to the text one. Models priced per
+// minute, per image or by audio or video output (live, transcription, TTS)
+// are left out. Prices with an effective date follow the Pacific date of now.
 func parseCustomGooglePricing(page []byte, now time.Time) (map[string]customVendorPrice, error) {
 	pacific := now.UTC().Add(-8 * time.Hour)
 	day := time.Date(pacific.Year(), pacific.Month(), pacific.Day(), 0, 0, 0, 0, time.UTC)
@@ -154,18 +167,23 @@ func parseCustomGooglePricing(page []byte, now time.Time) (map[string]customVend
 				}
 			}
 		}
-		if customGoogleNonToken.MatchString(cells["output price"]) || strings.Contains(cells["input price"], "/min") {
+		if customGoogleNonToken.MatchString(customGooglePricedPart(cells["output price"])) || strings.Contains(cells["input price"], "/min") {
 			continue
 		}
-		input, audio, ok := customGoogleCellPrices(cells["input price"], day)
-		if !ok || input == nil || (audio != nil && audio.Upper > 0) {
+		input, audio, inputImages, ok := customGoogleCellPrices(cells["input price"], day)
+		if !ok || input == nil || inputImages != nil || (audio != nil && audio.Upper > 0) {
 			continue
 		}
-		output, _, ok := customGoogleCellPrices(cells["output price"], day)
+		output, _, images, ok := customGoogleCellPrices(cells["output price"], day)
 		if !ok || output == nil || (output.Upper > 0 && output.Upper != input.Upper) {
 			continue
 		}
-		cache, _, ok := customGoogleCellPrices(cells["context caching price"], day)
+		// Image output is read as one price beside one text price; with
+		// prompt-length tiers on either it is not read exactly.
+		if images != nil && (images.Upper > 0 || input.Upper > 0) {
+			continue
+		}
+		cache, _, _, ok := customGoogleCellPrices(cells["context caching price"], day)
 		if !ok || (cache != nil && cache.Upper > 0 && cache.Upper != input.Upper) {
 			cache = nil
 		}
@@ -175,6 +193,9 @@ func parseCustomGooglePricing(page []byte, now time.Time) (map[string]customVend
 		}
 		if audio != nil {
 			base.AudioInput = &audio.Base
+		}
+		if images != nil {
+			base.ImageOutput = &images.Base
 		}
 		price := customVendorPrice{Provider: customVendorGoogleProvider, Input: base.Input, Output: base.Output, CacheRead: base.CacheRead}
 		switch {
@@ -188,7 +209,7 @@ func parseCustomGooglePricing(page []byte, now time.Time) (map[string]customVend
 				top.CacheRead = &cache.Above
 			}
 			price.Tiers = []customVendorTier{base, top}
-		case audio != nil:
+		case audio != nil || images != nil:
 			price.Tiers = []customVendorTier{base}
 		}
 		for _, id := range ids {
@@ -306,6 +327,24 @@ func (p customOpenRouterPricing) vendorPrice() (customVendorPrice, bool) {
 	return price, true
 }
 
+// customOpenAIImageModels are OpenAI's image models. OpenRouter does not list
+// them and OpenAI's pricing pages refuse automated clients, so their price is
+// kept here: per 1M tokens, text input 5 (cached 1.25), image input 8 (cached
+// 2), output 30, as Baidu's model service price page (BO) states it for each
+// of them on 2026-11-24 and as the built-in gpt-image prices have it. The
+// Images API reports image output as output tokens.
+var customOpenAIImageModels = []string{
+	"gpt-image-2", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "gpt-image-2.6-sunburst", "gpt-image-2.6-flare",
+}
+
+func customOpenAIImagePrice() customVendorPrice {
+	output, cached, image, imageCached := 30.0, 1.25, 8.0, 2.0
+	return customVendorPrice{
+		Provider: "OpenAI list price (image models, read 2026-11-24)", Input: 5, Output: &output, CacheRead: &cached,
+		Tiers: []customVendorTier{{Input: 5, Output: &output, CacheRead: &cached, ImageInput: &image, ImageCacheRead: &imageCached}},
+	}
+}
+
 // customOpenRouterModelsURL is OpenRouter's public model list; a model's
 // endpoints are listed under it at /<id>/endpoints.
 const customOpenRouterModelsURL = "https://openrouter.ai/api/v1/models"
@@ -315,7 +354,8 @@ const customOpenRouterModelsURL = "https://openrouter.ai/api/v1/models"
 // endpoint. The list carries one price per model, and that can be another
 // host's regional endpoint, a tenth dearer. A model OpenAI itself does not
 // serve there keeps the listed price; one whose endpoints cannot be read is
-// left out, so the price stored for it stays.
+// left out, so the price stored for it stays. The image models OpenRouter does
+// not list are added at their kept price.
 func fetchCustomOpenAIVendorPrices(ctx context.Context, client *http.Client, modelsURL string) (map[string]customVendorPrice, error) {
 	body, err := fetchCustomVendorBody(ctx, client, modelsURL)
 	if err != nil {
@@ -367,6 +407,11 @@ func fetchCustomOpenAIVendorPrices(ctx context.Context, client *http.Client, mod
 			delete(prices, name)
 		case own[i] != nil:
 			prices[name] = *own[i]
+		}
+	}
+	for _, name := range customOpenAIImageModels {
+		if _, listed := prices[name]; !listed {
+			prices[name] = customOpenAIImagePrice()
 		}
 	}
 	return customPageResult(prices)

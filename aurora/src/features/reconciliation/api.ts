@@ -134,6 +134,9 @@ export type UpstreamBillRow = {
 export type UpstreamBillReport = {
   channel_id: number
   channel: string
+  // The other channels on the same upstream account (same host and key) the
+  // bill was compared with too.
+  also_channels?: string[] | null
   from: number
   to: number
   offset_minutes: number

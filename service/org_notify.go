@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -55,20 +56,28 @@ func notifyOrgOwnerBudget(orgId int, reason string) {
 	if !shouldAttemptOrgNotify(orgId, reason) {
 		return
 	}
-	var notifyType, prompt string
+	var notifyType, prompt, notice string
 	switch reason {
 	case "wallet":
 		notifyType, prompt = notifyOrgWalletInsufficient, "组织钱包余额不足"
+		notice = "Requests are being refused: the wallet of organization {{org}} is empty"
 	case "member":
 		notifyType, prompt = notifyOrgMemberBudget, "组织成员本月预算已用尽"
+		notice = "Requests are being refused: a member of organization {{org}} has used up this month's budget"
 	case "workspace":
 		notifyType, prompt = notifyOrgWorkspaceBudget, "组织 workspace 本月预算已用尽"
+		notice = "Requests are being refused: a workspace of organization {{org}} has used up this month's budget"
 	default:
 		return
 	}
 	gopool.Go(func() {
 		org, err := model.GetOrganizationById(orgId)
-		if err != nil || org == nil || org.OwnerUserId == 0 {
+		if err != nil || org == nil {
+			return
+		}
+		// In the console too, for everyone who runs the organization.
+		model.NotifyOrgAdminsOnce(orgId, common.NewMessage(notice, map[string]any{"org": org.Name}))
+		if org.OwnerUserId == 0 {
 			return
 		}
 		owner, err := model.GetUserById(org.OwnerUserId, false)

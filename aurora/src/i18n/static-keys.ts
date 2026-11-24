@@ -1068,4 +1068,13 @@ export const STATIC_I18N_KEYS = [
   'Set {{contract_no}} as the current supplier contract',
   'Uploaded supplier attachment {{file_name}}',
   'Deleted supplier attachment {{file_name}}',
+  // Supplier statuses, channel binding messages and audit lines.
+  'Signing contract',
+  'Nature',
+  "Pick models from this supplier's model list",
+  'Channel not found',
+  'Channel {{id}} is already bound to another supplier',
+  'Bind the channel to this supplier first',
+  'Changed the channels of supplier {{id}}',
+  'Pulled {{count}} models from channel {{channel_id}} into supplier {{id}}',
 ] as const

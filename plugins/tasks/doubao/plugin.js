@@ -323,6 +323,38 @@ function capabilityUsageProfiles(models, usageSchema, usageExamples) {
   return profiles.map((profile) => ({ models: profile.models, schema: profile.schema, examples: profile.examples }));
 }
 
+// Fork: Seed-TTS 2.0 speech synthesis as another New API gateway serves it,
+// POST /doubao/api/v3/tts/unidirectional: one JSON reply carrying the audio in
+// Base64, billed per character of req_params.text. Volcengine serves this API
+// on another host with its own credential headers, so only the new_api
+// upstream is addressed.
+const SPEECH_MODELS = ["seed-tts-2.0"];
+const SPEECH_ACTION = "text_to_speech";
+// Documented text ceiling; every character counts one, punctuation and spaces included.
+const MAX_SPEECH_CHARACTERS = 3000;
+// Characters of the request text at submit, usage.text_words of the reply on completion.
+const SPEECH_USAGE_SCHEMA = {
+  characters: { type: "number", unit: "token", description: { en: "Speech synthesis unit price", zh: "语音合成单价" } },
+};
+
+function speechTask(ctx) {
+  if (!ctx) return false;
+  return ctx.action === SPEECH_ACTION || SPEECH_MODELS.includes(trimmed(ctx.upstreamModel)) || SPEECH_MODELS.includes(trimmed(ctx.model));
+}
+
+// Fork: checks the members that set the charge and returns the billed
+// character count; the other req_params are the upstream's to check.
+function speechCharacters(body) {
+  const params = body && body.req_params;
+  if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("req_params is required");
+  if (typeof params.text !== "string" || !params.text) throw new Error("req_params.text is required");
+  if (typeof params.speaker !== "string" || !trimmed(params.speaker)) throw new Error("req_params.speaker is required");
+  // A character is at most two UTF-16 code units.
+  if (params.text.length > 2 * MAX_SPEECH_CHARACTERS || Array.from(params.text).length > MAX_SPEECH_CHARACTERS)
+    throw new Error("req_params.text must not exceed " + MAX_SPEECH_CHARACTERS + " characters");
+  return Array.from(params.text).length;
+}
+
 export const meta = {
   apiVersion: 1,
   key: "doubao",
@@ -335,7 +367,7 @@ export const meta = {
   version: "1.4.0",
   author: { name: "QuantumNous" },
   channelTypes: [54, 45], // VolcEngine-type channels serve Ark video models with the same wire format
-  models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS)),
+  models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS), SPEECH_MODELS), // Fork: SPEECH_MODELS
   fetchMode: "per_task",
   upstreams: ["vendor", "new_api"],
   // Seedream streams its images when asked to (stream: true).
@@ -344,7 +376,9 @@ export const meta = {
   usageSchema: seedanceUsageSchema(DEFAULT_VIDEO_PROFILE),
   usageExamples: seedanceUsageExamples(DEFAULT_VIDEO_PROFILE),
   usageProfiles: capabilityUsageProfiles(VIDEO_MODELS, seedanceUsageSchema, seedanceUsageExamples).concat(
-    capabilityUsageProfiles(IMAGE_MODELS, seedreamUsageSchema, seedreamUsageExamples)
+    capabilityUsageProfiles(IMAGE_MODELS, seedreamUsageSchema, seedreamUsageExamples),
+    // Fork: per-character speech synthesis.
+    [{ models: SPEECH_MODELS, schema: SPEECH_USAGE_SCHEMA, examples: [{ label: "1000 字符", facts: { characters: 1000 } }] }]
   ),
   // Ark's own paths; the gateway also serves each under /doubao.
   routes: [
@@ -353,6 +387,16 @@ export const meta = {
     // The vendor image API answers synchronously and has no task to re-query;
     // the complete response is delivered once and never persisted.
     { method: "POST", path: "/api/v3/images/generations", type: "submit", decode: "createImage", render: "imageCreated", retainResult: false },
+    // Fork: speech synthesis answers at once with the audio in the reply.
+    {
+      method: "POST",
+      path: "/api/v3/tts/unidirectional",
+      type: "submit",
+      decode: "createSpeech",
+      render: "imageCreated",
+      retainResult: false,
+      models: SPEECH_MODELS,
+    },
   ],
   protocols: [
     { name: "openai_responses", supports: ["stream", "sync", "background"] },
@@ -833,12 +877,36 @@ export const native = {
   imageCreated: function (ctx, task) {
     return task.data && typeof task.data === "object" && !Array.isArray(task.data) ? task.data : {};
   },
+  // Fork: the speech body goes upstream as the client sent it.
+  createSpeech: function (ctx) {
+    if (!ctx.body || ctx.body.kind !== "json") throw new Error("JSON body required");
+    const body = ctx.body.value;
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("request body must be an object");
+    const model = trimmed(body.model);
+    if (!model) throw new Error("model is required");
+    speechCharacters(body);
+    return { kind: "submit", model: model, action: SPEECH_ACTION, requestBody: Object.assign({}, body, { model: model }) };
+  },
   error: function (ctx, error) {
     return { error: { code: ERROR_CODES[error.httpStatus] || "InternalServiceError", message: error.message } };
   },
 };
 
 export function buildSubmitRequest(ctx) {
+  // Fork: speech synthesis.
+  if (speechTask(ctx)) {
+    if (!ctx.upstream || ctx.upstream.kind !== "new_api") throw new Error("speech synthesis is only served through a New API channel");
+    const body = Object.assign({}, ctx.requestBody, { model: ctx.upstreamModel || ctx.requestBody.model });
+    speechCharacters(body);
+    return {
+      url: apiRoot(ctx) + "/api/v3/tts/unidirectional",
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: "Bearer " + ctx.apiKey },
+      body: body,
+      action: SPEECH_ACTION,
+      rewriteModel: body.model,
+    };
+  }
   if (imageTask(ctx)) {
     const converted = convertImage(ctx);
     const streaming = converted.body.stream === true;
@@ -921,6 +989,15 @@ export function parseSubmitEvent(ctx, event, previousState) {
 }
 
 export function parseSubmitResponse(ctx, resp) {
+  // Fork: a speech reply is the finished result; one without audio fails the
+  // submission, which charges nothing.
+  if (speechTask(ctx)) {
+    const body = resp.body;
+    if (!body || typeof body !== "object" || Array.isArray(body) || !trimmed(body.audio_base64)) throw new Error("speech synthesis returned no audio");
+    const taskId = trimmed(ctx.publicTaskId);
+    if (!taskId) throw new Error("missing gateway task id");
+    return { taskId: taskId, taskData: body, immediate: { status: "SUCCESS", progress: "100%" } };
+  }
   if (imageTask(ctx)) {
     const body = resp.body;
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid image generation response");
@@ -948,6 +1025,8 @@ export function parseSubmitResponse(ctx, resp) {
 }
 
 export function extractUsage(ctx) {
+  // Fork: per-call pricing charges a speech request once, whatever its length.
+  if (speechTask(ctx)) return ctx.usagePurpose === "billing_ratios" ? null : { characters: speechCharacters(ctx.requestBody) };
   if (imageTask(ctx)) {
     const facts = convertImage(ctx).facts;
     // Legacy per-call pricing multiplies the price by every ratio returned
@@ -1063,6 +1142,12 @@ export function buildContentRequest(ctx) {
 }
 
 export function extractUsageOnComplete(task, taskResult, body) {
+  // Fork: a speech request settles on the characters the upstream billed; a
+  // count outside the documented range keeps the reservation.
+  if (speechTask(task)) {
+    const billed = ((body || {}).usage || {}).text_words;
+    return Number.isInteger(billed) && billed > 0 && billed <= MAX_SPEECH_CHARACTERS ? { characters: billed } : {};
+  }
   if (imageTask(task)) return imageUsage(body || {}, imageProfile(task));
   if (!body || body.status !== "succeeded") return {};
   const facts = {};
@@ -1084,6 +1169,8 @@ export const protocols = {
       if (!req || typeof req !== "object" || Array.isArray(req)) throw new Error("request body must be an object");
       const model = trimmed(req.model);
       if (!model) throw new Error("model is required");
+      // Fork: speech synthesis has its native route only.
+      if (speechTask({ upstreamModel: ctx.upstreamModel, model: model })) throw new Error("speech synthesis is served on /doubao/api/v3/tts/unidirectional only");
       if (req.input !== undefined && typeof req.input !== "string" && !Array.isArray(req.input)) throw new Error("input must be a string or array");
       if (req.images !== undefined && !Array.isArray(req.images)) throw new Error("images must be an array");
       const input = responsesInput(req);

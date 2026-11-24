@@ -148,6 +148,10 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/wondergate/pay", middleware.CriticalRateLimit(), middleware.OrgTopUpGate(), middleware.Require2FAEnabled(), controller.RequestWonderGatePay)
 				selfRoute.POST("/aff_transfer", middleware.UserCriticalRateLimit("aff-transfer"), controller.TransferAffQuota)
 				selfRoute.PUT("/setting", controller.UpdateUserSetting)
+				// Fork: what the console tells the user about (top-ups,
+				// organization membership, answers to their requests).
+				selfRoute.GET("/notifications", controller.ListMyNotifications)
+				selfRoute.POST("/notifications/read", controller.ReadMyNotifications)
 
 				// 2FA routes
 				selfRoute.GET("/2fa/status", controller.Get2FAStatus)

@@ -1,7 +1,9 @@
 package model
 
 import (
+	"archive/zip"
 	"bytes"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -245,4 +247,87 @@ func TestUpstreamBillReportSetBillRequests(t *testing.T) {
 	}, report.Rows)
 	assert.Equal(t, int64(13), report.Bill.Requests)
 	assert.Equal(t, int64(15), report.Ours.Requests)
+}
+
+// Baidu's model service exports its usage as a zip with one CSV per kind of
+// billing, and one account's export covers every channel on that account: the
+// bill is read whole and compared with all of them together.
+func TestBaiduUsageExportComparesTheAccountsChannels(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&QuotaData{}, &Channel{}, &CustomChannelPrice{}, &UserChannel{}, &OrgChannel{}))
+	clear := func() {
+		DB.Exec("DELETE FROM quota_data")
+		DB.Exec("DELETE FROM channels WHERE id IN (31, 32, 33, 34)")
+	}
+	clear()
+	t.Cleanup(clear)
+
+	var packed bytes.Buffer
+	archive := zip.NewWriter(&packed)
+	for name, content := range map[string]string{
+		"customer_token_1.csv": "accountId,taskId,requestId,billingParadigm,providerCode,originalAmount,discount,discountedAmount,vendorName,modelName,modelFamily,username,startTime,endTime,totalInputTokens,totalOutputTokens,inputTextTokens,inputTextOriginalAmount,inputTextCachedTokens,inputImageCachedTokens,outputTextTokens\n" +
+			"a1,t1,r1,token,multi,0.50,0.8,0.40,Anthropic,claude-opus-5,claude,key-1,2026-11-20T14:10:00,2026-11-20T14:10:09,1000,200,900,0.3,100,20,200\n" +
+			"a1,t2,r2,token,multi,0.25,0.8,0.20,Google,gemini-3-flash,gemini,key-1,2026-11-20T14:40:00,2026-11-20T14:40:02,400,50,400,0.1,0,0,50\n",
+		"customer_media_unit_1.csv": "accountId,taskid,requestId,billingParadigm,providerCode,OriginalAmount,discount,discountedAmount,vendorName,modelName,modelFamily,username,startTime,endTime,interfaceType,taskType,offPeak,resolution,durationSeconds,audioIncluded,outputCount\n" +
+			"a1,t3,r3,media_unit,video,1.00,0.8,0.80,Kuaishou,kling-v3,kling,key-1,2026-11-20T15:05:00,2026-11-20T15:06:00,async,video,false,1080p,5,false,1\n",
+		"__MACOSX/._customer_token_1.csv": "not a bill",
+	} {
+		file, err := archive.Create(name)
+		require.NoError(t, err)
+		_, err = file.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	require.NoError(t, archive.Close())
+	entries, err := ParseUpstreamBill("export.zip", &packed)
+	require.NoError(t, err)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Wall < entries[j].Wall })
+	at := func(hour, minute int) int64 { return time.Date(2026, 11, 20, hour, minute, 0, 0, time.UTC).Unix() }
+	// The charge after the contract discount is the cost; cached input is the
+	// sum over the kinds of content.
+	assert.Equal(t, []UpstreamBillEntry{
+		{Wall: at(14, 10), Model: "claude-opus-5", PromptTokens: 1000, CompletionTokens: 200, CacheReadTokens: 120, Cost: 0.4, Requests: 1},
+		{Wall: at(14, 40), Model: "gemini-3-flash", PromptTokens: 400, CompletionTokens: 50, Cost: 0.2, Requests: 1},
+		{Wall: at(15, 5), Model: "kling-v3", Cost: 0.8, Requests: 1, UsageUnit: UsageUnitSecond, UsageAmount: 5},
+	}, entries)
+
+	_, err = ParseUpstreamBill("hourly.csv", strings.NewReader("time_bucket,request_count,input_token_total,output_token_total,total_cost\n2026112014,2,1400,250,0.6\n"))
+	assert.ErrorIs(t, err, ErrUpstreamBillAggregated)
+	_, err = ParseUpstreamBill("empty.zip", bytes.NewReader([]byte("not a zip")))
+	assert.ErrorContains(t, err, "read zip")
+
+	// Two channels reach the account, one per protocol; a third has the host
+	// with another key, a fourth the key on another host.
+	host, elsewhere := "https://eos-sg.aigc.exp.bcevod.com", "https://api.example.com"
+	mapping := `{"flash":"gemini-3-flash"}`
+	require.NoError(t, DB.Create(&[]Channel{
+		{Id: 31, Name: "vod-claude", Key: "account-key", BaseURL: &host},
+		{Id: 32, Name: "vod-gemini", Key: "account-key", BaseURL: &host, ModelMapping: &mapping},
+		{Id: 33, Name: "vod-other", Key: "another-key", BaseURL: &host},
+		{Id: 34, Name: "elsewhere", Key: "account-key", BaseURL: &elsewhere},
+	}).Error)
+	also, err := UpstreamAccountChannels(31)
+	require.NoError(t, err)
+	assert.Equal(t, []int{32}, also)
+
+	// 14:00 in the export is 06:00 UTC: Baidu's times are Beijing time.
+	h := time.Date(2026, 11, 20, 6, 0, 0, 0, time.UTC).Unix()
+	require.NoError(t, DB.Create(&[]QuotaData{
+		{ModelName: "claude-opus-5", CreatedAt: h, ChannelID: 31, Count: 1, Quota: 100, TokenUsed: 1200, PromptTokens: 1000, CompletionTokens: 200, CacheReadTokens: 120},
+		{ModelName: "flash", CreatedAt: h, ChannelID: 32, Count: 1, Quota: 50, TokenUsed: 450, PromptTokens: 400, CompletionTokens: 50},
+		{ModelName: "flash", CreatedAt: h, ChannelID: 33, Count: 9, Quota: 9, TokenUsed: 9},
+	}).Error)
+	rep, err := CompareUpstreamBill(31, entries, nil, 0, nil, also...)
+	require.NoError(t, err)
+	assert.Equal(t, "vod-claude", rep.Channel)
+	assert.Equal(t, []string{"vod-gemini"}, rep.AlsoChannels)
+	assert.Equal(t, 480, rep.OffsetMinutes)
+	require.Len(t, rep.Rows, 3)
+	rows := map[string]UpstreamBillRow{}
+	for _, row := range rep.Rows {
+		rows[row.Model] = row
+	}
+	assert.Equal(t, UpstreamBillSide{Requests: 1, Tokens: 1200, PromptTokens: 1000, CompletionTokens: 200, CacheReadTokens: 120, Quota: 100}, rows["claude-opus-5"].Ours)
+	assert.Equal(t, UpstreamBillSide{Requests: 1, Tokens: 450, PromptTokens: 400, CompletionTokens: 50, Quota: 50}, rows["gemini-3-flash"].Ours)
+	assert.Equal(t, UpstreamBillSide{Requests: 1, Cost: 0.8, Rows: 1, UsageUnit: UsageUnitSecond, UsageAmount: 5}, rows["kling-v3"].Bill)
+	assert.Equal(t, int64(2), rep.Ours.Requests)
+	assert.InDelta(t, 1.4, rep.Bill.Cost, 1e-9)
 }

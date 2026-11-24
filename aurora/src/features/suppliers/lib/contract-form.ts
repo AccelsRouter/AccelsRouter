@@ -54,6 +54,7 @@ export function getContractFormSchema(t: TFunction, isCreate: boolean) {
         ),
       sla_terms: z.string(),
       remark: z.string(),
+      model_ids: z.array(z.number()),
     })
     .superRefine((values, ctx) => {
       if (
@@ -113,6 +114,7 @@ export const CONTRACT_FORM_DEFAULTS: ContractFormValues = {
   low_balance_pct: '20',
   sla_terms: '',
   remark: '',
+  model_ids: [],
 }
 
 export function contractToFormValues(
@@ -141,6 +143,7 @@ export function contractToFormValues(
     low_balance_pct: String(contract.low_balance_pct),
     sla_terms: contract.sla_terms,
     remark: contract.remark,
+    model_ids: contract.model_ids ?? [],
   }
 }
 
@@ -166,5 +169,6 @@ export function contractFormToPayload(
     low_balance_pct: Number(values.low_balance_pct) || 0,
     sla_terms: values.sla_terms,
     remark: values.remark,
+    model_ids: values.model_ids,
   }
 }

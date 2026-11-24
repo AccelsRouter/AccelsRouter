@@ -548,6 +548,9 @@ const AUDIT_TEMPLATES: Record<string, string> = {
     'Set {{contract_no}} as the current supplier contract',
   'supplier.attachment.upload': 'Uploaded supplier attachment {{file_name}}',
   'supplier.attachment.delete': 'Deleted supplier attachment {{file_name}}',
+  'supplier.channels.update': 'Changed the channels of supplier {{id}}',
+  'supplier.channels.pull_models':
+    'Pulled {{count}} models from channel {{channel_id}} into supplier {{id}}',
   // Prefill groups
   'prefill_group.create': 'Created a prefill group',
   'prefill_group.update': 'Updated a prefill group',

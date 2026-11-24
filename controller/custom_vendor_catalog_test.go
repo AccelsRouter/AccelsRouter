@@ -229,7 +229,12 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 		"gemini-2.5-flash": {Provider: customVendorGoogleProvider, Input: 0.3, Output: out(2.5), CacheRead: out(0.03), Tiers: []customVendorTier{
 			{Input: 0.3, Output: out(2.5), CacheRead: out(0.03), AudioInput: out(1)},
 		}},
+		// One with a built-in price equal to the list price, one without.
+		"gpt-image-2":         customOpenAIImagePrice(),
+		"gpt-image-2.6-flare": customOpenAIImagePrice(),
 	}
+	builtinImage, ok := billing_setting.GetBillingExpr("gpt-image-2")
+	require.True(t, ok)
 	for name, price := range rows {
 		row := customVendorRowFromPrice(name, "kimi", price, 100)
 		require.NoError(t, db.Create(&row).Error)
@@ -237,17 +242,21 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 	manual := customVendorRowFromPrice("kimi-k3", customVendorManualSource, customVendorPrice{Provider: "manual", Input: 2.5, Output: out(12)}, 100)
 	require.NoError(t, db.Create(&manual).Error)
 
-	// ByteDance prices a model family once: a dated snapshot this gateway
-	// serves takes its family's price, a snapshot of another vendor does not.
+	// ByteDance prices a model family once: a snapshot this gateway serves,
+	// dated the way ByteDance dates them, takes its family's price; another
+	// vendor's model with that suffix does not. A snapshot dated the way the
+	// other vendors do takes its model's price whoever lists it.
 	family := customVendorRowFromPrice("doubao-seed-2-1-pro", "volcengine", customVendorPrice{Provider: customVendorVolcengineProvider + " (CNY at 7.3 per USD)", Input: 0.82, Output: out(4.1)}, 100)
 	require.NoError(t, db.Create(&family).Error)
-	for _, served := range []string{"doubao-seed-2-1-pro-260715", "glm-5.1-260101"} {
+	for _, served := range []string{"doubao-seed-2-1-pro-260715", "glm-5.1-260101", "glm-5.1-20260101", "glm-9-0101"} {
 		require.NoError(t, db.Create(&model.Ability{Group: "default", Model: served, ChannelId: 1, Enabled: true}).Error)
 	}
 	resolved, _, err := resolveCustomVendorPrices()
 	require.NoError(t, err)
 	assert.Equal(t, resolved["doubao-seed-2-1-pro"], resolved["doubao-seed-2-1-pro-260715"])
 	assert.NotContains(t, resolved, "glm-5.1-260101")
+	assert.Equal(t, resolved["glm-5.1"], resolved["glm-5.1-20260101"])
+	assert.NotContains(t, resolved, "glm-9-0101")
 
 	data, handled, err := fetchCustomPricingSync(t.Context(), nil, dto.UpstreamDTO{ID: customVendorPresetID})
 	require.True(t, handled)
@@ -263,9 +272,13 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 		"gemini-2.5-flash":           `tier("base", p * 0.3 + c * 2.5 + cr * 0.03 + ai * 1)`,
 		"doubao-seed-2-1-pro":        `tier("base", p * 0.82 + c * 4.1)`,
 		"doubao-seed-2-1-pro-260715": `tier("base", p * 0.82 + c * 4.1)`,
+		"glm-5.1-20260101":           `tier("base", p * 1.4 + c * 4.4 + cr * 0.26)`,
+		// A model already charged the list price keeps the wording it has.
+		"gpt-image-2":         builtinImage,
+		"gpt-image-2.6-flare": `tier("base", p * 5 + c * 30 + cr * 1.25 + img * 8 + img_cr * 2)`,
 	}, data[billing_setting.BillingExprField])
 	modes := data[billing_setting.BillingModeField].(map[string]string)
-	assert.Len(t, modes, 9)
+	assert.Len(t, modes, 12)
 	assert.Equal(t, billing_setting.BillingModeTieredExpr, modes["grok-4.7"])
 
 	// The daily check names the served models that charge less than listed:

@@ -421,6 +421,10 @@ func SaveBdLead(l *BdLead, operatorId int) error {
 			if err := tx.Create(l).Error; err != nil {
 				return err
 			}
+			// Fork: a new purchase lead also opens a supplier record of the same name.
+			if err := ensureSupplierForBdLead(tx, l, operatorId); err != nil {
+				return err
+			}
 		} else {
 			old, err := getBdLeadTx(tx, l.Id)
 			if err != nil {
