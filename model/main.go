@@ -419,6 +419,8 @@ func migrateDB() error {
 		&SupplierContractSeq{},
 		&SupplierAttachment{},
 		&SupplierModelSearchLog{},
+		&SupplierChannel{},
+		&SupplierContractModel{},
 	)
 	if err != nil {
 		return err

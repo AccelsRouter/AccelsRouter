@@ -23,6 +23,9 @@ var supplierPermissionRoutes = []permissionRoute{
 	{method: http.MethodGet, path: "/", permission: authz.SupplierRead, handler: controller.GetSuppliers},
 	{method: http.MethodPost, path: "/", permission: authz.SupplierWrite, handler: controller.CreateSupplier},
 	{method: http.MethodGet, path: "/stats", permission: authz.SupplierRead, handler: controller.GetSupplierStats},
+	{method: http.MethodGet, path: "/meta", permission: authz.SupplierRead, handler: controller.GetSupplierMeta},
+	{method: http.MethodGet, path: "/match", permission: authz.SupplierRead, handler: controller.MatchSuppliers},
+	{method: http.MethodGet, path: "/channel-offers", permission: authz.SupplierRead, handler: controller.GetSupplierChannelOffers},
 	{method: http.MethodGet, path: "/models/catalog", permission: authz.SupplierRead, handler: controller.GetSupplierModelCatalog},
 	{method: http.MethodGet, path: "/models/compare", permission: authz.SupplierRead, handler: controller.CompareSupplierModel},
 	{method: http.MethodPost, path: "/models/search-log", permission: authz.SupplierRead, handler: controller.RecordSupplierModelSearch},
@@ -38,4 +41,6 @@ var supplierPermissionRoutes = []permissionRoute{
 	{method: http.MethodPost, path: "/:id/contracts", permission: authz.SupplierWrite, handler: controller.CreateSupplierContract},
 	{method: http.MethodGet, path: "/:id/contracts/next-no", permission: authz.SupplierWrite, handler: controller.PreviewSupplierContractNo},
 	{method: http.MethodGet, path: "/:id/frameworks", permission: authz.SupplierRead, handler: controller.GetSupplierFrameworks},
+	{method: http.MethodPut, path: "/:id/channels", permission: authz.SupplierWrite, handler: controller.SetSupplierChannels},
+	{method: http.MethodPost, path: "/:id/channels/:channel_id/pull-models", permission: authz.SupplierWrite, handler: controller.PullSupplierChannelModels},
 }

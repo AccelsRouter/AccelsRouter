@@ -252,7 +252,7 @@ export function SupplierModelCompare() {
                     },
                     {
                       id: 'source',
-                      header: t('Source'),
+                      header: t('Nature'),
                       cell: (row: SupplierModelOffer) => {
                         const label = optionLabel(
                           SUPPLIER_MODEL_SOURCE_OPTIONS,

@@ -134,7 +134,11 @@ export function SelectFormField<T extends FieldValues>(
   )
 }
 
-/** A YYYY-MM-DD string field; any date may be picked. */
+// Contract terms run years ahead; the calendar's own range stops this year.
+const DATE_RANGE_START = new Date(2000, 0)
+const DATE_RANGE_END = new Date(new Date().getFullYear() + 30, 11)
+
+/** A YYYY-MM-DD string field; any date from 2000 to 30 years ahead. */
 export function DateFormField<T extends FieldValues>(props: BaseFieldProps<T>) {
   return (
     <FormField
@@ -150,6 +154,8 @@ export function DateFormField<T extends FieldValues>(props: BaseFieldProps<T>) {
                 field.onChange(date ? dayjs(date).format('YYYY-MM-DD') : '')
               }
               isDateDisabled={() => props.disabled ?? false}
+              startMonth={DATE_RANGE_START}
+              endMonth={DATE_RANGE_END}
               className='w-full'
             />
           </FormControl>

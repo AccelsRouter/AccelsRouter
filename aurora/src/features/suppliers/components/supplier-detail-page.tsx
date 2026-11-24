@@ -41,6 +41,7 @@ import {
 } from '../constants'
 import { useSupplierPermissions } from '../hooks/use-supplier-permissions'
 import { describeMissingField } from '../lib/missing-fields'
+import { SupplierChannelsCard } from './supplier-channels-card'
 import { SupplierContractsPanel } from './supplier-contracts-panel'
 import { SupplierBasicTab, SupplierDueDiligenceTab } from './supplier-info-tabs'
 import { SupplierModelsTable } from './supplier-models-table'
@@ -194,7 +195,13 @@ export function SupplierDetailPage() {
               <SupplierContractsPanel supplier={data} />
             </TabsContent>
             <TabsContent value='models' className='pt-4'>
-              <SupplierModelsTable models={data.models} />
+              <div className='flex flex-col gap-4'>
+                <SupplierChannelsCard supplier={data} />
+                <SupplierModelsTable
+                  models={data.models}
+                  channels={data.channels}
+                />
+              </div>
             </TabsContent>
           </Tabs>
         </div>

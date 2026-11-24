@@ -27,7 +27,13 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Form } from '@/components/ui/form'
+import {
+  Form,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+} from '@/components/ui/form'
 import { TitledCard } from '@/components/ui/titled-card'
 import { ErrorState } from '@/components/error-state'
 import { PageFooterPortal, SectionPageLayout } from '@/components/layout'
@@ -42,6 +48,7 @@ import {
   SUPPLIER_STATUS_OPTIONS,
   SUPPLIER_YES_NO_OPTIONS,
 } from '../constants'
+import { useSupplierMeta } from '../hooks/use-supplier-meta'
 import {
   describeMissingField,
   filledModels,
@@ -57,7 +64,9 @@ import {
   supplierToFormValues,
 } from '../lib/supplier-form'
 import { DateFormField, SelectFormField, TextFormField } from './form-fields'
+import { OptionSelect } from './option-select'
 import { SupplierModelsEditor } from './supplier-models-editor'
+import { SupplierNameMatches } from './supplier-name-matches'
 
 /** Creates a supplier, or edits one when the route has a supplierId. */
 export function SupplierFormPage() {
@@ -85,6 +94,24 @@ export function SupplierFormPage() {
   }, [existing.data, form])
 
   const values = useWatch({ control: form.control }) as SupplierFormValues
+  const { meta } = useSupplierMeta()
+  // Older records may hold a free-text owner that is not an admin account.
+  const legacyOwner =
+    (values.owner_id ?? '0') === '0' ? (values.owner ?? '').trim() : ''
+  const ownerOptions = meta.owners.map((owner) => ({
+    value: String(owner.id),
+    label: owner.name,
+  }))
+  const currentOwnerId = existing.data?.owner_id ?? 0
+  if (
+    currentOwnerId > 0 &&
+    !ownerOptions.some((option) => option.value === String(currentOwnerId))
+  ) {
+    ownerOptions.push({
+      value: String(currentOwnerId),
+      label: existing.data?.owner ?? `#${currentOwnerId}`,
+    })
+  }
   const missing = supplierMissingFields(
     formValuesToFields({ ...SUPPLIER_FORM_DEFAULTS, ...values }),
     filledModels(formModelsToPayload(values.models ?? []))
@@ -192,6 +219,10 @@ export function SupplierFormPage() {
                   label={t('Short name')}
                   required
                 />
+                <SupplierNameMatches
+                  names={[values.short_name ?? '', values.legal_name ?? '']}
+                  excludeId={supplierId}
+                />
                 <TextFormField
                   control={form.control}
                   name='reg_place'
@@ -242,11 +273,40 @@ export function SupplierFormPage() {
                   options={SUPPLIER_GRADE_OPTIONS}
                   clearable
                 />
-                <TextFormField
+                <FormField
                   control={form.control}
-                  name='owner'
-                  label={t('Internal owner')}
-                  required
+                  name='owner_id'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {t('Internal owner')}
+                        <span className='text-destructive'>*</span>
+                      </FormLabel>
+                      <OptionSelect
+                        inFormField
+                        literalLabels
+                        value={field.value === '0' ? '' : field.value}
+                        onValueChange={(value) => {
+                          field.onChange(value || '0')
+                          // Choosing someone (or nobody) replaces older free text.
+                          form.setValue('owner', '')
+                        }}
+                        options={ownerOptions}
+                        placeholder={legacyOwner || t('Unassigned')}
+                        clearable
+                      />
+                      {legacyOwner && (
+                        <FormDescription>
+                          {t(
+                            'Recorded as "{{name}}"; pick an admin to replace it.',
+                            {
+                              name: legacyOwner,
+                            }
+                          )}
+                        </FormDescription>
+                      )}
+                    </FormItem>
+                  )}
                 />
                 <DateFormField
                   control={form.control}

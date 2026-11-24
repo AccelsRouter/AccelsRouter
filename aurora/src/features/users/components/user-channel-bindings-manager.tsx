@@ -46,6 +46,8 @@ import {
     upsertUserChannelBinding,
     type UserChannelBinding,
 } from '../api-channel-bindings'
+import { SupplierOfferHint } from '@/features/suppliers/components/supplier-offer-hint'
+import { useSupplierChannelOffers } from '@/features/suppliers/hooks/use-supplier-channel-offers'
 
 interface UserChannelBindingsManagerProps {
     userId: number
@@ -83,6 +85,7 @@ function ChannelModelRatiosDialog({
 }) {
     const { t } = useTranslation()
     const [rows, setRows] = useState<ModelRatioRow[]>([])
+    const supplierOffers = useSupplierChannelOffers([channelId], open)
 
     const { data: channelModels = [], isLoading: modelsLoading } = useQuery({
         queryKey: ['user-channel-bindings-channel-models', channelId],
@@ -177,7 +180,15 @@ function ChannelModelRatiosDialog({
                                         )
                                     }
                                 />
-                                <span className='flex-1 truncate text-sm'>{row.model}</span>
+                                <span className='flex min-w-0 flex-1 flex-col'>
+                                    <span className='truncate text-sm'>{row.model}</span>
+                                    {/* Fork: supplier terms of this channel's model */}
+                                    <SupplierOfferHint
+                                        offers={supplierOffers}
+                                        channelId={channelId}
+                                        modelName={row.model}
+                                    />
+                                </span>
                                 <Input
                                     type='number'
                                     min={0}
@@ -261,6 +272,10 @@ function ModelChannelRatiosDialog({
         },
         enabled: open,
     })
+    const supplierOffers = useSupplierChannelOffers(
+        channels.map((ch) => ch.id),
+        open
+    )
 
     // (Re)seed the editable rows whenever the dialog opens for a model:
     // channels this user already binds modelName to start checked with
@@ -349,9 +364,15 @@ function ModelChannelRatiosDialog({
                                         )
                                     }
                                 />
-                                <span className='flex-1 truncate text-sm'>
-                  {row.channelName}
-                </span>
+                                <span className='flex min-w-0 flex-1 flex-col'>
+                                    <span className='truncate text-sm'>{row.channelName}</span>
+                                    {/* Fork: supplier terms of this model on the channel */}
+                                    <SupplierOfferHint
+                                        offers={supplierOffers}
+                                        channelId={row.channelId}
+                                        modelName={modelName}
+                                    />
+                                </span>
                                 <Input
                                     type='number'
                                     min={0}

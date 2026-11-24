@@ -60,6 +60,7 @@ export function getSupplierFormSchema(t: TFunction) {
     status: z.string(),
     grade: z.string(),
     owner: z.string().max(64),
+    owner_id: z.string(),
     onboard_date: z.string(),
     sign_entity: z.string(),
     gst_applicable: yesNo,
@@ -72,6 +73,9 @@ export function getSupplierFormSchema(t: TFunction) {
     remark: z.string(),
     models: z.array(
       z.object({
+        // Kept so a saved row keeps its id and the contracts covering it.
+        id: z.number(),
+        channel_id: z.number(),
         model_name: z.string().max(128),
         variant: z.string().max(64),
         source: z.string(),
@@ -92,6 +96,8 @@ export type SupplierFormValues = z.infer<
 export type SupplierModelFormValues = SupplierFormValues['models'][number]
 
 export const BLANK_MODEL_ROW: SupplierModelFormValues = {
+  id: 0,
+  channel_id: 0,
   model_name: '',
   variant: '',
   source: '',
@@ -115,6 +121,7 @@ export const SUPPLIER_FORM_DEFAULTS: SupplierFormValues = {
   status: 'potential',
   grade: '',
   owner: '',
+  owner_id: '0',
   onboard_date: '',
   sign_entity: '',
   gst_applicable: '',
@@ -161,6 +168,7 @@ export function supplierToFormValues(
     status: supplier.status,
     grade: supplier.grade,
     owner: supplier.owner,
+    owner_id: String(supplier.owner_id ?? 0),
     onboard_date: supplier.onboard_date,
     sign_entity: supplier.sign_entity,
     gst_applicable: toYesNo(supplier.gst_applicable),
@@ -174,6 +182,8 @@ export function supplierToFormValues(
     models:
       supplier.models.length > 0
         ? supplier.models.map((model) => ({
+            id: model.id ?? 0,
+            channel_id: model.channel_id ?? 0,
             model_name: model.model_name,
             variant: model.variant,
             source: model.source,
@@ -192,6 +202,8 @@ export function formModelsToPayload(
   models: SupplierModelFormValues[]
 ): SupplierModel[] {
   return models.map((model) => ({
+    id: model.id || undefined,
+    channel_id: model.channel_id,
     model_name: model.model_name.trim(),
     variant: model.variant.trim(),
     source: model.source,
@@ -217,7 +229,9 @@ export function formValuesToFields(values: SupplierFormValues): SupplierFields {
     tech_contact: values.tech_contact.trim(),
     status: values.status,
     grade: values.grade,
-    owner: values.owner.trim(),
+    // A chosen admin's name is filled in by the server.
+    owner: Number(values.owner_id) > 0 ? '' : values.owner.trim(),
+    owner_id: Number(values.owner_id) || 0,
     onboard_date: values.onboard_date,
     sign_entity: values.sign_entity,
     gst_applicable: gstApplicable,

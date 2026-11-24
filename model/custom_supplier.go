@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -49,6 +50,9 @@ type Supplier struct {
 	CreatedTime int64          `json:"created_time" gorm:"type:bigint"`
 	UpdatedTime int64          `json:"updated_time" gorm:"type:bigint"`
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+	// OwnerId is the admin responsible for the supplier; Owner keeps their
+	// name as a snapshot (and the free text of records saved before).
+	OwnerId int `json:"owner_id" gorm:"index"`
 }
 
 // SupplierModel is one model channel a supplier offers. DiscountPct is the
@@ -66,12 +70,15 @@ type SupplierModel struct {
 	Enabled     bool     `json:"enabled"`
 	Remark      string   `json:"remark" gorm:"type:varchar(255)"`
 	Sort        int      `json:"sort"`
+	// ChannelId is the bound channel the row was pulled from, 0 when typed in.
+	ChannelId int `json:"channel_id" gorm:"index"`
 }
 
 const (
 	SupplierStatusPotential  = "potential"
 	SupplierStatusEvaluating = "evaluating"
 	SupplierStatusTrial      = "trial"
+	SupplierStatusSigning    = "signing"
 	SupplierStatusActive     = "active"
 	SupplierStatusWatch      = "watch"
 	SupplierStatusSuspended  = "suspended"
@@ -82,7 +89,7 @@ const (
 const supplierGstRatePct = 9
 
 var (
-	supplierStatuses         = []string{SupplierStatusPotential, SupplierStatusEvaluating, SupplierStatusTrial, SupplierStatusActive, SupplierStatusWatch, SupplierStatusSuspended, SupplierStatusTerminated}
+	supplierStatuses         = []string{SupplierStatusPotential, SupplierStatusEvaluating, SupplierStatusTrial, SupplierStatusSigning, SupplierStatusActive, SupplierStatusWatch, SupplierStatusSuspended, SupplierStatusTerminated}
 	supplierGrades           = []string{"strategic", "core", "backup", "temporary"}
 	supplierSignEntities     = []string{"sg", "hk", "cn"}
 	supplierKybStatuses      = []string{"complete", "partial", "none"}
@@ -173,7 +180,6 @@ func normalizeSupplierModels(models []SupplierModel) ([]SupplierModel, error) {
 		if (m.Concurrency != nil && *m.Concurrency < 0) || (m.Rpm != nil && *m.Rpm < 0) || (m.Tpm != nil && *m.Tpm < 0) {
 			return nil, supplierInvalid("Invalid value for {{field}}", map[string]any{"field": "limits"})
 		}
-		m.Id = 0
 		m.Sort = len(result)
 		result = append(result, m)
 	}
@@ -194,7 +200,7 @@ func SupplierMissingFields(s *Supplier, models []SupplierModel, current *Supplie
 		{"short_name", s.ShortName == ""},
 		{"biz_contact", s.BizContact == ""},
 		{"status", s.Status == ""},
-		{"owner", s.Owner == ""},
+		{"owner", s.OwnerId == 0 && s.Owner == ""},
 		{"sign_entity", s.SignEntity == ""},
 		{"gst_applicable", s.GstApplicable == nil},
 	}
@@ -239,10 +245,11 @@ type SupplierListItem struct {
 
 type SupplierDetail struct {
 	Supplier
-	Models        []SupplierModel      `json:"models"`
-	Contracts     []SupplierContract   `json:"contracts"`
-	Attachments   []SupplierAttachment `json:"attachments"`
-	MissingFields []string             `json:"missing_fields"`
+	Models        []SupplierModel       `json:"models"`
+	Contracts     []SupplierContract    `json:"contracts"`
+	Attachments   []SupplierAttachment  `json:"attachments"`
+	MissingFields []string              `json:"missing_fields"`
+	Channels      []SupplierChannelView `json:"channels"`
 }
 
 type SupplierStats struct {
@@ -396,6 +403,14 @@ func GetSupplierDetail(id int) (*SupplierDetail, error) {
 			current = &detail.Contracts[i]
 		}
 	}
+	if err := fillSupplierContractModels(DB, detail.Contracts); err != nil {
+		return nil, err
+	}
+	channels, err := listSupplierChannels(id)
+	if err != nil {
+		return nil, err
+	}
+	detail.Channels = channels
 	attachments, err := listSupplierAttachments(id, contractIds)
 	if err != nil {
 		return nil, err
@@ -409,27 +424,75 @@ func GetSupplierDetail(id int) (*SupplierDetail, error) {
 func supplierEditableFields(dst *Supplier, src *Supplier) {
 	dst.LegalName, dst.ShortName, dst.RegPlace, dst.RegNo = src.LegalName, src.ShortName, src.RegPlace, src.RegNo
 	dst.Website, dst.Founded, dst.BizContact, dst.TechContact = src.Website, src.Founded, src.BizContact, src.TechContact
-	dst.Status, dst.Grade, dst.Owner, dst.OnboardDate = src.Status, src.Grade, src.Owner, src.OnboardDate
+	dst.Status, dst.Grade, dst.Owner, dst.OwnerId, dst.OnboardDate = src.Status, src.Grade, src.Owner, src.OwnerId, src.OnboardDate
 	dst.SignEntity, dst.GstApplicable, dst.GstRate = src.SignEntity, src.GstApplicable, src.GstRate
 	dst.KybStatus, dst.PromptRetention, dst.DataRegion, dst.DpaSigned = src.KybStatus, src.PromptRetention, src.DataRegion, src.DpaSigned
 	dst.Certifications, dst.NextReviewDate, dst.Remark = src.Certifications, src.NextReviewDate, src.Remark
 }
 
-func replaceSupplierModels(tx *gorm.DB, supplierID int, models []SupplierModel) error {
-	if err := tx.Where("supplier_id = ?", supplierID).Delete(&SupplierModel{}).Error; err != nil {
+// syncSupplierModels makes the supplier's model rows match models. Rows that
+// carry the id of one of the supplier's rows are updated in place, so the
+// contracts that cover them stay linked; other rows are inserted, and rows
+// no longer listed are deleted together with their contract links.
+func syncSupplierModels(tx *gorm.DB, supplierID int, models []SupplierModel) error {
+	var existingIDs []int
+	if err := tx.Model(&SupplierModel{}).Where("supplier_id = ?", supplierID).Pluck("id", &existingIDs).Error; err != nil {
 		return err
 	}
-	if len(models) == 0 {
+	kept := map[int]bool{}
+	editable := []string{"model_name", "variant", "source", "discount_pct", "concurrency", "rpm", "tpm", "enabled", "remark", "sort", "channel_id"}
+	for i := range models {
+		m := &models[i]
+		m.SupplierId = supplierID
+		if m.Id > 0 && slices.Contains(existingIDs, m.Id) && !kept[m.Id] {
+			kept[m.Id] = true
+			if err := tx.Model(&SupplierModel{Id: m.Id}).Select(editable).Updates(m).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		m.Id = 0
+		if err := tx.Create(m).Error; err != nil {
+			return err
+		}
+	}
+	removed := make([]int, 0)
+	for _, id := range existingIDs {
+		if !kept[id] {
+			removed = append(removed, id)
+		}
+	}
+	if len(removed) == 0 {
 		return nil
 	}
-	for i := range models {
-		models[i].SupplierId = supplierID
+	if err := tx.Where("supplier_model_id IN ?", removed).Delete(&SupplierContractModel{}).Error; err != nil {
+		return err
 	}
-	return tx.Create(&models).Error
+	return tx.Where("id IN ?", removed).Delete(&SupplierModel{}).Error
+}
+
+// resolveSupplierOwner stores the name of the chosen admin with the record,
+// so lists read without a join and the name survives the account's removal.
+func resolveSupplierOwner(tx *gorm.DB, s *Supplier) error {
+	if s.OwnerId <= 0 {
+		s.OwnerId = 0
+		return nil
+	}
+	var user User
+	err := tx.Select("id", "username", "display_name", "role").Where("id = ? AND role >= ?", s.OwnerId, common.RoleAdminUser).First(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return supplierInvalid("Invalid value for {{field}}", map[string]any{"field": "owner_id"})
+	}
+	if err != nil {
+		return err
+	}
+	s.Owner = BdUserName(&user)
+	return nil
 }
 
 // CreateSupplier saves a supplier and its models in one transaction. The code
-// is derived from the generated id so it never repeats.
+// is derived from the generated id so it never repeats. A purchase lead of
+// the same name is opened in the BD summary when there is none yet.
 func CreateSupplier(input *Supplier, models []SupplierModel, operatorID int) (*Supplier, error) {
 	s := &Supplier{}
 	supplierEditableFields(s, input)
@@ -440,24 +503,42 @@ func CreateSupplier(input *Supplier, models []SupplierModel, operatorID int) (*S
 	if err != nil {
 		return nil, err
 	}
-	now := common.GetTimestamp()
-	s.CreatedBy, s.UpdatedBy, s.CreatedTime, s.UpdatedTime = operatorID, operatorID, now, now
-	// A unique placeholder until the id is known.
-	s.Code = "p-" + common.GetUUID()
+	// Read before the transaction: on SQLite a read on the global handle
+	// would wait on the open write transaction.
+	knownModels, err := supplierBdModelNames()
+	if err != nil {
+		return nil, err
+	}
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(s).Error; err != nil {
+		if err := resolveSupplierOwner(tx, s); err != nil {
 			return err
 		}
-		s.Code = fmt.Sprintf("V%03d", s.Id)
-		if err := tx.Model(&Supplier{}).Where("id = ?", s.Id).Update("code", s.Code).Error; err != nil {
+		if err := insertSupplier(tx, s, normalizedModels, operatorID); err != nil {
 			return err
 		}
-		return replaceSupplierModels(tx, s.Id, normalizedModels)
+		return ensureBdLeadForSupplier(tx, s, normalizedModels, knownModels, operatorID)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// insertSupplier stores a normalized supplier with its models and assigns
+// its code. It does not touch the BD summary.
+func insertSupplier(tx *gorm.DB, s *Supplier, models []SupplierModel, operatorID int) error {
+	now := common.GetTimestamp()
+	s.CreatedBy, s.UpdatedBy, s.CreatedTime, s.UpdatedTime = operatorID, operatorID, now, now
+	// A unique placeholder until the id is known.
+	s.Code = "p-" + common.GetUUID()
+	if err := tx.Create(s).Error; err != nil {
+		return err
+	}
+	s.Code = fmt.Sprintf("V%03d", s.Id)
+	if err := tx.Model(&Supplier{}).Where("id = ?", s.Id).Update("code", s.Code).Error; err != nil {
+		return err
+	}
+	return syncSupplierModels(tx, s.Id, models)
 }
 
 // UpdateSupplier replaces the editable fields and the whole model list and
@@ -477,11 +558,20 @@ func UpdateSupplier(id int, input *Supplier, models []SupplierModel, operatorID 
 		if err := current.normalize(); err != nil {
 			return err
 		}
+		// An unchanged owner keeps the stored name even if that account is
+		// no longer an admin.
+		if current.OwnerId != previous.OwnerId {
+			if err := resolveSupplierOwner(tx, &current); err != nil {
+				return err
+			}
+		} else if current.OwnerId > 0 {
+			current.Owner = previous.Owner
+		}
 		current.UpdatedBy, current.UpdatedTime = operatorID, common.GetTimestamp()
 		if err := tx.Model(&Supplier{Id: id}).Select("*").Omit("id", "code", "created_by", "created_time", "deleted_at").Updates(&current).Error; err != nil {
 			return err
 		}
-		if err := replaceSupplierModels(tx, id, normalizedModels); err != nil {
+		if err := syncSupplierModels(tx, id, normalizedModels); err != nil {
 			return err
 		}
 		before, after = &previous, &current
@@ -496,7 +586,14 @@ func DeleteSupplier(id int) (*Supplier, error) {
 	if err := DB.First(&s, id).Error; err != nil {
 		return nil, err
 	}
-	if err := DB.Delete(&Supplier{}, id).Error; err != nil {
+	// Free its channels so they can be bound to another supplier.
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("supplier_id = ?", id).Delete(&SupplierChannel{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&Supplier{}, id).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &s, nil

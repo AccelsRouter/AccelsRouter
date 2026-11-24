@@ -73,7 +73,7 @@ export function supplierMissingFields(
     ['short_name', !values.short_name.trim()],
     ['biz_contact', !values.biz_contact.trim()],
     ['status', !values.status],
-    ['owner', !values.owner.trim()],
+    ['owner', !values.owner_id && !values.owner.trim()],
     ['sign_entity', !values.sign_entity],
     ['gst_applicable', values.gst_applicable === null],
   ]

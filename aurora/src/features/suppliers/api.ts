@@ -20,9 +20,12 @@ import { api } from '@/lib/api'
 import type {
   ApiResponse,
   SupplierAttachment,
+  SupplierBrief,
+  SupplierChannelOffer,
   SupplierContract,
   SupplierContractPayload,
   SupplierDetail,
+  SupplierMeta,
   SupplierModelCatalogItem,
   SupplierModelOffer,
   SupplierPage,
@@ -216,6 +219,49 @@ export async function deleteSupplierAttachment(
 ): Promise<ApiResponse> {
   const res = await api.delete(
     `/api/admin/suppliers/attachments/${attachmentId}`
+  )
+  return res.data
+}
+
+export async function getSupplierMeta(): Promise<ApiResponse<SupplierMeta>> {
+  const res = await api.get('/api/admin/suppliers/meta')
+  return res.data
+}
+
+export async function matchSuppliers(
+  name: string
+): Promise<ApiResponse<SupplierBrief[]>> {
+  const query = new URLSearchParams({ name })
+  const res = await api.get(`/api/admin/suppliers/match?${query.toString()}`)
+  return res.data
+}
+
+export async function setSupplierChannels(
+  supplierId: number,
+  channelIds: number[]
+): Promise<ApiResponse> {
+  const res = await api.put(`/api/admin/suppliers/${supplierId}/channels`, {
+    channel_ids: channelIds,
+  })
+  return res.data
+}
+
+export async function pullSupplierChannelModels(
+  supplierId: number,
+  channelId: number
+): Promise<ApiResponse<{ added: number }>> {
+  const res = await api.post(
+    `/api/admin/suppliers/${supplierId}/channels/${channelId}/pull-models`
+  )
+  return res.data
+}
+
+export async function getSupplierChannelOffers(
+  channelIds: number[]
+): Promise<ApiResponse<SupplierChannelOffer[]>> {
+  const query = new URLSearchParams({ channel_ids: channelIds.join(',') })
+  const res = await api.get(
+    `/api/admin/suppliers/channel-offers?${query.toString()}`
   )
   return res.data
 }

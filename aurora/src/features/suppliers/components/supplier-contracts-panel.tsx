@@ -137,6 +137,12 @@ export function SupplierContractsPanel(props: { supplier: SupplierDetail }) {
               `${t(optionLabel(SUPPLIER_CONTRACT_TYPE_OPTIONS, row.contract_type) ?? row.contract_type)} · ${row.business_line}`,
           },
           {
+            id: 'models',
+            header: t('Covered models'),
+            cell: (row: SupplierContract) =>
+              t('{{count}} models', { count: row.model_ids?.length ?? 0 }),
+          },
+          {
             id: 'term',
             header: t('Term'),
             cell: (row: SupplierContract) =>
@@ -210,6 +216,7 @@ export function SupplierContractsPanel(props: { supplier: SupplierDetail }) {
 
       <ContractDialog
         supplierId={supplier.id}
+        models={supplier.models}
         open={creating || editing !== null}
         contract={editing ?? undefined}
         onOpenChange={(open) => {
@@ -280,6 +287,20 @@ export function SupplierContractsPanel(props: { supplier: SupplierDetail }) {
                   wide: true,
                 },
                 { label: t('SLA terms'), value: viewing.sla_terms, wide: true },
+                {
+                  label: t('Covered models'),
+                  value: supplier.models
+                    .filter((model) =>
+                      viewing.model_ids?.includes(model.id ?? 0)
+                    )
+                    .map((model) =>
+                      model.variant
+                        ? `${model.model_name} (${model.variant})`
+                        : model.model_name
+                    )
+                    .join(', '),
+                  wide: true,
+                },
                 { label: t('Remarks'), value: viewing.remark, wide: true },
                 ...(viewing.status === 'void'
                   ? [

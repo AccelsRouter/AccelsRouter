@@ -49,11 +49,14 @@ import {
   contractToFormValues,
   getContractFormSchema,
 } from '../lib/contract-form'
-import type { SupplierContract } from '../types'
+import type { SupplierContract, SupplierModel } from '../types'
+import { ContractModelsField } from './contract-models-field'
 import { DateFormField, SelectFormField, TextFormField } from './form-fields'
 
 type ContractDialogProps = {
   supplierId: number
+  /** The supplier's model rows a contract can cover. */
+  models: SupplierModel[]
   open: boolean
   onOpenChange: (open: boolean) => void
   /** The contract to edit; a new contract is created when absent. */
@@ -294,8 +297,8 @@ export function ContractDialog(props: ContractDialogProps) {
             name='remaining_amount'
             label={t('Remaining balance')}
             inputMode='decimal'
-            required={payMode === 'prepaid'}
           />
+          <ContractModelsField control={form.control} models={props.models} />
           <TextFormField
             control={form.control}
             name='rebate_rule'

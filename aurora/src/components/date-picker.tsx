@@ -48,6 +48,9 @@ type DatePickerProps = {
   isDateDisabled?: (date: Date) => boolean
   className?: string
   id?: string
+  /** Range of the month/year dropdowns; the calendar's default ends this year. */
+  startMonth?: Date
+  endMonth?: Date
 }
 
 function isPastDateOutOfRange(date: Date): boolean {
@@ -61,6 +64,8 @@ export function DatePicker({
   isDateDisabled = isPastDateOutOfRange,
   className,
   id,
+  startMonth,
+  endMonth,
 }: DatePickerProps) {
   const { t, i18n } = useTranslation()
   const placeholderText = placeholder ?? t('Pick a date')
@@ -96,6 +101,8 @@ export function DatePicker({
           onSelect={onSelect}
           locale={calendarLocale}
           disabled={isDateDisabled}
+          startMonth={startMonth}
+          endMonth={endMonth}
         />
       </PopoverContent>
     </Popover>

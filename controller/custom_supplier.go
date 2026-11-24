@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -32,6 +33,8 @@ func init() {
 		"supplier.contract.set_current": "Set ${contract_no} as the current supplier contract",
 		"supplier.attachment.upload":    "Uploaded supplier attachment ${file_name}",
 		"supplier.attachment.delete":    "Deleted supplier attachment ${file_name}",
+		"supplier.channels.update":      "Changed the channels of supplier ${id}",
+		"supplier.channels.pull_models": "Pulled ${count} models from channel ${channel_id} into supplier ${id}",
 	})
 }
 
@@ -417,4 +420,110 @@ func DeleteSupplierAttachment(c *gin.Context) {
 	}
 	recordManageAudit(c, "supplier.attachment.delete", map[string]any{"id": id, "biz_type": attachment.BizType, "biz_id": attachment.BizId, "file_name": attachment.FileName})
 	common.ApiSuccess(c, nil)
+}
+
+type supplierOwner struct {
+	Id   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetSupplierMeta returns the choices the supplier forms offer: owners
+// (admins who can view suppliers), the system model list, variant notes
+// already in use, and channels with the supplier each is bound to.
+func GetSupplierMeta(c *gin.Context) {
+	users, err := model.ListBdOwnerCandidates()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	owners := make([]supplierOwner, 0, len(users))
+	for i := range users {
+		if authz.Can(users[i].Id, users[i].Role, authz.SupplierRead) {
+			owners = append(owners, supplierOwner{Id: users[i].Id, Name: model.BdUserName(&users[i])})
+		}
+	}
+	models, err := model.ListBdModelNames()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	variants, err := model.SupplierModelVariants()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channels, err := model.ListSupplierChannelOptions()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"owners": owners, "models": models, "variants": variants, "channels": channels})
+}
+
+// MatchSuppliers looks suppliers up by name for duplicate checks.
+func MatchSuppliers(c *gin.Context) {
+	matches, err := model.MatchSuppliers(c.Query("name"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, matches)
+}
+
+// GetSupplierChannelOffers returns the supplier terms for the models of the
+// given channels (?channel_ids=1,2,3).
+func GetSupplierChannelOffers(c *gin.Context) {
+	ids := make([]int, 0)
+	for raw := range strings.SplitSeq(c.Query("channel_ids"), ",") {
+		if id, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > 500 {
+		ids = ids[:500]
+	}
+	offers, err := model.SupplierChannelOffers(ids)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, offers)
+}
+
+func SetSupplierChannels(c *gin.Context) {
+	supplierID, ok := supplierIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req struct {
+		ChannelIds []int `json:"channel_ids"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if err := model.SetSupplierChannels(supplierID, req.ChannelIds, c.GetInt("id")); err != nil {
+		supplierAPIError(c, err, "Supplier not found")
+		return
+	}
+	recordManageAudit(c, "supplier.channels.update", map[string]any{"id": supplierID, "channel_ids": req.ChannelIds})
+	common.ApiSuccess(c, nil)
+}
+
+func PullSupplierChannelModels(c *gin.Context) {
+	supplierID, ok := supplierIDParam(c, "id")
+	if !ok {
+		return
+	}
+	channelID, ok := supplierIDParam(c, "channel_id")
+	if !ok {
+		return
+	}
+	added, err := model.PullSupplierChannelModels(supplierID, channelID, c.GetInt("id"))
+	if err != nil {
+		supplierAPIError(c, err, "Supplier not found")
+		return
+	}
+	recordManageAudit(c, "supplier.channels.pull_models", map[string]any{"id": supplierID, "channel_id": channelID, "count": added})
+	common.ApiSuccess(c, gin.H{"added": added})
 }
