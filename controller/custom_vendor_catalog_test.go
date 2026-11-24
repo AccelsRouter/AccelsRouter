@@ -229,7 +229,12 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 		"gemini-2.5-flash": {Provider: customVendorGoogleProvider, Input: 0.3, Output: out(2.5), CacheRead: out(0.03), Tiers: []customVendorTier{
 			{Input: 0.3, Output: out(2.5), CacheRead: out(0.03), AudioInput: out(1)},
 		}},
+		// One with a built-in price equal to the list price, one without.
+		"gpt-image-2":         customOpenAIImagePrice(),
+		"gpt-image-2.6-flare": customOpenAIImagePrice(),
 	}
+	builtinImage, ok := billing_setting.GetBillingExpr("gpt-image-2")
+	require.True(t, ok)
 	for name, price := range rows {
 		row := customVendorRowFromPrice(name, "kimi", price, 100)
 		require.NoError(t, db.Create(&row).Error)
@@ -268,9 +273,12 @@ func TestCustomVendorPricesServeThePriceSync(t *testing.T) {
 		"doubao-seed-2-1-pro":        `tier("base", p * 0.82 + c * 4.1)`,
 		"doubao-seed-2-1-pro-260715": `tier("base", p * 0.82 + c * 4.1)`,
 		"glm-5.1-20260101":           `tier("base", p * 1.4 + c * 4.4 + cr * 0.26)`,
+		// A model already charged the list price keeps the wording it has.
+		"gpt-image-2":         builtinImage,
+		"gpt-image-2.6-flare": `tier("base", p * 5 + c * 30 + cr * 1.25 + img * 8 + img_cr * 2)`,
 	}, data[billing_setting.BillingExprField])
 	modes := data[billing_setting.BillingModeField].(map[string]string)
-	assert.Len(t, modes, 10)
+	assert.Len(t, modes, 12)
 	assert.Equal(t, billing_setting.BillingModeTieredExpr, modes["grok-4.7"])
 
 	// The daily check names the served models that charge less than listed:

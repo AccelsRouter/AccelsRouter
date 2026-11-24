@@ -159,7 +159,8 @@ func customVendorIsLargeJump(old, next model.CustomVendorPrice) bool {
 	for i := range before {
 		a, b := before[i], after[i]
 		if large(&a.Input, &b.Input) || large(a.Output, b.Output) || large(a.CacheRead, b.CacheRead) ||
-			large(a.CacheWrite, b.CacheWrite) || large(a.AudioInput, b.AudioInput) || large(a.ImageInput, b.ImageInput) || large(a.ImageOutput, b.ImageOutput) {
+			large(a.CacheWrite, b.CacheWrite) || large(a.AudioInput, b.AudioInput) || large(a.ImageInput, b.ImageInput) ||
+			large(a.ImageCacheRead, b.ImageCacheRead) || large(a.ImageOutput, b.ImageOutput) {
 			return true
 		}
 		for unit, price := range a.Usage {

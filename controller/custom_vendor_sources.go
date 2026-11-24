@@ -327,6 +327,24 @@ func (p customOpenRouterPricing) vendorPrice() (customVendorPrice, bool) {
 	return price, true
 }
 
+// customOpenAIImageModels are OpenAI's image models. OpenRouter does not list
+// them and OpenAI's pricing pages refuse automated clients, so their price is
+// kept here: per 1M tokens, text input 5 (cached 1.25), image input 8 (cached
+// 2), output 30, as Baidu's model service price page (BO) states it for each
+// of them on 2026-11-24 and as the built-in gpt-image prices have it. The
+// Images API reports image output as output tokens.
+var customOpenAIImageModels = []string{
+	"gpt-image-2", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "gpt-image-2.6-sunburst", "gpt-image-2.6-flare",
+}
+
+func customOpenAIImagePrice() customVendorPrice {
+	output, cached, image, imageCached := 30.0, 1.25, 8.0, 2.0
+	return customVendorPrice{
+		Provider: "OpenAI list price (image models, read 2026-11-24)", Input: 5, Output: &output, CacheRead: &cached,
+		Tiers: []customVendorTier{{Input: 5, Output: &output, CacheRead: &cached, ImageInput: &image, ImageCacheRead: &imageCached}},
+	}
+}
+
 // customOpenRouterModelsURL is OpenRouter's public model list; a model's
 // endpoints are listed under it at /<id>/endpoints.
 const customOpenRouterModelsURL = "https://openrouter.ai/api/v1/models"
@@ -336,7 +354,8 @@ const customOpenRouterModelsURL = "https://openrouter.ai/api/v1/models"
 // endpoint. The list carries one price per model, and that can be another
 // host's regional endpoint, a tenth dearer. A model OpenAI itself does not
 // serve there keeps the listed price; one whose endpoints cannot be read is
-// left out, so the price stored for it stays.
+// left out, so the price stored for it stays. The image models OpenRouter does
+// not list are added at their kept price.
 func fetchCustomOpenAIVendorPrices(ctx context.Context, client *http.Client, modelsURL string) (map[string]customVendorPrice, error) {
 	body, err := fetchCustomVendorBody(ctx, client, modelsURL)
 	if err != nil {
@@ -388,6 +407,11 @@ func fetchCustomOpenAIVendorPrices(ctx context.Context, client *http.Client, mod
 			delete(prices, name)
 		case own[i] != nil:
 			prices[name] = *own[i]
+		}
+	}
+	for _, name := range customOpenAIImageModels {
+		if _, listed := prices[name]; !listed {
+			prices[name] = customOpenAIImagePrice()
 		}
 	}
 	return customPageResult(prices)

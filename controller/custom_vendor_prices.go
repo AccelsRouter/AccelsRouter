@@ -29,6 +29,9 @@ type customVendorTier struct {
 	CacheWrite *float64 `json:"cache_write,omitempty"`
 	AudioInput *float64 `json:"audio_input,omitempty"`
 	ImageInput *float64 `json:"image_input,omitempty"`
+	// ImageCacheRead is the price of cached image input where the vendor
+	// prices it apart from cached text input.
+	ImageCacheRead *float64 `json:"image_cache_read,omitempty"`
 	// ImageOutput is the price of image output tokens where the vendor prices
 	// them apart from text output.
 	ImageOutput *float64           `json:"image_output,omitempty"`

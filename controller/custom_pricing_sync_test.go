@@ -471,7 +471,11 @@ func TestCustomVendorPageParsers(t *testing.T) {
 	defer router.Close()
 	own, err := fetchCustomOpenAIVendorPrices(t.Context(), router.Client(), router.URL+"/models")
 	require.NoError(t, err)
-	assert.Len(t, own, 2)
+	// The image models OpenRouter does not list come with the two it does.
+	assert.Len(t, own, 2+len(customOpenAIImageModels))
+	imageExpr, ok := customVendorSyncExpr("gpt-image-2.6-flare", own["gpt-image-2.6-flare"])
+	require.True(t, ok)
+	assert.Equal(t, `tier("base", p * 5 + c * 30 + cr * 1.25 + img * 8 + img_cr * 2)`, imageExpr)
 	assertCustomVendorPrice(t, own, "gpt-x", 4, 20)
 	require.Len(t, own["gpt-x"].Tiers, 2)
 	assert.Equal(t, 8.0, own["gpt-x"].Tiers[1].Input)
