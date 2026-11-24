@@ -564,10 +564,18 @@ func TestCustomBillingExprErrorFlagsUnservedUsageExpressions(t *testing.T) {
 func TestCustomCharacterExpressionConversion(t *testing.T) {
 	var errors, conversions map[string]string
 	candidate := map[string]any{billing_setting.BillingModeField: billing_setting.BillingModeTieredExpr, billing_setting.BillingExprField: `u("characters") / 10000 * 0.4412`}
-	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", candidate)
+	customRecordBillingExprError(&errors, &conversions, "aigc", "other-tts-1", candidate)
 	assert.Empty(t, errors)
 	assert.Equal(t, `tier("base", p * 44.12)`, candidate[billing_setting.BillingExprField])
 	assert.Equal(t, `u("characters") / 10000 * 0.4412`, conversions["aigc"])
+	// seed-tts-2.0 is served by the doubao plugin, which meters characters, so
+	// its task price is kept as the upstream has it.
+	errors, conversions = nil, nil
+	served := map[string]any{billing_setting.BillingExprField: `u("characters") / 10000 * 0.4412`}
+	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", served)
+	assert.Empty(t, errors)
+	assert.Empty(t, conversions)
+	assert.Equal(t, `u("characters") / 10000 * 0.4412`, served[billing_setting.BillingExprField])
 
 	assert.Equal(t, `tier("base", p * 50)`, customConvertCharacterExpr(`tier("base", u("characters") * 0.00005)`))
 	assert.Equal(t, `tier("base", p * 0)`, customConvertCharacterExpr(`u("characters") * 0`))
@@ -582,7 +590,7 @@ func TestCustomCharacterExpressionConversion(t *testing.T) {
 		assert.Empty(t, customConvertCharacterExpr(expression), name)
 	}
 	errors, conversions = nil, nil
-	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", map[string]any{billing_setting.BillingExprField: `tier("base", 0.01 + u("characters") * 0.00005)`})
+	customRecordBillingExprError(&errors, &conversions, "aigc", "other-tts-1", map[string]any{billing_setting.BillingExprField: `tier("base", 0.01 + u("characters") * 0.00005)`})
 	assert.Contains(t, errors, "aigc")
 	assert.Empty(t, conversions)
 }
