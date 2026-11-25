@@ -3,7 +3,8 @@
 // the provider plugin baidu-vod. Baidu resells other vendors' models: each
 // interface is a Baidu address prefix followed by the vendor's own protocol,
 // with the API key as a Bearer token. A client calls the gateway at the
-// vendor's own path and gets the vendor's own reply.
+// vendor's own path and gets the vendor's own reply, or calls /v1/videos, the
+// OpenAI video protocol, for any of the video models.
 //
 // The key sorts after alibaba, doubao, hailuo, kling and vidu on purpose. The
 // host gives a model several plugins declare to the first of them in key order
@@ -138,6 +139,12 @@ const KLING_UNITS_SCHEMA = { units: { type: "number", unit: "credit", descriptio
 const KLING_SECONDS_SCHEMA = { seconds: SECONDS_FIELD, resolution: resolutionField(["720p", "1080p", "4k"]), audio: AUDIO_FIELD, video_input: VIDEO_INPUT_FIELD };
 const KLING_MODE_RESOLUTIONS = { std: "720p", pro: "1080p", "4k": "4k" };
 const KLING_PATH_MIN_SECONDS = 3;
+// The text-to-video aspect ratios of each API; the OpenAI video protocol sends
+// the one nearest the request's size.
+const KLING_PATH_ASPECT_RATIOS = ["16:9", "9:16", "1:1", "21:9"];
+const KLING_BODY_ASPECT_RATIOS = ["16:9", "9:16", "1:1"];
+// The models Kling serves on its omni-video endpoint alone.
+const KLING_OMNI_MODELS = ["kling-v3-omni", "kling-video-o1"];
 // Whether an element is a video character is not in the request, so an element
 // counts as an input video.
 const KLING_VIDEO_INPUTS = ["feature_video", "base_video", "element", "video"];
@@ -226,6 +233,9 @@ const VIDU_MODELS = [
 ];
 // Vidu's resolutions from the cheapest to the dearest.
 const VIDU_RESOLUTIONS = ["360p", "540p", "720p", "1080p", "2K", "4K"];
+// The defaults of Vidu's current models with every resolution, for a request
+// of the OpenAI video protocol whose model the endpoint does not list.
+const VIDU_WIDEST = { durations: [1, 16, 5], resolutions: ["720p", "360p", "540p", "1080p", "2K", "4K"] };
 const VIDU_USAGE_SCHEMA = {
   // The credits Vidu reports for the finished task.
   credits: { type: "number", unit: "credit", description: { en: "Vidu credit unit price", zh: "Vidu 积分单价" } },
@@ -249,6 +259,11 @@ const PIXVERSE_MODELS = {
 const PIXVERSE_ENDPOINTS = { text: "text_to_video", img: "image_to_video", transition: "first_tail_to_video" };
 const PIXVERSE_QUALITIES = ["360p", "540p", "720p", "1080p"];
 const PIXVERSE_MAX_SECONDS = 15;
+// What the OpenAI video protocol sends for a request that names no duration,
+// size or resolution, and the text-to-video aspect ratios it picks from.
+const PIXVERSE_DEFAULT_SECONDS = 5;
+const PIXVERSE_DEFAULT_QUALITY = "720p";
+const PIXVERSE_ASPECT_RATIOS = ["16:9", "4:3", "1:1", "3:4", "9:16"];
 const PIXVERSE_USAGE_SCHEMA = {
   seconds: SECONDS_FIELD,
   resolution: resolutionField(PIXVERSE_QUALITIES),
@@ -277,6 +292,7 @@ const HAPPYHORSE_MODELS = [
 // The longest output reserved for a request that leaves the duration out, as
 // video editing does; the duration Bailian reports settles the task.
 const HAPPYHORSE_MAX_SECONDS = 15;
+const HAPPYHORSE_ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 const HAPPYHORSE_USAGE_SCHEMA = { seconds: SECONDS_FIELD, resolution: resolutionField(["720P", "1080P"]) };
 
 // ---------------------------------------------------------------------------
@@ -289,6 +305,12 @@ const H3_MIN_DURATION = 4;
 const H3_MAX_DURATION = 15;
 const H3_MAX_REFERENCE_IMAGES = 9;
 const H3_MAX_INPUT_VIDEO_SECONDS = 15;
+// The OpenAI video protocol sends 5 seconds for a request that names none,
+// and checks the content it assembles as the hailuo plugin does.
+const H3_DEFAULT_DURATION = 5;
+const H3_MAX_FRAME_IMAGES = 2;
+const H3_MAX_REFERENCE_VIDEOS = 3;
+const H3_MAX_REFERENCE_AUDIOS = 3;
 const H3_USAGE_SCHEMA = {
   seconds: SECONDS_FIELD,
   resolution: { enum: ["768P", "2K"], description: RESOLUTION_DESCRIPTION },
@@ -307,6 +329,18 @@ const SPEECH_USAGE_SCHEMA = {
   characters: { type: "number", unit: "token", description: { en: "Speech synthesis unit price", zh: "语音合成单价" } },
 };
 
+const VIDEO_MODELS = Object.keys(SEEDANCE_MODELS).concat(Object.keys(KLING_PATH_MODELS), KLING_BODY_MODELS, VIDU_MODELS, Object.keys(PIXVERSE_MODELS), HAPPYHORSE_MODELS, [H3_MODEL, H3_MAX_MODEL]);
+// The video models a vendor's plugin (doubao, kling, vidu, hailuo) declares
+// too. On /v1/videos the host has every plugin that declares a model decode
+// the request before it picks a channel, and the plugin of that channel
+// executes it, so these models are read here exactly as the vendor's plugin
+// reads them: a client must not see which channel served it.
+const SHARED_VIDEO_MODELS = Object.keys(SEEDANCE_MODELS).concat(
+  ["kling-4.0", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"],
+  VIDU_MODELS.filter((model) => model !== "viduq4"),
+  [H3_MODEL]
+);
+
 // One submit route per model and endpoint of the Kling API that takes the
 // model in its path; the kling plugin declares the Kling 4.0 paths the same way.
 const klingPathRoutes = [];
@@ -322,10 +356,10 @@ export const meta = {
   name: { en: "Baidu model service (video and speech)", zh: "百度模型服务（视频与语音）" },
   icon: "BaiduCloud.Color",
   description: {
-    en: "Seedance, Kling, Vidu, PixVerse, HappyHorse and MiniMax video generation and MiniMax speech synthesis through Baidu's model service, in each vendor's own format",
-    zh: "通过百度模型服务调用 Seedance、可灵、Vidu、PixVerse、HappyHorse、MiniMax 视频生成与 MiniMax 语音合成，使用各厂商自己的接口格式",
+    en: "Seedance, Kling, Vidu, PixVerse, HappyHorse and MiniMax video generation and MiniMax speech synthesis through Baidu's model service, in each vendor's own format or the OpenAI video format",
+    zh: "通过百度模型服务调用 Seedance、可灵、Vidu、PixVerse、HappyHorse、MiniMax 视频生成与 MiniMax 语音合成，使用各厂商自己的接口格式或 OpenAI 视频格式",
   },
-  version: "1.0.0",
+  version: "1.1.0",
   author: { name: "AccelsRouter" },
   baseUrl: "https://vod.bj.baidubce.com",
   allowedHosts: ["vod.gz.baidubce.com"],
@@ -345,8 +379,10 @@ export const meta = {
       },
     },
   },
-  models: Object.keys(SEEDANCE_MODELS).concat(Object.keys(KLING_PATH_MODELS), KLING_BODY_MODELS, VIDU_MODELS, Object.keys(PIXVERSE_MODELS), HAPPYHORSE_MODELS, [H3_MODEL, H3_MAX_MODEL], SPEECH_MODELS),
+  models: VIDEO_MODELS.concat(SPEECH_MODELS),
   fetchMode: "per_task",
+  // /v1/videos for the video models; speech synthesis has no host protocol.
+  protocols: [{ name: "openai_video", models: VIDEO_MODELS }],
   // The fallback of a channel alias that resolves to several models.
   usageSchema: { seconds: SECONDS_FIELD },
   usageProfiles: Object.keys(SEEDANCE_MODELS)
@@ -472,10 +508,22 @@ function seedanceUsage(ctx, body) {
 
 // --------------------------------- Kling -----------------------------------
 
-function klingDuration(value, shortest, longest) {
+function klingDuration(value, shortest, longest, refusal) {
   const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
-  if (!Number.isInteger(n) || n < shortest || n > longest) throw new Error("duration must be an integer from " + shortest + " to " + longest);
+  if (!Number.isInteger(n) || n < shortest || n > longest) throw new Error(refusal || "duration must be an integer from " + shortest + " to " + longest);
   return n;
+}
+
+// What a request of the API that takes the model in its path may not carry:
+// Kling would call back, or look tasks up, by ids the gateway does not hand
+// out, and the duration is billed, so it is kept within the model's range.
+function checkKlingPathBody(model, body) {
+  const options = plainObject(body.options);
+  for (const name of KLING_UNSUPPORTED_FIELDS) {
+    if (options[name] !== undefined && options[name] !== null && options[name] !== "") throw new Error("options." + name + " is not supported; query the task instead");
+  }
+  const settings = plainObject(body.settings);
+  if (settings.duration !== undefined && settings.duration !== null) klingDuration(settings.duration, KLING_PATH_MIN_SECONDS, KLING_PATH_MODELS[model].maxSeconds);
 }
 
 function klingPathResolution(profile, settings) {
@@ -502,8 +550,7 @@ function klingPathBilledSeconds(profile, body, withTotal) {
 
 // The usage of a Kling request: units for the models the kling plugin also
 // serves, seconds with their conditions for the others.
-function klingUsage(ctx) {
-  const req = ctx.requestBody;
+function klingUsage(ctx, req) {
   const body = req.vendorBody;
   const model = upstreamModel(ctx);
   if (req.api === "path") {
@@ -960,17 +1007,11 @@ export const native = {
 };
 
 // The decoders of the Kling paths that take the model: the route names the
-// model and the endpoint. Kling would call back, or look tasks up, by ids the
-// gateway does not hand out; the duration is billed, so it is bounded.
+// model and the endpoint.
 for (const route of klingPathRoutes) {
   native[route.decode] = function (ctx) {
     const body = jsonBody(ctx);
-    const options = plainObject(body.options);
-    for (const name of KLING_UNSUPPORTED_FIELDS) {
-      if (options[name] !== undefined && options[name] !== null && options[name] !== "") throw new Error("options." + name + " is not supported; query the task instead");
-    }
-    const settings = plainObject(body.settings);
-    if (settings.duration !== undefined && settings.duration !== null) klingDuration(settings.duration, KLING_PATH_MIN_SECONDS, KLING_PATH_MODELS[route.model].maxSeconds);
+    checkKlingPathBody(route.model, body);
     return {
       kind: "submit",
       model: route.model,
@@ -982,11 +1023,21 @@ for (const route of klingPathRoutes) {
 
 // ------------------------------- driver hooks -------------------------------
 
-// A request reaches Baidu as the client sent it, with the channel's model.
-export function buildSubmitRequest(ctx) {
+// The vendor request a task sends: a native route's own body, or the one a
+// request of the OpenAI video protocol becomes.
+function vendorRequest(ctx) {
   const req = ctx.requestBody;
+  if (!req.protocol) return req;
+  if (req.invalid) throw new Error(req.invalid);
+  return VIDEO_PROTOCOL[req.vendor].request(ctx, req);
+}
+
+// A native request reaches Baidu as the client sent it, with the channel's
+// model.
+export function buildSubmitRequest(ctx) {
+  const req = vendorRequest(ctx);
   const model = upstreamModel(ctx);
-  const descriptor = { method: "POST", headers: bearerHeaders(ctx), action: ctx.action };
+  const descriptor = { method: "POST", headers: bearerHeaders(ctx), action: req.action || ctx.action };
   // Reject what cannot be billed before any quota is reserved.
   extractUsage(ctx);
   if (req.vendor === "seedance") {
@@ -1029,7 +1080,7 @@ export function buildSubmitRequest(ctx) {
 // The plugin state names the vendor for the polls, which have no request, and
 // keeps what settles a task whose reply does not report its usage.
 export function parseSubmitResponse(ctx, resp) {
-  const req = ctx.requestBody;
+  const req = vendorRequest(ctx);
   const body = plainObject(resp.body);
   const state = { vendor: req.vendor };
   let taskId = "";
@@ -1044,7 +1095,7 @@ export function parseSubmitResponse(ctx, resp) {
     state.resolution = klingPathResolution(profile, settings);
     if (klingBilledInUnits(req.model)) state.units = true;
     else {
-      state.facts = klingUsage(ctx);
+      state.facts = klingUsage(ctx, req);
       state.open = settings.duration === undefined || settings.duration === null;
       state.requested = state.open ? 0 : Number(settings.duration);
       state.total = profile.totalDuration === true;
@@ -1089,10 +1140,10 @@ export function parseSubmitResponse(ctx, resp) {
 
 export function extractUsage(ctx) {
   if (ctx.usagePurpose === "billing_ratios") return null;
-  const req = ctx.requestBody;
+  const req = vendorRequest(ctx);
   const body = req.vendorBody;
-  if (req.vendor === "seedance") return seedanceUsage(ctx, body);
-  if (req.vendor === "kling") return klingUsage(ctx);
+  if (req.vendor === "seedance") return seedanceUsage(ctx, req.reserved || body);
+  if (req.vendor === "kling") return klingUsage(ctx, req);
   if (req.vendor === "vidu") return viduUsage(req.endpoint, upstreamModel(ctx), body);
   if (req.vendor === "pixverse") return pixverseUsage(body);
   if (req.vendor === "happyhorse") return happyHorseUsage(body);
@@ -1254,6 +1305,654 @@ export function extractUsageOnComplete(ctx, _result, body) {
   }
   return null;
 }
+
+// ------------------------------ video artifacts -----------------------------
+
+// The video of a finished task, from the vendor's last reply.
+function taskVideoURL(state, data) {
+  if (state.detail || state.vendor === "pixverse") return taskDetailVideoURL(data, 0);
+  if (state.vendor === "seedance") return trimmed(plainObject(data.content).video_url);
+  if (state.vendor === "kling" && state.api === "path") {
+    const videos = klingPathVideos(klingPathEntry(data));
+    return videos.length ? trimmed(videos[0].url) : "";
+  }
+  if (state.vendor === "kling") {
+    const videos = plainObject(plainObject(data.data).task_result).videos;
+    return Array.isArray(videos) && videos.length ? trimmed(plainObject(videos[0]).url) : "";
+  }
+  if (state.vendor === "vidu") return Array.isArray(data.creations) && data.creations.length ? trimmed(plainObject(data.creations[0]).url) : "";
+  if (state.vendor === "happyhorse") return trimmed(plainObject(data.output).video_url);
+  if (state.vendor === "minimax") {
+    const task = h3Task(data);
+    return task ? trimmed(plainObject(task.content).url) : taskDetailVideoURL(data, 0);
+  }
+  return "";
+}
+
+// The artifacts the vendors' plugins list for the same task: the video, and
+// the last frame Ark returns with it when asked to.
+export function listArtifacts(task) {
+  if (task.status !== "SUCCESS") return [];
+  const state = plainObject(task.state);
+  const data = plainObject(task.data);
+  const artifacts = [];
+  if (taskVideoURL(state, data)) artifacts.push(state.vendor === "minimax" ? { key: "video", type: "video", mimeType: "video/mp4" } : { key: "video", type: "video" });
+  if (state.vendor === "seedance" && trimmed(plainObject(data.content).last_frame_url)) artifacts.push({ key: "last_frame", type: "image", mimeType: "image/png" });
+  return artifacts;
+}
+
+// The vendors' result addresses take no credentials.
+export function buildContentRequest(ctx) {
+  const state = plainObject(ctx.state);
+  const data = plainObject(ctx.data);
+  let url = "";
+  if (ctx.artifactKey === "video") url = taskVideoURL(state, data);
+  else if (ctx.artifactKey === "last_frame" && state.vendor === "seedance") url = trimmed(plainObject(data.content).last_frame_url);
+  if (!url) throw new Error("artifact_not_found");
+  return { url: url, method: ctx.clientRequest.method, credentialless: true };
+}
+
+// --------------------------- OpenAI video protocol --------------------------
+//
+// POST /v1/videos takes prompt, seconds (or duration), size, a reference image
+// (image, input_reference, images, or one uploaded input_reference) and
+// metadata, the vendor's own fields. Each vendor below turns such a request
+// into the vendor's own body, which the checks and the usage of the native
+// routes then read, so nothing is billed that is not sent.
+//
+// The models of SHARED_VIDEO_MODELS are read as the vendor's plugin reads
+// them, step for step: its decoder's refusals here in decode, its request
+// builder's in request, in its words. The other models follow the plugin
+// nearest to them, and their refusals wait until the request is built: this
+// gateway offers its OpenAI video plugin as one more candidate for every model
+// on /v1/videos, and a request refused in decode would be left to it instead of
+// answering the client.
+
+// The model whose vendor serves a request: a channel alias stands for the
+// declared model it maps to.
+function videoVendor(model) {
+  if (Object.prototype.hasOwnProperty.call(SEEDANCE_MODELS, model)) return "seedance";
+  if (Object.prototype.hasOwnProperty.call(KLING_PATH_MODELS, model) || KLING_BODY_MODELS.includes(model)) return "kling";
+  if (VIDU_MODELS.includes(model)) return "vidu";
+  if (Object.prototype.hasOwnProperty.call(PIXVERSE_MODELS, model)) return "pixverse";
+  if (HAPPYHORSE_MODELS.includes(model)) return "happyhorse";
+  if (model === H3_MODEL || model === H3_MAX_MODEL) return "minimax";
+  return "";
+}
+
+// The fields of a form, each given once but those of listed, which repeat.
+function formFields(ctx, listed) {
+  const fields = ctx.body.fields || {};
+  const req = {};
+  for (const name of Object.keys(fields)) {
+    const values = fields[name] || [];
+    if ((listed || []).includes(name)) req[name] = values;
+    else if (values.length > 1) throw new Error(name + " must be provided once");
+    else req[name] = values[0];
+  }
+  return req;
+}
+
+// A form carries metadata as the text of a JSON object.
+function parseFormMetadata(req) {
+  if (req.metadata === undefined) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(req.metadata);
+  } catch (e) {
+    throw new Error("metadata must be a JSON object string");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("metadata must be a JSON object string");
+  req.metadata = parsed;
+}
+
+// The request as the kling, vidu and hailuo plugins read it: a JSON object, or
+// a form with at most one uploaded file, input_reference.
+function uploadableVideoRequest(ctx) {
+  if (!ctx.body || (ctx.body.kind !== "json" && ctx.body.kind !== "multipart")) throw new Error("JSON or multipart body required");
+  if (ctx.body.kind === "json") {
+    if (!ctx.body.value || Array.isArray(ctx.body.value)) throw new Error("JSON object required");
+    return { req: Object.assign({}, ctx.body.value), uploaded: false };
+  }
+  const req = formFields(ctx);
+  let uploaded = false;
+  for (const file of ctx.body.files || []) {
+    if (file.field !== "input_reference") throw new Error("unexpected file field: " + file.field);
+    if (uploaded) throw new Error("input_reference must be provided once");
+    uploaded = true;
+  }
+  parseFormMetadata(req);
+  if (req.seconds !== undefined) req.seconds = Number(req.seconds);
+  else if (req.duration !== undefined) req.seconds = Number(req.duration);
+  return { req: req, uploaded: uploaded };
+}
+
+// The request of the vendors that take reference images by address only, as
+// the alibaba plugin reads it; seconds and duration name the same value.
+function addressedVideoRequest(ctx) {
+  if (!ctx.body || (ctx.body.kind !== "json" && ctx.body.kind !== "multipart")) throw new Error("JSON or multipart body required");
+  let req;
+  if (ctx.body.kind === "json") {
+    if (!ctx.body.value || typeof ctx.body.value !== "object" || Array.isArray(ctx.body.value)) throw new Error("JSON object required");
+    req = Object.assign({}, ctx.body.value);
+  } else {
+    if ((ctx.body.files || []).length) throw new Error("reference images must be URLs; files cannot be uploaded");
+    req = formFields(ctx, ["images"]);
+    parseFormMetadata(req);
+    for (const name of ["seconds", "duration"]) {
+      if (req[name] !== undefined) req[name] = Number(req[name]);
+    }
+  }
+  const seconds = req.seconds === undefined ? req.duration : req.seconds;
+  if (seconds !== undefined) req.duration = seconds;
+  req.images = referenceImages([req.image, req.input_reference].concat(Array.isArray(req.images) ? req.images : []));
+  return req;
+}
+
+// The reference images a request names, in order and without repeats.
+function referenceImages(values) {
+  const images = [];
+  for (const image of values) {
+    if (trimmed(image) && !images.includes(trimmed(image))) images.push(trimmed(image));
+  }
+  return images;
+}
+
+// An uploaded file stays a placeholder the host fills in when it sends the
+// request; nothing else of a client's object reaches the upstream body.
+function filePlaceholder(image) {
+  if (!image || typeof image !== "object" || Array.isArray(image) || !image.__fileRef) return image;
+  const placeholder = { __fileRef: image.__fileRef, encoding: image.encoding };
+  if (image.mimeType) placeholder.mimeType = image.mimeType;
+  if (image.maxBytes !== undefined && image.maxBytes !== null) placeholder.maxBytes = image.maxBytes;
+  return placeholder;
+}
+
+// A size of the protocol, WIDTHxHEIGHT.
+function sizeDimensions(size) {
+  const parts = trimmed(size).toLowerCase().split("x");
+  const width = Number(parts[0]);
+  const height = Number(parts[1]);
+  if (parts.length !== 2 || !(width > 0) || !(height > 0)) throw new Error("size must be WIDTHxHEIGHT, such as 1280x720");
+  return { width: width, height: height };
+}
+
+// The aspect ratio of the list nearest the size's.
+function nearestAspectRatio(dimensions, ratios) {
+  let nearest = ratios[0];
+  let distance = Infinity;
+  for (const ratio of ratios) {
+    const sides = ratio.split(":").map(Number);
+    const ratioDistance = Math.abs(Math.log(dimensions.width / dimensions.height) - Math.log(sides[0] / sides[1]));
+    if (ratioDistance < distance) {
+      nearest = ratio;
+      distance = ratioDistance;
+    }
+  }
+  return nearest;
+}
+
+// The doubao plugin's check of the protocol's seconds: -1 lets the model pick
+// the length.
+function checkSeedanceSeconds(seconds) {
+  if (seconds !== undefined && Number(seconds) !== -1 && (!Number.isFinite(Number(seconds)) || Number(seconds) <= 0 || Number(seconds) > 3600))
+    throw new Error("seconds must be -1 or between 1 and 3600");
+}
+
+// The action of a Vidu request, which names its endpoint: metadata.action, or
+// the number of reference images.
+function viduProtocolAction(req) {
+  if (req.metadata && req.metadata.action) {
+    const aliases = { generate: "image_to_video", textGenerate: "text_to_video", firstTailGenerate: "first_tail_to_video", referenceGenerate: "reference_to_video", remixGenerate: "remix" };
+    return aliases[req.metadata.action] || req.metadata.action;
+  }
+  if (!req.images || req.images.length === 0) return "text_to_video";
+  if (req.images.length === 2) return "first_tail_to_video";
+  if (req.images.length > 2) return "reference_to_video";
+  return "image_to_video";
+}
+
+// The duration and resolution a request of the protocol sends Vidu: its own,
+// whose size or resolution may sit in metadata and in any case, or the
+// model's defaults on the endpoint. Vidu checks them for the model.
+function viduProtocolSettings(req, action, model) {
+  const endpoint = Object.keys(VIDU_ENDPOINTS).find((name) => VIDU_ENDPOINTS[name].action === action);
+  const profile = (endpoint && viduProfile(endpoint, model)) || VIDU_WIDEST;
+  const duration = req.duration === undefined || req.duration === null || req.duration === "" ? profile.durations[2] : Number(req.duration);
+  if (!Number.isInteger(duration) || duration <= 0 || duration > 3600) throw new Error("seconds must be between 1 and 3600");
+  const resolutions = profile.longest && duration === profile.durations[1] ? profile.longest : profile.resolutions;
+  const raw = trimmed(req.resolution || (req.metadata || {}).resolution || req.size);
+  let resolution = resolutions.find((item) => item.toLowerCase() === raw.toLowerCase());
+  const parts = raw.toLowerCase().replace("*", "x").split("x");
+  const longer = Math.max(Number(parts[0]), Number(parts[1]));
+  if (!resolution && parts.length === 2 && Number(parts[0]) > 0 && Number(parts[1]) > 0) {
+    const wanted = longer >= 3840 ? "4K" : longer >= 2560 ? "2K" : longer >= 1920 ? "1080p" : longer >= 1280 ? "720p" : longer >= 960 ? "540p" : "360p";
+    if (resolutions.includes(wanted)) resolution = wanted;
+  }
+  return { duration: duration, resolution: resolution || resolutions[0] };
+}
+
+// The content of a MiniMax-H3 request is checked as the hailuo plugin checks
+// it, in its words, before MiniMax reads it.
+function checkH3Content(name, items) {
+  const counts = { text: 0, first: 0, last: 0, frames: 0, images: 0, referenceImages: 0, videos: 0, audios: 0 };
+  for (const item of items) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const role = trimmed(item.role);
+    if (item.type === "text" && trimmed(item.text)) counts.text += 1;
+    else if (item.type === "video_url") counts.videos += 1;
+    else if (item.type === "audio_url") counts.audios += 1;
+    if (item.type !== "image_url") continue;
+    counts.images += 1;
+    if (!role || role === "first_frame") counts.first += 1;
+    else if (role === "last_frame") counts.last += 1;
+    if (!role || role === "first_frame" || role === "last_frame" || role === "middle_frame") counts.frames += 1;
+    else if (role === "reference_image") counts.referenceImages += 1;
+  }
+  if (!counts.text) throw new Error(name + " requires a non-empty text item");
+  if (counts.first > 1) throw new Error(name + " accepts at most one first_frame image");
+  if (counts.last > 1) throw new Error(name + " accepts at most one last_frame image");
+  if (counts.referenceImages > H3_MAX_REFERENCE_IMAGES) throw new Error(name + " accepts at most " + H3_MAX_REFERENCE_IMAGES + " reference images");
+  if (counts.images > H3_MAX_REFERENCE_IMAGES) throw new Error(name + " accepts at most " + H3_MAX_REFERENCE_IMAGES + " input images");
+  if (counts.videos > H3_MAX_REFERENCE_VIDEOS) throw new Error(name + " accepts at most " + H3_MAX_REFERENCE_VIDEOS + " reference videos");
+  if (counts.audios > H3_MAX_REFERENCE_AUDIOS) throw new Error(name + " accepts at most " + H3_MAX_REFERENCE_AUDIOS + " reference audios");
+  if (counts.frames && (counts.referenceImages || counts.videos || counts.audios)) throw new Error(name + " cannot mix frame images with reference media");
+  return items;
+}
+
+// One value or a list of them; an uploaded file stays a placeholder.
+function h3MediaList(source, key) {
+  const raw = source[key];
+  if (raw === undefined || raw === null) return [];
+  return (Array.isArray(raw) ? raw : [raw]).filter((value) => (value && typeof value === "object" ? true : Boolean(trimmed(value))));
+}
+
+function h3MediaItem(type, url, role) {
+  const item = { type: type, role: role };
+  item[type] = { url: url };
+  return item;
+}
+
+// The content array of a MiniMax-H3 request: metadata.content as it is, with
+// the prompt when it has no text, or the prompt, the frame images and the
+// reference media of metadata.
+function h3ProtocolContent(name, req) {
+  const metadata = req.metadata || {};
+  const prompt = trimmed(req.prompt);
+  if (metadata.content !== undefined && metadata.content !== null) {
+    if (!Array.isArray(metadata.content)) throw new Error("metadata.content must be an array");
+    if (metadata.content.some((item) => item && item.type === "text" && trimmed(item.text))) return checkH3Content(name, metadata.content);
+    if (!prompt) throw new Error(name + " metadata.content requires a text item or a prompt");
+    return checkH3Content(name, [{ type: "text", text: prompt }].concat(metadata.content));
+  }
+  const content = prompt ? [{ type: "text", text: prompt }] : [];
+  const images = h3MediaList(req, "images");
+  if (images.length > H3_MAX_FRAME_IMAGES) throw new Error(name + " accepts at most " + H3_MAX_FRAME_IMAGES + " frame images");
+  if (metadata.first_frame_image) content.push(h3MediaItem("image_url", metadata.first_frame_image, "first_frame"));
+  if (metadata.last_frame_image) content.push(h3MediaItem("image_url", metadata.last_frame_image, "last_frame"));
+  if (!metadata.first_frame_image && !metadata.last_frame_image) {
+    images.forEach((url, index) => content.push(h3MediaItem("image_url", url, index === 0 ? "first_frame" : "last_frame")));
+  }
+  const videos = h3MediaList(metadata, "reference_video");
+  if (videos.length > H3_MAX_REFERENCE_VIDEOS) throw new Error(name + " accepts at most " + H3_MAX_REFERENCE_VIDEOS + " reference videos");
+  for (const video of videos) content.push(h3MediaItem("video_url", video, "reference_video"));
+  const audios = h3MediaList(metadata, "reference_audio");
+  if (audios.length > H3_MAX_REFERENCE_AUDIOS) throw new Error(name + " accepts at most " + H3_MAX_REFERENCE_AUDIOS + " reference audios");
+  for (const audio of audios) content.push(h3MediaItem("audio_url", audio, "reference_audio"));
+  if (!content.length) throw new Error(name + " requires a prompt or a media input");
+  return checkH3Content(name, content);
+}
+
+// Each vendor's reading of the protocol: decode normalizes the client's
+// request and names the action, request builds the vendor request from it for
+// the model the channel sends.
+const VIDEO_PROTOCOL = {
+  // Seedance, as the doubao plugin: seconds reaches Ark as duration, the
+  // images lead the content before those of metadata.content, and the rest
+  // of metadata is Ark's own fields.
+  seedance: {
+    decode: function (ctx) {
+      if (!ctx.body || (ctx.body.kind !== "json" && ctx.body.kind !== "multipart")) throw new Error("JSON or multipart body required");
+      if (ctx.body.kind === "json") {
+        if (!ctx.body.value || Array.isArray(ctx.body.value)) throw new Error("JSON object required");
+        const body = ctx.body.value;
+        const seconds = body.seconds === undefined ? body.duration : body.seconds;
+        checkSeedanceSeconds(seconds);
+        const req = Object.assign({}, body);
+        if (seconds !== undefined) req.seconds = seconds;
+        const images = referenceImages([body.image, body.input_reference].concat(Array.isArray(body.images) ? body.images : []));
+        if (images.length) req.images = images;
+        return { request: req, action: images.length ? "image_to_video" : "text_to_video" };
+      }
+      const req = formFields(ctx);
+      parseFormMetadata(req);
+      // One uploaded input_reference is the first frame, which Ark reads as a
+      // data URL of a lowercase image type; every other reference is a URL
+      // inside metadata.content.
+      const images = referenceImages([req.image, req.input_reference]);
+      for (const file of ctx.body.files || []) {
+        if (file.field !== "input_reference") throw new Error("only input_reference may be uploaded; other references must be URLs inside metadata.content");
+        if (images.length) throw new Error("input_reference must be provided once");
+        const mimeType = trimmed(file.mimeType).toLowerCase();
+        images.push({ __fileRef: file.ref, encoding: "dataUrl", mimeType: /^image\/[a-z0-9.+-]+$/.test(mimeType) ? mimeType : "image/png", maxBytes: 31457280 });
+      }
+      if (images.length) req.images = images;
+      if (req.seconds !== undefined) req.seconds = Number(req.seconds);
+      else if (req.duration !== undefined) req.seconds = Number(req.duration);
+      checkSeedanceSeconds(req.seconds);
+      return { request: req, action: images.length ? "image_to_video" : "text_to_video" };
+    },
+    request: function (ctx, decoded) {
+      const req = decoded.request;
+      const metadata = req.metadata || {};
+      const body = Object.assign({ content: [] }, metadata);
+      const images = (Array.isArray(req.images) ? req.images : []).map((url) => ({ type: "image_url", image_url: { url: url } }));
+      const content = images.concat(Array.isArray(body.content) ? body.content : []).filter((item) => item && item.type !== "text");
+      const hasReference = content.length > 0;
+      if (trimmed(req.prompt) || !hasReference) content.push({ type: "text", text: req.prompt || "" });
+      // A draft names an earlier task, which this protocol does not resolve.
+      if (content.some((item) => item.type === "draft_task" && trimmed(plainObject(item.draft_task).id))) throw new Error("origin task is unavailable");
+      body.content = content;
+      // -1 lets the model pick the length; the longest is then reserved.
+      const seconds = Number.parseInt(req.seconds || "", 10);
+      if (seconds > 0 || seconds === -1) body.duration = seconds;
+      // The tier of a WIDTHxHEIGHT size, which Ark is not sent, is the
+      // resolution reserved; the one Ark reports settles the task.
+      const stated = trimmed(metadata.resolution || req.size).toLowerCase();
+      const sides = stated.replace("*", "x").split("x");
+      const longer = Math.max(Number(sides[0]), Number(sides[1]));
+      let resolution = SEEDANCE_RESOLUTIONS.includes(stated) ? stated : "";
+      if (!resolution && sides.length === 2) resolution = longer >= 3840 ? "4k" : longer >= 1920 ? "1080p" : longer >= 1280 ? "720p" : "480p";
+      return {
+        vendor: "seedance",
+        model: decoded.model,
+        vendorBody: body,
+        action: hasReference ? "image_to_video" : "text_to_video",
+        reserved: { duration: req.seconds || req.duration || metadata.duration, frames: metadata.frames, resolution: resolution, content: metadata.content },
+      };
+    },
+  },
+
+  // Kling, as the kling plugin: the prompt, the first frame, the mode and the
+  // aspect ratio nearest the size, with Kling's other fields in metadata. The
+  // API that takes the model in its path gets a resolution from the size and
+  // a last frame from metadata.image_tail; the other always gets a mode and a
+  // duration, Kling's defaults when the request names none.
+  kling: {
+    decode: function (ctx) {
+      const read = uploadableVideoRequest(ctx);
+      const req = read.req;
+      const seconds = req.seconds === undefined ? req.duration : req.seconds;
+      if (seconds !== undefined) req.duration = klingDuration(seconds, 1, 3600, "duration must be a positive integer of at most 3600");
+      if (read.uploaded) req.image = { __fileRef: "request_file:input_reference", encoding: "base64", maxBytes: 10485760 };
+      else if (trimmed(req.input_reference || req.image)) req.image = trimmed(req.input_reference || req.image);
+      const metadata = req.metadata || {};
+      req.mode = trimmed(req.mode || metadata.mode).toLowerCase() || "std";
+      const hasImage = read.uploaded || Boolean(trimmed(req.input_reference) || trimmed(req.image) || metadata.image || metadata.image_tail);
+      return { request: req, action: hasImage ? "image_to_video" : "text_to_video" };
+    },
+    request: function (ctx, decoded) {
+      const req = decoded.request;
+      const model = decoded.model;
+      if (Object.prototype.hasOwnProperty.call(KLING_PATH_MODELS, model)) {
+        const metadata = Object.assign({}, plainObject(req.metadata));
+        const frames = [
+          ["first_frame", req.image || metadata.image],
+          ["last_frame", metadata.image_tail],
+        ].filter((frame) => frame[1]);
+        let duration = metadata.duration;
+        if (duration === undefined || duration === null) duration = req.duration;
+        for (const name of ["mode", "duration", "image", "image_tail"]) delete metadata[name];
+        const endpoint = frames.length ? "image-to-video" : "text-to-video";
+        const settings = {};
+        if (trimmed(req.size)) {
+          const dimensions = sizeDimensions(req.size);
+          // The resolution whose shorter side is nearer the size's.
+          settings.resolution = Math.min(dimensions.width, dimensions.height) < 900 ? "720p" : "1080p";
+          if (endpoint === "text-to-video") settings.aspect_ratio = nearestAspectRatio(dimensions, KLING_PATH_ASPECT_RATIOS);
+        }
+        // Without a duration Kling picks the length.
+        if (duration !== undefined && duration !== null) settings.duration = klingDuration(duration, KLING_PATH_MIN_SECONDS, KLING_PATH_MODELS[model].maxSeconds);
+        let body = req.prompt ? { prompt: req.prompt } : {};
+        if (frames.length) body = { contents: (req.prompt ? [{ type: "prompt", text: req.prompt }] : []).concat(frames.map((frame) => ({ type: frame[0], url: filePlaceholder(frame[1]) }))) };
+        if (Object.keys(settings).length) body.settings = settings;
+        Object.assign(body, metadata);
+        checkKlingPathBody(model, body);
+        return { vendor: "kling", api: "path", model: model, endpoint: endpoint, vendorBody: body, action: KLING_PATH_ACTIONS[endpoint] };
+      }
+      const metadata = req.metadata || {};
+      const hasImage = Boolean(req.image || metadata.image || metadata.image_tail);
+      let action = ctx.action === "text_to_video" || ctx.action === "image_to_video" ? ctx.action : hasImage ? "image_to_video" : "text_to_video";
+      const omni = KLING_OMNI_MODELS.includes(model);
+      if (omni) action = hasImage ? "image_to_video" : "text_to_video";
+      const body = {};
+      if (req.prompt) body.prompt = req.prompt;
+      if (req.image) body.image = req.image;
+      if (req.mode) body.mode = req.mode;
+      // Image-to-video has no aspect ratio.
+      if (action === "text_to_video" && req.size !== undefined && req.size !== null && req.size !== "") body.aspect_ratio = nearestAspectRatio(sizeDimensions(req.size), KLING_BODY_ASPECT_RATIOS);
+      Object.assign(body, metadata);
+      body.mode = trimmed(body.mode).toLowerCase() || "std";
+      let duration = metadata.duration;
+      if (duration === undefined || duration === null) duration = req.duration;
+      body.duration = String(duration === undefined || duration === null ? 5 : klingDuration(duration, 1, 3600, "duration must be a positive integer of at most 3600"));
+      if (body.image) body.image = filePlaceholder(body.image);
+      if (body.image_tail) body.image_tail = filePlaceholder(body.image_tail);
+      if (!body.prompt) delete body.prompt;
+      if (!body.image) delete body.image;
+      let endpoint = action === "image_to_video" ? "image2video" : "text2video";
+      if (omni) {
+        // The omni-video endpoint takes its frames as a list.
+        endpoint = "omni-video";
+        const frames = [
+          ["first_frame", body.image],
+          ["end_frame", body.image_tail],
+        ].filter((frame) => frame[1]);
+        delete body.image;
+        delete body.image_tail;
+        if (frames.length && body.image_list === undefined) body.image_list = frames.map((frame) => ({ image_url: frame[1], type: frame[0] }));
+      }
+      return { vendor: "kling", api: "body", model: model, endpoint: endpoint, vendorBody: body, action: KLING_BODY_ACTIONS[endpoint] };
+    },
+  },
+
+  // Vidu, as the vidu plugin: the prompt and the images in Vidu's fields and
+  // Vidu's other fields in metadata, which cannot replace the billed model,
+  // duration and resolution.
+  vidu: {
+    decode: function (ctx, model) {
+      const read = uploadableVideoRequest(ctx);
+      const req = read.req;
+      const seconds = req.seconds === undefined ? req.duration : req.seconds;
+      if (seconds !== undefined) req.duration = Number(seconds);
+      if (read.uploaded) req.images = [{ __fileRef: "request_file:input_reference", encoding: "dataUrl", maxBytes: 15728640 }];
+      else if (trimmed(req.input_reference || req.image) && (!Array.isArray(req.images) || req.images.length === 0)) req.images = [trimmed(req.input_reference || req.image)];
+      const action = viduProtocolAction(req);
+      const settings = viduProtocolSettings(req, action, model);
+      req.duration = settings.duration;
+      req.resolution = settings.resolution;
+      return { request: req, action: action };
+    },
+    request: function (ctx, decoded) {
+      const req = decoded.request;
+      const action = viduProtocolAction(req);
+      const body = Object.assign({}, req.metadata || {}, viduProtocolSettings(req, action, upstreamModel(ctx)));
+      if (trimmed(req.prompt)) body.prompt = req.prompt;
+      if (Array.isArray(req.images) && req.images.length) body.images = req.images;
+      delete body.action;
+      if (Array.isArray(body.images)) body.images = body.images.map(filePlaceholder);
+      const endpoint = Object.keys(VIDU_ENDPOINTS).find((name) => VIDU_ENDPOINTS[name].action === action) || "text2video";
+      return { vendor: "vidu", model: decoded.model, endpoint: endpoint, vendorBody: body, action: action };
+    },
+  },
+
+  // MiniMax-H3, as the hailuo plugin: a content array of the prompt, the frame
+  // images and metadata's reference media, or metadata.content itself, with a
+  // duration of 5 seconds, 768P and, for text alone, 16:9 when the request
+  // names none. MiniMax-H3-MAX follows it with its own resolutions.
+  minimax: {
+    decode: function (ctx) {
+      const read = uploadableVideoRequest(ctx);
+      const req = read.req;
+      const seconds = req.seconds === undefined ? req.duration : req.seconds;
+      if (seconds !== undefined) req.duration = Number(seconds);
+      // The reference image is the first frame unless metadata names one.
+      const image = trimmed(req.input_reference || req.image);
+      if (read.uploaded) req.metadata = Object.assign({}, req.metadata || {}, { first_frame_image: { __fileRef: "request_file:input_reference", encoding: "dataUrl", maxBytes: 20971520 } });
+      else if (image) {
+        req.metadata = Object.assign({}, req.metadata || {});
+        if (!req.metadata.first_frame_image) req.metadata.first_frame_image = image;
+      }
+      const metadata = req.metadata || {};
+      const named = trimmed(req.input_reference) || trimmed(req.image) || (Array.isArray(req.images) && req.images.length);
+      const hasImage = read.uploaded || Boolean(named || metadata.first_frame_image || metadata.last_frame_image || metadata.subject_reference);
+      return { request: req, action: hasImage ? "image_to_video" : "text_to_video" };
+    },
+    request: function (ctx, decoded) {
+      const req = decoded.request;
+      const metadata = req.metadata || {};
+      const name = upstreamModel(ctx) === H3_MODEL ? H3_MODEL : H3_MAX_MODEL;
+      const content = h3ProtocolContent(name, req);
+      const duration = req.duration === undefined || req.duration === null || req.duration === "" ? H3_DEFAULT_DURATION : h3Duration(name, req.duration);
+      // A resolution or a size names the tier it contains.
+      const stated = (trimmed(metadata.resolution) || trimmed(req.resolution) || trimmed(req.size)).toUpperCase();
+      const tiers = name === H3_MODEL ? ["2K", "768"] : ["480", "768"];
+      const tier = stated ? tiers.find((item) => stated.includes(item)) : "768";
+      if (!tier) throw new Error(name + " resolution must be " + (name === H3_MODEL ? "768P or 2K" : "480P or 768P"));
+      const resolution = tier === "2K" ? tier : tier + "P";
+      // Text alone needs a ratio other than adaptive.
+      const media = content.some((item) => item && (item.type === "image_url" || item.type === "video_url" || item.type === "audio_url"));
+      const body = { content: content, resolution: resolution, duration: duration, ratio: trimmed(metadata.ratio) || (media ? "adaptive" : "16:9") };
+      if (metadata.aigc_watermark !== undefined && metadata.aigc_watermark !== null) body.aigc_watermark = metadata.aigc_watermark;
+      const visual = content.some((item) => item && (item.type === "image_url" || item.type === "video_url"));
+      return { vendor: "minimax", model: decoded.model, vendorBody: body, action: visual ? "image_to_video" : "text_to_video" };
+    },
+  },
+
+  // PixVerse, after the vidu plugin: the prompt, the reference images (one for
+  // image-to-video, two for the first and the last frame) and PixVerse's own
+  // fields in metadata, whose action names another endpoint. The duration and
+  // the quality, which the size names by its shorter side, are sent as they
+  // are billed, 5 seconds and 720p when the request names none.
+  pixverse: {
+    decode: function (ctx) {
+      const req = addressedVideoRequest(ctx);
+      const action = trimmed(plainObject(req.metadata).action) || (req.images.length > 1 ? "first_tail_to_video" : req.images.length ? "image_to_video" : "text_to_video");
+      return { request: req, action: action };
+    },
+    request: function (ctx, decoded) {
+      const req = decoded.request;
+      const metadata = plainObject(req.metadata);
+      const action = trimmed(metadata.action) || (req.images.length > 1 ? "first_tail_to_video" : req.images.length ? "image_to_video" : "text_to_video");
+      const endpoint = Object.keys(PIXVERSE_ENDPOINTS).find((name) => PIXVERSE_ENDPOINTS[name] === action);
+      if (!endpoint) throw new Error("metadata.action must be one of " + Object.keys(PIXVERSE_ENDPOINTS).map((name) => PIXVERSE_ENDPOINTS[name]).join(", "));
+      const body = {};
+      if (trimmed(req.prompt)) body.prompt = req.prompt;
+      if (req.images.length) body.image_list = req.images.map((url) => ({ image_url: url }));
+      const size = trimmed(req.size).toLowerCase();
+      let quality = PIXVERSE_QUALITIES.includes(size) ? size : "";
+      if (size && !quality) {
+        const dimensions = sizeDimensions(size);
+        const shorter = Math.min(dimensions.width, dimensions.height);
+        quality = shorter >= 1080 ? "1080p" : shorter >= 720 ? "720p" : shorter >= 540 ? "540p" : "360p";
+        if (endpoint === "text") body.aspect_ratio = nearestAspectRatio(dimensions, PIXVERSE_ASPECT_RATIOS);
+      }
+      Object.assign(body, metadata);
+      delete body.action;
+      body.duration = req.duration ?? metadata.duration ?? PIXVERSE_DEFAULT_SECONDS;
+      body.quality = metadata.quality ?? req.resolution ?? (quality || PIXVERSE_DEFAULT_QUALITY);
+      return { vendor: "pixverse", model: decoded.model, endpoint: endpoint, vendorBody: body, action: action };
+    },
+  },
+
+  // HappyHorse, after the alibaba plugin: the prompt and the reference images
+  // in input, the duration, the resolution and, for text-to-video, the ratio
+  // of the size in parameters, and DashScope's own input and parameters in
+  // metadata. A duration or resolution the request leaves out is left to
+  // Bailian: the longest and the dearest are reserved and its report settles.
+  happyhorse: {
+    decode: function (ctx, model) {
+      return { request: addressedVideoRequest(ctx), action: model.endsWith("-t2v") ? "text_to_video" : "image_to_video" };
+    },
+    request: function (ctx, decoded) {
+      const req = decoded.request;
+      const model = decoded.model;
+      const metadata = plainObject(req.metadata);
+      for (const name of ["input", "parameters"]) {
+        const value = metadata[name];
+        if (value !== undefined && value !== null && (typeof value !== "object" || Array.isArray(value))) throw new Error("metadata." + name + " must be an object");
+      }
+      const input = {};
+      if (trimmed(req.prompt)) input.prompt = req.prompt;
+      // Image-to-video takes its frames, the other models reference images.
+      if (req.images.length) input.media = req.images.map((url, index) => ({ type: !model.endsWith("-i2v") ? "reference_image" : index === 0 ? "first_frame" : "last_frame", url: url }));
+      Object.assign(input, plainObject(metadata.input));
+      const parameters = {};
+      const size = trimmed(req.size);
+      if (trimmed(req.resolution)) parameters.resolution = trimmed(req.resolution).toUpperCase().replace(/^(\d+)$/, "$1P");
+      else if (size) {
+        const dimensions = sizeDimensions(size);
+        parameters.resolution = Math.min(dimensions.width, dimensions.height) >= 1080 ? "1080P" : "720P";
+        if (model.endsWith("-t2v")) parameters.ratio = nearestAspectRatio(dimensions, HAPPYHORSE_ASPECT_RATIOS);
+      }
+      if (req.duration !== undefined && req.duration !== null) parameters.duration = req.duration;
+      Object.assign(parameters, plainObject(metadata.parameters));
+      return { vendor: "happyhorse", model: model, vendorBody: { input: input, parameters: parameters }, action: model.endsWith("-t2v") ? "text_to_video" : "image_to_video" };
+    },
+  },
+};
+
+export const protocols = {
+  openai_video: {
+    decodeRequest: function (ctx) {
+      const model = [ctx.upstreamModel, ctx.model].map(trimmed).find(videoVendor);
+      if (!model) throw new Error("model " + trimmed(ctx.model) + " is not served on /v1/videos");
+      const requestBody = { vendor: videoVendor(model), model: model, protocol: "openai_video" };
+      const intent = { kind: "submit", model: ctx.model, requestBody: requestBody };
+      try {
+        const decoded = VIDEO_PROTOCOL[requestBody.vendor].decode(ctx, model);
+        // vendorBody carries a native request's own body; a client of this
+        // protocol cannot set it.
+        delete decoded.request.vendorBody;
+        requestBody.request = decoded.request;
+        intent.action = decoded.action;
+      } catch (error) {
+        if (SHARED_VIDEO_MODELS.includes(model)) throw error;
+        requestBody.invalid = String((error && error.message) || error);
+      }
+      return intent;
+    },
+    // The host sets id, object, model, status, progress and the timestamps.
+    // What a vendor's plugin adds to them from the vendor's last reply is
+    // added here for the same reply: the output's length for Kling and each
+    // vendor's own error.
+    render: function (ctx, task) {
+      const data = plainObject(task.data);
+      const output = {};
+      if (data.data && typeof data.data === "object") {
+        // Kling: the task of the API that takes the model in its path is data
+        // itself or the only entry of a list, the other API's has a task_id.
+        const path = Array.isArray(data.data) || Boolean(data.data.id && !data.data.task_id);
+        const entry = path ? klingPathEntry(data) : data.data;
+        const videos = path ? klingPathVideos(entry) : plainObject(entry.task_result).videos || [];
+        if (videos.length && videos[0].duration) output.seconds = videos[0].duration;
+        if (data.code !== 0 && data.message) output.error = { message: data.message, code: String(data.code) };
+        if (path && entry.status === "failed") output.error = { message: entry.message || "", code: "" };
+        if (!path && entry.task_status === "failed") output.error = { message: entry.task_status_msg, code: "" };
+        return output;
+      }
+      const error = plainObject(data.error);
+      const result = plainObject(data.output);
+      if (data.status === "failed") output.error = { message: error.message || "", code: error.code || "" };
+      else if (data.state === "failed" && data.err_code) output.error = { message: data.err_code, code: data.err_code };
+      else if (data.base_resp && data.base_resp.status_code !== 0) output.error = { message: data.base_resp.status_msg, code: String(data.base_resp.status_code) };
+      else if (data.output && data.code) output.error = { code: data.code, message: data.message || "" };
+      else if (result.code) output.error = { code: result.code, message: result.message || "" };
+      else if (data.taskId && trimmed(data.status).toUpperCase() === "FAILED") output.error = { message: taskDetailResult(data).reason, code: "" };
+      return output;
+    },
+  },
+};
 
 // A key is the API key alone, or the API key with an AccessKey and its
 // SecretKey.

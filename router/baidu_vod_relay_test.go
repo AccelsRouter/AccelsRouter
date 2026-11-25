@@ -1,16 +1,20 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"maps"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -23,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -219,6 +224,30 @@ func TestBaiduTaskPluginLeavesSharedModelsToTheirPlugins(t *testing.T) {
 	provider, found := generation.Get("baidu-vod")
 	require.True(t, found)
 	assert.False(t, provider.Meta.HasTaskPart())
+
+	// On /v1/videos every video model is offered to this plugin after the
+	// vendor's own, and no speech model is. The plugin reads a shared model as
+	// the vendor's plugin does, refusals in its decoder included, and keeps the
+	// refusals of its own models for the request it builds; a body no decoder
+	// accepts tells the two apart.
+	for _, name := range plugin.Meta.Models {
+		candidates := generation.LookupEndpointCandidates(http.MethodPost, "/v1/videos", name)
+		if strings.HasPrefix(name, "speech-") {
+			assert.Empty(t, candidates, name)
+			continue
+		}
+		require.NotEmpty(t, candidates, name)
+		owner, _ := generation.GetByModel(name)
+		assert.Same(t, owner, candidates[0].Plugin, name)
+		assert.Same(t, plugin, candidates[len(candidates)-1].Plugin, name)
+		_, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "decodeRequest"},
+			map[string]any{"model": name, "body": map[string]any{"kind": "json", "value": []any{}}})
+		if owner == plugin {
+			assert.NoError(t, err, name)
+		} else {
+			assert.ErrorContains(t, err, "JSON object required", name)
+		}
+	}
 }
 
 // Fork: a request at a vendor's own path reaches Baidu's address for that
@@ -784,4 +813,532 @@ func TestBaiduTaskPluginBoundsWhatIsBilled(t *testing.T) {
 		map[string]any{"extra_info": map[string]any{"usage_characters": 20000}})
 	require.NoError(t, err)
 	assert.Nil(t, facts)
+}
+
+// Fork: /v1/videos, the OpenAI video protocol, serves every video model of the
+// plugin on a Baidu channel. A model a vendor's plugin also declares is served
+// by that plugin on the vendor's channel, and a client cannot tell the two
+// channels apart: the same request is accepted or refused alike, the same body
+// reaches the upstream, the same usage is reserved and settled and the same
+// replies come back, also when one channel fails and the other takes over.
+func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
+	const (
+		key   = "sk-baidu-test"
+		image = "https://cdn.example/cat.png"
+		clip  = "not really a video"
+	)
+	// The fake upstream is a loopback address, which the gateway would not
+	// fetch a video from.
+	fetchSetting := system_setting.GetFetchSetting()
+	previousFetchSetting := *fetchSetting
+	fetchSetting.AllowPrivateIp, fetchSetting.AllowedPorts = true, []string{"1-65535"}
+	previousRetry := common.RetryTimes
+	t.Cleanup(func() {
+		*fetchSetting, common.RetryTimes = previousFetchSetting, previousRetry
+		service.InitHttpClient()
+	})
+	harness := newRelayHarness(t)
+	previousAdaptor := service.GetTaskAdaptorFunc
+	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor { return relay.GetTaskAdaptor(platform) }
+	t.Cleanup(func() { service.GetTaskAdaptorFunc = previousAdaptor })
+	video := harness.upstream.URL + "/files/video.mp4"
+
+	upload := &bytes.Buffer{}
+	form := multipart.NewWriter(upload)
+	for name, value := range map[string]string{"model": "kling-v3", "prompt": "a cat", "seconds": "5", "metadata": `{"negative_prompt":"blur"}`} {
+		require.NoError(t, form.WriteField(name, value))
+	}
+	part, err := form.CreateFormFile("input_reference", "cat.png")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("\x89PNG not really an image"))
+	require.NoError(t, err)
+	require.NoError(t, form.Close())
+
+	type refusal struct{ body, message string }
+	executingPlugin := regexp.MustCompile(`plugin \S+ hook buildSubmitRequest failed: Error: | at [^"]+\(\S+\.js:\d+:\d+\)`)
+	shared := []struct {
+		name, model string
+		// vendor is the vendor's plugin and vendorType a channel type it serves.
+		vendor     string
+		vendorType int
+		// expression prices the model, in US dollars.
+		expression        string
+		contentType, body string
+		// sent is the body both channels send, at the vendor's path and at the
+		// path Baidu serves the vendor under.
+		sent                      string
+		vendorSubmit, baiduSubmit string
+		vendorQuery, baiduQuery   string
+		created, done, failed     string
+		facts                     string
+		reserved, settled         float64
+		// retrieved is what the plugin adds to the video the host renders.
+		retrieved, retrievedFailed string
+		refusals                   []refusal
+	}{
+		{
+			name: "seedance", model: "doubao-seedance-2-0-260128", vendor: "doubao", vendorType: constant.ChannelTypeDoubaoVideo,
+			expression:   `u("video_input") == "video" ? tier("video", u("tokens") * 6 / 1000000) : tier("base", u("tokens") * 10 / 1000000)`,
+			body:         `{"model":"doubao-seedance-2-0-260128","prompt":"a cat","seconds":"5","size":"1280x720","input_reference":"` + image + `","metadata":{"watermark":false,"content":[{"type":"text","text":"ignored"},{"type":"video_url","video_url":{"url":"https://cdn.example/in.mp4"}}]}}`,
+			sent:         `{"model":"doubao-seedance-2-0-260128","watermark":false,"content":[{"type":"image_url","image_url":{"url":"` + image + `"}},{"type":"video_url","video_url":{"url":"https://cdn.example/in.mp4"}},{"type":"text","text":"a cat"}],"duration":5}`,
+			vendorSubmit: "/api/v3/contents/generations/tasks", baiduSubmit: "/async/seedance/api/v3/contents/generations/tasks",
+			vendorQuery: "/api/v3/contents/generations/tasks/cgt-1", baiduQuery: "/async/seedance/api/v3/contents/generations/tasks/cgt-1",
+			created: `{"id":"cgt-1"}`,
+			done:    `{"id":"cgt-1","status":"succeeded","resolution":"720p","content":{"video_url":"` + video + `"},"usage":{"completion_tokens":100000,"total_tokens":100000}}`,
+			failed:  `{"id":"cgt-1","status":"failed","error":{"code":"OutputVideoSensitiveContentDetected","message":"blocked"}}`,
+			// 5 s x 1280 x 720 x 24 / 1024 tokens at the size's tier; Ark reports 100000.
+			facts:    `{"tokens":108000,"resolution":"720p","video_input":"video"}`,
+			reserved: 0.648, settled: 0.6,
+			retrieved: `{}`, retrievedFailed: `{"error":{"message":"blocked","code":"OutputVideoSensitiveContentDetected"}}`,
+			refusals: []refusal{
+				// Refused by the decoders, before a channel is picked.
+				{`{"model":"doubao-seedance-2-0-260128","prompt":"a cat","seconds":0}`, "seconds must be -1 or between 1 and 3600"},
+				// Refused when the request is built, on the channel.
+				{`{"model":"doubao-seedance-2-0-fast-260128","prompt":"a cat","size":"1920x1080"}`, "doubao-seedance-2-0-fast-260128 resolution must be one of 480p, 720p"},
+			},
+		},
+		{
+			name: "kling v3", model: "kling-v3", vendor: "kling", vendorType: constant.ChannelTypeKling, expression: `tier("base", u("units") * 0.1)`,
+			body:         `{"model":"kling-v3","prompt":"a cat","seconds":10,"size":"720x1280","mode":"pro","metadata":{"sound":"on","negative_prompt":"blur"}}`,
+			sent:         `{"model_name":"kling-v3","prompt":"a cat","mode":"pro","aspect_ratio":"9:16","sound":"on","negative_prompt":"blur","duration":"10"}`,
+			vendorSubmit: "/v1/videos/text2video", baiduSubmit: "/v3/aigc/kl/videos/text2video",
+			vendorQuery: "/v1/videos/text2video/tsk-k3", baiduQuery: "/v3/aigc/kl/videos/text2video/tsk-k3",
+			created: `{"code":0,"message":"SUCCEED","data":{"task_id":"tsk-k3","task_status":"submitted"}}`,
+			done:    `{"code":0,"data":{"task_id":"tsk-k3","task_status":"succeed","task_result":{"videos":[{"url":"` + video + `","duration":"10.04"}]},"final_unit_deduction":"11"}}`,
+			failed:  `{"code":0,"data":{"task_id":"tsk-k3","task_status":"failed","task_status_msg":"blocked"}}`,
+			// 10 s in pro mode with audio at 1.2 units per second; Kling deducted 11.
+			facts: `{"units":12}`, reserved: 1.2, settled: 1.1,
+			retrieved: `{"seconds":"10.04"}`, retrievedFailed: `{"error":{"message":"blocked","code":""}}`,
+			refusals: []refusal{
+				{`{"model":"kling-v3","prompt":"a cat","seconds":"long"}`, "duration must be a positive integer of at most 3600"},
+				{`{"model":"kling-v3","prompt":"a cat","size":"wide"}`, "size must be WIDTHxHEIGHT, such as 1280x720"},
+			},
+		},
+		{
+			name: "kling v3 with an uploaded image", model: "kling-v3", vendor: "kling", vendorType: constant.ChannelTypeKling, expression: `tier("base", u("units") * 0.1)`,
+			contentType: form.FormDataContentType(), body: upload.String(),
+			sent:         `{"model_name":"kling-v3","prompt":"a cat","image":"iVBORyBub3QgcmVhbGx5IGFuIGltYWdl","mode":"std","negative_prompt":"blur","duration":"5"}`,
+			vendorSubmit: "/v1/videos/image2video", baiduSubmit: "/v3/aigc/kl/videos/image2video",
+			vendorQuery: "/v1/videos/image2video/tsk-k3", baiduQuery: "/v3/aigc/kl/videos/image2video/tsk-k3",
+			created: `{"code":0,"message":"SUCCEED","data":{"task_id":"tsk-k3","task_status":"submitted"}}`,
+			done:    `{"code":0,"data":{"task_id":"tsk-k3","task_status":"succeed","task_result":{"videos":[{"url":"` + video + `","duration":"5"}]}}}`,
+			failed:  `{"code":5000,"message":"internal error","data":{"task_id":"tsk-k3","task_status":"failed","task_status_msg":""}}`,
+			// 5 s in std mode at 0.6 units per second; without a deduction the estimate stays.
+			facts: `{"units":3}`, reserved: 0.3, settled: 0.3,
+			retrieved: `{"seconds":"5"}`, retrievedFailed: `{"error":{"message":"","code":""}}`,
+		},
+		{
+			name: "kling 4.0", model: "kling-4.0", vendor: "kling", vendorType: constant.ChannelTypeKling, expression: `tier("base", u("units") * 0.1)`,
+			body:         `{"model":"kling-4.0","prompt":"a cat","seconds":5,"size":"1280x720","image":"` + image + `","metadata":{"image_tail":"https://cdn.example/end.png","options":{"watermark":false}}}`,
+			sent:         `{"contents":[{"type":"prompt","text":"a cat"},{"type":"first_frame","url":"` + image + `"},{"type":"last_frame","url":"https://cdn.example/end.png"}],"settings":{"resolution":"720p","duration":5},"options":{"watermark":false}}`,
+			vendorSubmit: "/image-to-video/kling-4.0", baiduSubmit: "/async/kling/image-to-video/kling-4.0",
+			vendorQuery: "/tasks?task_ids=k4-1", baiduQuery: "/async/kling/tasks?task_ids=k4-1",
+			created: `{"code":0,"message":"SUCCEED","data":{"id":"k4-1","status":"submitted"}}`,
+			done:    `{"code":0,"data":[{"id":"k4-1","status":"succeeded","outputs":[{"type":"video","url":"` + video + `","duration":"5.1"}],"billing":[{"charge_type":"unit","amount":"4"}]}]}`,
+			failed:  `{"code":0,"data":[{"id":"k4-1","status":"failed","message":"blocked"}]}`,
+			// 5 s at one unit per second; Kling deducted 4 units.
+			facts: `{"units":5}`, reserved: 0.5, settled: 0.4,
+			retrieved: `{"seconds":"5.1"}`, retrievedFailed: `{"error":{"message":"blocked","code":""}}`,
+			refusals: []refusal{
+				{`{"model":"kling-4.0","prompt":"a cat","seconds":31}`, "duration must be an integer from 3 to 30"},
+				{`{"model":"kling-4.0","prompt":"a cat","metadata":{"options":{"callback_url":"https://client.example/hook"}}}`, "options.callback_url is not supported"},
+			},
+		},
+		{
+			name: "vidu", model: "viduq3-pro", vendor: "vidu", vendorType: constant.ChannelTypeVidu,
+			expression:   `u("resolution") == "1080p" ? tier("1080p", u("duration") * 0.1) : tier("other", u("duration") * 0.05)`,
+			body:         `{"model":"viduq3-pro","prompt":"a cat","seconds":8,"size":"1920x1080","metadata":{"movement_amplitude":"auto","bgm":true,"duration":99,"model":"viduq1"}}`,
+			sent:         `{"model":"viduq3-pro","movement_amplitude":"auto","bgm":true,"duration":8,"resolution":"1080p","prompt":"a cat"}`,
+			vendorSubmit: "/ent/v2/text2video", baiduSubmit: "/v3/aigc/vd/ent/v2/text2video",
+			vendorQuery: "/ent/v2/tasks/tsk-v1/creations", baiduQuery: "/v3/aigc/vd/ent/v2/tasks/tsk-v1/creations",
+			created: `{"task_id":"tsk-v1","state":"created"}`,
+			done:    `{"state":"success","credits":120,"creations":[{"url":"` + video + `"}]}`,
+			failed:  `{"state":"failed","err_code":"blocked"}`,
+			facts:   `{"duration":8,"resolution":"1080p"}`, reserved: 0.8, settled: 0.8,
+			retrieved: `{}`, retrievedFailed: `{"error":{"message":"blocked","code":"blocked"}}`,
+			refusals: []refusal{
+				{`{"model":"viduq3-pro","prompt":"a cat","seconds":2.5}`, "seconds must be between 1 and 3600"},
+			},
+		},
+		{
+			name: "minimax h3", model: "MiniMax-H3", vendor: "hailuo", vendorType: constant.ChannelTypeMiniMax,
+			expression:   `tier("base", u("seconds") * 0.1 + u("input_images") * 0.02 + u("input_video_seconds") * 0.1)`,
+			body:         `{"model":"MiniMax-H3","prompt":"a cat","seconds":6,"size":"2K","input_reference":"` + image + `","metadata":{"aigc_watermark":true}}`,
+			sent:         `{"model":"MiniMax-H3","content":[{"type":"text","text":"a cat"},{"type":"image_url","role":"first_frame","image_url":{"url":"` + image + `"}}],"resolution":"2K","duration":6,"ratio":"adaptive","aigc_watermark":true}`,
+			vendorSubmit: "/v2/video_generation", baiduSubmit: "/v3/aigc/minimax/v2/video_generation",
+			vendorQuery: "/v2/query/video_generation/tsk-m1", baiduQuery: "/v3/aigc/minimax/v2/query/video_generation/tsk-m1",
+			created: `{"task_id":"tsk-m1"}`,
+			done:    `{"task":{"id":"tsk-m1","model":"MiniMax-H3","status":"succeeded","content":{"url":"` + video + `"},"resolution":"768P","duration":6,"usage":{"output_seconds":6,"input_seconds":0,"input_image_count":1}}}`,
+			failed:  `{"task":{"id":"tsk-m1","status":"failed","error":{"message":"blocked"}}}`,
+			// 6 s and one input image at 2K; MiniMax rendered 768P, which this price does not tell apart.
+			facts: `{"seconds":6,"resolution":"2K","input_images":1,"input_video_seconds":0}`, reserved: 0.62, settled: 0.62,
+			retrieved: `{}`, retrievedFailed: `{}`,
+			refusals: []refusal{
+				{`{"model":"MiniMax-H3","prompt":"a cat","seconds":3}`, "MiniMax-H3 duration must be an integer between 4 and 15 seconds"},
+				{`{"model":"MiniMax-H3","prompt":"a cat","size":"1080P"}`, "MiniMax-H3 resolution must be 768P or 2K"},
+				{`{"model":"MiniMax-H3","seconds":5,"metadata":{"reference_video":"https://cdn.example/in.mp4"}}`, "MiniMax-H3 requires a non-empty text item"},
+			},
+		},
+	}
+
+	own := []struct {
+		name, body string
+		// path and sent are the request Baidu receives.
+		path, sent string
+		header     [2]string
+		created    string
+		facts      string
+		reserved   float64
+		// message is the refusal of a request the plugin cannot bill.
+		message string
+	}{
+		{
+			name: "pixverse from a size", body: `{"model":"pixversev5.6","prompt":"a cat","seconds":8,"size":"1920x1080","metadata":{"motion_mode":"fast","generate_audio_switch":true}}`,
+			path: "/v3/aigc/pv/video/text/generate", sent: `{"model":"v5.6","prompt":"a cat","aspect_ratio":"16:9","motion_mode":"fast","generate_audio_switch":true,"duration":8,"quality":"1080p"}`,
+			created: `{"taskId":"tsk-p1"}`, facts: `{"seconds":8,"resolution":"1080p","motion_mode":"fast","audio":"on","multi_clip":false}`, reserved: 0.8,
+		},
+		{
+			name: "pixverse by default with an image", body: `{"model":"pixverse5.5","prompt":"a cat","image":"` + image + `"}`,
+			path: "/v3/aigc/pv/video/img/generate", sent: `{"model":"v5.5","prompt":"a cat","image_list":[{"image_url":"` + image + `"}],"duration":5,"quality":"720p"}`,
+			created: `{"taskId":"tsk-p1"}`, facts: `{"seconds":5,"resolution":"720p","motion_mode":"normal","audio":"off","multi_clip":false}`, reserved: 0.5,
+		},
+		{name: "pixverse past the longest", body: `{"model":"pixversev6.0","prompt":"a cat","seconds":16}`, message: "duration must be an integer from 1 to 15"},
+		{name: "pixverse action outside the list", body: `{"model":"pixversev6.0","prompt":"a cat","metadata":{"action":"extend"}}`, message: "metadata.action must be one of text_to_video, image_to_video, first_tail_to_video"},
+		{
+			name: "happyhorse", body: `{"model":"happyhorse-1.0-i2v","prompt":"a cat","seconds":5,"size":"1280x720","image":"` + image + `","metadata":{"parameters":{"watermark":false}}}`,
+			path: "/v3/aigc/bailian/api/v1/services/aigc/video-generation/video-synthesis", header: [2]string{"X-DashScope-Async", "enable"},
+			sent:    `{"model":"happyhorse-1.0-i2v","input":{"prompt":"a cat","media":[{"type":"first_frame","url":"` + image + `"}]},"parameters":{"resolution":"720P","duration":5,"watermark":false}}`,
+			created: `{"output":{"task_id":"tsk-h1","task_status":"PENDING"}}`, facts: `{"seconds":5,"resolution":"720P"}`, reserved: 0.5,
+		},
+		{
+			// Without a duration or a size the longest and the dearest are reserved.
+			name: "happyhorse left to Bailian", body: `{"model":"happyhorse-1.1-t2v","prompt":"a cat"}`,
+			path: "/v3/aigc/bailian/api/v1/services/aigc/video-generation/video-synthesis", header: [2]string{"X-DashScope-Async", "enable"},
+			sent:    `{"model":"happyhorse-1.1-t2v","input":{"prompt":"a cat"},"parameters":{}}`,
+			created: `{"output":{"task_id":"tsk-h1","task_status":"PENDING"}}`, facts: `{"seconds":15,"resolution":"1080P"}`, reserved: 1.5,
+		},
+		{name: "happyhorse duration past the bound", body: `{"model":"happyhorse-1.1-t2v","prompt":"a cat","seconds":99999}`, message: "parameters.duration must be an integer from 1 to 3600"},
+		{
+			name: "kling 4.0 flash", body: `{"model":"kling-4.0-flash","prompt":"a cat","seconds":5,"size":"1920x1080"}`,
+			path: "/async/kling/text-to-video/kling-4.0-flash", sent: `{"prompt":"a cat","settings":{"resolution":"1080p","aspect_ratio":"16:9","duration":5}}`,
+			created: `{"code":0,"data":{"id":"k4-1","status":"submitted"}}`, facts: `{"seconds":5,"resolution":"1080p","audio":"on","video_input":"none"}`, reserved: 0.5,
+		},
+		{name: "kling 3.0 turbo past its longest", body: `{"model":"kling-3.0-turbo","prompt":"a cat","seconds":16}`, message: "duration must be an integer from 3 to 15"},
+		{
+			name: "kling v2 master", body: `{"model":"kling-v2-master","prompt":"a cat","seconds":10,"mode":"pro","input_reference":"` + image + `"}`,
+			path: "/v3/aigc/kl/videos/image2video", header: [2]string{"X-Response-Format", "orion"},
+			sent:    `{"model_name":"kling-v2-master","prompt":"a cat","image":"` + image + `","mode":"pro","duration":"10"}`,
+			created: `{"code":0,"data":{"task_id":"tsk-k2","task_status":"submitted"}}`, facts: `{"seconds":10,"resolution":"1080p","audio":"off","video_input":"none"}`, reserved: 1,
+		},
+		{
+			name: "kling omni", body: `{"model":"kling-video-o1","prompt":"a cat","image":"` + image + `","size":"1280x720"}`,
+			path: "/v3/aigc/kl/videos/omni-video", header: [2]string{"X-Response-Format", "orion"},
+			sent:    `{"model_name":"kling-video-o1","prompt":"a cat","mode":"std","duration":"5","image_list":[{"image_url":"` + image + `","type":"first_frame"}]}`,
+			created: `{"code":0,"data":{"task_id":"tsk-k2","task_status":"submitted"}}`, facts: `{"seconds":5,"resolution":"720p","audio":"off","video_input":"none"}`, reserved: 0.5,
+		},
+		{name: "kling duration of zero", body: `{"model":"kling-v2-master","prompt":"a cat","seconds":0}`, message: "duration must be a positive integer of at most 3600"},
+		{
+			name: "vidu q4", body: `{"model":"viduq4","prompt":"a cat","image":"` + image + `","size":"3840x2160"}`,
+			path: "/v3/aigc/vd/ent/v2/img2video", sent: `{"model":"viduq4","prompt":"a cat","images":["` + image + `"],"duration":5,"resolution":"4K"}`,
+			created: `{"task_id":"tsk-v1"}`, facts: `{"duration":5,"resolution":"4K"}`, reserved: 0.5,
+		},
+		{
+			name: "minimax h3 max", body: `{"model":"MiniMax-H3-MAX","prompt":"a cat","size":"480P"}`,
+			path: "/v3/aigc/minimax/v2/video_generation", sent: `{"model":"MiniMax-H3-MAX","content":[{"type":"text","text":"a cat"}],"resolution":"480P","duration":5,"ratio":"16:9"}`,
+			created: `{"task_id":"tsk-m1"}`, facts: `{"seconds":5,"resolution":"480P"}`, reserved: 0.5,
+		},
+		{name: "minimax h3 max resolution of h3", body: `{"model":"MiniMax-H3-MAX","prompt":"a cat","size":"2K"}`, message: "MiniMax-H3-MAX resolution must be 480P or 768P"},
+	}
+
+	modes, expressions := map[string]string{}, map[string]string{}
+	models := []string{"doubao-seedance-2-0-fast-260128"}
+	for _, tc := range shared {
+		modes[tc.model], expressions[tc.model] = "tiered_expr", tc.expression
+		models = append(models, tc.model)
+	}
+	modes["doubao-seedance-2-0-fast-260128"], expressions["doubao-seedance-2-0-fast-260128"] = "tiered_expr", shared[0].expression
+	for _, tc := range own {
+		name := gjson.Get(tc.body, "model").String()
+		usage := "seconds"
+		if name == "viduq4" {
+			usage = "duration"
+		}
+		modes[name], expressions[name] = "tiered_expr", `tier("base", u("`+usage+`") * 0.1)`
+		models = append(models, name)
+	}
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(option, value string) error {
+		if option == "billing_setting.billing_mode" || option == "billing_setting.billing_expr" {
+			saved[option] = value
+		}
+		return nil
+	}))
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
+	modeJSON, err := common.Marshal(modes)
+	require.NoError(t, err)
+	expressionJSON, err := common.Marshal(expressions)
+	require.NoError(t, err)
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{"billing_setting.billing_mode": string(modeJSON), "billing_setting.billing_expr": string(expressionJSON)}))
+
+	baiduChannel := func() *model.Channel {
+		channel := harness.pluginChannel("vod-baidu-task", key)
+		channel.Models = strings.Join(models, ",")
+		// Both of Baidu's systems are the fake upstream.
+		channel.SetOtherSettings(dto.ChannelOtherSettings{PluginConfig: []byte(`{"asyncBaseUrl":"` + harness.upstream.URL + `"}`)})
+		return channel
+	}
+	vendorChannel := func(channelType int) *model.Channel {
+		channel := harness.newChannel(channelType, "vendor-key")
+		channel.Models = strings.Join(models, ",")
+		return channel
+	}
+	// install makes the channels the only ones, each preferred to the next.
+	install := func(t *testing.T, channels ...*model.Channel) {
+		for index, channel := range channels {
+			priority := int64(len(channels) - index)
+			channel.Priority = &priority
+			if index == 0 {
+				harness.install(t, channel)
+				continue
+			}
+			channel.Id = 0
+			require.NoError(t, channel.Insert())
+		}
+		model.InitChannelCache()
+	}
+	get := func(t *testing.T, path string) (int, string) {
+		request, err := http.NewRequest(http.MethodGet, harness.gateway.URL+path, nil)
+		require.NoError(t, err)
+		request.Header.Set("Authorization", "Bearer "+relayTestToken)
+		response, err := http.DefaultClient.Do(request)
+		require.NoError(t, err)
+		defer response.Body.Close()
+		received, err := io.ReadAll(response.Body)
+		require.NoError(t, err)
+		harness.waitIdle(t)
+		return response.StatusCode, string(received)
+	}
+	// The task ids and the times are the gateway's and differ on every task.
+	object := func(t *testing.T, body string) map[string]any {
+		var decoded map[string]any
+		require.NoError(t, common.Unmarshal([]byte(body), &decoded), body)
+		for _, field := range []string{"id", "created_at", "completed_at"} {
+			if _, present := decoded[field]; present {
+				decoded[field] = field
+			}
+		}
+		return decoded
+	}
+	quota := func(dollars float64) int { return int(dollars*common.QuotaPerUnit + 0.5) }
+	balance := func(t *testing.T) int {
+		var user model.User
+		require.NoError(t, model.DB.First(&user, harness.userID).Error)
+		return user.Quota
+	}
+	var queryReply atomic.Pointer[string]
+	// failing is how many submissions the upstream still answers with an error.
+	var failing atomic.Int32
+	respond := func(created string) {
+		harness.upstream.respond = func(w http.ResponseWriter, _ int, request capturedRequest) {
+			switch {
+			case request.URL == "/files/video.mp4":
+				w.Header().Set("Content-Type", "video/mp4")
+				_, _ = io.WriteString(w, clip)
+			case request.Method == http.MethodPost && failing.Add(-1) >= 0:
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = io.WriteString(w, `{"error":{"message":"upstream is down"}}`)
+			case request.Method == http.MethodPost:
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, created)
+			default:
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, *queryReply.Load())
+			}
+		}
+	}
+	poll := func(t *testing.T, reply string) model.Task {
+		queryReply.Store(&reply)
+		var task model.Task
+		require.NoError(t, model.DB.Order("id DESC").First(&task).Error)
+		upstreamID := task.GetUpstreamTaskID()
+		service.DispatchPlatformUpdate(context.Background(), task.Platform, map[int][]string{task.ChannelId: {upstreamID}}, map[string]*model.Task{upstreamID: &task})
+		require.NoError(t, model.DB.Order("id DESC").First(&task).Error)
+		return task
+	}
+
+	// served is everything a client and the bill see of one request that is
+	// polled to its end, and of a second one the vendor fails.
+	type served struct {
+		requests          []capturedRequest
+		platform          constant.TaskPlatform
+		create            map[string]any
+		facts             string
+		reserved, settled int
+		retrieve          map[string]any
+		content           string
+		failed            map[string]any
+		failReason        string
+	}
+	for _, tc := range shared {
+		t.Run(tc.name, func(t *testing.T) {
+			contentType := tc.contentType
+			if contentType == "" {
+				contentType = "application/json"
+			}
+			respond(tc.created)
+			// serve sends the request with the channels installed in order; the
+			// upstream fails the submissions of all but the last.
+			serve := func(t *testing.T, channels ...*model.Channel) served {
+				install(t, channels...)
+				common.RetryTimes = len(channels) - 1
+				harness.upstream.reset()
+				failing.Store(int32(len(channels) - 1))
+
+				outcome := harness.send(t, "/v1/videos", contentType, tc.body)
+
+				require.Equal(t, http.StatusOK, outcome.status, outcome.body)
+				result := served{requests: harness.upstream.captured(), create: object(t, outcome.body), facts: gjson.Get(outcome.log.Other, "usage_facts").Raw, reserved: outcome.quota}
+				require.Len(t, result.requests, len(channels))
+				assert.NotContains(t, outcome.body, gjson.Get(tc.created, "id").String()+gjson.Get(tc.created, "task_id").String()+gjson.Get(tc.created, "data.id").String()+gjson.Get(tc.created, "data.task_id").String(), "the client gets the gateway's task id")
+
+				task := poll(t, tc.done)
+				require.Equal(t, model.TaskStatus(model.TaskStatusSuccess), task.Status, task.FailReason)
+				result.platform, result.settled = task.Platform, task.Quota
+				status, body := get(t, "/v1/videos/"+task.TaskID)
+				require.Equal(t, http.StatusOK, status, body)
+				assert.Equal(t, task.TaskID, gjson.Get(body, "id").String())
+				result.retrieve = object(t, body)
+				status, result.content = get(t, "/v1/videos/"+task.TaskID+"/content")
+				require.Equal(t, http.StatusOK, status, result.content)
+				// The submissions, the poll and the video.
+				result.requests = harness.upstream.captured()
+				require.Len(t, result.requests, len(channels)+2)
+
+				// A task the vendor fails costs nothing.
+				failing.Store(int32(len(channels) - 1))
+				before := balance(t)
+				outcome = harness.send(t, "/v1/videos", contentType, tc.body)
+				require.Equal(t, http.StatusOK, outcome.status, outcome.body)
+				task = poll(t, tc.failed)
+				require.Equal(t, model.TaskStatus(model.TaskStatusFailure), task.Status)
+				assert.Equal(t, before, balance(t), "the reservation is returned")
+				result.failReason = task.FailReason
+				status, body = get(t, "/v1/videos/"+task.TaskID)
+				require.Equal(t, http.StatusOK, status, body)
+				result.failed = object(t, body)
+				return result
+			}
+
+			vendor := serve(t, vendorChannel(tc.vendorType))
+			baidu := serve(t, baiduChannel())
+
+			// Each channel is asked in its own way for the same thing.
+			assert.Equal(t, constant.TaskPlatform(tc.vendor), vendor.platform)
+			assert.Equal(t, constant.TaskPlatform("vod-baidu-task"), baidu.platform)
+			assert.Equal(t, []string{tc.vendorSubmit, tc.vendorQuery, "/files/video.mp4"}, []string{vendor.requests[0].URL, vendor.requests[1].URL, vendor.requests[2].URL})
+			assert.Equal(t, []string{tc.baiduSubmit, tc.baiduQuery, "/files/video.mp4"}, []string{baidu.requests[0].URL, baidu.requests[1].URL, baidu.requests[2].URL})
+			assert.Equal(t, "Bearer "+key, baidu.requests[0].Header.Get("Authorization"))
+			assert.Equal(t, "Bearer "+key, baidu.requests[1].Header.Get("Authorization"))
+			assert.Empty(t, baidu.requests[2].Header.Get("Authorization"), "the video's address takes no credentials")
+			assert.JSONEq(t, tc.sent, vendor.requests[0].Body)
+			assert.JSONEq(t, tc.sent, baidu.requests[0].Body)
+
+			// The client and the bill see no difference.
+			assert.JSONEq(t, tc.facts, vendor.facts)
+			assert.Equal(t, quota(tc.reserved), vendor.reserved, "the estimate is reserved")
+			assert.Equal(t, quota(tc.settled), vendor.settled, "the reported usage is settled")
+			assert.Equal(t, "queued", vendor.create["status"])
+			assert.Equal(t, tc.model, vendor.create["model"])
+			assert.Equal(t, "completed", vendor.retrieve["status"])
+			assert.Equal(t, "failed", vendor.failed["status"])
+			for field, value := range object(t, tc.retrieved) {
+				assert.Equal(t, value, vendor.retrieve[field], field)
+			}
+			assert.Equal(t, object(t, tc.retrievedFailed)["error"], vendor.failed["error"])
+			assert.Equal(t, clip, vendor.content)
+			same := func(t *testing.T, other served) {
+				assert.Equal(t, vendor.create, other.create)
+				assert.JSONEq(t, vendor.facts, other.facts)
+				assert.Equal(t, vendor.reserved, other.reserved)
+				assert.Equal(t, vendor.settled, other.settled)
+				assert.Equal(t, vendor.retrieve, other.retrieve)
+				assert.Equal(t, vendor.content, other.content)
+				assert.Equal(t, vendor.failed, other.failed)
+				assert.Equal(t, vendor.failReason, other.failReason)
+			}
+			same(t, baidu)
+
+			// When the first channel's upstream is down the other serves the
+			// request, in either order, and the client sees what it would have
+			// seen from one channel alone.
+			t.Run("the vendor's channel fails over to Baidu's", func(t *testing.T) {
+				result := serve(t, vendorChannel(tc.vendorType), baiduChannel())
+				assert.Equal(t, []string{tc.vendorSubmit, tc.baiduSubmit, tc.baiduQuery}, []string{result.requests[0].URL, result.requests[1].URL, result.requests[2].URL})
+				assert.Equal(t, constant.TaskPlatform("vod-baidu-task"), result.platform)
+				same(t, result)
+			})
+			t.Run("Baidu's channel fails over to the vendor's", func(t *testing.T) {
+				result := serve(t, baiduChannel(), vendorChannel(tc.vendorType))
+				assert.Equal(t, []string{tc.baiduSubmit, tc.vendorSubmit, tc.vendorQuery}, []string{result.requests[0].URL, result.requests[1].URL, result.requests[2].URL})
+				assert.Equal(t, constant.TaskPlatform(tc.vendor), result.platform)
+				same(t, result)
+			})
+
+			// A request one channel refuses the other refuses in the same
+			// words, before anything is sent or reserved. Around a refusal of
+			// the request it built, the host names the plugin and the place in
+			// its source: the only difference a client can see.
+			for _, refused := range tc.refusals {
+				var replies []string
+				for _, channel := range []*model.Channel{vendorChannel(tc.vendorType), baiduChannel()} {
+					install(t, channel)
+					harness.upstream.reset()
+					outcome := harness.post(t, "/v1/videos", refused.body)
+					// 400, or 503 when the gateway's OpenAI video plugin would
+					// take the request and has no channel.
+					assert.GreaterOrEqual(t, outcome.status, http.StatusBadRequest, outcome.body)
+					assert.Contains(t, outcome.body, refused.message)
+					assert.Empty(t, harness.upstream.captured())
+					assert.Zero(t, outcome.quota)
+					replies = append(replies, strconv.Itoa(outcome.status)+" "+executingPlugin.ReplaceAllString(outcome.body, ""))
+				}
+				assert.Equal(t, replies[0], replies[1], refused.body)
+			}
+		})
+	}
+
+	// The models no other plugin declares, on a Baidu channel.
+	install(t, baiduChannel())
+	common.RetryTimes = 0
+	failing.Store(0)
+	for _, tc := range own {
+		t.Run(tc.name, func(t *testing.T) {
+			respond(tc.created)
+			harness.upstream.reset()
+
+			outcome := harness.post(t, "/v1/videos", tc.body)
+
+			if tc.message != "" {
+				assert.Equal(t, http.StatusBadRequest, outcome.status, outcome.body)
+				assert.Contains(t, outcome.body, tc.message)
+				assert.Empty(t, harness.upstream.captured())
+				assert.Zero(t, outcome.quota)
+				return
+			}
+			require.Equal(t, http.StatusOK, outcome.status, outcome.body)
+			requests := harness.upstream.captured()
+			require.Len(t, requests, 1)
+			assert.Equal(t, tc.path, requests[0].URL)
+			assert.Equal(t, "Bearer "+key, requests[0].Header.Get("Authorization"))
+			if tc.header[0] != "" {
+				assert.Equal(t, tc.header[1], requests[0].Header.Get(tc.header[0]))
+			}
+			assert.JSONEq(t, tc.sent, requests[0].Body)
+			assert.JSONEq(t, tc.facts, gjson.Get(outcome.log.Other, "usage_facts").Raw)
+			assert.Equal(t, quota(tc.reserved), outcome.quota, "the estimate is reserved")
+			assert.Equal(t, "queued", gjson.Get(outcome.body, "status").String())
+			assert.Equal(t, gjson.Get(tc.body, "model").String(), gjson.Get(outcome.body, "model").String())
+		})
+	}
 }
