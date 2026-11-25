@@ -21,11 +21,16 @@
 //   Seedance      {new system}/async/seedance + Ark paths
 //   Kling 4.0, 3.0 Turbo  {new system}/async/kling + /{endpoint}/{model}
 //   Kling, model_name API {Base URL}/v3/aigc/kl + /videos/{endpoint}
+//   Kling video effects   {Base URL}/v3/aigc/kl + /videos/effects
 //   Vidu          {Base URL}/v3/aigc/vd + Vidu paths
-//   PixVerse      {Base URL}/v3/aigc/pv + /video/{endpoint}/generate
+//   PixVerse      {Base URL}/v3/aigc/pv + /video/{endpoint}/generate,
+//                 extend and fusion among the endpoints
 //   HappyHorse    {Base URL}/v3/aigc/bailian + DashScope paths
 //   MiniMax-H3    {Base URL}/v3/aigc/minimax + /v2 paths
-//   Speech        {Base URL}/v2/mini/t2a_v2, signed with an AccessKey
+//   Hailuo        {Base URL}/v3/aigc/minimax + /v1 paths
+//   Speech        {Base URL}/v2/mini/t2a_v2, /v2/mini/t2a_async_v2 with
+//                 /v2/task/{id}, and /v2/mini/voice_design, signed with an
+//                 AccessKey
 
 const SECONDS_FIELD = { type: "number", unit: "second", description: { en: "Video generation unit price", zh: "视频生成单价" } };
 const RESOLUTION_DESCRIPTION = { en: "Output video resolution", zh: "输出视频分辨率" };
@@ -152,8 +157,49 @@ const KLING_VIDEO_INPUTS = ["feature_video", "base_video", "element", "video"];
 // not hand out.
 const KLING_UNSUPPORTED_FIELDS = ["callback_url", "external_task_id"];
 
+// Video effects have no model in Kling's request; the gateway routes and
+// prices them under this name. Baidu's effects list gives what each
+// effect_scene deducts, in the units Kling reports as final_unit_deduction: an
+// amount of Baidu's own unit, not a currency price. A scene the list lacks
+// reserves the dearest.
+const KLING_EFFECTS_MODEL = "kling-effects";
+const KLING_EFFECT_UNITS = {};
+for (const group of [
+  [1.5, "pet_moto_rider running_man pet_dance swing_swing day_to_night surfsurf skateskate horse_mask ornament_crash heart_gesture_pro kiss_pro fight_pro hug_pro venomous_spider the_high_kick zoom_out santa_random_surprise dollar_rain_pro pet_bee_pro thumbs_up_pro tiger_hug_pro pet_lion_pro"],
+  [1.6, "ring_in_new new_year_greeting lion_dance lucky_red_packet lucky_money_come lion_dance_pet pet_red_packet"],
+  [1.7, "3d_cartoon_2 winter_charm maestro_of_magic sparkler_wand snow_night_kiss eternal_kiss lantern_festival_cuju fortune_knocks_cartoon christmas_photo_shoot spark_in_the_snow scarlet_and_snow glamour_photo_shoot box_of_joy santa_gift steampunk_christmas snowglobe"],
+  [2, "shooting_star send_my_love the_exercise ghost_step_dance poping santa_express"],
+  [2.5, "twist_shake smooth_transition tangyuan_to_animal overdrive subject_3_dance unique_firework fortune_god_transform new_year_feast great_success horse_year_firework red_packet_box lucky_horse_year dumpling_making_pet fish_making_pet lantern_glow jumping_ginger_joy snowboarding bullet_time_360 surprise_bouquet bouquet_drop pure_white_wings black_wings golden_wing pink_pink_wings swish_swish cheers_2026 magic_match_tree"],
+  [2.7, "flash_ride magic_carpet_ride good_luck_spirit dirt_rush return_of_the_king dance_with_dragon prosperity crystal_horse my_santa_pic"],
+  [3, "football_dance finger_swipe palm_sized_figure_pro instant_christmas coronation_of_frost building_sweater birthday_star witch_transform running countdown_teleport first_toast_of_the_year vampire_transform pumpkin_head_transform demon_transform mummy_transform zombie_transform halloween_escape"],
+  [3.5, "throne_of_king guardian_spirit jealousy_sway soccer_star make_it_rain luminous_elf woodland_elf wealth_drive"],
+  [4, "african_sway shrug_dance bra_hot_dance samba_fever football_live football_live_9_16 spielberg_transition pet_skateboard sovereign_scepter minimalist_light perler_beads spring_bloom color_mixing heart_gesture_dance advent_of_flora motorcycle_dance city_to_village martial_arts bullet_time_lite happy_birthday landmark_reveal daily_ootd phantom_jewel cute_pumpkin_transform"],
+  [4.5, "football_dance_2 air_dunk raid_check tiny_beast_printer prank_box shush_my_dreams bouncy_dance chanel_dance nezha"],
+  [5, "pet_working_daily fra_hot_dance victory_slide sassy_shake the_hip_sway lucky_veggie yangge_dance daoma_dance expression_challenge hot_feet_dance f1_live tennis_trend tennis_trend_9_16 funky_martian"],
+  [5.5, "switch_to_silk love_theme_song pumpitup_dance bloodline_dance swag_dance pigeon_dance"],
+  [6, "pet_roll_window arg_hot_dance toss_run knock_at_a_door_revenge cute_dance"],
+  [6.5, "good_luck_dance laicai_dance"],
+  [7, "fortune_in_motion sedan_chair_dance drunk_dance drunk_dance_pet smooth_sailing_dance"],
+  [7.2, "wiggle_faces_pets"],
+  [7.5, "magic_world_vlog magic_world_vlog_9_16 chinese_trend"],
+  [8, "critter_paste korean_baseball korean_baseball_9_16 bra_goal arg_goal por_goal red_card_sent_off martial_meow studio_look"],
+  [8.4, "bottle_transform"],
+  [8.5, "makeup_style get_rich_quick flash_drive"],
+  [9, "paw_headbang pet_diving pet_fitness whirling_beverage whirling_beverage_9_16 french_elegance"],
+  [9.5, "furry_birthday"],
+  [10.4, "pet_press_conference"],
+  [10.5, "hair_dressup"],
+  [11, "dj_pet"],
+  [11.2, "pet_train pet_crash_earth"],
+  [11.5, "disco_paws"],
+  [12, "bicycle_kick"],
+]) {
+  for (const scene of group[1].split(" ")) KLING_EFFECT_UNITS[scene] = group[0];
+}
+const KLING_DEAREST_EFFECT_UNITS = Object.keys(KLING_EFFECT_UNITS).reduce((dearest, scene) => Math.max(dearest, KLING_EFFECT_UNITS[scene]), 0);
+
 function klingBilledInUnits(model) {
-  return model === "kling-4.0" || Object.prototype.hasOwnProperty.call(KLING_UNIT_MODELS, model);
+  return model === "kling-4.0" || model === KLING_EFFECTS_MODEL || Object.prototype.hasOwnProperty.call(KLING_UNIT_MODELS, model);
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +303,15 @@ const PIXVERSE_MODELS = {
   "pixversev6.0": "v6",
 };
 const PIXVERSE_ENDPOINTS = { text: "text_to_video", img: "image_to_video", transition: "first_tail_to_video" };
+// Extending a video and generating from several subjects, with the models
+// Baidu lists for each. Baidu's price list puts extending in the generation
+// tables, by the requested duration, and fusion in a list of its own; the
+// operation fact tells the three apart for a price that needs it. Baidu's
+// name for PixVerse's c1 model is not known, so it is not served.
+const PIXVERSE_EDIT_ENDPOINTS = {
+  extend: { action: "video_extend", models: ["pixverse4.5", "pixverse5.0", "pixverse5.5", "pixversev5.6", "pixversev6.0"] },
+  fusion: { action: "reference_to_video", models: ["pixverse4.5", "pixverse5.0", "pixverse5.5", "pixversev5.6"] },
+};
 const PIXVERSE_QUALITIES = ["360p", "540p", "720p", "1080p"];
 const PIXVERSE_MAX_SECONDS = 15;
 // What the OpenAI video protocol sends for a request that names no duration,
@@ -274,6 +329,15 @@ const PIXVERSE_USAGE_SCHEMA = {
   },
   audio: AUDIO_FIELD,
   multi_clip: { type: "boolean", description: { en: "Whether multi-clip generation is enabled", zh: "是否开启多片段生成" } },
+  operation: {
+    enum: ["generate", "extend", "fusion"],
+    enumLabels: {
+      generate: { en: "Text, image or frames to video", zh: "文/图/首尾帧生视频" },
+      extend: { en: "Video extension", zh: "视频延长" },
+      fusion: { en: "Multi-subject reference", zh: "多主体参考" },
+    },
+    description: { en: "Generation type", zh: "生成类型" },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -320,16 +384,39 @@ const H3_USAGE_SCHEMA = {
 const H3_MAX_USAGE_SCHEMA = { seconds: SECONDS_FIELD, resolution: resolutionField(["480P", "768P"]) };
 
 // ---------------------------------------------------------------------------
+// MiniMax's /v1 video API, which Baidu serves for three Hailuo models. They
+// are the hailuo plugin's, so its usage facts, checks and defaults apply:
+// billed per video by duration (6 or 10 seconds) and resolution.
+// ---------------------------------------------------------------------------
+const HAILUO_MODELS = ["MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast", "MiniMax-Hailuo-02"];
+const HAILUO_23_USAGE_SCHEMA = { seconds: SECONDS_FIELD, resolution: { enum: ["768P", "1080P"], description: RESOLUTION_DESCRIPTION } };
+const HAILUO_02_USAGE_SCHEMA = { seconds: SECONDS_FIELD, resolution: { enum: ["512P", "768P", "1080P"], description: RESOLUTION_DESCRIPTION } };
+// MiniMax's own fields that the OpenAI video protocol carries in metadata.
+const HAILUO_METADATA_FIELDS = ["prompt_optimizer", "fast_pretreatment", "aigc_watermark", "first_frame_image", "last_frame_image", "subject_reference"];
+
+// ---------------------------------------------------------------------------
 // Speech synthesis: MiniMax's t2a_v2, billed per character, a Chinese
 // character counting two.
 // ---------------------------------------------------------------------------
 const SPEECH_MODELS = ["speech-2.8-hd", "speech-2.8-turbo", "speech-2.6-hd", "speech-2.6-turbo", "speech-02-hd", "speech-02-turbo", "speech-01-hd", "speech-01-turbo"];
 const SPEECH_MAX_CHARACTERS = 10000;
+// The asynchronous interface takes longer texts, counted the same way.
+const SPEECH_ASYNC_MAX_CHARACTERS = 50000;
 const SPEECH_USAGE_SCHEMA = {
   characters: { type: "number", unit: "token", description: { en: "Speech synthesis unit price", zh: "语音合成单价" } },
 };
+// Voice design has no model in MiniMax's request; the gateway routes and
+// prices it under this name. Baidu charges for a designed voice when it is
+// first used in a synthesis, which the gateway cannot see, so each voice is
+// billed when it is made, with the characters of its preview text.
+const VOICE_DESIGN_MODEL = "minimax-voice-design";
+const VOICE_DESIGN_MAX_PREVIEW_CHARACTERS = 500;
+const VOICE_DESIGN_USAGE_SCHEMA = {
+  voices: { type: "number", unit: "count", unitLabel: { en: "voice", zh: "个" }, description: { en: "Voice creation unit price", zh: "音色创建单价" } },
+  characters: { type: "number", unit: "token", description: { en: "Preview synthesis unit price", zh: "试听合成单价" } },
+};
 
-const VIDEO_MODELS = Object.keys(SEEDANCE_MODELS).concat(Object.keys(KLING_PATH_MODELS), KLING_BODY_MODELS, VIDU_MODELS, Object.keys(PIXVERSE_MODELS), HAPPYHORSE_MODELS, [H3_MODEL, H3_MAX_MODEL]);
+const VIDEO_MODELS = Object.keys(SEEDANCE_MODELS).concat(Object.keys(KLING_PATH_MODELS), KLING_BODY_MODELS, VIDU_MODELS, Object.keys(PIXVERSE_MODELS), HAPPYHORSE_MODELS, [H3_MODEL, H3_MAX_MODEL], HAILUO_MODELS);
 // The video models a vendor's plugin (doubao, kling, vidu, hailuo) declares
 // too. On /v1/videos the host has every plugin that declares a model decode
 // the request before it picks a channel, and the plugin of that channel
@@ -338,7 +425,8 @@ const VIDEO_MODELS = Object.keys(SEEDANCE_MODELS).concat(Object.keys(KLING_PATH_
 const SHARED_VIDEO_MODELS = Object.keys(SEEDANCE_MODELS).concat(
   ["kling-4.0", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"],
   VIDU_MODELS.filter((model) => model !== "viduq4"),
-  [H3_MODEL]
+  [H3_MODEL],
+  HAILUO_MODELS
 );
 
 // One submit route per model and endpoint of the Kling API that takes the
@@ -356,16 +444,16 @@ export const meta = {
   name: { en: "Baidu model service (video and speech)", zh: "百度模型服务（视频与语音）" },
   icon: "BaiduCloud.Color",
   description: {
-    en: "Seedance, Kling, Vidu, PixVerse, HappyHorse and MiniMax video generation and MiniMax speech synthesis through Baidu's model service, in each vendor's own format or the OpenAI video format",
-    zh: "通过百度模型服务调用 Seedance、可灵、Vidu、PixVerse、HappyHorse、MiniMax 视频生成与 MiniMax 语音合成，使用各厂商自己的接口格式或 OpenAI 视频格式",
+    en: "Seedance, Kling, Vidu, PixVerse, HappyHorse and MiniMax video generation, Kling video effects, and MiniMax speech synthesis and voice design through Baidu's model service, in each vendor's own format or the OpenAI video format",
+    zh: "通过百度模型服务调用 Seedance、可灵、Vidu、PixVerse、HappyHorse、MiniMax 视频生成、可灵视频特效，以及 MiniMax 语音合成与音色设计，使用各厂商自己的接口格式或 OpenAI 视频格式",
   },
-  version: "1.1.0",
+  version: "1.2.0",
   author: { name: "AccelsRouter" },
   baseUrl: "https://vod.bj.baidubce.com",
   allowedHosts: ["vod.gz.baidubce.com"],
   keyHint: {
-    en: "API Key, or API Key|AccessKey|SecretKey to also serve speech synthesis",
-    zh: "API Key；需要语音合成时填 API Key|AccessKey|SecretKey",
+    en: "API Key, or API Key|AccessKey|SecretKey to also serve speech synthesis and voice design",
+    zh: "API Key；需要语音合成与音色设计时填 API Key|AccessKey|SecretKey",
   },
   channelConfig: {
     type: "object",
@@ -379,23 +467,27 @@ export const meta = {
       },
     },
   },
-  models: VIDEO_MODELS.concat(SPEECH_MODELS),
+  models: VIDEO_MODELS.concat([KLING_EFFECTS_MODEL], SPEECH_MODELS, [VOICE_DESIGN_MODEL]),
   fetchMode: "per_task",
-  // /v1/videos for the video models; speech synthesis has no host protocol.
+  // /v1/videos for the video models; video effects, speech synthesis and
+  // voice design have no host protocol.
   protocols: [{ name: "openai_video", models: VIDEO_MODELS }],
   // The fallback of a channel alias that resolves to several models.
   usageSchema: { seconds: SECONDS_FIELD },
   usageProfiles: Object.keys(SEEDANCE_MODELS)
     .map((model) => ({ models: [model], schema: seedanceUsageSchema(SEEDANCE_MODELS[model]), examples: seedanceUsageExamples(SEEDANCE_MODELS[model]) }))
     .concat([
-      { models: Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS).filter(klingBilledInUnits), schema: KLING_UNITS_SCHEMA },
+      { models: Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS, [KLING_EFFECTS_MODEL]).filter(klingBilledInUnits), schema: KLING_UNITS_SCHEMA },
       { models: Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS).filter((model) => !klingBilledInUnits(model)), schema: KLING_SECONDS_SCHEMA },
       { models: VIDU_MODELS, schema: VIDU_USAGE_SCHEMA },
       { models: Object.keys(PIXVERSE_MODELS), schema: PIXVERSE_USAGE_SCHEMA },
       { models: HAPPYHORSE_MODELS, schema: HAPPYHORSE_USAGE_SCHEMA },
       { models: [H3_MODEL], schema: H3_USAGE_SCHEMA },
       { models: [H3_MAX_MODEL], schema: H3_MAX_USAGE_SCHEMA },
+      { models: ["MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast"], schema: HAILUO_23_USAGE_SCHEMA },
+      { models: ["MiniMax-Hailuo-02"], schema: HAILUO_02_USAGE_SCHEMA },
       { models: SPEECH_MODELS, schema: SPEECH_USAGE_SCHEMA, examples: [{ label: "1000 字符", facts: { characters: 1000 } }] },
+      { models: [VOICE_DESIGN_MODEL], schema: VOICE_DESIGN_USAGE_SCHEMA, examples: [{ label: "1 个音色 · 100 字符试听", facts: { voices: 1, characters: 100 } }] },
     ]),
   // Each vendor's own paths, which the vendor's plugin declares too where
   // there is one; the gateway also serves each under /vod-baidu-task.
@@ -407,18 +499,39 @@ export const meta = {
     .concat([{ method: "GET", path: "/tasks", type: "query", taskIdParam: "task_ids", render: "klingPathTasks" }])
     .concat(KLING_BODY_ENDPOINTS.map((endpoint) => ({ method: "POST", path: "/v1/videos/" + endpoint, type: "submit", decode: "createKlingVideo", render: "klingCreated" })))
     .concat(KLING_BODY_ENDPOINTS.map((endpoint) => ({ method: "GET", path: "/v1/videos/" + endpoint + "/:task_id", type: "query", render: "klingStatus" })))
+    .concat([
+      { method: "POST", path: "/v1/videos/effects", type: "submit", decode: "createKlingEffect", render: "klingCreated" },
+      { method: "GET", path: "/v1/videos/effects/:task_id", type: "query", render: "klingStatus" },
+    ])
     .concat(Object.keys(VIDU_ENDPOINTS).map((endpoint) => ({ method: "POST", path: "/ent/v2/" + endpoint, type: "submit", decode: "createViduTask", render: "viduCreated" })))
     .concat([{ method: "GET", path: "/ent/v2/tasks/:task_id/creations", type: "query", render: "viduStatus" }])
-    // PixVerse's own paths. Extending a video, lip sync and fusion are not served.
-    .concat(Object.keys(PIXVERSE_ENDPOINTS).map((endpoint) => ({ method: "POST", path: "/openapi/v2/video/" + endpoint + "/generate", type: "submit", decode: "createPixverseVideo", render: "pixverseCreated" })))
+    // PixVerse's own paths. Lip sync is not served.
+    .concat(
+      Object.keys(PIXVERSE_ENDPOINTS)
+        .concat(Object.keys(PIXVERSE_EDIT_ENDPOINTS))
+        .map((endpoint) => ({ method: "POST", path: "/openapi/v2/video/" + endpoint + "/generate", type: "submit", decode: "createPixverseVideo", render: "pixverseCreated" }))
+    )
     .concat([
       { method: "GET", path: "/openapi/v2/video/result/:task_id", type: "query", render: "pixverseStatus" },
       { method: "POST", path: "/api/v1/services/aigc/video-generation/video-synthesis", type: "submit", decode: "createHappyHorseTask", render: "happyHorseCreated" },
       { method: "GET", path: "/api/v1/tasks/:task_id", type: "query", render: "happyHorseStatus" },
       { method: "POST", path: "/v2/video_generation", type: "submit", decode: "createH3Task", render: "h3Created" },
       { method: "GET", path: "/v2/query/video_generation/:task_id", type: "query", render: "h3Status" },
+      // MiniMax's /v1 video paths, which the hailuo plugin declares too. The
+      // query reads the task id from the query string, as MiniMax does, and
+      // the video, or the audio of an asynchronous synthesis, is retrieved
+      // under the file id the query reports.
+      { method: "POST", path: "/v1/video_generation", type: "submit", decode: "createHailuoTask", render: "h3Created", models: HAILUO_MODELS },
+      { method: "GET", path: "/v1/query/video_generation", type: "query", taskIdParam: "task_id", render: "hailuoStatus" },
+      { method: "GET", path: "/v1/files/retrieve", type: "query", taskIdParam: "file_id", render: "minimaxFile" },
       // MiniMax answers with the audio; there is no task to query again.
       { method: "POST", path: "/v1/t2a_v2", type: "submit", decode: "createSpeech", render: "speechCreated", retainResult: false },
+      // MiniMax's asynchronous synthesis and its query, answered in MiniMax's
+      // structure from Baidu's task reply.
+      { method: "POST", path: "/v1/t2a_async_v2", type: "submit", decode: "createAsyncSpeech", render: "asyncSpeechCreated" },
+      { method: "GET", path: "/v1/query/t2a_async_query_v2", type: "query", taskIdParam: "task_id", render: "asyncSpeechStatus" },
+      // MiniMax answers with the voice and its preview audio at once.
+      { method: "POST", path: "/v1/voice_design", type: "submit", decode: "createVoiceDesign", render: "speechCreated", retainResult: false },
     ]),
 };
 
@@ -548,10 +661,18 @@ function klingPathBilledSeconds(profile, body, withTotal) {
   return Math.max(seconds * 2, profile.maxSeconds + seconds);
 }
 
+// The units Baidu's effects list gives an effect_scene, which it once writes
+// with a space, or the dearest of the list for one it lacks.
+function klingEffectUnits(scene) {
+  const key = trimmed(scene).replace(/\s+/g, "");
+  return Object.prototype.hasOwnProperty.call(KLING_EFFECT_UNITS, key) ? KLING_EFFECT_UNITS[key] : KLING_DEAREST_EFFECT_UNITS;
+}
+
 // The usage of a Kling request: units for the models the kling plugin also
 // serves, seconds with their conditions for the others.
 function klingUsage(ctx, req) {
   const body = req.vendorBody;
+  if (req.api === "effects") return { units: klingEffectUnits(body.effect_scene) };
   const model = upstreamModel(ctx);
   if (req.api === "path") {
     const profile = KLING_PATH_MODELS[req.model];
@@ -674,7 +795,7 @@ function viduUsage(endpoint, model, body) {
 
 // -------------------------------- PixVerse ---------------------------------
 
-function pixverseUsage(body) {
+function pixverseUsage(body, endpoint) {
   const seconds = typeof body.duration === "string" && body.duration.trim() !== "" ? Number(body.duration) : body.duration;
   if (!Number.isInteger(seconds) || seconds < 1 || seconds > PIXVERSE_MAX_SECONDS) throw new Error("duration must be an integer from 1 to " + PIXVERSE_MAX_SECONDS);
   const quality = trimmed(body.quality).toLowerCase();
@@ -685,6 +806,7 @@ function pixverseUsage(body) {
     motion_mode: trimmed(body.motion_mode).toLowerCase() === "fast" ? "fast" : "normal",
     audio: body.generate_audio_switch === true ? "on" : "off",
     multi_clip: body.generate_multi_clip_switch === true,
+    operation: endpoint === "extend" || endpoint === "fusion" ? endpoint : "generate",
   };
 }
 
@@ -763,6 +885,72 @@ function h3Usage(model, body) {
 function h3Task(body) {
   const task = plainObject(body).task;
   return task && typeof task === "object" && !Array.isArray(task) ? task : null;
+}
+
+// ------------------------------ Hailuo, /v1 --------------------------------
+// The hailuo plugin's reading of MiniMax's /v1 video API, in its words.
+
+// The resolution a size or a resolution names; the three models render 768P
+// where others render 720P.
+function hailuoResolution(size, model) {
+  const value = String(size || "");
+  if (value.includes("1080")) return "1080P";
+  if (value.includes("768")) return "768P";
+  if (value.includes("720")) return HAILUO_MODELS.includes(model) ? "768P" : "720P";
+  if (value.includes("512")) return "512P";
+  return HAILUO_MODELS.includes(model) ? "768P" : "720P";
+}
+
+// The resolution a request of the OpenAI video protocol names: its
+// resolution, metadata's, or its size, and otherwise the model's default.
+function hailuoProtocolResolution(req, model) {
+  const metadata = req.metadata || {};
+  return hailuoResolution(req.resolution || metadata.resolution || req.size, model);
+}
+
+// MiniMax's frame and subject fields mark a request as image-to-video.
+function hailuoHasImage(body) {
+  return Boolean(body.first_frame_image || body.last_frame_image || body.subject_reference);
+}
+
+// The durations and resolutions MiniMax renders, checked before a request is
+// reserved: 6 or 10 seconds, 10 only at 768P (or 512P, which only
+// MiniMax-Hailuo-02's image-to-video renders), and no text-to-video on
+// MiniMax-Hailuo-2.3-Fast. A native request leaves its resolution to MiniMax
+// and passes none.
+function checkHailuoRequest(model, duration, resolution, hasImage) {
+  if (model === "MiniMax-Hailuo-2.3-Fast" && !hasImage) throw new Error("MiniMax-Hailuo-2.3-Fast supports image-to-video only");
+  if (!HAILUO_MODELS.includes(model)) {
+    if (duration !== undefined && Number(duration) !== 6) throw new Error(model + " duration must be 6");
+    return;
+  }
+  const seconds = duration === undefined ? 6 : Number(duration);
+  if (seconds !== 6 && seconds !== 10) throw new Error(model + " duration must be 6 or 10");
+  if (resolution === undefined) return;
+  const lowest = model === "MiniMax-Hailuo-02" && hasImage;
+  if (seconds === 10) {
+    if (lowest && resolution !== "768P" && resolution !== "512P") throw new Error("MiniMax-Hailuo-02 duration 10 only allows resolution 768P or 512P");
+    if (!lowest && resolution !== "768P") throw new Error(model + " duration 10 only allows resolution 768P");
+    return;
+  }
+  const allowed = lowest ? ["512P", "768P", "1080P"] : ["768P", "1080P"];
+  if (!allowed.includes(resolution)) throw new Error(model + " duration 6 only allows resolution " + allowed.join(" or "));
+}
+
+// The usage of a native /v1 request: MiniMax's default of 6 seconds for a
+// duration the body leaves out, and for the resolution the body's own when
+// the model renders it, the model's default when it names none, and
+// otherwise the model's dearest. The two input facts are MiniMax-H3's, which
+// the hailuo plugin reports as zero for these models.
+function hailuoUsage(model, body) {
+  const hasImage = hailuoHasImage(body);
+  checkHailuoRequest(model, body.duration === undefined || body.duration === null ? undefined : Number(body.duration), undefined, hasImage);
+  let resolutions = ["512P", "720P", "768P", "1080P"];
+  if (HAILUO_MODELS.includes(model)) resolutions = model === "MiniMax-Hailuo-02" && hasImage && !body.last_frame_image ? ["512P", "768P", "1080P"] : ["768P", "1080P"];
+  let resolution = trimmed(body.resolution).toUpperCase();
+  if (!resolutions.includes(resolution)) resolution = (body.resolution === undefined || body.resolution === null) && HAILUO_MODELS.includes(model) ? "768P" : resolutions[resolutions.length - 1];
+  const seconds = Number(body.duration);
+  return { seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 6, resolution: resolution, input_images: 0, input_video_seconds: 0 };
 }
 
 // --------------------------------- Speech ----------------------------------
@@ -878,6 +1066,17 @@ export const native = {
     return Object.assign({ code: 0, message: "", request_id: "" }, result, { data: data });
   },
 
+  // Kling's own effects body, sent as is for Kling to check. The effect_scene
+  // sets what is deducted, so it must be named.
+  createKlingEffect: function (ctx) {
+    const body = jsonBody(ctx);
+    if (typeof body.effect_scene !== "string" || !body.effect_scene.trim()) throw new Error("effect_scene is required");
+    for (const name of KLING_UNSUPPORTED_FIELDS) {
+      if (body[name] !== undefined && body[name] !== null && body[name] !== "") throw new Error(name + " is not supported; query the task instead");
+    }
+    return { kind: "submit", model: KLING_EFFECTS_MODEL, action: "image_to_video", requestBody: { vendor: "kling", api: "effects", model: KLING_EFFECTS_MODEL, endpoint: "effects", vendorBody: body } };
+  },
+
   // Vidu's own body, sent as is for Vidu to check. The route names the endpoint.
   createViduTask: function (ctx) {
     const body = jsonBody(ctx);
@@ -909,9 +1108,16 @@ export const native = {
     const named = trimmed(body.model);
     const model = Object.keys(PIXVERSE_MODELS).find((name) => name === named || PIXVERSE_MODELS[name] === named.toLowerCase());
     if (!model) throw new Error("model must be one of " + Object.keys(PIXVERSE_MODELS).map((name) => PIXVERSE_MODELS[name]).join(", "));
-    pixverseUsage(body);
     const endpoint = lastSegment(ctx.path, 1);
-    return { kind: "submit", model: model, action: PIXVERSE_ENDPOINTS[endpoint], requestBody: { vendor: "pixverse", model: model, endpoint: endpoint, vendorBody: body } };
+    pixverseUsage(body, endpoint);
+    // Extending and fusion are priced for the models Baidu lists for them.
+    const edit = PIXVERSE_EDIT_ENDPOINTS[endpoint];
+    if (edit && !edit.models.includes(model)) throw new Error("model must be one of " + edit.models.map((name) => PIXVERSE_MODELS[name]).join(", ") + " on this endpoint");
+    // A Baidu media id names a video anywhere in the channel's Baidu account,
+    // so a customer could extend another customer's video by its id: the
+    // source is only taken as a URL.
+    if (endpoint === "extend" && body.video_media_id !== undefined) throw new Error("video_media_id is not supported; send source_video_url");
+    return { kind: "submit", model: model, action: edit ? edit.action : PIXVERSE_ENDPOINTS[endpoint], requestBody: { vendor: "pixverse", model: model, endpoint: endpoint, vendorBody: body } };
   },
   pixverseCreated: function (ctx, task) {
     return { ErrCode: 0, ErrMsg: "success", Resp: { video_id: task.task_id } };
@@ -978,6 +1184,47 @@ export const native = {
     return current ? Object.assign({}, data, { task: output }) : { task: output };
   },
 
+  // MiniMax's /v1 body, sent as is. The checks of the model the channel sends
+  // run when the request is built; MiniMax checks the rest.
+  createHailuoTask: function (ctx) {
+    const body = jsonBody(ctx);
+    const model = trimmed(body.model);
+    if (!model) throw new Error("model is required");
+    if (body.callback_url !== undefined && body.callback_url !== null) throw new Error("callback_url is not supported; query the task instead");
+    return { kind: "submit", model: model, action: hailuoHasImage(body) ? "image_to_video" : "text_to_video", requestBody: { vendor: "minimax", api: "v1", model: model, vendorBody: body } };
+  },
+  // The /v1 query reply. Before the first poll the task holds the create
+  // reply, which has no status. A finished task names its video by a file id,
+  // as MiniMax does: the task id, which /v1/files/retrieve takes. A file id
+  // Baidu reports is its own and is replaced, as the hailuo plugin replaces
+  // MiniMax's.
+  hailuoStatus: function (ctx, task) {
+    const data = plainObject(task.data);
+    const output = withTaskId(data, "task_id", task.task_id);
+    if (trimmed(output.file_id) || (task.status === "SUCCESS" && (ctx.artifacts || {}).video)) output.file_id = task.task_id;
+    if (task.status === "FAILURE") output.status = "Fail";
+    else if (typeof data.status !== "string") output.status = task.status === "IN_PROGRESS" ? "Processing" : "Queueing";
+    return output;
+  },
+  // MiniMax's file reply for the file id a query reports: download_url is the
+  // gateway's own address of the video or the audio, which takes no
+  // credentials.
+  minimaxFile: function (ctx, task) {
+    const data = plainObject(task.data);
+    const speech = data.type === "TTS";
+    const artifact = (ctx.artifacts || {})[speech ? "audio" : "video"];
+    if (!artifact || data.status !== (speech ? "SUCCESS" : "Success")) throw new Error("artifact_not_found");
+    const extension = speech ? /\.([a-z0-9]+)$/i.exec(trimmed(plainObject(data.ttsTaskInfo).url).split("?")[0]) : null;
+    const file = {
+      file_id: task.task_id,
+      filename: task.task_id + (speech ? (extension ? "." + extension[1] : "") : ".mp4"),
+      purpose: speech ? "t2a_async_output" : "video_generation",
+      download_url: artifact.url,
+    };
+    if (Number(task.finished_at) > 0) file.created_at = Number(task.finished_at);
+    return { file: file, base_resp: { status_code: 0, status_msg: "success" } };
+  },
+
   // MiniMax's own t2a_v2 body. The text is billed, so its length is bounded
   // first; MiniMax checks the rest.
   createSpeech: function (ctx) {
@@ -992,6 +1239,41 @@ export const native = {
   speechCreated: function (ctx, task) {
     return plainObject(task.data);
   },
+  // MiniMax's own t2a_async_v2 body. The text is billed, so it must be in the
+  // request, where it can be counted, and not in a file.
+  createAsyncSpeech: function (ctx) {
+    const body = jsonBody(ctx);
+    const model = trimmed(body.model);
+    if (!model) throw new Error("model is required");
+    if (body.text_file_id !== undefined && body.text_file_id !== null) throw new Error("text_file_id is not supported; send the text itself");
+    if (typeof body.text !== "string" || !body.text.trim()) throw new Error("text is required");
+    if (speechCharacters(body.text) > SPEECH_ASYNC_MAX_CHARACTERS) throw new Error("text must be at most " + SPEECH_ASYNC_MAX_CHARACTERS + " characters, a Chinese character counting two");
+    return { kind: "submit", model: model, action: "text_to_speech", requestBody: { vendor: "speech", api: "async", model: model, vendorBody: body } };
+  },
+  asyncSpeechCreated: function (ctx, task) {
+    const data = plainObject(task.data);
+    return { task_id: task.task_id, usage_characters: data.usage_characters, base_resp: data.base_resp || { status_code: 0, status_msg: "OK" } };
+  },
+  // MiniMax's query reply of a synthesis, from the status of the task: before
+  // the first poll the task holds the create reply, and the gateway can fail
+  // a task Baidu still reports as running. A finished synthesis names its
+  // audio by a file id, the task id, which /v1/files/retrieve takes.
+  asyncSpeechStatus: function (ctx, task) {
+    if (plainObject(task.data).type !== "TTS") throw new Error("artifact_not_found");
+    const statuses = { SUCCESS: "Success", FAILURE: "Failed" };
+    const output = { task_id: task.task_id, status: statuses[task.status] || "Processing" };
+    if (task.status === "SUCCESS" && (ctx.artifacts || {}).audio) output.file_id = task.task_id;
+    output.base_resp = { status_code: 0, status_msg: "success" };
+    return output;
+  },
+  // MiniMax's own voice_design body. The preview text is billed, so its
+  // length is bounded first; MiniMax checks the rest.
+  createVoiceDesign: function (ctx) {
+    const body = jsonBody(ctx);
+    if (typeof body.preview_text !== "string" || !body.preview_text.trim()) throw new Error("preview_text is required");
+    if (Array.from(body.preview_text).length > VOICE_DESIGN_MAX_PREVIEW_CHARACTERS) throw new Error("preview_text must be at most " + VOICE_DESIGN_MAX_PREVIEW_CHARACTERS + " characters");
+    return { kind: "submit", model: VOICE_DESIGN_MODEL, action: "voice_design", requestBody: { vendor: "speech", api: "design", model: VOICE_DESIGN_MODEL, vendorBody: body } };
+  },
 
   // Each vendor's own error reply, by the path the client called.
   error: function (ctx, error) {
@@ -1001,7 +1283,13 @@ export const native = {
     if (path.indexOf("/api/v1/") >= 0) return { code: error.code, message: error.message, request_id: error.requestId || "" };
     if (path.indexOf("/ent/v2/") >= 0) return { code: error.code, message: error.message };
     if (path.indexOf("/v2/") >= 0) return { type: "error", error: { type: error.httpStatus >= 500 ? "server_error" : "bad_request_error", message: error.message, http_code: String(error.httpStatus) }, request_id: error.requestId || "" };
-    if (path.indexOf("/t2a_v2") >= 0) return { __status: 200, __body: { base_resp: { status_code: error.httpStatus >= 500 ? 1013 : 2013, status_msg: error.message } } };
+    // MiniMax's /v1 video API answers 200 with its status code in base_resp,
+    // the codes the hailuo plugin answers with.
+    if (["/v1/video_generation", "/v1/query/video_generation", "/v1/files/retrieve"].some((name) => path.indexOf(name) >= 0)) {
+      const codes = { 400: 2013, 401: 1004, 403: 1004, 404: 2013, 413: 2013, 429: 1002 };
+      return { __status: 200, __body: { base_resp: { status_code: codes[error.httpStatus] || (error.httpStatus >= 500 ? 1013 : 1000), status_msg: error.message } } };
+    }
+    if (["/t2a_v2", "/t2a_async_v2", "/t2a_async_query_v2", "/voice_design"].some((name) => path.indexOf(name) >= 0)) return { __status: 200, __body: { base_resp: { status_code: error.httpStatus >= 500 ? 1013 : 2013, status_msg: error.message } } };
     return { code: error.httpStatus >= 500 ? 5000 : 1200, message: error.message, request_id: error.requestId || "" };
   },
 };
@@ -1046,6 +1334,9 @@ export function buildSubmitRequest(ctx) {
   } else if (req.vendor === "kling" && req.api === "path") {
     descriptor.url = asyncBase(ctx) + "/async/kling/" + req.endpoint + "/" + model;
     descriptor.body = req.vendorBody;
+  } else if (req.vendor === "kling" && req.api === "effects") {
+    descriptor.url = ctx.baseUrl + "/v3/aigc/kl/videos/effects";
+    descriptor.body = req.vendorBody;
   } else if (req.vendor === "kling") {
     // Without this header Baidu answers in its own structure instead of Kling's.
     descriptor.headers["X-Response-Format"] = "orion";
@@ -1061,6 +1352,9 @@ export function buildSubmitRequest(ctx) {
     descriptor.headers["X-DashScope-Async"] = "enable";
     descriptor.url = ctx.baseUrl + "/v3/aigc/bailian/api/v1/services/aigc/video-generation/video-synthesis";
     descriptor.body = Object.assign({}, req.vendorBody, { model: model });
+  } else if (req.vendor === "minimax" && req.api === "v1") {
+    descriptor.url = ctx.baseUrl + "/v3/aigc/minimax/v1/video_generation";
+    descriptor.body = Object.assign({}, req.vendorBody, { model: model });
   } else if (req.vendor === "minimax") {
     if (model !== H3_MODEL && model !== H3_MAX_MODEL) throw new Error(model + " is not served on /v2/video_generation");
     descriptor.url = ctx.baseUrl + "/v3/aigc/minimax/v2/video_generation";
@@ -1068,9 +1362,10 @@ export function buildSubmitRequest(ctx) {
   } else if (req.vendor === "speech") {
     const parts = keyParts(ctx);
     if (parts.length !== 3 || !parts[1] || !parts[2]) throw new Error("speech synthesis needs a channel key of the form API Key|AccessKey|SecretKey");
-    descriptor.url = ctx.baseUrl + "/v2/mini/t2a_v2";
+    descriptor.url = ctx.baseUrl + (req.api === "async" ? "/v2/mini/t2a_async_v2" : req.api === "design" ? "/v2/mini/voice_design" : "/v2/mini/t2a_v2");
     descriptor.headers = Object.assign({ "Content-Type": "application/json", Accept: "application/json" }, bceHeaders("POST", descriptor.url, parts[1], parts[2]));
-    descriptor.body = Object.assign({}, req.vendorBody, { model: model });
+    // A voice design names no model.
+    descriptor.body = req.api === "design" ? req.vendorBody : Object.assign({}, req.vendorBody, { model: model });
   } else {
     throw new Error("unsupported request");
   }
@@ -1100,6 +1395,14 @@ export function parseSubmitResponse(ctx, resp) {
       state.requested = state.open ? 0 : Number(settings.duration);
       state.total = profile.totalDuration === true;
     }
+  } else if (req.vendor === "kling" && req.api === "effects") {
+    if (body.code !== undefined && body.code !== 0 && body.code !== "0") throw new Error(trimmed(body.message) || "kling submit failed");
+    // Baidu answers some of Kling's interfaces in its own structure, {taskId};
+    // either way the task is queried at the interface's own path.
+    taskId = trimmed(plainObject(body.data).task_id) || trimmed(body.taskId);
+    state.api = "effects";
+    state.endpoint = req.endpoint;
+    state.reserved = klingUsage(ctx, req).units;
   } else if (req.vendor === "kling") {
     if (body.code !== undefined && body.code !== 0 && body.code !== "0") throw new Error(trimmed(body.message) || "kling submit failed");
     taskId = trimmed(plainObject(body.data).task_id);
@@ -1127,10 +1430,28 @@ export function parseSubmitResponse(ctx, resp) {
     const base = plainObject(body.base_resp);
     if (base.status_code) throw new Error(trimmed(base.status_msg) || "minimax submit failed");
     taskId = trimmed(body.task_id) || trimmed(plainObject(body.task).id);
+    if (req.api === "v1") state.api = "v1";
+  } else if (req.vendor === "speech" && req.api === "async") {
+    const base = plainObject(body.base_resp);
+    if (base.status_code) throw new Error(trimmed(base.status_msg) || "speech synthesis failed");
+    taskId = trimmed(body.task_id) || trimmed(body.taskId);
+    if (!taskId) throw new Error(trimmed(body.message) || "missing task id");
+    state.api = "async";
+    // Baidu's estimate of the billed characters settles the task when it is
+    // above the plugin's count and within what the text could count.
+    const text = req.vendorBody.text;
+    const estimate = body.usage_characters;
+    if (Number.isInteger(estimate) && estimate > speechCharacters(text) && estimate <= 2 * Array.from(text).length) state.characters = estimate;
+    // The status route tells a synthesis from the plugin's other tasks by
+    // the type Baidu's task reply carries.
+    return { taskId: taskId, taskData: Object.assign({}, body, { type: "TTS" }), state: state };
   } else if (req.vendor === "speech") {
     const base = plainObject(body.base_resp);
     if (base.status_code) throw new Error(trimmed(base.status_msg) || "speech synthesis failed");
-    if (body.code || !trimmed(plainObject(body.data).audio)) throw new Error(trimmed(body.message) || "speech synthesis returned no audio");
+    if (req.api === "design") {
+      if (body.code || !trimmed(body.voice_id)) throw new Error(trimmed(body.message) || "voice design returned no voice");
+    } else if (body.code || !trimmed(plainObject(body.data).audio)) throw new Error(trimmed(body.message) || "speech synthesis returned no audio");
+    if (req.api) state.api = req.api;
     if (!trimmed(ctx.publicTaskId)) throw new Error("missing gateway task id");
     return { taskId: trimmed(ctx.publicTaskId), taskData: body, state: state, immediate: { status: "SUCCESS", progress: "100%" } };
   }
@@ -1145,12 +1466,18 @@ export function extractUsage(ctx) {
   if (req.vendor === "seedance") return seedanceUsage(ctx, req.reserved || body);
   if (req.vendor === "kling") return klingUsage(ctx, req);
   if (req.vendor === "vidu") return viduUsage(req.endpoint, upstreamModel(ctx), body);
-  if (req.vendor === "pixverse") return pixverseUsage(body);
+  if (req.vendor === "pixverse") return pixverseUsage(body, req.endpoint);
   if (req.vendor === "happyhorse") return happyHorseUsage(body);
+  if (req.vendor === "minimax" && req.api === "v1") return req.facts || hailuoUsage(upstreamModel(ctx), body);
   if (req.vendor === "minimax") return h3Usage(upstreamModel(ctx), body);
+  if (req.vendor === "speech" && req.api === "design") {
+    if (typeof body.preview_text !== "string" || Array.from(body.preview_text).length > VOICE_DESIGN_MAX_PREVIEW_CHARACTERS) throw new Error("preview_text must be at most " + VOICE_DESIGN_MAX_PREVIEW_CHARACTERS + " characters");
+    return { voices: 1, characters: speechCharacters(body.preview_text) };
+  }
   if (req.vendor === "speech") {
+    const longest = req.api === "async" ? SPEECH_ASYNC_MAX_CHARACTERS : SPEECH_MAX_CHARACTERS;
     const characters = speechCharacters(body.text);
-    if (characters > SPEECH_MAX_CHARACTERS) throw new Error("text must be at most " + SPEECH_MAX_CHARACTERS + " characters, a Chinese character counting two");
+    if (characters > longest) throw new Error("text must be at most " + longest + " characters, a Chinese character counting two");
     return { characters: characters };
   }
   throw new Error("unsupported request");
@@ -1160,6 +1487,13 @@ export function buildQueryRequest(ctx) {
   const state = plainObject(ctx.state);
   const id = encodeURIComponent(ctx.taskId);
   let url;
+  if (state.vendor === "speech" && state.api === "async") {
+    // Baidu's task query, signed as the synthesis was.
+    const parts = keyParts(ctx);
+    if (parts.length !== 3 || !parts[1] || !parts[2]) throw new Error("speech synthesis needs a channel key of the form API Key|AccessKey|SecretKey");
+    url = ctx.baseUrl + "/v2/task/" + id;
+    return { url: url, method: "GET", headers: Object.assign({ "Content-Type": "application/json", Accept: "application/json" }, bceHeaders("GET", url, parts[1], parts[2])) };
+  }
   if (state.vendor === "seedance") url = asyncBase(ctx) + "/async/seedance/api/v3/contents/generations/tasks/" + id;
   else if (state.vendor === "kling" && state.api === "path") url = asyncBase(ctx) + "/async/kling/tasks?task_ids=" + id;
   else if (state.vendor === "kling") url = ctx.baseUrl + "/v3/aigc/kl/videos/" + state.endpoint + "/" + id;
@@ -1167,6 +1501,7 @@ export function buildQueryRequest(ctx) {
   // Baidu's PixVerse interface has no query of its own.
   else if (state.vendor === "pixverse" || state.detail) url = ctx.baseUrl + "/v3/tasks/" + id;
   else if (state.vendor === "happyhorse") url = ctx.baseUrl + "/v3/aigc/bailian/api/v1/tasks/" + id;
+  else if (state.vendor === "minimax" && state.api === "v1") url = ctx.baseUrl + "/v3/aigc/minimax/v1/query/video_generation?task_id=" + id;
   else if (state.vendor === "minimax") url = ctx.baseUrl + "/v3/aigc/minimax/v2/query/video_generation/" + id;
   else throw new Error("the task has no status to query");
   return { url: url, method: "GET", headers: { Accept: "application/json", Authorization: "Bearer " + keyParts(ctx)[0] } };
@@ -1222,6 +1557,17 @@ export function parseTaskResult(ctx, body) {
     if (["FAILED", "CANCELED", "UNKNOWN"].includes(output.task_status)) return { status: "FAILURE", reason: trimmed(body.message) || trimmed(output.message) || "task failed" };
     return { status: "UNKNOWN", reason: "unrecognized status: " + trimmed(output.task_status) };
   }
+  if (state.vendor === "minimax" && state.api === "v1") {
+    if (body.base_resp && body.base_resp.status_code !== 0) return { status: "FAILURE", progress: "100%", reason: body.base_resp.status_msg || "" };
+    const statuses = { Preparing: "IN_PROGRESS", Queueing: "IN_PROGRESS", Processing: "IN_PROGRESS", Success: "SUCCESS", Fail: "FAILURE" };
+    const status = statuses[body.status];
+    if (!status) return { status: "UNKNOWN", reason: "unrecognized status: " + trimmed(body.status) };
+    const result = { status: status, progress: status === "IN_PROGRESS" ? (body.status === "Processing" ? "50%" : "30%") : "100%", reason: status === "FAILURE" ? "task failed" : "" };
+    // Baidu keeps the video and reports its address with the status.
+    const url = trimmed(plainObject(body.file).download_url);
+    if (status === "SUCCESS" && url) result.url = url;
+    return result;
+  }
   if (state.vendor === "minimax") {
     const task = h3Task(body);
     // Until a task is finished Baidu may answer with its own task status
@@ -1234,6 +1580,13 @@ export function parseTaskResult(ctx, body) {
     if (status === "SUCCESS") result.url = trimmed(plainObject(task.content).url);
     if (status === "FAILURE") result.reason = trimmed(plainObject(task.error).message) || "task " + trimmed(task.status);
     return result;
+  }
+  if (state.vendor === "speech") {
+    const info = plainObject(body.ttsTaskInfo);
+    if (body.status === "RUNNING") return { status: "IN_PROGRESS", progress: "50%" };
+    if (body.status === "SUCCESS") return { status: "SUCCESS", progress: "100%", url: trimmed(info.url) };
+    if (body.status === "FAILED") return { status: "FAILURE", progress: "100%", reason: trimmed(info.errMsg) || "speech synthesis failed" };
+    return { status: "UNKNOWN", reason: "unrecognized status: " + trimmed(body.status) };
   }
   return { status: "UNKNOWN", reason: "the task has no vendor" };
 }
@@ -1256,6 +1609,12 @@ export function extractUsageOnComplete(ctx, _result, body) {
     return facts;
   }
   if (state.vendor === "kling" && state.api === "path") return klingPathCompleted(ctx, body);
+  if (state.vendor === "kling" && state.api === "effects") {
+    // The units Kling deducted, never more than the list gives the effect. A
+    // reply without a deduction keeps the reservation.
+    const units = Number.parseFloat(plainObject(body.data).final_unit_deduction);
+    return units > 0 ? { units: Math.min(units, state.reserved) } : null;
+  }
   if (state.vendor === "kling") {
     if (!state.units) return null;
     const deduction = plainObject(body.data).final_unit_deduction;
@@ -1278,6 +1637,12 @@ export function extractUsageOnComplete(ctx, _result, body) {
     if (resolution === "720P" || resolution === "1080P") facts.resolution = resolution;
     return facts;
   }
+  if (state.vendor === "minimax" && state.api === "v1") {
+    // MiniMax reports the size of the video, not its price tier.
+    const width = Number(body.video_width || 0);
+    const height = Number(body.video_height || 0);
+    return width > 0 && height > 0 ? { resolution: hailuoResolution(width + "x" + height, "") } : null;
+  }
   if (state.vendor === "minimax") {
     const task = h3Task(body);
     if (!task) return null;
@@ -1299,6 +1664,8 @@ export function extractUsageOnComplete(ctx, _result, body) {
     }
     return Object.keys(facts).length ? facts : null;
   }
+  if (state.vendor === "speech" && state.api === "async") return state.characters ? { characters: state.characters } : null;
+  if (state.vendor === "speech" && state.api === "design") return null;
   if (state.vendor === "speech") {
     const characters = plainObject(body.extra_info).usage_characters;
     return Number.isInteger(characters) && characters >= 1 && characters <= SPEECH_MAX_CHARACTERS ? { characters: characters } : null;
@@ -1322,6 +1689,7 @@ function taskVideoURL(state, data) {
   }
   if (state.vendor === "vidu") return Array.isArray(data.creations) && data.creations.length ? trimmed(plainObject(data.creations[0]).url) : "";
   if (state.vendor === "happyhorse") return trimmed(plainObject(data.output).video_url);
+  if (state.vendor === "minimax" && state.api === "v1") return trimmed(plainObject(data.file).download_url);
   if (state.vendor === "minimax") {
     const task = h3Task(data);
     return task ? trimmed(plainObject(task.content).url) : taskDetailVideoURL(data, 0);
@@ -1336,6 +1704,8 @@ export function listArtifacts(task) {
   const state = plainObject(task.state);
   const data = plainObject(task.data);
   const artifacts = [];
+  // The audio of an asynchronous synthesis.
+  if (state.vendor === "speech" && trimmed(plainObject(data.ttsTaskInfo).url)) artifacts.push({ key: "audio", type: "audio" });
   if (taskVideoURL(state, data)) artifacts.push(state.vendor === "minimax" ? { key: "video", type: "video", mimeType: "video/mp4" } : { key: "video", type: "video" });
   if (state.vendor === "seedance" && trimmed(plainObject(data.content).last_frame_url)) artifacts.push({ key: "last_frame", type: "image", mimeType: "image/png" });
   return artifacts;
@@ -1348,6 +1718,7 @@ export function buildContentRequest(ctx) {
   let url = "";
   if (ctx.artifactKey === "video") url = taskVideoURL(state, data);
   else if (ctx.artifactKey === "last_frame" && state.vendor === "seedance") url = trimmed(plainObject(data.content).last_frame_url);
+  else if (ctx.artifactKey === "audio" && state.vendor === "speech") url = trimmed(plainObject(data.ttsTaskInfo).url);
   if (!url) throw new Error("artifact_not_found");
   return { url: url, method: ctx.clientRequest.method, credentialless: true };
 }
@@ -1376,7 +1747,7 @@ function videoVendor(model) {
   if (VIDU_MODELS.includes(model)) return "vidu";
   if (Object.prototype.hasOwnProperty.call(PIXVERSE_MODELS, model)) return "pixverse";
   if (HAPPYHORSE_MODELS.includes(model)) return "happyhorse";
-  if (model === H3_MODEL || model === H3_MAX_MODEL) return "minimax";
+  if (model === H3_MODEL || model === H3_MAX_MODEL || HAILUO_MODELS.includes(model)) return "minimax";
   return "";
 }
 
@@ -1789,9 +2160,12 @@ const VIDEO_PROTOCOL = {
   // MiniMax-H3, as the hailuo plugin: a content array of the prompt, the frame
   // images and metadata's reference media, or metadata.content itself, with a
   // duration of 5 seconds, 768P and, for text alone, 16:9 when the request
-  // names none. MiniMax-H3-MAX follows it with its own resolutions.
+  // names none. MiniMax-H3-MAX follows it with its own resolutions. The /v1
+  // models, as the hailuo plugin too: the prompt, a duration of 6 seconds and
+  // the model's default resolution when the request names none, and MiniMax's
+  // frame fields from metadata.
   minimax: {
-    decode: function (ctx) {
+    decode: function (ctx, model) {
       const read = uploadableVideoRequest(ctx);
       const req = read.req;
       const seconds = req.seconds === undefined ? req.duration : req.seconds;
@@ -1805,12 +2179,24 @@ const VIDEO_PROTOCOL = {
       }
       const metadata = req.metadata || {};
       const named = trimmed(req.input_reference) || trimmed(req.image) || (Array.isArray(req.images) && req.images.length);
-      const hasImage = read.uploaded || Boolean(named || metadata.first_frame_image || metadata.last_frame_image || metadata.subject_reference);
+      const hasImage = read.uploaded || Boolean(named || hailuoHasImage(metadata));
+      if (HAILUO_MODELS.includes(model)) checkHailuoRequest(model, req.duration === undefined ? undefined : Number(req.duration), hailuoProtocolResolution(req, model), hasImage);
       return { request: req, action: hasImage ? "image_to_video" : "text_to_video" };
     },
     request: function (ctx, decoded) {
       const req = decoded.request;
       const metadata = req.metadata || {};
+      if (HAILUO_MODELS.includes(decoded.model)) {
+        const seconds = Number(req.duration);
+        const facts = { seconds: Number.isFinite(seconds) && seconds > 0 ? seconds : 6, resolution: hailuoProtocolResolution(req, upstreamModel(ctx)), input_images: 0, input_video_seconds: 0 };
+        const body = { duration: facts.seconds, resolution: facts.resolution };
+        if (req.prompt) body.prompt = req.prompt;
+        for (const name of HAILUO_METADATA_FIELDS) {
+          if (metadata[name] !== undefined && metadata[name] !== null) body[name] = metadata[name];
+        }
+        const named = trimmed(req.input_reference) || trimmed(req.image) || (Array.isArray(req.images) && req.images.length);
+        return { vendor: "minimax", api: "v1", model: decoded.model, vendorBody: body, action: named || hailuoHasImage(metadata) ? "image_to_video" : "text_to_video", facts: facts };
+      }
       const name = upstreamModel(ctx) === H3_MODEL ? H3_MODEL : H3_MAX_MODEL;
       const content = h3ProtocolContent(name, req);
       const duration = req.duration === undefined || req.duration === null || req.duration === "" ? H3_DEFAULT_DURATION : h3Duration(name, req.duration);

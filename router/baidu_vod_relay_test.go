@@ -202,7 +202,7 @@ func TestBaiduTaskPluginLeavesSharedModelsToTheirPlugins(t *testing.T) {
 	assert.Equal(t, []string{"doubao", "hailuo", "kling", "vidu"}, slices.Sorted(maps.Keys(shared)))
 	assert.Len(t, shared["doubao"], 4)
 	assert.ElementsMatch(t, []string{"kling-4.0", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"}, shared["kling"])
-	assert.Equal(t, []string{"MiniMax-H3"}, shared["hailuo"])
+	assert.ElementsMatch(t, []string{"MiniMax-H3", "MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast", "MiniMax-Hailuo-02"}, shared["hailuo"])
 	assert.Len(t, shared["vidu"], 13)
 
 	// A path both declare reaches the vendor's plugin first.
@@ -212,9 +212,15 @@ func TestBaiduTaskPluginLeavesSharedModelsToTheirPlugins(t *testing.T) {
 		"/text-to-video/kling-4.0":                               "kling",
 		"/ent/v2/text2video":                                     "vidu",
 		"/v2/video_generation":                                   "hailuo",
+		"/v1/video_generation":                                   "hailuo",
 		"/api/v1/services/aigc/video-generation/video-synthesis": "alibaba",
 		"/openapi/v2/video/text/generate":                        "vod-baidu-task",
+		"/openapi/v2/video/extend/generate":                      "vod-baidu-task",
+		"/openapi/v2/video/fusion/generate":                      "vod-baidu-task",
+		"/v1/videos/effects":                                     "vod-baidu-task",
 		"/v1/t2a_v2":                                             "vod-baidu-task",
+		"/v1/t2a_async_v2":                                       "vod-baidu-task",
+		"/v1/voice_design":                                       "vod-baidu-task",
 	} {
 		binding, ok := generation.LookupDeclaredRoute(http.MethodPost, path)
 		require.True(t, ok, path)
@@ -226,13 +232,14 @@ func TestBaiduTaskPluginLeavesSharedModelsToTheirPlugins(t *testing.T) {
 	assert.False(t, provider.Meta.HasTaskPart())
 
 	// On /v1/videos every video model is offered to this plugin after the
-	// vendor's own, and no speech model is. The plugin reads a shared model as
+	// vendor's own, and no speech, voice design or video effects model is,
+	// since none of them is a video request. The plugin reads a shared model as
 	// the vendor's plugin does, refusals in its decoder included, and keeps the
 	// refusals of its own models for the request it builds; a body no decoder
 	// accepts tells the two apart.
 	for _, name := range plugin.Meta.Models {
 		candidates := generation.LookupEndpointCandidates(http.MethodPost, "/v1/videos", name)
-		if strings.HasPrefix(name, "speech-") {
+		if strings.HasPrefix(name, "speech-") || name == "kling-effects" || name == "minimax-voice-design" {
 			assert.Empty(t, candidates, name)
 			continue
 		}
@@ -398,11 +405,66 @@ func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
 			reserved: 2, settled: 0.9,
 			statusPath: "/v2/query/video_generation/", wantStatus: `"status":"succeeded"`,
 		},
+		{
+			name: "minimax hailuo v1", model: "MiniMax-Hailuo-2.3",
+			expression: `u("resolution") == "1080P" ? tier("1080P", u("seconds") * 0.06) : tier("other", u("seconds") * 0.03)`,
+			path:       "/v1/video_generation", body: `{"model":"MiniMax-Hailuo-2.3","prompt":"a cat","duration":6,"resolution":"1080P"}`,
+			submitPath: "/v3/aigc/minimax/v1/video_generation", queryPath: "/v3/aigc/minimax/v1/query/video_generation?task_id=tsk-mv1",
+			created: `{"task_id":"tsk-mv1","base_resp":{"status_code":0,"status_msg":"success"}}`,
+			running: `{"task_id":"tsk-mv1","status":"Processing","base_resp":{"status_code":0,"status_msg":"success"}}`,
+			done:    `{"task_id":"tsk-mv1","status":"Success","file":{"download_url":"https://cdn.example/hailuo.mp4"},"video_width":1366,"video_height":768,"base_resp":{"status_code":0,"status_msg":"success"}}`,
+			failed:  `{"task_id":"tsk-mv1","status":"Fail","base_resp":{"status_code":1026,"status_msg":"blocked"}}`,
+			// 6 s at 1080P are reserved; the 1366x768 video settles at 768P.
+			reserved: 0.36, settled: 0.18,
+			statusPath: "/v1/query/video_generation?task_id=", wantStatus: `"status":"Success"`,
+		},
+		{
+			name: "kling effects", model: "kling-effects", expression: `tier("base", u("units") * 0.1)`,
+			path: "/v1/videos/effects", body: `{"effect_scene":"color_mixing","input":{"image":"https://cdn.example/cat.png"}}`,
+			submitPath: "/v3/aigc/kl/videos/effects", queryPath: "/v3/aigc/kl/videos/effects/tsk-e1",
+			created: `{"code":0,"message":"SUCCEED","request_id":"req-1","data":{"task_id":"tsk-e1","task_status":"submitted","task_info":{"external_task_id":""}}}`,
+			running: `{"code":0,"data":{"task_id":"tsk-e1","task_status":"processing"}}`,
+			done:    `{"code":0,"data":{"task_id":"tsk-e1","task_status":"succeed","task_result":{"videos":[{"id":"9","url":"https://cdn.example/effect.mp4","duration":"10.666"}]},"final_unit_deduction":"3.5","final_balance_deduction":{"quota":"0","list_price":"0"}}}`,
+			failed:  `{"code":0,"data":{"task_id":"tsk-e1","task_status":"failed","task_status_msg":"blocked"}}`,
+			// Baidu's list deducts 4 for color_mixing; the task deducted 3.5.
+			reserved: 0.4, settled: 0.35,
+			statusPath: "/v1/videos/effects/", wantStatus: `"task_status":"succeed"`,
+		},
+		{
+			name: "pixverse extend", model: "pixversev6.0",
+			expression: `u("operation") == "extend" ? tier("extend", u("seconds") * 0.05) : tier("other", u("seconds") * 0.01)`,
+			path:       "/openapi/v2/video/extend/generate",
+			body:       `{"model":"v6","source_video_url":"https://cdn.example/in.mp4","prompt":"go on","duration":5,"quality":"720p","water_mark":false}`,
+			submitPath: "/v3/aigc/pv/video/extend/generate", queryPath: "/v3/tasks/tsk-p2",
+			created:  `{"taskId":"tsk-p2","requestId":"req-1"}`,
+			running:  `{"taskId":"tsk-p2","status":"RUNNING"}`,
+			done:     `{"taskId":"tsk-p2","status":"SUCCESS","videoGenerateTaskInfo":{"videoGenerateTaskOutput":{"mediaBasicInfos":[{"mediaId":"mda-2","source":{"sourceUrl":"https://cdn.example/extended.mp4"}}]}}}`,
+			failed:   `{"taskId":"tsk-p2","status":"FAILED","errorMessage":"blocked"}`,
+			reserved: 0.25, settled: 0.25,
+			statusPath: "/openapi/v2/video/result/", wantStatus: `"url":"https://cdn.example/extended.mp4"`,
+		},
+		{
+			name: "pixverse fusion", model: "pixverse5.5",
+			expression: `u("operation") == "fusion" ? tier("fusion", u("seconds") * 0.06) : tier("other", u("seconds") * 0.01)`,
+			path:       "/openapi/v2/video/fusion/generate",
+			body:       `{"model":"v5.5","prompt":"@cat plays at @ground","duration":5,"quality":"540p","image_references":[{"type":"subject","image_url":"https://cdn.example/cat.png","ref_name":"cat"},{"type":"background","image_url":"https://cdn.example/ground.png","ref_name":"ground"}]}`,
+			submitPath: "/v3/aigc/pv/video/fusion/generate", queryPath: "/v3/tasks/tsk-p3",
+			created:  `{"taskId":"tsk-p3","requestId":"req-1"}`,
+			running:  `{"taskId":"tsk-p3","status":"RUNNING"}`,
+			done:     `{"taskId":"tsk-p3","status":"SUCCESS","videoGenerateTaskInfo":{"videoGenerateTaskOutput":{"mediaBasicInfos":[{"mediaId":"mda-3","source":{"sourceUrl":"https://cdn.example/fusion.mp4"}}]}}}`,
+			failed:   `{"taskId":"tsk-p3","status":"FAILED","errorMessage":"blocked"}`,
+			reserved: 0.3, settled: 0.3,
+			statusPath: "/openapi/v2/video/result/", wantStatus: `"url":"https://cdn.example/fusion.mp4"`,
+		},
 	}
 
-	const speechModel = "speech-2.8-hd"
-	modes, expressions := map[string]string{speechModel: "tiered_expr"}, map[string]string{speechModel: `tier("base", u("characters") * 500 / 1000000)`}
-	models := []string{speechModel}
+	const speechModel, voiceDesignModel = "speech-2.8-hd", "minimax-voice-design"
+	modes := map[string]string{speechModel: "tiered_expr", voiceDesignModel: "tiered_expr"}
+	expressions := map[string]string{
+		speechModel:      `tier("base", u("characters") * 500 / 1000000)`,
+		voiceDesignModel: `tier("base", u("voices") * 1 + u("characters") * 200 / 1000000)`,
+	}
+	models := []string{speechModel, voiceDesignModel}
 	for _, tc := range cases {
 		modes[tc.model], expressions[tc.model] = "tiered_expr", tc.expression
 		models = append(models, tc.model)
@@ -587,6 +649,142 @@ func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
 		assert.Empty(t, harness.upstream.captured())
 		assert.Zero(t, spent(t)-before)
 	})
+
+	// MiniMax's asynchronous synthesis is a task Baidu answers in its own task
+	// structure, signed like the synthesis. The text is counted as for the
+	// synthesis, 11 characters; Baidu's estimate, 13, is above that and within
+	// what the text could count, and settles the task.
+	t.Run("asynchronous speech", func(t *testing.T) {
+		const speech = `{"model":"speech-2.8-hd","text":"你好, world","voice_setting":{"voice_id":"voice-1"},"audio_setting":{"format":"mp3"}}`
+		channel := install(t, key+"|ak-test|sk-test")
+		var reply atomic.Pointer[string]
+		harness.upstream.respond = func(w http.ResponseWriter, _ int, request capturedRequest) {
+			w.Header().Set("Content-Type", "application/json")
+			if request.Method == http.MethodPost {
+				_, _ = io.WriteString(w, `{"task_id":"tsk-async-1","usage_characters":13,"base_resp":{"status_code":0,"status_msg":"OK"}}`)
+				return
+			}
+			_, _ = io.WriteString(w, *reply.Load())
+		}
+		harness.upstream.reset()
+		signed := func(t *testing.T, request capturedRequest) {
+			assert.True(t, strings.HasPrefix(request.Header.Get("Authorization"), "bce-auth-v1/ak-test/"), request.Header.Get("Authorization"))
+			assert.NotEmpty(t, request.Header.Get("X-Bce-Date"))
+		}
+		before := spent(t)
+
+		status, body := call(t, http.MethodPost, "/v1/t2a_async_v2", speech)
+
+		require.Equal(t, http.StatusOK, status, body)
+		requests := harness.upstream.captured()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "/v2/mini/t2a_async_v2", requests[0].URL)
+		signed(t, requests[0])
+		assert.JSONEq(t, speech, requests[0].Body)
+		task := lastTask(t)
+		assert.Equal(t, task.TaskID, gjson.Get(body, "task_id").String())
+		assert.NotContains(t, body, "tsk-async-1")
+		assert.Equal(t, quota(11*500.0/1_000_000), spent(t)-before, "the counted text is reserved")
+
+		running := `{"taskId":"tsk-async-1","type":"TTS","status":"RUNNING","createTime":"2024-11-15T10:00:00Z","ttsTaskInfo":{}}`
+		reply.Store(&running)
+		task = poll(t, channel)
+		requests = harness.upstream.captured()
+		require.Len(t, requests, 2)
+		assert.Equal(t, http.MethodGet, requests[1].Method)
+		assert.Equal(t, "/v2/task/tsk-async-1", requests[1].URL)
+		signed(t, requests[1])
+		assert.Equal(t, model.TaskStatus(model.TaskStatusInProgress), task.Status)
+
+		done := `{"taskId":"tsk-async-1","type":"TTS","status":"SUCCESS","createTime":"2024-11-15T10:00:00Z","finishTime":"2024-11-15T10:01:30Z","ttsTaskInfo":{"url":"https://cdn.example/tmp/tsk-async-1.mp3?sign=1","code":"0"}}`
+		reply.Store(&done)
+		task = poll(t, channel)
+		assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), task.Status)
+		assert.Equal(t, quota(13*500.0/1_000_000), spent(t)-before, "Baidu's estimate settles")
+
+		// MiniMax's query names the audio by a file id, which the gateway's
+		// file retrieval answers with its own address of the audio.
+		status, body = call(t, http.MethodGet, "/v1/query/t2a_async_query_v2?task_id="+task.TaskID, "")
+		require.Equal(t, http.StatusOK, status, body)
+		assert.Equal(t, "Success", gjson.Get(body, "status").String(), body)
+		assert.Equal(t, task.TaskID, gjson.Get(body, "file_id").String(), body)
+		status, body = call(t, http.MethodGet, "/v1/files/retrieve?file_id="+task.TaskID, "")
+		require.Equal(t, http.StatusOK, status, body)
+		assert.Equal(t, "t2a_async_output", gjson.Get(body, "file.purpose").String(), body)
+		assert.Equal(t, task.TaskID+".mp3", gjson.Get(body, "file.filename").String(), body)
+		assert.NotEmpty(t, gjson.Get(body, "file.download_url").String(), body)
+		assert.NotContains(t, body, "cdn.example", "the audio is served at the gateway's address")
+
+		// A synthesis Baidu fails costs nothing.
+		before = spent(t)
+		status, body = call(t, http.MethodPost, "/v1/t2a_async_v2", speech)
+		require.Equal(t, http.StatusOK, status, body)
+		failed := `{"taskId":"tsk-async-1","type":"TTS","status":"FAILED","ttsTaskInfo":{"code":"1013","errMsg":"Audio synthesis failed due to invalid input"}}`
+		reply.Store(&failed)
+		task = poll(t, channel)
+		assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), task.Status)
+		assert.Contains(t, task.FailReason, "invalid input")
+		assert.Zero(t, spent(t)-before, "the reservation is returned")
+		status, body = call(t, http.MethodGet, "/v1/query/t2a_async_query_v2?task_id="+task.TaskID, "")
+		require.Equal(t, http.StatusOK, status, body)
+		assert.Equal(t, "Failed", gjson.Get(body, "status").String(), body)
+
+		// A text in a file cannot be counted, so it is not sent.
+		harness.upstream.reset()
+		before = spent(t)
+		status, body = call(t, http.MethodPost, "/v1/t2a_async_v2", `{"model":"speech-2.8-hd","text_file_id":"file-1","voice_setting":{"voice_id":"voice-1"}}`)
+		assert.Equal(t, http.StatusOK, status)
+		assert.NotZero(t, gjson.Get(body, "base_resp.status_code").Int(), body)
+		assert.Contains(t, body, "text_file_id is not supported")
+		assert.Empty(t, harness.upstream.captured())
+		assert.Zero(t, spent(t)-before)
+	})
+
+	// Baidu charges for a designed voice when it is first used, which the
+	// gateway cannot see, so the voice is charged when it is made, with the
+	// characters of its preview: 1 voice and 11 characters.
+	t.Run("voice design", func(t *testing.T) {
+		const design = `{"prompt":"温柔的女声","preview_text":"你好, world","voice_id":"myVoice01"}`
+		install(t, key+"|ak-test|sk-test")
+		designed := `{"voice_id":"myVoice01","trial_audio":"fffb9064","trial_audio_url":"https://cdn.example/design.mp3","base_resp":{"status_code":0,"status_msg":"OK"}}`
+		var answer atomic.Pointer[string]
+		answer.Store(&designed)
+		harness.upstream.respond = func(w http.ResponseWriter, _ int, _ capturedRequest) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, *answer.Load())
+		}
+		harness.upstream.reset()
+		before := spent(t)
+
+		status, body := call(t, http.MethodPost, "/v1/voice_design", design)
+
+		require.Equal(t, http.StatusOK, status, body)
+		assert.Equal(t, "myVoice01", gjson.Get(body, "voice_id").String(), body)
+		requests := harness.upstream.captured()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "/v2/mini/voice_design", requests[0].URL)
+		assert.True(t, strings.HasPrefix(requests[0].Header.Get("Authorization"), "bce-auth-v1/ak-test/"), requests[0].Header.Get("Authorization"))
+		assert.JSONEq(t, design, requests[0].Body, "a voice design names no model")
+		assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), lastTask(t).Status)
+		assert.Equal(t, quota(1+11*200.0/1_000_000), spent(t)-before)
+
+		// A voice Baidu does not make costs nothing.
+		refused := `{"base_resp":{"status_code":2013,"status_msg":"invalid prompt"}}`
+		answer.Store(&refused)
+		before = spent(t)
+		status, body = call(t, http.MethodPost, "/v1/voice_design", design)
+		assert.Equal(t, http.StatusOK, status)
+		assert.NotZero(t, gjson.Get(body, "base_resp.status_code").Int(), body)
+		assert.Zero(t, spent(t)-before)
+
+		// A preview past Baidu's longest is not sent.
+		harness.upstream.reset()
+		status, body = call(t, http.MethodPost, "/v1/voice_design", `{"prompt":"a voice","preview_text":"`+strings.Repeat("a", 501)+`"}`)
+		assert.Equal(t, http.StatusOK, status)
+		assert.Contains(t, body, "preview_text must be at most 500 characters")
+		assert.Empty(t, harness.upstream.captured())
+		assert.Zero(t, spent(t)-before)
+	})
 }
 
 // Fork: every request quantity the plugin turns into usage is bounded before
@@ -700,7 +898,52 @@ func TestBaiduTaskPluginBoundsWhatIsBilled(t *testing.T) {
 		"pixverse conditions": {
 			decode: "createPixverseVideo", path: pixverse,
 			body: `{"model":"pixverse5.5","prompt":"a cat","duration":"8","quality":"1080P","motion_mode":"fast","generate_audio_switch":true,"generate_multi_clip_switch":true,"image_list":[{"image_url":"https://cdn.example/a.png"}]}`,
-			want: map[string]any{"seconds": float64(8), "resolution": "1080p", "motion_mode": "fast", "audio": "on", "multi_clip": true},
+			want: map[string]any{"seconds": float64(8), "resolution": "1080p", "motion_mode": "fast", "audio": "on", "multi_clip": true, "operation": "generate"},
+		},
+		"pixverse extend by the requested duration": {
+			decode: "createPixverseVideo", path: "/openapi/v2/video/extend/generate",
+			body: `{"model":"v6","source_video_url":"https://cdn.example/in.mp4","prompt":"go on","duration":12,"quality":"1080p","water_mark":false}`,
+			want: map[string]any{"seconds": float64(12), "resolution": "1080p", "motion_mode": "normal", "audio": "off", "multi_clip": false, "operation": "extend"},
+		},
+		"pixverse extend of a media id": {
+			decode: "createPixverseVideo", path: "/openapi/v2/video/extend/generate",
+			body: `{"model":"v6","video_media_id":"mda-other","prompt":"go on","duration":5,"quality":"720p"}`, wantErr: "video_media_id is not supported; send source_video_url",
+		},
+		"pixverse fusion model outside its list": {
+			decode: "createPixverseVideo", path: "/openapi/v2/video/fusion/generate",
+			body: `{"model":"v6","prompt":"@cat runs","duration":5,"quality":"720p"}`, wantErr: "model must be one of v4.5, v5, v5.5, v5.6 on this endpoint",
+		},
+		"kling effect from Baidu's list": {
+			decode: "createKlingEffect", path: "/v1/videos/effects",
+			body: `{"effect_scene":"bicycle_kick","input":{"image":"https://cdn.example/a.png"}}`, want: map[string]any{"units": float64(12)},
+		},
+		"kling effect the list writes with a space": {
+			decode: "createKlingEffect", path: "/v1/videos/effects",
+			body: `{"effect_scene":"twist_ shake","input":{"image":"https://cdn.example/a.png"}}`, want: map[string]any{"units": 2.5},
+		},
+		"kling effect the list lacks": {
+			decode: "createKlingEffect", path: "/v1/videos/effects",
+			body: `{"effect_scene":"brand_new_effect","input":{"image":"https://cdn.example/a.png"}}`,
+			// The dearest of the list.
+			want: map[string]any{"units": float64(12)},
+		},
+		"kling effect without a scene": {
+			decode: "createKlingEffect", path: "/v1/videos/effects",
+			body: `{"input":{"image":"https://cdn.example/a.png"}}`, wantErr: "effect_scene is required",
+		},
+		"hailuo v1 by default": {
+			decode: "createHailuoTask", path: "/v1/video_generation",
+			body: `{"model":"MiniMax-Hailuo-02","prompt":"a cat","first_frame_image":"https://cdn.example/a.png"}`,
+			want: map[string]any{"seconds": float64(6), "resolution": "768P", "input_images": float64(0), "input_video_seconds": float64(0)},
+		},
+		"hailuo v1 resolution it cannot read": {
+			decode: "createHailuoTask", path: "/v1/video_generation",
+			body: `{"model":"MiniMax-Hailuo-2.3","prompt":"a cat","duration":6,"resolution":"4K"}`,
+			want: map[string]any{"seconds": float64(6), "resolution": "1080P", "input_images": float64(0), "input_video_seconds": float64(0)},
+		},
+		"hailuo v1 duration the model lacks": {
+			decode: "createHailuoTask", path: "/v1/video_generation",
+			body: `{"model":"MiniMax-Hailuo-2.3","prompt":"a cat","duration":7}`, wantErr: "MiniMax-Hailuo-2.3 duration must be 6 or 10",
 		},
 		"pixverse duration past the longest": {
 			decode: "createPixverseVideo", path: pixverse,
@@ -745,6 +988,18 @@ func TestBaiduTaskPluginBoundsWhatIsBilled(t *testing.T) {
 		"speech past the longest text": {
 			decode: "createSpeech", path: "/v1/t2a_v2",
 			body: `{"model":"speech-02-turbo","text":"` + strings.Repeat("好", 5000) + `a"}`, wantErr: "text must be at most 10000 characters",
+		},
+		"asynchronous speech at the longest text": {
+			decode: "createAsyncSpeech", path: "/v1/t2a_async_v2",
+			body: `{"model":"speech-2.8-turbo","text":"` + strings.Repeat("好", 25000) + `"}`, want: map[string]any{"characters": float64(50000)},
+		},
+		"asynchronous speech past the longest text": {
+			decode: "createAsyncSpeech", path: "/v1/t2a_async_v2",
+			body: `{"model":"speech-2.8-turbo","text":"` + strings.Repeat("好", 25000) + `a"}`, wantErr: "text must be at most 50000 characters",
+		},
+		"voice design with its preview": {
+			decode: "createVoiceDesign", path: "/v1/voice_design",
+			body: `{"prompt":"a calm voice","preview_text":"你好, world"}`, want: map[string]any{"voices": float64(1), "characters": float64(11)},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -792,6 +1047,21 @@ func TestBaiduTaskPluginBoundsWhatIsBilled(t *testing.T) {
 			model: "MiniMax-H3", state: map[string]any{"vendor": "minimax"},
 			reply: `{"task":{"status":"succeeded","resolution":"8K","usage":{"output_seconds":900,"input_seconds":4,"input_image_count":-1}}}`,
 			want:  map[string]any{"input_video_seconds": float64(4)},
+		},
+		"kling effect cannot settle above the list": {
+			model: "kling-effects", state: map[string]any{"vendor": "kling", "api": "effects", "endpoint": "effects", "reserved": 4},
+			reply: `{"code":0,"data":{"task_status":"succeed","final_unit_deduction":"99"}}`,
+			want:  map[string]any{"units": float64(4)},
+		},
+		"kling effect without a deduction keeps the reservation": {
+			model: "kling-effects", state: map[string]any{"vendor": "kling", "api": "effects", "endpoint": "effects", "reserved": 4},
+			reply: `{"code":0,"data":{"task_status":"succeed","final_unit_deduction":"0"}}`,
+			want:  nil,
+		},
+		"hailuo v1 settles the resolution of the video": {
+			model: "MiniMax-Hailuo-2.3", state: map[string]any{"vendor": "minimax", "api": "v1"},
+			reply: `{"status":"Success","video_width":1920,"video_height":1080}`,
+			want:  map[string]any{"resolution": "1080P"},
 		},
 		"seedance settles the tokens Ark reports": {
 			model: "doubao-seedance-2-5-260628", state: map[string]any{"vendor": "seedance"},
@@ -869,9 +1139,12 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 		sent                      string
 		vendorSubmit, baiduSubmit string
 		vendorQuery, baiduQuery   string
-		created, done, failed     string
-		facts                     string
-		reserved, settled         float64
+		// vendorRetrieve is the request the vendor's plugin makes for the
+		// video's address before it fetches the video, if any.
+		vendorRetrieve        string
+		created, done, failed string
+		facts                 string
+		reserved, settled     float64
 		// retrieved is what the plugin adds to the video the host renders.
 		retrieved, retrievedFailed string
 		refusals                   []refusal
@@ -979,6 +1252,28 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 				{`{"model":"MiniMax-H3","seconds":5,"metadata":{"reference_video":"https://cdn.example/in.mp4"}}`, "MiniMax-H3 requires a non-empty text item"},
 			},
 		},
+		{
+			name: "minimax hailuo v1", model: "MiniMax-Hailuo-02", vendor: "hailuo", vendorType: constant.ChannelTypeMiniMax,
+			expression:   `u("resolution") == "1080P" ? tier("1080P", u("seconds") * 0.06) : tier("other", u("seconds") * 0.03)`,
+			body:         `{"model":"MiniMax-Hailuo-02","prompt":"a cat","seconds":6,"size":"1920x1080","input_reference":"` + image + `","metadata":{"prompt_optimizer":false}}`,
+			sent:         `{"model":"MiniMax-Hailuo-02","prompt":"a cat","duration":6,"resolution":"1080P","prompt_optimizer":false,"first_frame_image":"` + image + `"}`,
+			vendorSubmit: "/v1/video_generation", baiduSubmit: "/v3/aigc/minimax/v1/video_generation",
+			vendorQuery: "/v1/query/video_generation?task_id=tsk-mv1", baiduQuery: "/v3/aigc/minimax/v1/query/video_generation?task_id=tsk-mv1",
+			// MiniMax hands out the video's address for its file id only; Baidu
+			// reports it with the status. The fake upstream answers the file
+			// request with the status reply, which holds both.
+			vendorRetrieve: "/v1/files/retrieve?file_id=f-1",
+			created:        `{"task_id":"tsk-mv1","base_resp":{"status_code":0,"status_msg":"success"}}`,
+			done:           `{"task_id":"tsk-mv1","status":"Success","file_id":"f-1","video_width":1366,"video_height":768,"file":{"file_id":"f-1","download_url":"` + video + `"},"base_resp":{"status_code":0,"status_msg":"success"}}`,
+			failed:         `{"task_id":"tsk-mv1","status":"Fail","base_resp":{"status_code":1026,"status_msg":"blocked"}}`,
+			// 6 s at the size's 1080P; the 1366x768 video settles at 768P.
+			facts: `{"seconds":6,"resolution":"1080P","input_images":0,"input_video_seconds":0}`, reserved: 0.36, settled: 0.18,
+			retrieved: `{}`, retrievedFailed: `{"error":{"message":"blocked","code":"1026"}}`,
+			refusals: []refusal{
+				{`{"model":"MiniMax-Hailuo-02","prompt":"a cat","seconds":7}`, "MiniMax-Hailuo-02 duration must be 6 or 10"},
+				{`{"model":"MiniMax-Hailuo-02","prompt":"a cat","seconds":10,"size":"1920x1080"}`, "MiniMax-Hailuo-02 duration 10 only allows resolution 768P"},
+			},
+		},
 	}
 
 	own := []struct {
@@ -995,12 +1290,12 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 		{
 			name: "pixverse from a size", body: `{"model":"pixversev5.6","prompt":"a cat","seconds":8,"size":"1920x1080","metadata":{"motion_mode":"fast","generate_audio_switch":true}}`,
 			path: "/v3/aigc/pv/video/text/generate", sent: `{"model":"v5.6","prompt":"a cat","aspect_ratio":"16:9","motion_mode":"fast","generate_audio_switch":true,"duration":8,"quality":"1080p"}`,
-			created: `{"taskId":"tsk-p1"}`, facts: `{"seconds":8,"resolution":"1080p","motion_mode":"fast","audio":"on","multi_clip":false}`, reserved: 0.8,
+			created: `{"taskId":"tsk-p1"}`, facts: `{"seconds":8,"resolution":"1080p","motion_mode":"fast","audio":"on","multi_clip":false,"operation":"generate"}`, reserved: 0.8,
 		},
 		{
 			name: "pixverse by default with an image", body: `{"model":"pixverse5.5","prompt":"a cat","image":"` + image + `"}`,
 			path: "/v3/aigc/pv/video/img/generate", sent: `{"model":"v5.5","prompt":"a cat","image_list":[{"image_url":"` + image + `"}],"duration":5,"quality":"720p"}`,
-			created: `{"taskId":"tsk-p1"}`, facts: `{"seconds":5,"resolution":"720p","motion_mode":"normal","audio":"off","multi_clip":false}`, reserved: 0.5,
+			created: `{"taskId":"tsk-p1"}`, facts: `{"seconds":5,"resolution":"720p","motion_mode":"normal","audio":"off","multi_clip":false,"operation":"generate"}`, reserved: 0.5,
 		},
 		{name: "pixverse past the longest", body: `{"model":"pixversev6.0","prompt":"a cat","seconds":16}`, message: "duration must be an integer from 1 to 15"},
 		{name: "pixverse action outside the list", body: `{"model":"pixversev6.0","prompt":"a cat","metadata":{"action":"extend"}}`, message: "metadata.action must be one of text_to_video, image_to_video, first_tail_to_video"},
@@ -1211,9 +1506,13 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 				result.retrieve = object(t, body)
 				status, result.content = get(t, "/v1/videos/"+task.TaskID+"/content")
 				require.Equal(t, http.StatusOK, status, result.content)
-				// The submissions, the poll and the video.
+				// The submissions, the poll, the vendor's file request and the video.
 				result.requests = harness.upstream.captured()
-				require.Len(t, result.requests, len(channels)+2)
+				fetches := 2
+				if tc.vendorRetrieve != "" && channels[len(channels)-1].Type == tc.vendorType {
+					fetches = 3
+				}
+				require.Len(t, result.requests, len(channels)+fetches)
 
 				// A task the vendor fails costs nothing.
 				failing.Store(int32(len(channels) - 1))
@@ -1236,7 +1535,15 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 			// Each channel is asked in its own way for the same thing.
 			assert.Equal(t, constant.TaskPlatform(tc.vendor), vendor.platform)
 			assert.Equal(t, constant.TaskPlatform("vod-baidu-task"), baidu.platform)
-			assert.Equal(t, []string{tc.vendorSubmit, tc.vendorQuery, "/files/video.mp4"}, []string{vendor.requests[0].URL, vendor.requests[1].URL, vendor.requests[2].URL})
+			vendorRequests := []string{tc.vendorSubmit, tc.vendorQuery, tc.vendorRetrieve, "/files/video.mp4"}
+			if tc.vendorRetrieve == "" {
+				vendorRequests = slices.Delete(vendorRequests, 2, 3)
+			}
+			sentURLs := make([]string, 0, len(vendor.requests))
+			for _, request := range vendor.requests {
+				sentURLs = append(sentURLs, request.URL)
+			}
+			assert.Equal(t, vendorRequests, sentURLs)
 			assert.Equal(t, []string{tc.baiduSubmit, tc.baiduQuery, "/files/video.mp4"}, []string{baidu.requests[0].URL, baidu.requests[1].URL, baidu.requests[2].URL})
 			assert.Equal(t, "Bearer "+key, baidu.requests[0].Header.Get("Authorization"))
 			assert.Equal(t, "Bearer "+key, baidu.requests[1].Header.Get("Authorization"))
