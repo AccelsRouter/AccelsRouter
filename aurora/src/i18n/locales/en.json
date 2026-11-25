@@ -19,6 +19,7 @@
     "Nature": "Nature",
     "No channel bound yet": "No channel bound yet",
     "No supplier record with this name. Saving creates one with the same name.": "No supplier record with this name. Saving creates one with the same name.",
+    "Supplier record {{code}} already uses this name": "Supplier record {{code}} already uses this name",
     "No supplier record with this name.": "No supplier record with this name.",
     "No supplier with this name yet; a new one is created on save.": "No supplier with this name yet; a new one is created on save.",
     "Pick models from this supplier's model list": "Pick models from this supplier's model list",

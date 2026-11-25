@@ -1077,4 +1077,5 @@ export const STATIC_I18N_KEYS = [
   'Bind the channel to this supplier first',
   'Changed the channels of supplier {{id}}',
   'Pulled {{count}} models from channel {{channel_id}} into supplier {{id}}',
+  'Supplier record {{code}} already uses this name',
 ] as const

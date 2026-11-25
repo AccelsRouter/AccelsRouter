@@ -440,6 +440,10 @@ func migrateDB() error {
 	if err := backfillCustomerOrgOwners(); err != nil {
 		return err
 	}
+	// Fork: supplier records take their BD supplier company code.
+	if err := backfillSupplierCodes(); err != nil {
+		return err
+	}
 	if err := EncryptExistingByokKeys(); err != nil {
 		return err
 	}

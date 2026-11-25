@@ -19,6 +19,7 @@
     "Nature": "性质",
     "No channel bound yet": "还没有绑定渠道",
     "No supplier record with this name. Saving creates one with the same name.": "没有同名的供应商档案，保存后将自动新建同名档案。",
+    "Supplier record {{code}} already uses this name": "供应商档案 {{code}} 已使用这个名称",
     "No supplier record with this name.": "没有同名的供应商档案。",
     "No supplier with this name yet; a new one is created on save.": "暂无同名供应商，保存后新建。",
     "Pick models from this supplier's model list": "请从该供应商的模型列表中选择",
