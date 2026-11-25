@@ -199,8 +199,7 @@ func TestBaiduTaskPluginLeavesSharedModelsToTheirPlugins(t *testing.T) {
 			assert.Equal(t, ownerSchema[field].Enum, declared.Enum, name+" "+field)
 		}
 	}
-	assert.Equal(t, []string{"doubao", "hailuo", "kling", "vidu"}, slices.Sorted(maps.Keys(shared)))
-	assert.Len(t, shared["doubao"], 4)
+	assert.Equal(t, []string{"hailuo", "kling", "vidu"}, slices.Sorted(maps.Keys(shared)))
 	assert.ElementsMatch(t, []string{"kling-4.0", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"}, shared["kling"])
 	assert.ElementsMatch(t, []string{"MiniMax-H3", "MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast", "MiniMax-Hailuo-02"}, shared["hailuo"])
 	assert.Len(t, shared["vidu"], 13)
@@ -299,19 +298,6 @@ func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
 		// statusPath is the client's status request, answered with wantStatus.
 		statusPath, wantStatus string
 	}{
-		{
-			name: "seedance", model: "doubao-seedance-2-0-260128", expression: `tier("base", u("tokens") * 10 / 1000000)`,
-			path:       "/api/v3/contents/generations/tasks",
-			body:       `{"model":"doubao-seedance-2-0-260128","content":[{"type":"text","text":"a cat"}],"duration":5,"resolution":"720p"}`,
-			submitPath: "/async/seedance/api/v3/contents/generations/tasks", queryPath: "/async/seedance/api/v3/contents/generations/tasks/cgt-1",
-			created: `{"id":"cgt-1"}`,
-			running: `{"id":"cgt-1","status":"running"}`,
-			done:    `{"id":"cgt-1","status":"succeeded","resolution":"720p","content":{"video_url":"https://cdn.example/seedance.mp4"},"usage":{"completion_tokens":100000,"total_tokens":100000}}`,
-			failed:  `{"id":"cgt-1","status":"failed","error":{"message":"blocked"}}`,
-			// 5 s x 1280 x 720 x 24 / 1024 = 108000 tokens; Ark reports 100000.
-			reserved: 1.08, settled: 1,
-			statusPath: "/api/v3/contents/generations/tasks/", wantStatus: `"status":"succeeded"`,
-		},
 		{
 			name: "kling 4.0", model: "kling-4.0", expression: `tier("base", u("units") * 0.1)`,
 			path: "/text-to-video/kling-4.0", body: `{"prompt":"a cat","settings":{"duration":5,"resolution":"720p"}}`,
@@ -458,11 +444,12 @@ func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
 		},
 	}
 
-	const speechModel, voiceDesignModel = "speech-2.8-hd", "minimax-voice-design"
-	modes := map[string]string{speechModel: "tiered_expr", voiceDesignModel: "tiered_expr"}
+	const speechModel, voiceDesignModel, seedanceModel = "speech-2.8-hd", "minimax-voice-design", "doubao-seedance-2-0-260128"
+	modes := map[string]string{speechModel: "tiered_expr", voiceDesignModel: "tiered_expr", seedanceModel: "tiered_expr"}
 	expressions := map[string]string{
 		speechModel:      `tier("base", u("characters") * 500 / 1000000)`,
 		voiceDesignModel: `tier("base", u("voices") * 1 + u("characters") * 200 / 1000000)`,
+		seedanceModel:    `tier("base", u("tokens") * 10 / 1000000)`,
 	}
 	models := []string{speechModel, voiceDesignModel}
 	for _, tc := range cases {
@@ -785,6 +772,50 @@ func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
 		assert.Empty(t, harness.upstream.captured())
 		assert.Zero(t, spent(t)-before)
 	})
+
+	// Baidu serves Seedance at its new system's /async/seedance prefix with
+	// Ark's own paths and a Bearer key, so this plugin leaves it to the doubao
+	// plugin on a Doubao video channel whose Base URL is that prefix.
+	t.Run("seedance on a Doubao video channel", func(t *testing.T) {
+		channel := harness.newChannel(constant.ChannelTypeDoubaoVideo, key)
+		baseURL := harness.upstream.URL + "/async/seedance"
+		channel.BaseURL, channel.Models = &baseURL, seedanceModel
+		harness.install(t, channel)
+		running := `{"id":"cgt-1","status":"running"}`
+		var reply atomic.Pointer[string]
+		reply.Store(&running)
+		harness.upstream.respond = func(w http.ResponseWriter, _ int, request capturedRequest) {
+			w.Header().Set("Content-Type", "application/json")
+			if request.Method == http.MethodPost {
+				_, _ = io.WriteString(w, `{"id":"cgt-1"}`)
+				return
+			}
+			_, _ = io.WriteString(w, *reply.Load())
+		}
+		harness.upstream.reset()
+		before := spent(t)
+
+		status, body := call(t, http.MethodPost, "/api/v3/contents/generations/tasks", `{"model":"doubao-seedance-2-0-260128","content":[{"type":"text","text":"a cat"}],"duration":5,"resolution":"720p"}`)
+
+		require.Equal(t, http.StatusOK, status, body)
+		assert.Equal(t, constant.TaskPlatform("doubao"), lastTask(t).Platform)
+		// 5 s x 1280 x 720 x 24 / 1024 = 108000 tokens are reserved.
+		assert.Equal(t, quota(1.08), spent(t)-before)
+		poll(t, channel)
+		requests := harness.upstream.captured()
+		require.Len(t, requests, 2)
+		assert.Equal(t, "/async/seedance/api/v3/contents/generations/tasks", requests[0].URL)
+		assert.Equal(t, "/async/seedance/api/v3/contents/generations/tasks/cgt-1", requests[1].URL)
+		for _, request := range requests {
+			assert.Equal(t, "Bearer "+key, request.Header.Get("Authorization"))
+		}
+
+		done := `{"id":"cgt-1","status":"succeeded","resolution":"720p","content":{"video_url":"https://cdn.example/seedance.mp4"},"usage":{"completion_tokens":100000,"total_tokens":100000}}`
+		reply.Store(&done)
+		task := poll(t, channel)
+		assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), task.Status)
+		assert.Equal(t, quota(1), spent(t)-before, "the tokens Ark reports are settled")
+	})
 }
 
 // Fork: every request quantity the plugin turns into usage is bounded before
@@ -816,8 +847,8 @@ func TestBaiduTaskPluginBoundsWhatIsBilled(t *testing.T) {
 		return object(t, usage), nil
 	}
 	const (
-		seedance, klingVideo, vidu = "/api/v3/contents/generations/tasks", "/v1/videos/", "/ent/v2/"
-		pixverse, happyHorse       = "/openapi/v2/video/img/generate", "/api/v1/services/aigc/video-generation/video-synthesis"
+		klingVideo, vidu     = "/v1/videos/", "/ent/v2/"
+		pixverse, happyHorse = "/openapi/v2/video/img/generate", "/api/v1/services/aigc/video-generation/video-synthesis"
 	)
 
 	for name, tc := range map[string]struct {
@@ -825,17 +856,6 @@ func TestBaiduTaskPluginBoundsWhatIsBilled(t *testing.T) {
 		want               map[string]any
 		wantErr            string
 	}{
-		"seedance picks the length": {
-			decode: "createSeedanceTask", path: seedance,
-			body: `{"model":"doubao-seedance-2-0-fast-260128","duration":-1,"content":[{"type":"text","text":"a cat"},{"type":"video_url","video_url":{"url":"https://cdn.example/in.mp4"}}]}`,
-			// The longest, 15 s, at the model's highest resolution, 720p.
-			want: map[string]any{"tokens": float64(15 * 1280 * 720 * 24 / 1024), "resolution": "720p", "video_input": "video"},
-		},
-		"seedance resolution the model lacks": {
-			decode: "createSeedanceTask", path: seedance,
-			body:    `{"model":"doubao-seedance-2-0-fast-260128","resolution":"1080p","content":[{"type":"text","text":"a cat"}]}`,
-			wantErr: "resolution must be one of 480p, 720p",
-		},
 		"kling 4.0 flash follows an input video": {
 			decode: "kling_omni_video_kling_4_0_flash", path: "/omni-video/kling-4.0-flash",
 			body: `{"contents":[{"type":"prompt","text":"a cat"},{"type":"base_video","url":"https://cdn.example/in.mp4"}]}`,
@@ -1063,11 +1083,6 @@ func TestBaiduTaskPluginBoundsWhatIsBilled(t *testing.T) {
 			reply: `{"status":"Success","video_width":1920,"video_height":1080}`,
 			want:  map[string]any{"resolution": "1080P"},
 		},
-		"seedance settles the tokens Ark reports": {
-			model: "doubao-seedance-2-5-260628", state: map[string]any{"vendor": "seedance"},
-			reply: `{"status":"succeeded","usage":{"completion_tokens":0,"total_tokens":246840},"content":{"resolution":"4k"}}`,
-			want:  map[string]any{"tokens": float64(246840)},
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var reply any
@@ -1149,27 +1164,6 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 		retrieved, retrievedFailed string
 		refusals                   []refusal
 	}{
-		{
-			name: "seedance", model: "doubao-seedance-2-0-260128", vendor: "doubao", vendorType: constant.ChannelTypeDoubaoVideo,
-			expression:   `u("video_input") == "video" ? tier("video", u("tokens") * 6 / 1000000) : tier("base", u("tokens") * 10 / 1000000)`,
-			body:         `{"model":"doubao-seedance-2-0-260128","prompt":"a cat","seconds":"5","size":"1280x720","input_reference":"` + image + `","metadata":{"watermark":false,"content":[{"type":"text","text":"ignored"},{"type":"video_url","video_url":{"url":"https://cdn.example/in.mp4"}}]}}`,
-			sent:         `{"model":"doubao-seedance-2-0-260128","watermark":false,"content":[{"type":"image_url","image_url":{"url":"` + image + `"}},{"type":"video_url","video_url":{"url":"https://cdn.example/in.mp4"}},{"type":"text","text":"a cat"}],"duration":5}`,
-			vendorSubmit: "/api/v3/contents/generations/tasks", baiduSubmit: "/async/seedance/api/v3/contents/generations/tasks",
-			vendorQuery: "/api/v3/contents/generations/tasks/cgt-1", baiduQuery: "/async/seedance/api/v3/contents/generations/tasks/cgt-1",
-			created: `{"id":"cgt-1"}`,
-			done:    `{"id":"cgt-1","status":"succeeded","resolution":"720p","content":{"video_url":"` + video + `"},"usage":{"completion_tokens":100000,"total_tokens":100000}}`,
-			failed:  `{"id":"cgt-1","status":"failed","error":{"code":"OutputVideoSensitiveContentDetected","message":"blocked"}}`,
-			// 5 s x 1280 x 720 x 24 / 1024 tokens at the size's tier; Ark reports 100000.
-			facts:    `{"tokens":108000,"resolution":"720p","video_input":"video"}`,
-			reserved: 0.648, settled: 0.6,
-			retrieved: `{}`, retrievedFailed: `{"error":{"message":"blocked","code":"OutputVideoSensitiveContentDetected"}}`,
-			refusals: []refusal{
-				// Refused by the decoders, before a channel is picked.
-				{`{"model":"doubao-seedance-2-0-260128","prompt":"a cat","seconds":0}`, "seconds must be -1 or between 1 and 3600"},
-				// Refused when the request is built, on the channel.
-				{`{"model":"doubao-seedance-2-0-fast-260128","prompt":"a cat","size":"1920x1080"}`, "doubao-seedance-2-0-fast-260128 resolution must be one of 480p, 720p"},
-			},
-		},
 		{
 			name: "kling v3", model: "kling-v3", vendor: "kling", vendorType: constant.ChannelTypeKling, expression: `tier("base", u("units") * 0.1)`,
 			body:         `{"model":"kling-v3","prompt":"a cat","seconds":10,"size":"720x1280","mode":"pro","metadata":{"sound":"on","negative_prompt":"blur"}}`,
@@ -1346,12 +1340,11 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 	}
 
 	modes, expressions := map[string]string{}, map[string]string{}
-	models := []string{"doubao-seedance-2-0-fast-260128"}
+	models := []string{}
 	for _, tc := range shared {
 		modes[tc.model], expressions[tc.model] = "tiered_expr", tc.expression
 		models = append(models, tc.model)
 	}
-	modes["doubao-seedance-2-0-fast-260128"], expressions["doubao-seedance-2-0-fast-260128"] = "tiered_expr", shared[0].expression
 	for _, tc := range own {
 		name := gjson.Get(tc.body, "model").String()
 		usage := "seconds"

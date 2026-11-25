@@ -6,7 +6,12 @@
 // vendor's own path and gets the vendor's own reply, or calls /v1/videos, the
 // OpenAI video protocol, for any of the video models.
 //
-// The key sorts after alibaba, doubao, hailuo, kling and vidu on purpose. The
+// Seedance is not served here: Baidu serves it at its new system's
+// /async/seedance prefix followed by Ark's own paths and Bearer key, which the
+// doubao plugin sends unchanged on a Doubao video channel (type 54) whose Base
+// URL is https://vod.gz.baidubce.com/async/seedance.
+//
+// The key sorts after alibaba, hailuo, kling and vidu on purpose. The
 // host gives a model several plugins declare to the first of them in key order
 // for its model-level price labels, and a path several plugins declare to the
 // first of them for a request no channel has been chosen for. Those plugins
@@ -18,7 +23,6 @@
 // output second with the conditions Baidu's price list tells apart.
 //
 // Addresses, from Baidu's interface documents:
-//   Seedance      {new system}/async/seedance + Ark paths
 //   Kling 4.0, 3.0 Turbo  {new system}/async/kling + /{endpoint}/{model}
 //   Kling, model_name API {Base URL}/v3/aigc/kl + /videos/{endpoint}
 //   Kling video effects   {Base URL}/v3/aigc/kl + /videos/effects
@@ -51,48 +55,6 @@ const AUDIO_FIELD = {
   enumLabels: { off: { en: "Silent", zh: "无声" }, on: { en: "With audio", zh: "有声" } },
   description: { en: "Audio output", zh: "音频输出" },
 };
-
-// ---------------------------------------------------------------------------
-// Seedance. The capabilities and the usage facts of the doubao plugin, whose
-// models these are: Ark bills tokens by output resolution and by whether the
-// request carries a reference video.
-// ---------------------------------------------------------------------------
-const SEEDANCE_MODELS = {
-  "doubao-seedance-2-0-260128": { resolutions: ["480p", "720p", "1080p", "4k"], maxDuration: 15 },
-  "doubao-seedance-2-0-fast-260128": { resolutions: ["480p", "720p"], maxDuration: 15 },
-  "doubao-seedance-2-0-mini-260615": { resolutions: ["480p", "720p"], maxDuration: 15 },
-  "doubao-seedance-2-5-260628": { resolutions: ["480p", "720p", "1080p"], maxDuration: 30 },
-};
-const SEEDANCE_RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
-// A channel may map a declared model to a name outside the table.
-const DEFAULT_SEEDANCE_MODEL = { resolutions: SEEDANCE_RESOLUTIONS, maxDuration: 30 };
-
-function seedanceUsageSchema(profile) {
-  return {
-    // Ark's billing tokens: estimated at submit, reported on completion.
-    tokens: { type: "number", unit: "token", description: { en: "Billing token unit price", zh: "计费 Token 单价" } },
-    resolution: resolutionField(profile.resolutions),
-    video_input: VIDEO_INPUT_FIELD,
-  };
-}
-
-// Ark's formula: tokens = seconds x width x height x 24 / 1024, at the widest
-// 16:9 frame of the resolution so that the estimate is not below the bill.
-const SEEDANCE_FRAMES = { "480p": [854, 480], "720p": [1280, 720], "1080p": [1920, 1080], "4k": [3840, 2160] };
-
-function seedanceTokens(seconds, resolution) {
-  const frame = SEEDANCE_FRAMES[resolution] || SEEDANCE_FRAMES["720p"];
-  return (seconds * frame[0] * frame[1] * 24) / 1024;
-}
-
-function seedanceUsageExamples(profile) {
-  const examples = profile.resolutions.map((resolution) => ({
-    label: resolution + " · 5s",
-    facts: { tokens: Math.round(seedanceTokens(5, resolution)), resolution: resolution, video_input: "none" },
-  }));
-  examples.push({ label: "720p · 5s (+4s 输入视频)", facts: { tokens: Math.round(seedanceTokens(9, "720p")), resolution: "720p", video_input: "video" } });
-  return examples;
-}
 
 // ---------------------------------------------------------------------------
 // Kling. Baidu serves Kling's two API families: the one that takes the model
@@ -416,14 +378,13 @@ const VOICE_DESIGN_USAGE_SCHEMA = {
   characters: { type: "number", unit: "token", description: { en: "Preview synthesis unit price", zh: "试听合成单价" } },
 };
 
-const VIDEO_MODELS = Object.keys(SEEDANCE_MODELS).concat(Object.keys(KLING_PATH_MODELS), KLING_BODY_MODELS, VIDU_MODELS, Object.keys(PIXVERSE_MODELS), HAPPYHORSE_MODELS, [H3_MODEL, H3_MAX_MODEL], HAILUO_MODELS);
-// The video models a vendor's plugin (doubao, kling, vidu, hailuo) declares
+const VIDEO_MODELS = Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS, VIDU_MODELS, Object.keys(PIXVERSE_MODELS), HAPPYHORSE_MODELS, [H3_MODEL, H3_MAX_MODEL], HAILUO_MODELS);
+// The video models a vendor's plugin (kling, vidu, hailuo) declares
 // too. On /v1/videos the host has every plugin that declares a model decode
 // the request before it picks a channel, and the plugin of that channel
 // executes it, so these models are read here exactly as the vendor's plugin
 // reads them: a client must not see which channel served it.
-const SHARED_VIDEO_MODELS = Object.keys(SEEDANCE_MODELS).concat(
-  ["kling-4.0", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"],
+const SHARED_VIDEO_MODELS = ["kling-4.0", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"].concat(
   VIDU_MODELS.filter((model) => model !== "viduq4"),
   [H3_MODEL],
   HAILUO_MODELS
@@ -444,10 +405,10 @@ export const meta = {
   name: { en: "Baidu model service (video and speech)", zh: "百度模型服务（视频与语音）" },
   icon: "BaiduCloud.Color",
   description: {
-    en: "Seedance, Kling, Vidu, PixVerse, HappyHorse and MiniMax video generation, Kling video effects, and MiniMax speech synthesis and voice design through Baidu's model service, in each vendor's own format or the OpenAI video format",
-    zh: "通过百度模型服务调用 Seedance、可灵、Vidu、PixVerse、HappyHorse、MiniMax 视频生成、可灵视频特效，以及 MiniMax 语音合成与音色设计，使用各厂商自己的接口格式或 OpenAI 视频格式",
+    en: "Kling, Vidu, PixVerse, HappyHorse and MiniMax video generation, Kling video effects, and MiniMax speech synthesis and voice design through Baidu's model service, in each vendor's own format or the OpenAI video format",
+    zh: "通过百度模型服务调用可灵、Vidu、PixVerse、HappyHorse、MiniMax 视频生成、可灵视频特效，以及 MiniMax 语音合成与音色设计，使用各厂商自己的接口格式或 OpenAI 视频格式",
   },
-  version: "1.2.0",
+  version: "1.3.0",
   author: { name: "AccelsRouter" },
   baseUrl: "https://vod.bj.baidubce.com",
   allowedHosts: ["vod.gz.baidubce.com"],
@@ -462,7 +423,7 @@ export const meta = {
         type: "string",
         format: "url",
         title: { en: "New system address", zh: "新系统地址" },
-        description: { en: "Serves Seedance, Kling 4.0 and Kling 3.0 Turbo", zh: "用于 Seedance、可灵 4.0 与可灵 3.0 Turbo" },
+        description: { en: "Serves Kling 4.0, 4.0 Flash and 3.0 Turbo", zh: "用于可灵 4.0、4.0 Flash 与 3.0 Turbo" },
         default: "https://vod.gz.baidubce.com",
       },
     },
@@ -474,28 +435,23 @@ export const meta = {
   protocols: [{ name: "openai_video", models: VIDEO_MODELS }],
   // The fallback of a channel alias that resolves to several models.
   usageSchema: { seconds: SECONDS_FIELD },
-  usageProfiles: Object.keys(SEEDANCE_MODELS)
-    .map((model) => ({ models: [model], schema: seedanceUsageSchema(SEEDANCE_MODELS[model]), examples: seedanceUsageExamples(SEEDANCE_MODELS[model]) }))
-    .concat([
-      { models: Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS, [KLING_EFFECTS_MODEL]).filter(klingBilledInUnits), schema: KLING_UNITS_SCHEMA },
-      { models: Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS).filter((model) => !klingBilledInUnits(model)), schema: KLING_SECONDS_SCHEMA },
-      { models: VIDU_MODELS, schema: VIDU_USAGE_SCHEMA },
-      { models: Object.keys(PIXVERSE_MODELS), schema: PIXVERSE_USAGE_SCHEMA },
-      { models: HAPPYHORSE_MODELS, schema: HAPPYHORSE_USAGE_SCHEMA },
-      { models: [H3_MODEL], schema: H3_USAGE_SCHEMA },
-      { models: [H3_MAX_MODEL], schema: H3_MAX_USAGE_SCHEMA },
-      { models: ["MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast"], schema: HAILUO_23_USAGE_SCHEMA },
-      { models: ["MiniMax-Hailuo-02"], schema: HAILUO_02_USAGE_SCHEMA },
-      { models: SPEECH_MODELS, schema: SPEECH_USAGE_SCHEMA, examples: [{ label: "1000 字符", facts: { characters: 1000 } }] },
-      { models: [VOICE_DESIGN_MODEL], schema: VOICE_DESIGN_USAGE_SCHEMA, examples: [{ label: "1 个音色 · 100 字符试听", facts: { voices: 1, characters: 100 } }] },
-    ]),
+  usageProfiles: [
+    { models: Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS, [KLING_EFFECTS_MODEL]).filter(klingBilledInUnits), schema: KLING_UNITS_SCHEMA },
+    { models: Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS).filter((model) => !klingBilledInUnits(model)), schema: KLING_SECONDS_SCHEMA },
+    { models: VIDU_MODELS, schema: VIDU_USAGE_SCHEMA },
+    { models: Object.keys(PIXVERSE_MODELS), schema: PIXVERSE_USAGE_SCHEMA },
+    { models: HAPPYHORSE_MODELS, schema: HAPPYHORSE_USAGE_SCHEMA },
+    { models: [H3_MODEL], schema: H3_USAGE_SCHEMA },
+    { models: [H3_MAX_MODEL], schema: H3_MAX_USAGE_SCHEMA },
+    { models: ["MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast"], schema: HAILUO_23_USAGE_SCHEMA },
+    { models: ["MiniMax-Hailuo-02"], schema: HAILUO_02_USAGE_SCHEMA },
+    { models: SPEECH_MODELS, schema: SPEECH_USAGE_SCHEMA, examples: [{ label: "1000 字符", facts: { characters: 1000 } }] },
+    { models: [VOICE_DESIGN_MODEL], schema: VOICE_DESIGN_USAGE_SCHEMA, examples: [{ label: "1 个音色 · 100 字符试听", facts: { voices: 1, characters: 100 } }] },
+  ],
   // Each vendor's own paths, which the vendor's plugin declares too where
   // there is one; the gateway also serves each under /vod-baidu-task.
-  routes: [
-    { method: "POST", path: "/api/v3/contents/generations/tasks", type: "submit", decode: "createSeedanceTask", render: "seedanceCreated" },
-    { method: "GET", path: "/api/v3/contents/generations/tasks/:task_id", type: "query", render: "seedanceStatus" },
-  ]
-    .concat(klingPathRoutes.map((route) => ({ method: route.method, path: route.path, type: "submit", decode: route.decode, render: "klingPathCreated" })))
+  routes: klingPathRoutes
+    .map((route) => ({ method: route.method, path: route.path, type: "submit", decode: route.decode, render: "klingPathCreated" }))
     .concat([{ method: "GET", path: "/tasks", type: "query", taskIdParam: "task_ids", render: "klingPathTasks" }])
     .concat(KLING_BODY_ENDPOINTS.map((endpoint) => ({ method: "POST", path: "/v1/videos/" + endpoint, type: "submit", decode: "createKlingVideo", render: "klingCreated" })))
     .concat(KLING_BODY_ENDPOINTS.map((endpoint) => ({ method: "GET", path: "/v1/videos/" + endpoint + "/:task_id", type: "query", render: "klingStatus" })))
@@ -579,44 +535,6 @@ function asyncBase(ctx) {
 
 function upstreamModel(ctx) {
   return trimmed(ctx.upstreamModel) || trimmed(ctx.model) || trimmed(plainObject(ctx.requestBody).model);
-}
-
-// ------------------------------- Seedance ---------------------------------
-
-function seedanceProfile(ctx) {
-  for (const model of [ctx.upstreamModel, ctx.model].map(trimmed)) {
-    if (Object.prototype.hasOwnProperty.call(SEEDANCE_MODELS, model)) return SEEDANCE_MODELS[model];
-  }
-  return DEFAULT_SEEDANCE_MODEL;
-}
-
-function seedanceHasVideo(content) {
-  return Array.isArray(content) && content.some((item) => item && (item.type === "video_url" || Object.prototype.hasOwnProperty.call(item, "video_url")));
-}
-
-// The resolution the reservation is estimated at: the requested one, which the
-// model must offer, or the model's highest up to 1080p when Ark picks it.
-function seedanceResolution(ctx, body) {
-  const profile = seedanceProfile(ctx);
-  const raw = trimmed(body.resolution).toLowerCase();
-  if (!SEEDANCE_RESOLUTIONS.includes(raw)) return profile.resolutions.includes("1080p") ? "1080p" : profile.resolutions[profile.resolutions.length - 1];
-  if (!profile.resolutions.includes(raw)) throw new Error(upstreamModel(ctx) + " resolution must be one of " + profile.resolutions.join(", "));
-  return raw;
-}
-
-function seedanceUsage(ctx, body) {
-  const profile = seedanceProfile(ctx);
-  // A missing duration or -1, with which the model picks the length, reserves
-  // the longest the model makes.
-  let seconds = typeof body.duration === "number" || typeof body.duration === "string" ? Number(body.duration) : 0;
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    const frames = Number(body.frames);
-    seconds = Number.isFinite(frames) && frames > 0 ? Math.floor(frames / 24) : profile.maxDuration;
-  }
-  if (seconds <= 0) seconds = 5;
-  seconds = Math.min(seconds, 3600);
-  const resolution = seedanceResolution(ctx, body);
-  return { tokens: seedanceTokens(seconds, resolution), resolution: resolution, video_input: seedanceHasVideo(body.content) ? "video" : "none" };
 }
 
 // --------------------------------- Kling -----------------------------------
@@ -993,32 +911,6 @@ function withTaskId(data, name, id) {
 }
 
 export const native = {
-  // Ark's own body, sent as is for Ark to check. Ark would call callback_url
-  // back with its own task ids, and a draft task names an earlier task by one.
-  createSeedanceTask: function (ctx) {
-    const body = jsonBody(ctx);
-    const model = trimmed(body.model);
-    if (!model) throw new Error("model is required");
-    if (body.callback_url !== undefined && body.callback_url !== null) throw new Error("callback_url is not supported; query the task instead");
-    if (!Array.isArray(body.content) || !body.content.some((item) => item && typeof item === "object" && !Array.isArray(item))) throw new Error("content is required");
-    if (body.content.some((item) => item && item.type === "draft_task")) throw new Error("draft_task content is not supported");
-    const hasReference = body.content.some((item) => item && typeof item === "object" && item.type !== "text");
-    return { kind: "submit", model: model, action: hasReference ? "image_to_video" : "text_to_video", requestBody: { vendor: "seedance", model: model, vendorBody: body } };
-  },
-  seedanceCreated: function (ctx, task) {
-    return withTaskId(task.data, "id", task.task_id);
-  },
-  seedanceStatus: function (ctx, task) {
-    const statuses = { NOT_START: "queued", SUBMITTED: "queued", QUEUED: "queued", IN_PROGRESS: "running", SUCCESS: "succeeded", FAILURE: "failed" };
-    const output = withTaskId(task.data, "id", task.task_id);
-    if (typeof output.status !== "string") output.status = statuses[task.status] || "queued";
-    if (task.status === "FAILURE" && (output.status === "queued" || output.status === "running")) {
-      output.status = "failed";
-      output.error = { code: "InternalServiceError", message: task.fail_reason || "task failed" };
-    }
-    return output;
-  },
-
   klingPathCreated: function (ctx, task) {
     const result = plainObject(task.data);
     return Object.assign({}, result, { data: withTaskId(result.data, "id", task.task_id) });
@@ -1278,7 +1170,6 @@ export const native = {
   // Each vendor's own error reply, by the path the client called.
   error: function (ctx, error) {
     const path = String(ctx.path || "");
-    if (path.indexOf("/api/v3/") >= 0) return { error: { code: error.httpStatus === 400 ? "InvalidParameter" : "InternalServiceError", message: error.message } };
     if (path.indexOf("/openapi/v2/") >= 0) return { ErrCode: error.httpStatus, ErrMsg: error.message };
     if (path.indexOf("/api/v1/") >= 0) return { code: error.code, message: error.message, request_id: error.requestId || "" };
     if (path.indexOf("/ent/v2/") >= 0) return { code: error.code, message: error.message };
@@ -1328,10 +1219,7 @@ export function buildSubmitRequest(ctx) {
   const descriptor = { method: "POST", headers: bearerHeaders(ctx), action: req.action || ctx.action };
   // Reject what cannot be billed before any quota is reserved.
   extractUsage(ctx);
-  if (req.vendor === "seedance") {
-    descriptor.url = asyncBase(ctx) + "/async/seedance/api/v3/contents/generations/tasks";
-    descriptor.body = Object.assign({}, req.vendorBody, { model: model });
-  } else if (req.vendor === "kling" && req.api === "path") {
+  if (req.vendor === "kling" && req.api === "path") {
     descriptor.url = asyncBase(ctx) + "/async/kling/" + req.endpoint + "/" + model;
     descriptor.body = req.vendorBody;
   } else if (req.vendor === "kling" && req.api === "effects") {
@@ -1379,9 +1267,7 @@ export function parseSubmitResponse(ctx, resp) {
   const body = plainObject(resp.body);
   const state = { vendor: req.vendor };
   let taskId = "";
-  if (req.vendor === "seedance") {
-    taskId = trimmed(body.id);
-  } else if (req.vendor === "kling" && req.api === "path") {
+  if (req.vendor === "kling" && req.api === "path") {
     if (body.code !== 0) throw new Error(trimmed(body.message) || "kling submit failed");
     taskId = trimmed(plainObject(body.data).id);
     const profile = KLING_PATH_MODELS[req.model];
@@ -1463,7 +1349,6 @@ export function extractUsage(ctx) {
   if (ctx.usagePurpose === "billing_ratios") return null;
   const req = vendorRequest(ctx);
   const body = req.vendorBody;
-  if (req.vendor === "seedance") return seedanceUsage(ctx, req.reserved || body);
   if (req.vendor === "kling") return klingUsage(ctx, req);
   if (req.vendor === "vidu") return viduUsage(req.endpoint, upstreamModel(ctx), body);
   if (req.vendor === "pixverse") return pixverseUsage(body, req.endpoint);
@@ -1494,8 +1379,7 @@ export function buildQueryRequest(ctx) {
     url = ctx.baseUrl + "/v2/task/" + id;
     return { url: url, method: "GET", headers: Object.assign({ "Content-Type": "application/json", Accept: "application/json" }, bceHeaders("GET", url, parts[1], parts[2])) };
   }
-  if (state.vendor === "seedance") url = asyncBase(ctx) + "/async/seedance/api/v3/contents/generations/tasks/" + id;
-  else if (state.vendor === "kling" && state.api === "path") url = asyncBase(ctx) + "/async/kling/tasks?task_ids=" + id;
+  if (state.vendor === "kling" && state.api === "path") url = asyncBase(ctx) + "/async/kling/tasks?task_ids=" + id;
   else if (state.vendor === "kling") url = ctx.baseUrl + "/v3/aigc/kl/videos/" + state.endpoint + "/" + id;
   else if (state.vendor === "vidu") url = ctx.baseUrl + "/v3/aigc/vd/ent/v2/tasks/" + id + "/creations";
   // Baidu's PixVerse interface has no query of its own.
@@ -1511,14 +1395,6 @@ export function parseTaskResult(ctx, body) {
   const state = plainObject(ctx.state);
   body = plainObject(body);
   if (state.detail) return taskDetailResult(body);
-  if (state.vendor === "seedance") {
-    if (body.status === "queued") return { status: "QUEUED", progress: "10%" };
-    if (body.status === "running") return { status: "IN_PROGRESS", progress: "50%" };
-    if (body.status === "succeeded") return { status: "SUCCESS", progress: "100%", url: trimmed(plainObject(body.content).video_url) };
-    if (body.status === "failed" || body.status === "expired" || body.status === "cancelled")
-      return { status: "FAILURE", progress: "100%", reason: trimmed(plainObject(body.error).message) || body.status };
-    return { status: "UNKNOWN", reason: "unrecognized status: " + trimmed(body.status) };
-  }
   if (state.vendor === "kling" && state.api === "path") {
     const entry = klingPathEntry(body, ctx.taskId);
     const statuses = { submitted: "SUBMITTED", processing: "IN_PROGRESS", succeeded: "SUCCESS", failed: "FAILURE" };
@@ -1597,17 +1473,6 @@ export function extractUsageOnComplete(ctx, _result, body) {
   const state = plainObject(ctx.state);
   body = plainObject(body);
   if (state.detail) return null;
-  if (state.vendor === "seedance") {
-    if (body.status !== "succeeded") return {};
-    const facts = {};
-    const usage = plainObject(body.usage);
-    let tokens = Number(usage.completion_tokens);
-    if (!Number.isFinite(tokens) || tokens <= 0) tokens = Number(usage.total_tokens);
-    if (Number.isFinite(tokens) && tokens > 0) facts.tokens = tokens;
-    const resolution = trimmed(plainObject(body.content).resolution || body.resolution).toLowerCase();
-    if (seedanceProfile(ctx).resolutions.includes(resolution)) facts.resolution = resolution;
-    return facts;
-  }
   if (state.vendor === "kling" && state.api === "path") return klingPathCompleted(ctx, body);
   if (state.vendor === "kling" && state.api === "effects") {
     // The units Kling deducted, never more than the list gives the effect. A
@@ -1678,7 +1543,6 @@ export function extractUsageOnComplete(ctx, _result, body) {
 // The video of a finished task, from the vendor's last reply.
 function taskVideoURL(state, data) {
   if (state.detail || state.vendor === "pixverse") return taskDetailVideoURL(data, 0);
-  if (state.vendor === "seedance") return trimmed(plainObject(data.content).video_url);
   if (state.vendor === "kling" && state.api === "path") {
     const videos = klingPathVideos(klingPathEntry(data));
     return videos.length ? trimmed(videos[0].url) : "";
@@ -1697,8 +1561,8 @@ function taskVideoURL(state, data) {
   return "";
 }
 
-// The artifacts the vendors' plugins list for the same task: the video, and
-// the last frame Ark returns with it when asked to.
+// The artifacts the vendors' plugins list for the same task: the video, or the
+// audio of an asynchronous synthesis.
 export function listArtifacts(task) {
   if (task.status !== "SUCCESS") return [];
   const state = plainObject(task.state);
@@ -1707,7 +1571,6 @@ export function listArtifacts(task) {
   // The audio of an asynchronous synthesis.
   if (state.vendor === "speech" && trimmed(plainObject(data.ttsTaskInfo).url)) artifacts.push({ key: "audio", type: "audio" });
   if (taskVideoURL(state, data)) artifacts.push(state.vendor === "minimax" ? { key: "video", type: "video", mimeType: "video/mp4" } : { key: "video", type: "video" });
-  if (state.vendor === "seedance" && trimmed(plainObject(data.content).last_frame_url)) artifacts.push({ key: "last_frame", type: "image", mimeType: "image/png" });
   return artifacts;
 }
 
@@ -1717,7 +1580,6 @@ export function buildContentRequest(ctx) {
   const data = plainObject(ctx.data);
   let url = "";
   if (ctx.artifactKey === "video") url = taskVideoURL(state, data);
-  else if (ctx.artifactKey === "last_frame" && state.vendor === "seedance") url = trimmed(plainObject(data.content).last_frame_url);
   else if (ctx.artifactKey === "audio" && state.vendor === "speech") url = trimmed(plainObject(data.ttsTaskInfo).url);
   if (!url) throw new Error("artifact_not_found");
   return { url: url, method: ctx.clientRequest.method, credentialless: true };
@@ -1742,7 +1604,6 @@ export function buildContentRequest(ctx) {
 // The model whose vendor serves a request: a channel alias stands for the
 // declared model it maps to.
 function videoVendor(model) {
-  if (Object.prototype.hasOwnProperty.call(SEEDANCE_MODELS, model)) return "seedance";
   if (Object.prototype.hasOwnProperty.call(KLING_PATH_MODELS, model) || KLING_BODY_MODELS.includes(model)) return "kling";
   if (VIDU_MODELS.includes(model)) return "vidu";
   if (Object.prototype.hasOwnProperty.call(PIXVERSE_MODELS, model)) return "pixverse";
@@ -1863,13 +1724,6 @@ function nearestAspectRatio(dimensions, ratios) {
   return nearest;
 }
 
-// The doubao plugin's check of the protocol's seconds: -1 lets the model pick
-// the length.
-function checkSeedanceSeconds(seconds) {
-  if (seconds !== undefined && Number(seconds) !== -1 && (!Number.isFinite(Number(seconds)) || Number(seconds) <= 0 || Number(seconds) > 3600))
-    throw new Error("seconds must be -1 or between 1 and 3600");
-}
-
 // The action of a Vidu request, which names its endpoint: metadata.action, or
 // the number of reference images.
 function viduProtocolAction(req) {
@@ -1978,72 +1832,6 @@ function h3ProtocolContent(name, req) {
 // request and names the action, request builds the vendor request from it for
 // the model the channel sends.
 const VIDEO_PROTOCOL = {
-  // Seedance, as the doubao plugin: seconds reaches Ark as duration, the
-  // images lead the content before those of metadata.content, and the rest
-  // of metadata is Ark's own fields.
-  seedance: {
-    decode: function (ctx) {
-      if (!ctx.body || (ctx.body.kind !== "json" && ctx.body.kind !== "multipart")) throw new Error("JSON or multipart body required");
-      if (ctx.body.kind === "json") {
-        if (!ctx.body.value || Array.isArray(ctx.body.value)) throw new Error("JSON object required");
-        const body = ctx.body.value;
-        const seconds = body.seconds === undefined ? body.duration : body.seconds;
-        checkSeedanceSeconds(seconds);
-        const req = Object.assign({}, body);
-        if (seconds !== undefined) req.seconds = seconds;
-        const images = referenceImages([body.image, body.input_reference].concat(Array.isArray(body.images) ? body.images : []));
-        if (images.length) req.images = images;
-        return { request: req, action: images.length ? "image_to_video" : "text_to_video" };
-      }
-      const req = formFields(ctx);
-      parseFormMetadata(req);
-      // One uploaded input_reference is the first frame, which Ark reads as a
-      // data URL of a lowercase image type; every other reference is a URL
-      // inside metadata.content.
-      const images = referenceImages([req.image, req.input_reference]);
-      for (const file of ctx.body.files || []) {
-        if (file.field !== "input_reference") throw new Error("only input_reference may be uploaded; other references must be URLs inside metadata.content");
-        if (images.length) throw new Error("input_reference must be provided once");
-        const mimeType = trimmed(file.mimeType).toLowerCase();
-        images.push({ __fileRef: file.ref, encoding: "dataUrl", mimeType: /^image\/[a-z0-9.+-]+$/.test(mimeType) ? mimeType : "image/png", maxBytes: 31457280 });
-      }
-      if (images.length) req.images = images;
-      if (req.seconds !== undefined) req.seconds = Number(req.seconds);
-      else if (req.duration !== undefined) req.seconds = Number(req.duration);
-      checkSeedanceSeconds(req.seconds);
-      return { request: req, action: images.length ? "image_to_video" : "text_to_video" };
-    },
-    request: function (ctx, decoded) {
-      const req = decoded.request;
-      const metadata = req.metadata || {};
-      const body = Object.assign({ content: [] }, metadata);
-      const images = (Array.isArray(req.images) ? req.images : []).map((url) => ({ type: "image_url", image_url: { url: url } }));
-      const content = images.concat(Array.isArray(body.content) ? body.content : []).filter((item) => item && item.type !== "text");
-      const hasReference = content.length > 0;
-      if (trimmed(req.prompt) || !hasReference) content.push({ type: "text", text: req.prompt || "" });
-      // A draft names an earlier task, which this protocol does not resolve.
-      if (content.some((item) => item.type === "draft_task" && trimmed(plainObject(item.draft_task).id))) throw new Error("origin task is unavailable");
-      body.content = content;
-      // -1 lets the model pick the length; the longest is then reserved.
-      const seconds = Number.parseInt(req.seconds || "", 10);
-      if (seconds > 0 || seconds === -1) body.duration = seconds;
-      // The tier of a WIDTHxHEIGHT size, which Ark is not sent, is the
-      // resolution reserved; the one Ark reports settles the task.
-      const stated = trimmed(metadata.resolution || req.size).toLowerCase();
-      const sides = stated.replace("*", "x").split("x");
-      const longer = Math.max(Number(sides[0]), Number(sides[1]));
-      let resolution = SEEDANCE_RESOLUTIONS.includes(stated) ? stated : "";
-      if (!resolution && sides.length === 2) resolution = longer >= 3840 ? "4k" : longer >= 1920 ? "1080p" : longer >= 1280 ? "720p" : "480p";
-      return {
-        vendor: "seedance",
-        model: decoded.model,
-        vendorBody: body,
-        action: hasReference ? "image_to_video" : "text_to_video",
-        reserved: { duration: req.seconds || req.duration || metadata.duration, frames: metadata.frames, resolution: resolution, content: metadata.content },
-      };
-    },
-  },
-
   // Kling, as the kling plugin: the prompt, the first frame, the mode and the
   // aspect ratio nearest the size, with Kling's other fields in metadata. The
   // API that takes the model in its path gets a resolution from the size and
