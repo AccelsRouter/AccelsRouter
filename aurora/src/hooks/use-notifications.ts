@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 
+// Fork: the user's own notifications are a third tab of the bell.
+import { useMyNotifications } from '@/features/notifications/use-my-notifications'
 import { useStatus } from '@/hooks/use-status'
 import { getNotice } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
@@ -65,9 +67,10 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
  */
 export function useNotifications() {
   const [popoverOpen, setPopoverOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
-    'notice'
-  )
+  const [activeTab, setActiveTab] = useState<
+    'notice' | 'announcements' | 'messages'
+  >('notice')
+  const personal = useMyNotifications()
 
   // Fetch Notice from API
   const {
@@ -119,9 +122,15 @@ export function useNotifications() {
     return {
       notice: noticeUnread,
       announcements: announcementsUnread,
-      total: noticeUnread + announcementsUnread,
+      total: noticeUnread + announcementsUnread + personal.unread,
     }
-  }, [noticeContent, lastReadNotice, announcements, isAnnouncementRead])
+  }, [
+    noticeContent,
+    lastReadNotice,
+    announcements,
+    isAnnouncementRead,
+    personal.unread,
+  ])
 
   const markAnnouncementsAsRead = () => {
     if (announcements.length > 0) {
@@ -133,8 +142,9 @@ export function useNotifications() {
   }
 
   // Handle popover open
-  const handleOpenPopover = (tab?: 'notice' | 'announcements') => {
-    const nextTab = tab || activeTab
+  const handleOpenPopover = (tab?: 'notice' | 'announcements' | 'messages') => {
+    // Fork: an unread message of the user's own is what the bell opens on.
+    const nextTab = tab || (personal.unread > 0 ? 'messages' : activeTab)
 
     // Mark currently visible content as read when opening the notification center
     if (noticeContent) {
@@ -143,6 +153,9 @@ export function useNotifications() {
     if (nextTab === 'announcements') {
       markAnnouncementsAsRead()
     }
+    if (nextTab === 'messages') {
+      personal.markRead()
+    }
 
     setActiveTab(nextTab)
     setPopoverOpen(true)
@@ -150,7 +163,7 @@ export function useNotifications() {
 
   const handlePopoverOpenChange = (open: boolean) => {
     if (open) {
-      handleOpenPopover(activeTab)
+      handleOpenPopover()
       return
     }
 
@@ -158,11 +171,14 @@ export function useNotifications() {
   }
 
   // Handle tab change - mark announcements as read when switching to that tab
-  const handleTabChange = (tab: 'notice' | 'announcements') => {
+  const handleTabChange = (tab: 'notice' | 'announcements' | 'messages') => {
     setActiveTab(tab)
 
     if (tab === 'announcements') {
       markAnnouncementsAsRead()
+    }
+    if (tab === 'messages') {
+      personal.markRead()
     }
   }
 

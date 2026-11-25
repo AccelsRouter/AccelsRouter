@@ -413,6 +413,7 @@ func migrateDB() error {
 		&CustomVendorPriceChange{},
 		&CustomVendorPriceSource{},
 		&CustomChannelPrice{},
+		&CustomNotification{},
 		&Supplier{},
 		&SupplierModel{},
 		&SupplierContract{},

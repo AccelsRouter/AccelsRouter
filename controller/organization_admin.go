@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
@@ -392,6 +393,13 @@ func AdminCreditOrganization(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(id, c.GetInt("id"), "org."+op, fmt.Sprintf("org:%d", id), fmt.Sprintf("quota=%d delta=%d trade=%s", req.Quota, delta, req.TradeNo))
+	if org, err := model.GetOrganizationById(id); err == nil && org != nil && delta != 0 {
+		change := "The platform added {{quota}} to the wallet of organization {{org}}"
+		if delta < 0 {
+			change = "The platform deducted {{quota}} from the wallet of organization {{org}}"
+		}
+		model.NotifyOrgAdmins(id, c.GetInt("id"), orgNotice(change, org, 0, map[string]any{"quota": logger.FormatQuota(max(delta, -delta))}))
+	}
 	common.ApiSuccess(c, gin.H{"delta": delta})
 }
 
@@ -493,6 +501,8 @@ func AdminAttachOrgAccount(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(req.OrgId, c.GetInt("id"), "account.attach", fmt.Sprintf("user:%d", req.UserId), fmt.Sprintf("relation=%s role=%s", relation, role))
+	model.NotifyUsers([]int{req.UserId}, orgNotice("You were added to organization {{org}}", org, 0))
+	model.NotifyOrgAdmins(org.Id, req.UserId, orgNotice("{{user}} joined organization {{org}}", org, req.UserId))
 	common.ApiSuccess(c, acc)
 }
 
@@ -515,6 +525,10 @@ func AdminDetachOrgAccount(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(orgId, c.GetInt("id"), "account.detach", fmt.Sprintf("user:%d", userId), "")
+	if org, err := model.GetOrganizationById(orgId); err == nil && org != nil {
+		model.NotifyUsers([]int{userId}, orgNotice("You were removed from organization {{org}}", org, 0))
+		model.NotifyOrgAdmins(orgId, c.GetInt("id"), orgNotice("{{user}} was removed from organization {{org}}", org, userId))
+	}
 	common.ApiSuccess(c, nil)
 }
 

@@ -122,7 +122,15 @@ func recordCreditAdjustmentTopUp(userId int, signedAmount int64, paymentMethod s
 		Status:          common.TopUpStatusSuccess,
 		Remark:          remark,
 	}
-	return topUp.Insert()
+	if err := topUp.Insert(); err != nil {
+		return err
+	}
+	quota, change := signedAmount, "An administrator added {{quota}} to your balance"
+	if signedAmount < 0 {
+		quota, change = -signedAmount, "An administrator deducted {{quota}} from your balance"
+	}
+	NotifyUsers([]int{userId}, common.NewMessage(change, map[string]any{"quota": logger.FormatQuota(int(quota))}))
+	return nil
 }
 
 func topUpQuotaMaxCurrent(creditedQuota int) (int, error) {

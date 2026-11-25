@@ -651,3 +651,190 @@ export function ingress(ctx, req) {
 	assert.Equal(t, "task: mail [email] a lighthouse", gjson.Get(sent, "prompt").Str, sent)
 	assert.Equal(t, "kling-v3", gjson.Get(sent, "model_name").Str)
 }
+
+// speechBilling records what a submission reserves before it is sent.
+type speechBilling struct {
+	nativeRouteBilling
+	reserved []int
+}
+
+func (b *speechBilling) ReserveBeforeSubmit(quota int) error {
+	b.reserved = append(b.reserved, quota)
+	return b.Reserve(quota)
+}
+
+// Fork: seed-tts-2.0 on a New API upstream. The client's body goes to the
+// upstream gateway's /doubao native route with the channel key as a Bearer
+// token and the upstream reply comes back; the request reserves the text's
+// characters and settles on usage.text_words. An upstream error or a channel
+// that is not a New API one charges nothing, and a text over 3000 characters
+// is refused before anything is reserved or sent.
+func TestDoubaoSpeechOnNewAPIUpstream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+	require.NoError(t, i18n.Init())
+
+	previousDB, previousLogDB := model.DB, model.LOG_DB
+	previousMemoryCache, previousBatchUpdate, previousLogConsume, previousRedis := common.MemoryCacheEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled, common.RedisEnabled
+	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.Log{}))
+	model.DB, model.LOG_DB = database, database
+	common.MemoryCacheEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled, common.RedisEnabled = false, false, true, false
+	savedConfig := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
+		savedConfig[key] = value
+		return nil
+	}))
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		common.MemoryCacheEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled, common.RedisEnabled = previousMemoryCache, previousBatchUpdate, previousLogConsume, previousRedis
+		require.NoError(t, config.GlobalConfig.LoadFromDB(savedConfig))
+	})
+	const speech, route = "seed-tts-2.0", "/doubao/api/v3/tts/unidirectional"
+	// 0.001 USD, 500 quota, per character.
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode":    `{"` + speech + `":"tiered_expr"}`,
+		"billing_setting.billing_expr":    `{"` + speech + `":"tier(\"base\", u(\"characters\") * 0.001)"}`,
+		"group_ratio_setting.group_ratio": `{"default":1}`,
+	}))
+	require.NoError(t, database.Create(&model.User{Id: 7, Username: "speech-user", Group: "default", Quota: 1_000_000}).Error)
+
+	const reply = `{"audio_base64":"SUQzBAAAAAAA","format":"mp3","mime_type":"audio/mpeg","sample_rate":24000,"model":"seed-tts-2.0","status":"succeeded","id":"up-speech-1","task_id":"up-speech-1","usage":{"text_words":10}}`
+	var received []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received = append(received, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization")+" "+string(body))
+		w.Header().Set("Content-Type", "application/json")
+		switch gjson.GetBytes(body, "req_params.speaker").Str {
+		case "missing_speaker":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error":{"message":"Task request failed"}}`)
+		case "bad_format":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"code":"invalid_request","message":"unsupported format"}}`)
+		default:
+			_, _ = io.WriteString(w, reply)
+		}
+	}))
+	defer upstream.Close()
+	gateway := model.Channel{Type: constant.ChannelTypeNewAPI, Name: "aigc", Key: "sk-upstream", BaseURL: &upstream.URL, Status: common.ChannelStatusEnabled, Models: speech, Group: "default"}
+	gateway.SetSetting(dto.ChannelSettings{TaskExtendPluginKeys: []string{"doubao"}})
+	require.NoError(t, database.Create(&gateway).Error)
+	ark := model.Channel{Type: constant.ChannelTypeDoubaoVideo, Name: "ark", Key: "ark-key", BaseURL: &upstream.URL, Status: common.ChannelStatusEnabled, Models: speech, Group: "default"}
+	require.NoError(t, database.Create(&ark).Error)
+	generation := pluginruntime.DefaultRegistry.Generation()
+	require.NotNil(t, generation)
+	binding, found := generation.LookupDeclaredRoute(http.MethodPost, route)
+	require.True(t, found)
+	require.Equal(t, "doubao", binding.Plugin.Meta.Key)
+
+	// Eleven characters, the emoji being two UTF-16 code units.
+	body := func(speaker, text string) string {
+		encoded, marshalErr := common.Marshal(map[string]any{"model": speech, "req_params": map[string]any{
+			"text": text, "speaker": speaker, "audio_params": map[string]any{"format": "mp3", "sample_rate": 24000}, "additions": `{"disable_markdown_filter":true}`,
+		}})
+		require.NoError(t, marshalErr)
+		return string(encoded)
+	}
+	submit := func(channel *model.Channel, requestBody, taskID string) (*httptest.ResponseRecorder, *speechBilling, *taskdto.TaskError) {
+		received = nil
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, route, strings.NewReader(requestBody))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set(pluginruntime.ContextKeyPinnedRoute, pluginruntime.PinnedRoute{Generation: generation, Plugin: binding.Plugin, Route: binding.Route})
+		common.SetContextKey(c, constant.ContextKeyUserId, 7)
+		common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+		common.SetContextKey(c, constant.ContextKeyTokenGroup, "default")
+		common.SetContextKey(c, constant.ContextKeyUserQuota, 1_000_000)
+		middleware.PrepareTaskPluginRoute()(c)
+		if c.IsAborted() {
+			return recorder, nil, nil
+		}
+		require.Nil(t, middleware.SetupContextForSelectedChannel(c, channel, speech))
+		billing := &speechBilling{nativeRouteBilling: nativeRouteBilling{userID: 7}}
+		relayInfo := &relaycommon.RelayInfo{UserId: 7, UserGroup: "default", UsingGroup: "default", UserQuota: 1_000_000, TokenGroup: "default",
+			OriginModelName: speech, Billing: billing,
+			TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: c.GetString("task_action"), PublicTaskID: taskID, LockedChannel: channel}}
+		outcome, taskErr := executeTaskSubmissionWith(c, relayInfo, relay.RelayTaskSubmit)
+		if taskErr != nil {
+			respondTaskSubmissionError(c, taskErr)
+		} else {
+			presentTaskSubmission(c, outcome)
+		}
+		return recorder, billing, taskErr
+	}
+	quota := func() int {
+		var user model.User
+		require.NoError(t, database.First(&user, 7).Error)
+		return user.Quota
+	}
+	consumeLogs := func() []model.Log {
+		var logs []model.Log
+		require.NoError(t, database.Where("type = ?", model.LogTypeConsume).Find(&logs).Error)
+		return logs
+	}
+
+	spoken := body("zh_female_vv_uranus_bigtts", "你好，world! 😀")
+	recorder, billing, taskErr := submit(&gateway, spoken, "task_speech")
+	require.Nil(t, taskErr, recorder.Body.String())
+	require.Len(t, received, 1)
+	assert.True(t, strings.HasPrefix(received[0], "POST "+route+" Bearer sk-upstream "), received[0])
+	assert.JSONEq(t, spoken, strings.TrimPrefix(received[0], "POST "+route+" Bearer sk-upstream "))
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.JSONEq(t, reply, recorder.Body.String())
+	assert.Equal(t, []int{5500}, billing.reserved, "eleven characters are reserved")
+	assert.True(t, billing.settled)
+	logs := consumeLogs()
+	require.Len(t, logs, 1)
+	assert.Equal(t, 5000, logs[0].Quota, "the ten characters the upstream billed are settled")
+	assert.JSONEq(t, `{"characters":10}`, gjson.Get(logs[0].Other, "usage_facts").Raw)
+	var task model.Task
+	require.NoError(t, database.Where("task_id = ?", "task_speech").First(&task).Error)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), task.Status)
+	assert.Equal(t, 5000, task.Quota)
+	assert.NotContains(t, string(task.Data), "SUQzBAAAAAAA", "the audio is delivered once and not stored")
+
+	for _, tc := range []struct {
+		name, speaker string
+		channel       *model.Channel
+		wantStatus    int
+		wantSent      int
+		wantEvents    []string
+	}{
+		{"an unknown speaker fails upstream", "missing_speaker", &gateway, http.StatusInternalServerError, 1, []string{"reserve", "refund"}},
+		{"an invalid request fails upstream", "bad_format", &gateway, http.StatusBadRequest, 1, []string{"reserve", "refund"}},
+		// The request is refused when it is built, before anything is reserved.
+		{"Volcengine itself is not addressed", "zh_female_vv_uranus_bigtts", &ark, 0, 0, []string{"refund"}},
+	} {
+		before := quota()
+		recorder, billing, taskErr = submit(tc.channel, body(tc.speaker, "你好"), "task_speech_failed")
+		require.NotNil(t, taskErr, tc.name)
+		if tc.wantStatus != 0 {
+			assert.Equal(t, tc.wantStatus, recorder.Code, tc.name)
+		} else {
+			assert.Contains(t, taskErr.Message, "only served through a New API channel", tc.name)
+		}
+		assert.Len(t, received, tc.wantSent, tc.name)
+		assert.Equal(t, tc.wantEvents, billing.events, tc.name)
+		assert.Equal(t, before, quota(), tc.name)
+		assert.Len(t, consumeLogs(), 1, tc.name)
+	}
+
+	for name, requestBody := range map[string]string{
+		"3001 characters": body("zh_female_vv_uranus_bigtts", strings.Repeat("字", 3001)),
+		"no text":         `{"model":"seed-tts-2.0","req_params":{"speaker":"zh_female_vv_uranus_bigtts"}}`,
+		"no speaker":      `{"model":"seed-tts-2.0","req_params":{"text":"你好"}}`,
+	} {
+		recorder, billing, _ = submit(&gateway, requestBody, "task_speech_refused")
+		assert.Nil(t, billing, name)
+		assert.Equal(t, http.StatusBadRequest, recorder.Code, name)
+		assert.Empty(t, received, name)
+	}
+	recorder, billing, taskErr = submit(&gateway, body("zh_female_vv_uranus_bigtts", strings.Repeat("字", 3000)), "task_speech_longest")
+	require.Nil(t, taskErr, recorder.Body.String())
+	assert.Len(t, received, 1)
+	assert.Equal(t, []int{1_500_000}, billing.reserved, "3000 characters are accepted and reserved")
+}

@@ -1,9 +1,12 @@
 package model
 
 import (
+	"cmp"
 	"errors"
+	"slices"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -85,7 +88,30 @@ func creditOrgTopUp(tx *gorm.DB, orgId, userId, quota int, userUpdates map[strin
 	if err := insertLedger(tx, 0, orgId, quota, userId, LedgerTypeTopUp, tradeNo, ""); err != nil {
 		return err
 	}
-	return chargeAcquiringFee(tx, orgId, tradeNo, quota)
+	if err := chargeAcquiringFee(tx, orgId, tradeNo, quota); err != nil {
+		return err
+	}
+	// The others who run the organization are told. Inside a savepoint, so a
+	// notification that cannot be written leaves the payment whole.
+	_ = tx.Transaction(func(sp *gorm.DB) error {
+		admins, err := orgAdminUserIds(sp, orgId)
+		if err != nil {
+			return err
+		}
+		var org Organization
+		if err := sp.Select("name").First(&org, orgId).Error; err != nil {
+			return err
+		}
+		var payer User
+		if err := sp.Select("email", "username").First(&payer, userId).Error; err != nil {
+			return err
+		}
+		return notifyUsers(sp, slices.DeleteFunc(admins, func(id int) bool { return id == userId }),
+			common.NewMessage("{{user}} topped up organization {{org}} by {{quota}}", map[string]any{
+				"user": cmp.Or(payer.Email, payer.Username), "org": org.Name, "quota": logger.FormatQuota(quota),
+			}))
+	})
+	return nil
 }
 
 // orgOrderBeingCredited names the payment order a credit to the organization's

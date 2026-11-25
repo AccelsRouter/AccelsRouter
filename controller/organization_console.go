@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 )
@@ -164,6 +165,21 @@ func UpdateMyOrgAccount(c *gin.Context) {
 		}
 	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "account.update", fmt.Sprintf("user:%d", userId), fmt.Sprintf("%v", fields))
+	// The member is told what changed for them.
+	if req.Role != nil && *req.Role != target.Role {
+		change := "You are now a member of organization {{org}}"
+		if *req.Role == model.OrgRoleAdmin {
+			change = "You are now an admin of organization {{org}}"
+		}
+		model.NotifyUsers([]int{userId}, orgNotice(change, org, 0))
+	}
+	if req.Status != nil && (*req.Status == model.OrgStatusSuspended) != (target.Status == model.OrgStatusSuspended) {
+		change := "Your membership of organization {{org}} was restored"
+		if *req.Status == model.OrgStatusSuspended {
+			change = "Your membership of organization {{org}} was suspended"
+		}
+		model.NotifyUsers([]int{userId}, orgNotice(change, org, 0))
+	}
 	common.ApiSuccess(c, nil)
 }
 
@@ -192,6 +208,8 @@ func DetachMyOrgAccount(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "account.detach", fmt.Sprintf("user:%d", userId), "")
+	model.NotifyUsers([]int{userId}, orgNotice("You were removed from organization {{org}}", org, 0))
+	model.NotifyOrgAdmins(org.Id, c.GetInt("id"), orgNotice("{{user}} was removed from organization {{org}}", org, userId))
 	common.ApiSuccess(c, nil)
 }
 
@@ -207,6 +225,9 @@ func LeaveMyOrganization(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(acc.OrgId, userId, "account.leave", fmt.Sprintf("user:%d", userId), "")
+	if org, err := model.GetOrganizationById(acc.OrgId); err == nil && org != nil {
+		model.NotifyOrgAdmins(org.Id, userId, orgNotice("{{user}} left organization {{org}}", org, userId))
+	}
 	common.ApiSuccess(c, nil)
 }
 
@@ -308,6 +329,10 @@ func AllocateFromMyOrg(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "credit.allocate", fmt.Sprintf("org:%d", req.ToOrgId), fmt.Sprintf("quota=%d", req.Quota))
+	if customer, err := model.GetOrganizationById(req.ToOrgId); err == nil && customer != nil {
+		model.NotifyOrgAdmins(customer.Id, 0, orgNotice("{{reseller}} allocated {{quota}} to organization {{org}}", customer, 0,
+			map[string]any{"reseller": model.ResellerLabelOfOrg(org), "quota": logger.FormatQuota(req.Quota)}))
+	}
 	common.ApiSuccess(c, nil)
 }
 
@@ -355,6 +380,10 @@ func RevokeFromMyOrg(c *gin.Context) {
 		return
 	}
 	model.RecordOrgAudit(org.Id, c.GetInt("id"), "credit.revoke", fmt.Sprintf("org:%d", req.ToOrgId), fmt.Sprintf("quota=%d", req.Quota))
+	if customer, err := model.GetOrganizationById(req.ToOrgId); err == nil && customer != nil {
+		model.NotifyOrgAdmins(customer.Id, 0, orgNotice("{{reseller}} took back {{quota}} from organization {{org}}", customer, 0,
+			map[string]any{"reseller": model.ResellerLabelOfOrg(org), "quota": logger.FormatQuota(req.Quota)}))
+	}
 	common.ApiSuccess(c, nil)
 }
 

@@ -167,6 +167,9 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 {"type":"video_ratio_720p","price":"0.05","price_unit":"Per second","time_band":"standard"},
 {"type":"video_ratio_1080p","price":"0.075","price_unit":"Per second","time_band":"standard"}]}]},
 {"model":"happyhorse-1.0-t2v","provider":"happyhorse","prices":[{"range_name":"Default","prices":[
+{"type":"video_ratio_720p","price":"0.14","price_unit":"Per second","time_band":"standard"},
+{"type":"video_ratio_1080p","price":"0.24","price_unit":"Per second","time_band":"standard"}]}]},
+{"model":"unserved-video-1","provider":"happyhorse","prices":[{"range_name":"Default","prices":[
 {"type":"video_ratio_720p","price":"0.14","price_unit":"Per second","time_band":"standard"}]}]},
 {"model":"free-input-only","prices":[{"range_name":"Default","prices":[
 {"type":"input_token","price":"0","price_unit":"Per 1M tokens","time_band":null}]}]}]}}`
@@ -187,13 +190,15 @@ func TestConvertCustomAlibabaModelsRealResponseShape(t *testing.T) {
 	assert.Equal(t, video, exprs["wan3.0-video"])
 	assert.Empty(t, customBillingExprError("wan3.0-video", video))
 	assert.Equal(t, `tier("base", u("seconds") * 0.1)`, exprs["wanx2.1-t2v-plus"])
+	// The vod-baidu-task plugin serves HappyHorse and meters its seconds by resolution.
+	assert.Equal(t, `u("resolution") == "720P" ? tier("720P", u("seconds") * 0.14) : tier("1080P", u("seconds") * 0.24)`, exprs["happyhorse-1.0-t2v"])
 	assert.Equal(t, map[string]string{
-		"peaky":              "time-of-day prices without both a peak and an off-peak input and output price",
-		"qwen-timed":         "priced by time of day, and the peak hours are only known for DeepSeek models",
-		"free-input-only":    "no input and output token price",
-		"wan2.7-t2v":         "Model Studio lists no per-second price for 1080P",
-		"wan2.6-i2v-flash":   "the plugin also prices this model by audio, and Model Studio lists per-second prices by resolution only",
-		"happyhorse-1.0-t2v": "priced per second of video, and no task plugin on this gateway meters the seconds of this model",
+		"peaky":            "time-of-day prices without both a peak and an off-peak input and output price",
+		"qwen-timed":       "priced by time of day, and the peak hours are only known for DeepSeek models",
+		"free-input-only":  "no input and output token price",
+		"wan2.7-t2v":       "Model Studio lists no per-second price for 1080P",
+		"wan2.6-i2v-flash": "the plugin also prices this model by audio, and Model Studio lists per-second prices by resolution only",
+		"unserved-video-1": "priced per second of video, and no task plugin on this gateway meters the seconds of this model",
 	}, got[customPricingSkippedField])
 }
 
@@ -320,6 +325,61 @@ func TestParseCustomByteDancePricing(t *testing.T) {
 	// Without the rate nothing is read: the payment exchange rate is no substitute.
 	setRate("")
 	_, err = parseCustomVolcenginePricing(customVendorFixture(t, "volcengine.md"))
+	assert.ErrorContains(t, err, "CNY per USD")
+}
+
+// Tencent's page prices every vendor TokenHub hosts, in CNY and once per
+// region: only Tencent's own models are read, at the first region's price and
+// with the limited-time discount the page announces while it runs.
+func TestParseCustomTencentPricing(t *testing.T) {
+	value := func(v float64) *float64 { return &v }
+	setRate := func(rate string) {
+		common.OptionMapRWMutex.Lock()
+		defer common.OptionMapRWMutex.Unlock()
+		if common.OptionMap == nil {
+			common.OptionMap = make(map[string]string)
+		}
+		common.OptionMap[customVendorCNYPerUSDOption] = rate
+	}
+	t.Cleanup(func() { setRate("") })
+	setRate("8")
+	beijing := time.FixedZone("UTC+8", 8*3600)
+	page := customVendorFixture(t, "tencent.html")
+
+	prices, err := parseCustomTencentPricing(page, time.Date(2026, 11, 24, 22, 0, 0, 0, beijing))
+	require.NoError(t, err)
+	list := customVendorTencentProvider + " (CNY at 8 per USD)"
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.125, Output: value(0.5), CacheRead: value(0.03125)}, prices["hy3"])
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.75, Output: value(2.25), CacheRead: value(0.0375)}, prices["hy4-preview"])
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.0625, Output: value(0.25)}, prices["hy-mt2-pro"], "no cache price is listed")
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.3, Output: value(1.2)}, prices["hunyuan-role-latest"])
+	assert.Equal(t, customVendorPrice{
+		Provider: customVendorTencentProvider + " (CNY at 8 per USD, 50% of the list price until 2026-12-31 23:59 UTC+8)",
+		Input:    0.375, Output: value(1.125), CacheRead: value(0.01875),
+	}, prices["hy4"])
+	assert.Equal(t, customVendorPrice{
+		Provider: customVendorTencentProvider + " (CNY at 8 per USD, 50% of the list price until 2026-11-30 12:00 UTC+8)",
+		Input:    0.03125, Output: value(0.125), CacheRead: value(0.00125),
+	}, prices["hy4-flash"])
+	assert.Len(t, prices, 9)
+	for name := range prices {
+		assert.True(t, strings.HasPrefix(name, "hy") || strings.HasPrefix(name, "hunyuan"), "%s is another vendor's model", name)
+	}
+	expr, ok := customVendorSyncExpr("hy4", prices["hy4"])
+	require.True(t, ok)
+	assert.Equal(t, `tier("base", p * 0.375 + c * 1.125 + cr * 0.01875)`, expr)
+
+	// A discount ends at the time the page states, each model's on its own.
+	prices, err = parseCustomTencentPricing(page, time.Date(2026, 11, 30, 12, 0, 0, 0, beijing))
+	require.NoError(t, err)
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.0625, Output: value(0.25), CacheRead: value(0.0025)}, prices["hy4-flash"])
+	assert.Equal(t, 0.375, prices["hy4"].Input)
+	prices, err = parseCustomTencentPricing(page, time.Date(2027, 1, 1, 0, 0, 0, 0, beijing))
+	require.NoError(t, err)
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.75, Output: value(2.25), CacheRead: value(0.0375)}, prices["hy4"])
+
+	setRate("")
+	_, err = parseCustomTencentPricing(page, time.Now())
 	assert.ErrorContains(t, err, "CNY per USD")
 }
 
@@ -559,10 +619,18 @@ func TestCustomBillingExprErrorFlagsUnservedUsageExpressions(t *testing.T) {
 func TestCustomCharacterExpressionConversion(t *testing.T) {
 	var errors, conversions map[string]string
 	candidate := map[string]any{billing_setting.BillingModeField: billing_setting.BillingModeTieredExpr, billing_setting.BillingExprField: `u("characters") / 10000 * 0.4412`}
-	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", candidate)
+	customRecordBillingExprError(&errors, &conversions, "aigc", "other-tts-1", candidate)
 	assert.Empty(t, errors)
 	assert.Equal(t, `tier("base", p * 44.12)`, candidate[billing_setting.BillingExprField])
 	assert.Equal(t, `u("characters") / 10000 * 0.4412`, conversions["aigc"])
+	// seed-tts-2.0 is served by the doubao plugin, which meters characters, so
+	// its task price is kept as the upstream has it.
+	errors, conversions = nil, nil
+	served := map[string]any{billing_setting.BillingExprField: `u("characters") / 10000 * 0.4412`}
+	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", served)
+	assert.Empty(t, errors)
+	assert.Empty(t, conversions)
+	assert.Equal(t, `u("characters") / 10000 * 0.4412`, served[billing_setting.BillingExprField])
 
 	assert.Equal(t, `tier("base", p * 50)`, customConvertCharacterExpr(`tier("base", u("characters") * 0.00005)`))
 	assert.Equal(t, `tier("base", p * 0)`, customConvertCharacterExpr(`u("characters") * 0`))
@@ -577,7 +645,7 @@ func TestCustomCharacterExpressionConversion(t *testing.T) {
 		assert.Empty(t, customConvertCharacterExpr(expression), name)
 	}
 	errors, conversions = nil, nil
-	customRecordBillingExprError(&errors, &conversions, "aigc", "seed-tts-2.0", map[string]any{billing_setting.BillingExprField: `tier("base", 0.01 + u("characters") * 0.00005)`})
+	customRecordBillingExprError(&errors, &conversions, "aigc", "other-tts-1", map[string]any{billing_setting.BillingExprField: `tier("base", 0.01 + u("characters") * 0.00005)`})
 	assert.Contains(t, errors, "aigc")
 	assert.Empty(t, conversions)
 }

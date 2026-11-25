@@ -116,6 +116,12 @@ func ActivateOrgAccount(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
+	// The account was opened with its membership; activating it is the joining.
+	if acc, err := model.GetOrgAccountByUser(user.Id); err == nil && acc != nil {
+		if org, err := model.GetOrganizationById(acc.OrgId); err == nil && org != nil {
+			model.NotifyOrgAdmins(org.Id, user.Id, orgNotice("{{user}} joined organization {{org}}", org, user.Id))
+		}
+	}
 	common.ApiSuccess(c, gin.H{"username": user.Username, "email": user.Email})
 }
 
@@ -158,6 +164,9 @@ func ApplyForOrganization(c *gin.Context) {
 		common.ApiSuccess(c, gin.H{"status": model.OrgApplicationApproved, "auto_approved": true, "org_id": org.Id})
 		return
 	}
+	model.NotifyPlatformAdmins(common.NewMessage("{{user}} applied to open organization {{org}}; the application awaits review", map[string]any{
+		"user": model.UserDisplayLabelsByIds([]int{userId})[userId], "org": app.OrgName,
+	}))
 	common.ApiSuccess(c, gin.H{"status": model.OrgApplicationPending, "auto_approved": false})
 }
 
@@ -238,6 +247,9 @@ func AdminApproveOrgApplication(c *gin.Context) {
 		}
 		org.WholesaleRatios = stored
 	}
+	if org != nil && app != nil {
+		model.NotifyUsers([]int{app.UserId}, orgNotice("Your application to open organization {{org}} was approved", org, 0))
+	}
 	common.ApiSuccess(c, org)
 }
 
@@ -249,6 +261,9 @@ func AdminRejectOrgApplication(c *gin.Context) {
 	if err := model.RejectOrgApplication(id, c.GetInt("id"), req.Note); err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
+	}
+	if app, err := model.GetOrgApplicationById(id); err == nil && app != nil {
+		model.NotifyUsers([]int{app.UserId}, common.NewMessage("Your application to open organization {{org}} was declined", map[string]any{"org": app.OrgName}))
 	}
 	common.ApiSuccess(c, nil)
 }
@@ -438,6 +453,9 @@ func AcceptOrgInvitation(c *gin.Context) {
 	if err != nil {
 		common.ApiErrorMsg(c, err.Error())
 		return
+	}
+	if org, err := model.GetOrganizationById(inv.OrgId); err == nil && org != nil {
+		model.NotifyOrgAdmins(org.Id, c.GetInt("id"), orgNotice("{{user}} joined organization {{org}}", org, c.GetInt("id")))
 	}
 	common.ApiSuccess(c, gin.H{"org_id": inv.OrgId})
 }
