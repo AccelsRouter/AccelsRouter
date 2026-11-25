@@ -328,6 +328,61 @@ func TestParseCustomByteDancePricing(t *testing.T) {
 	assert.ErrorContains(t, err, "CNY per USD")
 }
 
+// Tencent's page prices every vendor TokenHub hosts, in CNY and once per
+// region: only Tencent's own models are read, at the first region's price and
+// with the limited-time discount the page announces while it runs.
+func TestParseCustomTencentPricing(t *testing.T) {
+	value := func(v float64) *float64 { return &v }
+	setRate := func(rate string) {
+		common.OptionMapRWMutex.Lock()
+		defer common.OptionMapRWMutex.Unlock()
+		if common.OptionMap == nil {
+			common.OptionMap = make(map[string]string)
+		}
+		common.OptionMap[customVendorCNYPerUSDOption] = rate
+	}
+	t.Cleanup(func() { setRate("") })
+	setRate("8")
+	beijing := time.FixedZone("UTC+8", 8*3600)
+	page := customVendorFixture(t, "tencent.html")
+
+	prices, err := parseCustomTencentPricing(page, time.Date(2026, 11, 24, 22, 0, 0, 0, beijing))
+	require.NoError(t, err)
+	list := customVendorTencentProvider + " (CNY at 8 per USD)"
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.125, Output: value(0.5), CacheRead: value(0.03125)}, prices["hy3"])
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.75, Output: value(2.25), CacheRead: value(0.0375)}, prices["hy4-preview"])
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.0625, Output: value(0.25)}, prices["hy-mt2-pro"], "no cache price is listed")
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.3, Output: value(1.2)}, prices["hunyuan-role-latest"])
+	assert.Equal(t, customVendorPrice{
+		Provider: customVendorTencentProvider + " (CNY at 8 per USD, 50% of the list price until 2026-12-31 23:59 UTC+8)",
+		Input:    0.375, Output: value(1.125), CacheRead: value(0.01875),
+	}, prices["hy4"])
+	assert.Equal(t, customVendorPrice{
+		Provider: customVendorTencentProvider + " (CNY at 8 per USD, 50% of the list price until 2026-11-30 12:00 UTC+8)",
+		Input:    0.03125, Output: value(0.125), CacheRead: value(0.00125),
+	}, prices["hy4-flash"])
+	assert.Len(t, prices, 9)
+	for name := range prices {
+		assert.True(t, strings.HasPrefix(name, "hy") || strings.HasPrefix(name, "hunyuan"), "%s is another vendor's model", name)
+	}
+	expr, ok := customVendorSyncExpr("hy4", prices["hy4"])
+	require.True(t, ok)
+	assert.Equal(t, `tier("base", p * 0.375 + c * 1.125 + cr * 0.01875)`, expr)
+
+	// A discount ends at the time the page states, each model's on its own.
+	prices, err = parseCustomTencentPricing(page, time.Date(2026, 11, 30, 12, 0, 0, 0, beijing))
+	require.NoError(t, err)
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.0625, Output: value(0.25), CacheRead: value(0.0025)}, prices["hy4-flash"])
+	assert.Equal(t, 0.375, prices["hy4"].Input)
+	prices, err = parseCustomTencentPricing(page, time.Date(2027, 1, 1, 0, 0, 0, 0, beijing))
+	require.NoError(t, err)
+	assert.Equal(t, customVendorPrice{Provider: list, Input: 0.75, Output: value(2.25), CacheRead: value(0.0375)}, prices["hy4"])
+
+	setRate("")
+	_, err = parseCustomTencentPricing(page, time.Now())
+	assert.ErrorContains(t, err, "CNY per USD")
+}
+
 func customVendorFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile("testdata/vendor_pages/" + name)

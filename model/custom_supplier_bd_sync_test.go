@@ -35,7 +35,7 @@ func TestBdLeadOpensSupplier(t *testing.T) {
 	assert.Equal(t, owner.Id, s.OwnerId)
 	assert.Equal(t, "Lead Owner", s.Owner)
 	assert.Equal(t, 3, s.CreatedBy)
-	assert.Regexp(t, `^V\d{3,}$`, s.Code)
+	assert.Equal(t, lead.Code, s.Code, "the record takes the BD company code")
 	var models []SupplierModel
 	require.NoError(t, DB.Where("supplier_id = ?", s.Id).Order("sort").Find(&models).Error)
 	require.Len(t, models, 2)

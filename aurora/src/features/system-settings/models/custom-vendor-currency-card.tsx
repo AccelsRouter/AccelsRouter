@@ -8,7 +8,8 @@ import { useUpdateOption } from '../hooks/use-update-option'
 
 const CNY_PER_USD_OPTION = 'VendorPriceCNYPerUSD'
 
-// The rate that turns a vendor's CNY list prices (Volcengine Ark) into USD.
+// The rate that turns a vendor's CNY list prices (Volcengine Ark, Tencent
+// Cloud) into USD.
 // It is separate from the payment exchange rate, which is 1 where payments
 // are taken in USD.
 export function CustomVendorCurrencyCard() {
@@ -45,7 +46,7 @@ export function CustomVendorCurrencyCard() {
         </h3>
         <p className='text-muted-foreground text-sm'>
           {t(
-            'Volcengine Ark lists its prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.'
+            'Volcengine Ark and Tencent Cloud list their prices in CNY. Enter how many CNY one USD buys to convert them; without it those prices are not read. Refresh the vendor prices below after changing it.'
           )}
         </p>
       </div>

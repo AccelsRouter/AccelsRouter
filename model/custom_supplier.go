@@ -513,10 +513,24 @@ func CreateSupplier(input *Supplier, models []SupplierModel, operatorID int) (*S
 		if err := resolveSupplierOwner(tx, s); err != nil {
 			return err
 		}
-		if err := insertSupplier(tx, s, normalizedModels, operatorID); err != nil {
+		company, created, err := supplierBdCompany(tx, s)
+		if err != nil {
 			return err
 		}
-		return ensureBdLeadForSupplier(tx, s, normalizedModels, knownModels, operatorID)
+		code := ""
+		if company != nil {
+			if err := checkSupplierCodeFree(tx, company.Code, 0); err != nil {
+				return err
+			}
+			code = company.Code
+		}
+		if err := insertSupplier(tx, s, normalizedModels, code, operatorID); err != nil {
+			return err
+		}
+		if !created {
+			return nil
+		}
+		return createBdLeadForSupplier(tx, s, company, normalizedModels, knownModels, operatorID)
 	})
 	if err != nil {
 		return nil, err
@@ -524,19 +538,25 @@ func CreateSupplier(input *Supplier, models []SupplierModel, operatorID int) (*S
 	return s, nil
 }
 
-// insertSupplier stores a normalized supplier with its models and assigns
-// its code. It does not touch the BD summary.
-func insertSupplier(tx *gorm.DB, s *Supplier, models []SupplierModel, operatorID int) error {
+// insertSupplier stores a normalized supplier with its models under code,
+// the BD supplier company code. A record without any name has no company;
+// it is numbered V001… from its id instead. It does not touch the BD summary.
+func insertSupplier(tx *gorm.DB, s *Supplier, models []SupplierModel, code string, operatorID int) error {
 	now := common.GetTimestamp()
 	s.CreatedBy, s.UpdatedBy, s.CreatedTime, s.UpdatedTime = operatorID, operatorID, now, now
-	// A unique placeholder until the id is known.
-	s.Code = "p-" + common.GetUUID()
+	s.Code = code
+	if code == "" {
+		// A unique placeholder until the id is known.
+		s.Code = "p-" + common.GetUUID()
+	}
 	if err := tx.Create(s).Error; err != nil {
 		return err
 	}
-	s.Code = fmt.Sprintf("V%03d", s.Id)
-	if err := tx.Model(&Supplier{}).Where("id = ?", s.Id).Update("code", s.Code).Error; err != nil {
-		return err
+	if code == "" {
+		s.Code = fmt.Sprintf("V%03d", s.Id)
+		if err := tx.Model(&Supplier{}).Where("id = ?", s.Id).Update("code", s.Code).Error; err != nil {
+			return err
+		}
 	}
 	return syncSupplierModels(tx, s.Id, models)
 }
@@ -589,6 +609,11 @@ func DeleteSupplier(id int) (*Supplier, error) {
 	// Free its channels so they can be bound to another supplier.
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("supplier_id = ?", id).Delete(&SupplierChannel{}).Error; err != nil {
+			return err
+		}
+		// The code is the BD company code; free it so a record of the same
+		// name can be created again.
+		if err := tx.Model(&Supplier{}).Where("id = ?", id).Update("code", fmt.Sprintf("%s~%d", s.Code, id)).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&Supplier{}, id).Error

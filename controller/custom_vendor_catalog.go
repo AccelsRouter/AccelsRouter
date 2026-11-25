@@ -36,7 +36,7 @@ const (
 
 // customVendorSourcePriority decides which source wins when several price a model.
 var customVendorSourcePriority = []string{
-	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai", "google", "openai", "byteplus", "volcengine",
+	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai", "google", "openai", "byteplus", "volcengine", "tencent",
 }
 
 type customVendorSourceResult struct {
@@ -378,7 +378,7 @@ func RefreshCustomVendorPrices(ctx context.Context, force bool) error {
 		} else {
 			drift = customVendorRateDrift(rate, market, date)
 			for i := range results {
-				if results[i].Name == "volcengine" {
+				if results[i].Name == "volcengine" || results[i].Name == "tencent" {
 					results[i].Note = fmt.Sprintf("market rate %s CNY per USD on %s", strconv.FormatFloat(market, 'f', -1, 64), date)
 				}
 			}

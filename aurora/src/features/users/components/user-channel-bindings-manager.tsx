@@ -32,11 +32,6 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from '@/components/ui/popover'
 
 import { getChannel, getChannelModels, searchChannels } from '../../channels/api'
 import {
@@ -623,50 +618,52 @@ function ChannelBindingsPanel({ userId }: { userId: number }) {
 
             {/* Bind a model */}
             <div className='border-border/60 space-y-2 rounded-md border border-dashed p-2.5'>
-                <Popover
-                    open={modelSearchTerm.trim().length > 0}
-                    onOpenChange={(open) => {
-                        if (!open) setModelSearchTerm('')
+                {/* Fork: matches listed under the input. The Base UI popover took
+                    focus from the input after the first letter. */}
+                <div
+                    onBlur={(e) => {
+                        if (!e.currentTarget.contains(e.relatedTarget)) {
+                            setModelSearchTerm('')
+                        }
                     }}
                 >
-                    <PopoverTrigger asChild>
-                        <Input
-                            placeholder={t('Search model by name...')}
-                            value={modelSearchTerm}
-                            onChange={(e) => setModelSearchTerm(e.target.value)}
-                        />
-                    </PopoverTrigger>
-                    <PopoverContent
-                        className='w-[--radix-popover-trigger-width] max-h-48 overflow-y-auto p-0'
-                        align='start'
-                        onOpenAutoFocus={(e) => e.preventDefault()}
-                    >
-                        {modelSearchResults.length === 0 ? (
-                            <div className='text-muted-foreground p-2 text-xs'>
-                                {t('No matching models.')}
-                            </div>
-                        ) : (
-                            modelSearchResults.map((m) => (
-                                <button
-                                    type='button'
-                                    key={m}
-                                    className='hover:bg-muted flex w-full items-center justify-between px-2.5 py-1.5 text-left text-sm'
-                                    onClick={() => {
-                                        setEditingModel(m)
-                                        setModelSearchTerm('')
-                                    }}
-                                >
-                                    <span className='truncate'>{m}</span>
-                                    {boundModelNames.has(m) && (
-                                        <span className='text-muted-foreground text-xs'>
-                      {t('Already has bindings')}
-                    </span>
-                                    )}
-                                </button>
-                            ))
-                        )}
-                    </PopoverContent>
-                </Popover>
+                    <Input
+                        placeholder={t('Search model by name...')}
+                        value={modelSearchTerm}
+                        onChange={(e) => setModelSearchTerm(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Escape') setModelSearchTerm('')
+                        }}
+                    />
+                    {modelSearchTerm.trim().length > 0 && (
+                        <div className='mt-1 max-h-48 overflow-y-auto rounded-md border'>
+                            {modelSearchResults.length === 0 ? (
+                                <div className='text-muted-foreground p-2 text-xs'>
+                                    {t('No matching models.')}
+                                </div>
+                            ) : (
+                                modelSearchResults.map((m) => (
+                                    <button
+                                        type='button'
+                                        key={m}
+                                        className='hover:bg-muted flex w-full items-center justify-between px-2.5 py-1.5 text-left text-sm'
+                                        onClick={() => {
+                                            setEditingModel(m)
+                                            setModelSearchTerm('')
+                                        }}
+                                    >
+                                        <span className='truncate'>{m}</span>
+                                        {boundModelNames.has(m) && (
+                                            <span className='text-muted-foreground text-xs'>
+                          {t('Already has bindings')}
+                        </span>
+                                        )}
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
 
             {editingChannel && (

@@ -22,5 +22,6 @@ func init() {
 		"text-embedding-ada": "OpenAI",
 		"hy3":                "腾讯",
 		"hy4":                "腾讯",
+		"wand-vega":          "腾讯",
 	})
 }

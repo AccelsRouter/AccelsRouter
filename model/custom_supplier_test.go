@@ -132,7 +132,7 @@ func runSupplierContractScenario(t *testing.T) {
 		{},
 	}, 7)
 	require.NoError(t, err)
-	assert.Equal(t, fmt.Sprintf("V%03d", supplier.Id), supplier.Code)
+	assert.Equal(t, "B-001", supplier.Code, "the code is the BD supplier company code")
 	assert.Equal(t, SupplierStatusPotential, supplier.Status)
 
 	year := time.Now().In(supplierContractZone).Year() % 100
@@ -362,10 +362,30 @@ func runSupplierToBdLeadScenario(t *testing.T) {
 	require.NotNil(t, models[0].PriceRate)
 	assert.InDelta(t, 80, *models[0].PriceRate, 0.001)
 
-	// A BD supplier company already named like the record: no second lead.
+	assert.Equal(t, lead.Code, s.Code, "one number on both sides")
+
+	// A second record of the same name would share the code: refused.
 	_, err = CreateSupplier(&Supplier{LegalName: "mirror"}, nil, 7)
-	require.NoError(t, err)
+	require.Error(t, err)
 	var count int64
 	require.NoError(t, DB.Model(&BdLead{}).Where("side = ?", BdSideBuy).Where("LOWER(company) = ?", "mirror").Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+
+	// Deleting frees the code for a new record of the same name.
+	_, err = DeleteSupplier(s.Id)
+	require.NoError(t, err)
+	again, err := CreateSupplier(&Supplier{LegalName: "Mirror"}, nil, 7)
+	require.NoError(t, err)
+	assert.Equal(t, lead.Code, again.Code)
+
+	// Records numbered before codes were shared move onto the company code.
+	legacy := Supplier{Code: "V900", ShortName: "Legacy Relay", Status: SupplierStatusActive}
+	require.NoError(t, DB.Create(&legacy).Error)
+	require.NoError(t, backfillSupplierCodes())
+	require.NoError(t, DB.First(&legacy, legacy.Id).Error)
+	var legacyCompany BdCompany
+	require.NoError(t, DB.Where("side = ? AND name = ?", BdSideBuy, "Legacy Relay").First(&legacyCompany).Error)
+	assert.Equal(t, legacyCompany.Code, legacy.Code)
+	require.NoError(t, DB.Model(&BdLead{}).Where("code = ?", legacyCompany.Code).Count(&count).Error)
 	assert.Equal(t, int64(1), count)
 }
