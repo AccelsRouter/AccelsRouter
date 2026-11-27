@@ -111,6 +111,7 @@ func customVendorUsageExpr(schema map[string]jsplugin.UsageFieldSchema, tiers []
 			}
 		}
 		var terms, tests, names []string
+		var surcharge string
 		for _, key := range slices.Sorted(maps.Keys(usage)) {
 			if !validCustomVendorNumber(usage[key]) {
 				return "", false
@@ -122,6 +123,8 @@ func customVendorUsageExpr(schema map[string]jsplugin.UsageFieldSchema, tiers []
 				if _, counted := schema["input_images"]; counted {
 					terms = append(terms, `max(u("input_images") - 1, 0) * `+price)
 				}
+			case key == "per_request":
+				surcharge = price
 			case !declared:
 				// A fact the model never reports, such as a size it cannot output.
 			case field.Unit == "token":
@@ -132,6 +135,9 @@ func customVendorUsageExpr(schema map[string]jsplugin.UsageFieldSchema, tiers []
 		}
 		if len(terms) == 0 {
 			return "", false
+		}
+		if surcharge != "" {
+			terms = append(terms, surcharge)
 		}
 		for i, key := range keys {
 			switch {

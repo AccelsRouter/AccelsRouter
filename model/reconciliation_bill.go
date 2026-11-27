@@ -60,22 +60,27 @@ type UpstreamBillEntry struct {
 // separately since bills label it with the currency ("折后价(CNY)"). The
 // camel-case names are those of Baidu's model service usage export.
 var upstreamBillColumns = map[string]string{
-	"时间": "time", "time": "time", "created_at": "time", "日期": "time", "date": "time", "starttime": "time",
-	"模型名": "model", "模型": "model", "model": "model", "model_name": "model", "modelname": "model",
-	"输入token": "prompt", "输入tokens": "prompt", "prompt_tokens": "prompt", "input_tokens": "prompt", "totalinputtokens": "prompt",
-	"输出token": "completion", "输出tokens": "completion", "completion_tokens": "completion", "output_tokens": "completion", "totaloutputtokens": "completion",
-	"缓存读取": "cache", "cache_read_tokens": "cache", "cached_tokens": "cache",
+	"时间": "time", "time": "time", "created_at": "time", "createdat": "time", "created_time": "time", "request_time": "time", "start_time": "time", "日期": "time", "date": "time", "starttime": "time", "timestamp": "time",
+	"模型名": "model", "模型": "model", "model": "model", "model_name": "model", "modelname": "model", "model_id": "model", "modelid": "model", "endpoint": "model",
+	"输入token": "prompt", "输入tokens": "prompt", "prompt_tokens": "prompt", "prompttokens": "prompt", "input_tokens": "prompt", "inputtokens": "prompt", "totalinputtokens": "prompt",
+	"输出token": "completion", "输出tokens": "completion", "completion_tokens": "completion", "completiontokens": "completion", "output_tokens": "completion", "outputtokens": "completion", "totaloutputtokens": "completion",
+	"缓存读取": "cache", "cache_read_tokens": "cache", "cached_tokens": "cache", "cachedtokens": "cache",
 	// Baidu counts cached input per kind of content; together they are the
 	// cached input.
 	"inputtextcachedtokens": "cache", "inputaudiocachedtokens": "cache", "inputimagecachedtokens": "cache",
 	"inputvideocachedtokens": "cache", "inputdocumentcachedtokens": "cache",
 	// What a call that is not billed by token produced.
-	"durationseconds": "seconds", "outputcount": "outputs",
+	"durationseconds": "seconds", "duration": "seconds", "seconds": "seconds", "video_seconds": "seconds",
+	"outputcount": "outputs", "images": "outputs", "image_count": "outputs",
 }
 
 // upstreamBillCostPrefixes, in order of preference: what the upstream charged
 // after discount, else the undiscounted price.
-var upstreamBillCostPrefixes = []string{"折后价", "discountedamount", "费用", "cost", "amount", "原价", "originalamount", "price"}
+var upstreamBillCostPrefixes = []string{"折后价", "discountedamount", "费用", "total_cost", "cost_usd", "cost", "amount", "usd", "credits", "credit", "billed", "原价", "originalamount", "price"}
+
+var upstreamBillZonedTimeLayouts = []string{
+	time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05Z", "2006-01-02 15:04:05-07:00",
+}
 
 var upstreamBillTimeLayouts = []string{
 	"2006-01-02 15:04:05", "2006-01-02T15:04:05", "2006/01/02 15:04:05", "2006/1/2 15:04:05",
@@ -242,6 +247,9 @@ func parseUpstreamBillRows(next func() ([]string, error)) ([]UpstreamBillEntry, 
 		var sum float64
 		for _, at := range cols[field] {
 			s := strings.ReplaceAll(cell(row, at), ",", "")
+			if field == "cost" {
+				s = strings.TrimSpace(strings.TrimPrefix(s, "$"))
+			}
 			if s == "" || s == "-" {
 				continue
 			}
@@ -275,12 +283,23 @@ func parseUpstreamBillRows(next func() ([]string, error)) ([]UpstreamBillEntry, 
 			continue
 		}
 		var wall time.Time
-		for _, layout := range upstreamBillTimeLayouts {
-			if wall, err = time.ParseInLocation(layout, when, time.UTC); err == nil {
+		for _, layout := range upstreamBillZonedTimeLayouts {
+			if parsed, parseErr := time.Parse(layout, when); parseErr == nil {
+				wall = parsed.UTC()
+				err = nil
 				break
+			} else {
+				err = parseErr
 			}
 		}
-		model := cell(row, cols["model"][0])
+		if err != nil {
+			for _, layout := range upstreamBillTimeLayouts {
+				if wall, err = time.ParseInLocation(layout, when, time.UTC); err == nil {
+					break
+				}
+			}
+		}
+		model := normalizeUpstreamBillModel(cell(row, cols["model"][0]))
 		if err != nil {
 			// A totals row ("合计") names no model.
 			if model == "" {
@@ -735,4 +754,23 @@ func abs(n int) int {
 		return -n
 	}
 	return n
+}
+
+func normalizeUpstreamBillModel(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "/vendors/") {
+		parts := strings.Split(strings.TrimPrefix(trimmed, "/"), "/")
+		if len(parts) >= 4 && parts[0] == "vendors" && parts[2] == "v1" && parts[3] != "" {
+			trimmed = parts[3]
+		}
+	}
+	for _, prefix := range []string{"carrothub/", "mulerouter/"} {
+		if rest, ok := strings.CutPrefix(trimmed, prefix); ok && rest != "" {
+			return rest
+		}
+	}
+	return trimmed
 }

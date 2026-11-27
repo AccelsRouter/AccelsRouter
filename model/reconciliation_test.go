@@ -336,3 +336,47 @@ func TestBaiduUsageExportComparesTheAccountsChannels(t *testing.T) {
 	assert.Equal(t, int64(2), rep.Ours.Requests)
 	assert.InDelta(t, 1.45, rep.Bill.Cost, 1e-9)
 }
+
+func TestMuleRouterBillParseNormalizesModelsAndTimestamps(t *testing.T) {
+	csvBill := "timestamp,endpoint,prompt_tokens,completion_tokens,cached_tokens,duration,images,total_cost\n" +
+		"2026-11-27T08:15:30Z,/vendors/carrothub/v1/berry-1.0/generation,0,0,0,5,0,$0.50\n" +
+		"2026-11-27T08:20:00+08:00,mulerouter/flashvsr,0,0,0,10,0,0.24\n" +
+		"2026-11-27T09:00:00Z,carrothub/z-image-spicy,0,0,0,0,2,0.027\n" +
+		"2026-11-27T09:05:00Z,carrothub-papaya-1.0,1000000,500000,0,0,0,0.375\n"
+	entries, err := ParseUpstreamBill("mulerouter_usage.csv", strings.NewReader(csvBill))
+	require.NoError(t, err)
+	assert.Equal(t, []UpstreamBillEntry{
+		{
+			Wall:        time.Date(2026, 11, 27, 8, 15, 30, 0, time.UTC).Unix(),
+			Model:       "berry-1.0",
+			Cost:        0.5,
+			Requests:    1,
+			UsageUnit:   UsageUnitSecond,
+			UsageAmount: 5,
+		},
+		{
+			Wall:        time.Date(2026, 11, 27, 0, 20, 0, 0, time.UTC).Unix(),
+			Model:       "flashvsr",
+			Cost:        0.24,
+			Requests:    1,
+			UsageUnit:   UsageUnitSecond,
+			UsageAmount: 10,
+		},
+		{
+			Wall:        time.Date(2026, 11, 27, 9, 0, 0, 0, time.UTC).Unix(),
+			Model:       "z-image-spicy",
+			Cost:        0.027,
+			Requests:    1,
+			UsageUnit:   UsageUnitImage,
+			UsageAmount: 2,
+		},
+		{
+			Wall:             time.Date(2026, 11, 27, 9, 5, 0, 0, time.UTC).Unix(),
+			Model:            "carrothub-papaya-1.0",
+			PromptTokens:     1000000,
+			CompletionTokens: 500000,
+			Cost:             0.375,
+			Requests:         1,
+		},
+	}, entries)
+}

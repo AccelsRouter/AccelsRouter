@@ -79,6 +79,8 @@ func customChannelVendorSource(baseURL string) string {
 		return "byteplus"
 	case strings.HasSuffix(host, ".volces.com"):
 		return "volcengine"
+	case isCustomMuleRouterHost(host):
+		return "mulerouter"
 	case strings.HasSuffix(host, ".bcevod.com"), strings.HasPrefix(host, "vod") && strings.HasSuffix(host, ".baidubce.com"):
 		return customChannelListPriceSource
 	}
@@ -103,8 +105,10 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 		if channel.Status != common.ChannelStatusEnabled || !strings.HasPrefix(channel.GetBaseURL(), "http") {
 			continue
 		}
-		// Baidu's model service serves no price list to ask for.
-		if customChannelVendorSource(channel.GetBaseURL()) == customChannelListPriceSource {
+		// Baidu's model service and MuleRouter expose no upstream /api/pricing
+		// endpoint to ask for.
+		vendorSource := customChannelVendorSource(channel.GetBaseURL())
+		if vendorSource == customChannelListPriceSource || vendorSource == "mulerouter" {
 			continue
 		}
 		upstream := dto.UpstreamDTO{ID: channel.Id, Name: channel.Name, BaseURL: channel.GetBaseURL()}
@@ -130,7 +134,7 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 		FetchUpstreamRatios(c)
 	}
 	var catalog []model.CustomVendorPrice
-	if err := model.DB.Where("source IN ?", []string{"byteplus", "volcengine"}).Find(&catalog).Error; err != nil {
+	if err := model.DB.Where("source IN ?", []string{"byteplus", "volcengine", "mulerouter"}).Find(&catalog).Error; err != nil {
 		return 0, err
 	}
 	listed := make(map[string]customVendorPrice, len(catalog))

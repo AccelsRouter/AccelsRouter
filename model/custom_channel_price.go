@@ -201,6 +201,16 @@ func customChannelCost(pricing map[string]any, usage customChannelUsage, name st
 		}
 		for _, condition := range conditions {
 			if cost, valid := run(billingexpr.TokenParams{}, condition); valid {
+				if usage.Requests > 1 {
+					zero := make(map[string]any, len(condition))
+					for k, v := range condition {
+						zero[k] = v
+					}
+					zero[fact] = 0.0
+					if base, ok := run(billingexpr.TokenParams{}, zero); ok && base > 0 {
+						cost = (cost - base) + base*float64(usage.Requests)
+					}
+				}
 				costs = append(costs, cost)
 			}
 		}

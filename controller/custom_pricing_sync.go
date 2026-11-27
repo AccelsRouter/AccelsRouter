@@ -51,6 +51,9 @@ func fetchCustomPricingSync(ctx context.Context, client *http.Client, upstream d
 			return nil, true, err
 		}
 		return customPricingSyncResult(convertCustomAlibabaModelsToBillingExpr(models))
+	case isCustomMuleRouterBaseURL(upstream.BaseURL):
+		data, err := customMuleRouterPricingSyncData(ctx, client)
+		return data, true, err
 	}
 	return nil, false, nil
 }

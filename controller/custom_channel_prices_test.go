@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -205,4 +207,151 @@ func TestBaiduInternationalFlashPricingTransition(t *testing.T) {
 			assert.False(t, ok)
 		})
 	}
+}
+
+func TestMuleRouterDocParsingAndTaskExpressions(t *testing.T) {
+	pages := map[string]string{
+		"/berry-1.0":             "# Berry 1.0\n\n## Pricing\n\n| Resolution | Unit price |\n| :- | -: |\n| 480p | \\$0.050 / second |\n| 720p | \\$0.100 / second |\n| 1080p (default) | \\$0.200 / second |\n",
+		"/berry-1.0-pro":         "# Berry 1.0 Pro\n\n## Pricing\n\n| Resolution | Unit price |\n| :- | -: |\n| 1080p (default) | \\$0.18 / second |\n| 2K | \\$0.20 / second |\n| 4K | \\$0.23 / second |\n",
+		"/berry-1.0-turbo":       "# Berry 1.0 Turbo\n\n## Pricing\n\n| Resolution | Unit price |\n| :- | -: |\n| 480p | \\$0.068 / second |\n| 720p | \\$0.140 / second |\n| 1080p (default) | \\$0.280 / second |\n",
+		"/berry-1.0-pro-turbo":   "# Berry 1.0 Pro Turbo\n\n## Pricing\n\n| Resolution | Unit price |\n| :- | -: |\n| 1080p (default) | \\$0.26 / second |\n| 2K | \\$0.28 / second |\n| 4K | \\$0.31 / second |\n",
+		"/wan2.7-i2v-spicy":      "# Wan 2.7 I2V Spicy\n\n## Pricing\n\n| Item | Price (USD) |\n| :- | -: |\n| 720p video | \\$0.13 / second |\n| 1080p video | \\$0.20 / second |\n| Prompt rewriting | Free |\n",
+		"/wan2.2-i2v-spicy":      "# Wan 2.2 I2V Spicy\n\n## Pricing\n\n| Item | Price (USD) |\n| :- | -: |\n| 480p video | \\$0.02 / second |\n| 720p video | \\$0.04 / second |\n| Prompt rewriting | \\$0.001 / request |\n",
+		"/w2.2-i2v-lora":         "# Wan 2.2 I2V LoRA\n\n## Pricing\n\n| Item | Price (USD) |\n| :- | -: |\n| 480p video | \\$0.02 / second |\n| 720p video | \\$0.04 / second |\n| LoRA weights | Free |\n",
+		"/wan-animate":           "# Wan Animate\n\n## Pricing\n\n| Resolution | Price (USD) |\n| :- | -: |\n| 480p | \\$0.053 / second |\n| 720p | \\$0.11 / second |\n",
+		"/flashvsr":              "# FlashVSR\n\n## Pricing\n\n| Resolution | Price (USD) |\n| :- | -: |\n| 720p | \\$0.0160 / second |\n| 1080p | \\$0.0240 / second |\n| 2k | \\$0.0320 / second |\n| 4k | \\$0.0530 / second |\n",
+		"/z-image-spicy":         "# Z Image Spicy\n\n## Pricing\n\n| Item | Price (USD) |\n| :- | -: |\n| Image generation | \\$0.013 / image |\n| Prompt rewriting | \\$0.001 / request |\n",
+		"/z-image-spicy-pro":     "# Z Image Spicy Pro\n\n## Pricing\n\n| Item | Price (USD) |\n| :- | -: |\n| Image generation | \\$0.02 / image |\n",
+		"/qwen-image-edit-spicy": "# Qwen Image Edit Spicy\n\n## Pricing\n\n| Item | Price (USD) |\n| :- | -: |\n| Image editing (1 image) | \\$0.04 / image |\n| Image editing (2 images) | \\$0.043 / image |\n| Image editing (3 images) | \\$0.046 / image |\n",
+		"/face-swap":             "# Face Swap\n\n## Pricing\n\n| Item | Price (USD) |\n| :- | -: |\n| Face Swap | \\$0.013 / image |\n",
+		"/head-swap":             "# Head Swap\n\n## Pricing\n\n| Item | Price (USD) |\n| :- | -: |\n| Head Swap | \\$0.013 / image |\n",
+		"/carrothub-papaya-1.0":  "> Input costs USD 0.15 per million tokens; output costs USD 0.45 per million tokens.\n",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, ok := pages[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprint(w, body)
+	}))
+	defer server.Close()
+
+	specs := make([]customMuleRouterDocSpec, len(customMuleRouterDocPages))
+	for i, spec := range customMuleRouterDocPages {
+		spec.URL = server.URL + "/" + spec.Model
+		specs[i] = spec
+	}
+	prices, err := fetchCustomMuleRouterPricesFrom(t.Context(), server.Client(), specs)
+	require.NoError(t, err)
+	require.Len(t, prices, len(customMuleRouterDocPages))
+
+	assert.Equal(t, 0.15, prices["carrothub-papaya-1.0"].Input)
+	require.NotNil(t, prices["carrothub-papaya-1.0"].Output)
+	assert.Equal(t, 0.45, *prices["carrothub-papaya-1.0"].Output)
+	assert.Equal(t, 0.05, prices["berry-1.0"].Input)
+	assert.Equal(t, 0.013, prices["z-image-spicy"].Input)
+
+	for _, spec := range specs {
+		expr, ok := customVendorSyncExpr(spec.Model, prices[spec.Model])
+		require.True(t, ok, "sync expression for %s", spec.Model)
+		assert.Empty(t, customBillingExprError(spec.Model, expr), "validation failed for %s: %s", spec.Model, expr)
+	}
+}
+
+func TestMuleRouterChannelPricingSyncRecordAndReconciliation(t *testing.T) {
+	db := setupCustomVendorCatalogDB(t)
+	require.NoError(t, db.AutoMigrate(&model.CustomChannelPrice{}, &model.QuotaData{}))
+
+	now := time.Date(2026, 11, 27, 8, 0, 0, 0, time.UTC)
+	wanPrice := customVendorPrice{
+		Provider: customMuleRouterProvider,
+		Tiers: []customVendorTier{
+			{When: map[string]string{"resolution": "480p", "prompt_extend": "false"}, Usage: map[string]float64{"seconds": 0.02}},
+			{When: map[string]string{"resolution": "480p", "prompt_extend": "true"}, Usage: map[string]float64{"seconds": 0.02, "per_request": 0.001}},
+			{When: map[string]string{"resolution": "720p", "prompt_extend": "false"}, Usage: map[string]float64{"seconds": 0.04}},
+			{When: map[string]string{"resolution": "720p", "prompt_extend": "true"}, Usage: map[string]float64{"seconds": 0.04, "per_request": 0.001}},
+		},
+	}
+	papayaOut := 0.45
+	papayaPrice := customVendorPrice{Provider: customMuleRouterProvider, Input: 0.15, Output: &papayaOut}
+
+	for name, price := range map[string]customVendorPrice{
+		"wan2.2-i2v-spicy":     wanPrice,
+		"carrothub-papaya-1.0": papayaPrice,
+	} {
+		row := customVendorRowFromPrice(name, "mulerouter", price, now.Unix())
+		require.NoError(t, db.Create(&row).Error)
+	}
+
+	syncData, handled, err := fetchCustomPricingSync(t.Context(), nil, dto.UpstreamDTO{
+		ID:      1,
+		Name:    "MuleRouter",
+		BaseURL: "https://api.mulerouter.ai",
+	})
+	require.True(t, handled)
+	require.NoError(t, err)
+	require.Contains(t, syncData, "wan2.2-i2v-spicy")
+	require.Contains(t, syncData, "carrothub-papaya-1.0")
+	wanEntry := syncData["wan2.2-i2v-spicy"].(map[string]any)
+	assert.Contains(t, wanEntry["billing_expr"], `+ 0.001`)
+
+	base := "https://api.mulerouter.ai"
+	channel := &model.Channel{
+		Name:   "mulerouter",
+		Key:    "sk-mulerouter",
+		Status: common.ChannelStatusEnabled,
+		Models: "wan2.2-i2v-spicy,carrothub-papaya-1.0",
+	}
+	channel.BaseURL = &base
+	require.NoError(t, db.Create(channel).Error)
+
+	// Record skips upstream /api/pricing for mulerouter and persists catalog
+	// prices under the channel.
+	written, err := recordCustomChannelPrices(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 2, written)
+
+	usageTime := time.Now().UTC().Add(time.Hour).Truncate(time.Hour)
+	// Multi-request usage scales the flat per_request surcharge across all requests.
+	require.NoError(t, db.Create(&[]model.QuotaData{
+		{
+			ChannelID:   channel.Id,
+			ModelName:   "wan2.2-i2v-spicy",
+			CreatedAt:   usageTime.Unix(),
+			Count:       3,
+			UsageUnit:   model.UsageUnitSecond,
+			UsageAmount: 15,
+			Quota:       100,
+		},
+		{
+			ChannelID:        channel.Id,
+			ModelName:        "carrothub-papaya-1.0",
+			CreatedAt:        usageTime.Unix(),
+			Count:            1,
+			TokenUsed:        1200000,
+			PromptTokens:     1000000,
+			CompletionTokens: 200000,
+			Quota:            120,
+		},
+	}).Error)
+
+	rep, err := model.CompareUpstreamBill(channel.Id, []model.UpstreamBillEntry{
+		{Wall: usageTime.Unix() + 60, Model: "wan2.2-i2v-spicy", Cost: 0.453, Requests: 3, UsageUnit: model.UsageUnitSecond, UsageAmount: 15},
+		{Wall: usageTime.Unix() + 120, Model: "carrothub-papaya-1.0", PromptTokens: 1000000, CompletionTokens: 200000, Cost: 0.24, Requests: 1},
+	}, nil, 0, nil)
+	require.NoError(t, err)
+	require.Len(t, rep.Rows, 2)
+
+	byModel := make(map[string]model.UpstreamBillRow, 2)
+	for _, row := range rep.Rows {
+		byModel[row.Model] = row
+	}
+	require.NotNil(t, byModel["wan2.2-i2v-spicy"].Expected)
+	assert.InDelta(t, 0.30, byModel["wan2.2-i2v-spicy"].Expected.Lowest, 1e-9)
+	assert.InDelta(t, 0.603, byModel["wan2.2-i2v-spicy"].Expected.Highest, 1e-9)
+	require.NotNil(t, byModel["carrothub-papaya-1.0"].Expected)
+	assert.InDelta(t, 0.24, byModel["carrothub-papaya-1.0"].Expected.Lowest, 1e-9)
+	assert.InDelta(t, 0.24, byModel["carrothub-papaya-1.0"].Expected.Highest, 1e-9)
 }

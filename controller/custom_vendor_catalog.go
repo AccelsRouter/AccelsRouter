@@ -36,7 +36,7 @@ const (
 
 // customVendorSourcePriority decides which source wins when several price a model.
 var customVendorSourcePriority = []string{
-	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai", "google", "openai", "byteplus", "volcengine", "tencent",
+	customVendorManualSource, "alibaba", "z.ai", "deepseek", "kimi", "anthropic", "xai", "google", "openai", "byteplus", "volcengine", "tencent", "mulerouter",
 }
 
 type customVendorSourceResult struct {
@@ -49,11 +49,14 @@ type customVendorSourceResult struct {
 // fetchCustomVendorSources reads every source; one that fails is reported, not fatal.
 func fetchCustomVendorSources(ctx context.Context) []customVendorSourceResult {
 	client := &http.Client{Timeout: 30 * time.Second}
-	results := make([]customVendorSourceResult, 0, len(customVendorPageSources)+1)
+	results := make([]customVendorSourceResult, 0, len(customVendorPageSources)+2)
 	for _, source := range customVendorPageSources {
 		results = append(results, customVendorSourceResult{Name: source.Name})
 	}
-	results = append(results, customVendorSourceResult{Name: "alibaba"})
+	results = append(results,
+		customVendorSourceResult{Name: "alibaba"},
+		customVendorSourceResult{Name: "mulerouter"},
+	)
 
 	var wg sync.WaitGroup
 	for i := range results {
@@ -64,6 +67,8 @@ func fetchCustomVendorSources(ctx context.Context) []customVendorSourceResult {
 			switch result.Name {
 			case "alibaba":
 				result.Prices, result.Note, result.Err = fetchCustomAlibabaVendorPrices(ctx, client)
+			case "mulerouter":
+				result.Prices, result.Err = fetchCustomMuleRouterVendorPrices(ctx, client)
 			case "openai":
 				result.Prices, result.Err = fetchCustomOpenAIVendorPrices(ctx, client, customOpenRouterModelsURL)
 			default:
