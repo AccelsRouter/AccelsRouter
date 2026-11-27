@@ -23,5 +23,8 @@ func init() {
 		"hy3":                "腾讯",
 		"hy4":                "腾讯",
 		"wand-vega":          "腾讯",
+		"berry-1.":           "MuleRouter",
+		"carrothub-":         "MuleRouter",
+		"flashvsr":           "MuleRouter",
 	})
 }
