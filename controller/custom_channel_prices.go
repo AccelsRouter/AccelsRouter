@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -26,11 +28,46 @@ const customUpstreamPriceSinkKey = "custom_upstream_price_sink"
 // model: each vendor's own list price, a manual entry first.
 const customChannelListPriceSource = "*"
 
+// baiduInternationalChannelPrice returns verified prices from Baidu's
+// international BG and BO tables (November 2026), in USD per million tokens.
+func baiduInternationalChannelPrice(host, name string, at time.Time) (customVendorPrice, bool) {
+	if !strings.HasSuffix(host, ".aigc.exp.bcevod.com") {
+		return customVendorPrice{}, false
+	}
+	if slices.Contains(customOpenAIImageModels, name) {
+		price := customOpenAIImagePrice()
+		price.Provider = "Baidu VOD international BO"
+		return price, true
+	}
+	switch name {
+	case "gemini-2.5-flash-image", "gemini-nano-banana-2.1":
+		input, output, image := 0.3, 2.5, 30.0
+		var cache *float64
+		if name == "gemini-nano-banana-2.1" {
+			input, output = 1.5, 7.5
+			cached := 0.15
+			cache = &cached
+		}
+		return customVendorPrice{
+			Provider: "Baidu VOD international BG", Input: input, Output: &output, CacheRead: cache,
+			Tiers: []customVendorTier{{Input: input, Output: &output, CacheRead: cache, ImageOutput: &image}},
+		}, true
+	case "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash":
+		input, output, cache := 0.75, 3.75, 0.08
+		if !at.Before(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)) {
+			input, output, cache = 1.5, 7.5, 0.15
+		}
+		return customVendorPrice{Input: input, Output: &output, CacheRead: &cache}, true
+	default:
+		return customVendorPrice{}, false
+	}
+}
+
 // customChannelVendorSource names the vendor price catalog source that lists
 // what a channel pointed at a vendor's own API is charged, or "" for a channel
 // of another kind. Baidu's model service (the AIGC endpoints of its VOD
-// product) publishes no price list of its own to read: it resells other
-// vendors' models at each vendor's list price.
+// product) does not expose a machine-readable pricing endpoint. Its verified regional
+// rates take precedence over the general vendor catalog.
 func customChannelVendorSource(baseURL string) string {
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
@@ -100,7 +137,7 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 	for _, row := range catalog {
 		listed[row.Source+"\n"+row.ModelName] = customVendorPriceFromRow(row)
 	}
-	resolved, _, err := resolveCustomVendorPrices()
+	resolved, manual, err := resolveCustomVendorPrices()
 	if err != nil {
 		return 0, err
 	}
@@ -120,6 +157,7 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 		}
 		list, read := lists[fmt.Sprintf("%s(%d)", channel.Name, channel.Id)]
 		source := customChannelVendorSource(channel.GetBaseURL())
+		baseURL, _ := url.Parse(channel.GetBaseURL())
 		prices := make(map[string]map[string]any)
 		for _, served := range channel.GetModels() {
 			name := served
@@ -141,6 +179,12 @@ func recordCustomChannelPrices(ctx context.Context) (int, error) {
 			}
 			if !found && source == customChannelListPriceSource {
 				row, found = listed[source+"\n"+customSnapshotDate.ReplaceAllString(name, "")]
+			}
+			if source == customChannelListPriceSource && baseURL != nil && !manual[name] &&
+				!manual[customSnapshotDate.ReplaceAllString(name, "")] {
+				if price, ok := baiduInternationalChannelPrice(strings.ToLower(baseURL.Hostname()), name, time.Unix(now, 0)); ok {
+					row, found = price, true
+				}
 			}
 			if !found {
 				continue

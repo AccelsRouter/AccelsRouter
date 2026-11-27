@@ -131,7 +131,7 @@ func TestCustomChannelPricesOfBaiduModelService(t *testing.T) {
 		"claude-opus-5":  customVendorTestPrice(5, 25),
 		"gemini-3-flash": customVendorTestPrice(0.5, 3),
 		// Image output has a price of its own.
-		"nano-banana": {Provider: "test", Input: 1.5, Output: &text, Tiers: []customVendorTier{{Input: 1.5, Output: &text, ImageOutput: &images}}},
+		"gemini-nano-banana-2.1": {Provider: "test", Input: 1.5, Output: &text, Tiers: []customVendorTier{{Input: 1.5, Output: &text, ImageOutput: &images}}},
 		// Image input and cached image input have prices of their own.
 		"gpt-image-2.5-flare": customOpenAIImagePrice(),
 	} {
@@ -142,7 +142,7 @@ func TestCustomChannelPricesOfBaiduModelService(t *testing.T) {
 	mapping := `{"flash":"gemini-3-flash"}`
 	require.NoError(t, db.Create(&model.Channel{
 		Id: 21, Name: "vod", Type: 14, Key: "k", Status: common.ChannelStatusEnabled, BaseURL: &base,
-		Models: "claude-opus-5,claude-opus-5-20261101,flash,nano-banana,gpt-image-2.5-flare,not-in-the-catalog", ModelMapping: &mapping,
+		Models: "claude-opus-5,claude-opus-5-20261101,flash,gemini-nano-banana-2.1,gpt-image-2.5-flare,not-in-the-catalog", ModelMapping: &mapping,
 	}).Error)
 
 	changed, err := recordCustomChannelPrices(t.Context())
@@ -152,7 +152,7 @@ func TestCustomChannelPricesOfBaiduModelService(t *testing.T) {
 	require.NoError(t, db.Where("channel_id = ? AND model_name <> ?", 21, "gpt-image-2.5-flare").Order("model_name").Find(&rows).Error)
 	require.Len(t, rows, 4)
 	// A dated snapshot costs what its model does.
-	assert.Equal(t, []string{"claude-opus-5", "claude-opus-5-20261101", "gemini-3-flash", "nano-banana"}, []string{rows[0].ModelName, rows[1].ModelName, rows[2].ModelName, rows[3].ModelName})
+	assert.Equal(t, []string{"claude-opus-5", "claude-opus-5-20261101", "gemini-3-flash", "gemini-nano-banana-2.1"}, []string{rows[0].ModelName, rows[1].ModelName, rows[2].ModelName, rows[3].ModelName})
 	assert.Contains(t, rows[0].Pricing, "p * 5")
 	assert.Equal(t, rows[0].Pricing, rows[1].Pricing)
 	assert.Contains(t, rows[3].Pricing, "img_o * 30")
@@ -163,14 +163,14 @@ func TestCustomChannelPricesOfBaiduModelService(t *testing.T) {
 	// The hourly record does not tell image output from text output: the
 	// expected cost runs from all of it as text to all of it as images.
 	hour := rows[3].EffectiveAt - rows[3].EffectiveAt%3600 + 3600
-	require.NoError(t, db.Create(&model.QuotaData{ModelName: "nano-banana", CreatedAt: hour, ChannelID: 21, Count: 1, Quota: 100, TokenUsed: 1002000, PromptTokens: 1000000, CompletionTokens: 2000}).Error)
+	require.NoError(t, db.Create(&model.QuotaData{ModelName: "gemini-nano-banana-2.1", CreatedAt: hour, ChannelID: 21, Count: 1, Quota: 100, TokenUsed: 1002000, PromptTokens: 1000000, CompletionTokens: 2000}).Error)
 	// Nor image input from text input: 0.8M fresh and 0.2M cached input run
 	// from all text to all images, and the 10K of output cost the same.
 	require.NoError(t, db.Create(&model.QuotaData{ModelName: "gpt-image-2.5-flare", CreatedAt: hour, ChannelID: 21, Count: 1, Quota: 100, TokenUsed: 1010000, PromptTokens: 1000000, CompletionTokens: 10000, CacheReadTokens: 200000}).Error)
 	utc := 0
 	report, err := model.CompareUpstreamBill(21, []model.UpstreamBillEntry{
 		{Wall: hour, Model: "gpt-image-2.5-flare", Requests: 1, Cost: 5},
-		{Wall: hour, Model: "nano-banana", Requests: 1, Cost: 1.56},
+		{Wall: hour, Model: "gemini-nano-banana-2.1", Requests: 1, Cost: 1.56},
 	}, &utc, 0, nil)
 	require.NoError(t, err)
 	require.Len(t, report.Rows, 2)
@@ -178,10 +178,31 @@ func TestCustomChannelPricesOfBaiduModelService(t *testing.T) {
 	for _, row := range report.Rows {
 		expected[row.Model] = row.Expected
 	}
-	require.NotNil(t, expected["nano-banana"])
-	assert.InDelta(t, 1.5+0.015, expected["nano-banana"].Lowest, 1e-9)
-	assert.InDelta(t, 1.5+0.06, expected["nano-banana"].Highest, 1e-9)
+	require.NotNil(t, expected["gemini-nano-banana-2.1"])
+	assert.InDelta(t, 1.5+0.015, expected["gemini-nano-banana-2.1"].Lowest, 1e-9)
+	assert.InDelta(t, 1.5+0.06, expected["gemini-nano-banana-2.1"].Highest, 1e-9)
 	require.NotNil(t, expected["gpt-image-2.5-flare"])
 	assert.InDelta(t, 4+0.25+0.3, expected["gpt-image-2.5-flare"].Lowest, 1e-9)
 	assert.InDelta(t, 6.4+0.4+0.3, expected["gpt-image-2.5-flare"].Highest, 1e-9)
+}
+
+func TestBaiduInternationalFlashPricingTransition(t *testing.T) {
+	const host = "eos-sg.aigc.exp.bcevod.com"
+	boundary := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, name := range []string{"gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
+		t.Run(name, func(t *testing.T) {
+			before, ok := baiduInternationalChannelPrice(host, name, boundary.Add(-time.Second))
+			require.True(t, ok)
+			assert.Equal(t, 0.75, before.Input)
+			assert.Equal(t, 3.75, *before.Output)
+			assert.Equal(t, 0.08, *before.CacheRead)
+			after, ok := baiduInternationalChannelPrice(host, name, boundary)
+			require.True(t, ok)
+			assert.Equal(t, 1.5, after.Input)
+			assert.Equal(t, 7.5, *after.Output)
+			assert.Equal(t, 0.15, *after.CacheRead)
+			_, ok = baiduInternationalChannelPrice("vod.gz.baidubce.com", name, boundary)
+			assert.False(t, ok)
+		})
+	}
 }

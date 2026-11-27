@@ -357,6 +357,30 @@ const HAILUO_02_USAGE_SCHEMA = { seconds: SECONDS_FIELD, resolution: { enum: ["5
 const HAILUO_METADATA_FIELDS = ["prompt_optimizer", "fast_pretreatment", "aigc_watermark", "first_frame_image", "last_frame_image", "subject_reference"];
 
 // ---------------------------------------------------------------------------
+// Gemini Omni, on Baidu's Interactions interface. The model generates video
+// from a prompt with optional reference images; the request carries neither a
+// duration nor a resolution, so the length Vertex's plugin checks and the
+// price tiers it reads shape the reservation, and the finished task's video
+// metadata settles it. The async form is documented for the old system only,
+// whose generic task detail answers the polls.
+// ---------------------------------------------------------------------------
+const OMNI_MODEL = "gemini-omni-flash-preview";
+const OMNI_MIN_SECONDS = 3;
+const OMNI_MAX_SECONDS = 15;
+const OMNI_DEFAULT_SECONDS = 8;
+// The video tokens a second of output is billed at, the tiers Vertex's plugin
+// reads for the same model, which keeps its usage facts and prices one.
+const OMNI_VIDEO_TOKENS_PER_SECOND = { "360p": 1931, "720p": 5792, "1080p": 8688, "4k": 17376 };
+const OMNI_USAGE_SCHEMA = {
+  input_tokens: { type: "number", unit: "token", description: { en: "Input token unit price", zh: "输入 Token 单价" } },
+  output_tokens: { type: "number", unit: "token", description: { en: "Text output token unit price", zh: "文本输出 Token 单价" } },
+  video_tokens: { type: "number", unit: "token", description: { en: "Video output token unit price", zh: "视频输出 Token 单价" } },
+};
+function omniUsageFacts(seconds, resolution) {
+  return { input_tokens: 0, output_tokens: 0, video_tokens: seconds * OMNI_VIDEO_TOKENS_PER_SECOND[resolution] };
+}
+
+// ---------------------------------------------------------------------------
 // Speech synthesis: MiniMax's t2a_v2, billed per character, a Chinese
 // character counting two.
 // ---------------------------------------------------------------------------
@@ -378,16 +402,18 @@ const VOICE_DESIGN_USAGE_SCHEMA = {
   characters: { type: "number", unit: "token", description: { en: "Preview synthesis unit price", zh: "试听合成单价" } },
 };
 
-const VIDEO_MODELS = Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS, VIDU_MODELS, Object.keys(PIXVERSE_MODELS), HAPPYHORSE_MODELS, [H3_MODEL, H3_MAX_MODEL], HAILUO_MODELS);
+const VIDEO_MODELS = Object.keys(KLING_PATH_MODELS).concat(KLING_BODY_MODELS, VIDU_MODELS, Object.keys(PIXVERSE_MODELS), HAPPYHORSE_MODELS, [H3_MODEL, H3_MAX_MODEL], HAILUO_MODELS, [OMNI_MODEL]);
 // The video models a vendor's plugin (kling, vidu, hailuo) declares
 // too. On /v1/videos the host has every plugin that declares a model decode
 // the request before it picks a channel, and the plugin of that channel
 // executes it, so these models are read here exactly as the vendor's plugin
-// reads them: a client must not see which channel served it.
+// reads them: a client must not see which channel served it. Gemini Omni is
+// Vertex AI's, whose duration and resolution checks are mirrored here.
 const SHARED_VIDEO_MODELS = ["kling-4.0", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"].concat(
   VIDU_MODELS.filter((model) => model !== "viduq4"),
   [H3_MODEL],
-  HAILUO_MODELS
+  HAILUO_MODELS,
+  [OMNI_MODEL]
 );
 
 // One submit route per model and endpoint of the Kling API that takes the
@@ -405,10 +431,10 @@ export const meta = {
   name: { en: "Baidu model service (video and speech)", zh: "百度模型服务（视频与语音）" },
   icon: "BaiduCloud.Color",
   description: {
-    en: "Kling, Vidu, PixVerse, HappyHorse and MiniMax video generation, Kling video effects, and MiniMax speech synthesis and voice design through Baidu's model service, in each vendor's own format or the OpenAI video format",
-    zh: "通过百度模型服务调用可灵、Vidu、PixVerse、HappyHorse、MiniMax 视频生成、可灵视频特效，以及 MiniMax 语音合成与音色设计，使用各厂商自己的接口格式或 OpenAI 视频格式",
+    en: "Kling, Vidu, PixVerse, HappyHorse, MiniMax and Gemini Omni video generation, Kling video effects, and MiniMax speech synthesis and voice design through Baidu's model service, in each vendor's own format or the OpenAI video format",
+    zh: "通过百度模型服务调用可灵、Vidu、PixVerse、HappyHorse、MiniMax、Gemini Omni 视频生成、可灵视频特效，以及 MiniMax 语音合成与音色设计，使用各厂商自己的接口格式或 OpenAI 视频格式",
   },
-  version: "1.3.0",
+  version: "1.4.0",
   author: { name: "AccelsRouter" },
   baseUrl: "https://vod.bj.baidubce.com",
   allowedHosts: ["vod.gz.baidubce.com"],
@@ -445,6 +471,7 @@ export const meta = {
     { models: [H3_MAX_MODEL], schema: H3_MAX_USAGE_SCHEMA },
     { models: ["MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast"], schema: HAILUO_23_USAGE_SCHEMA },
     { models: ["MiniMax-Hailuo-02"], schema: HAILUO_02_USAGE_SCHEMA },
+    { models: [OMNI_MODEL], schema: OMNI_USAGE_SCHEMA, examples: [{ label: "8s 720p", facts: omniUsageFacts(8, "720p") }] },
     { models: SPEECH_MODELS, schema: SPEECH_USAGE_SCHEMA, examples: [{ label: "1000 字符", facts: { characters: 1000 } }] },
     { models: [VOICE_DESIGN_MODEL], schema: VOICE_DESIGN_USAGE_SCHEMA, examples: [{ label: "1 个音色 · 100 字符试听", facts: { voices: 1, characters: 100 } }] },
   ],
@@ -1247,6 +1274,13 @@ export function buildSubmitRequest(ctx) {
     if (model !== H3_MODEL && model !== H3_MAX_MODEL) throw new Error(model + " is not served on /v2/video_generation");
     descriptor.url = ctx.baseUrl + "/v3/aigc/minimax/v2/video_generation";
     descriptor.body = Object.assign({}, req.vendorBody, { model: model });
+  } else if (req.vendor === "omni") {
+    // The async form of Baidu's Interactions interface, which only the old
+    // system documents; the new system's is synchronous, which the gateway's
+    // tasks cannot follow.
+    if (/aigc\.exp\.bcevod\.com/i.test(trimmed(ctx.baseUrl))) throw new Error("Gemini Omni tasks need the old-system base URL, the only one whose async form is documented");
+    descriptor.url = ctx.baseUrl + "/v3/chat/gc/v1beta/interactions";
+    descriptor.body = Object.assign({}, req.vendorBody, { model: model });
   } else if (req.vendor === "speech") {
     const parts = keyParts(ctx);
     if (parts.length !== 3 || !parts[1] || !parts[2]) throw new Error("speech synthesis needs a channel key of the form API Key|AccessKey|SecretKey");
@@ -1317,6 +1351,12 @@ export function parseSubmitResponse(ctx, resp) {
     if (base.status_code) throw new Error(trimmed(base.status_msg) || "minimax submit failed");
     taskId = trimmed(body.task_id) || trimmed(plainObject(body.task).id);
     if (req.api === "v1") state.api = "v1";
+  } else if (req.vendor === "omni") {
+    // Baidu's own structure, {"taskId":"tsk-xxx"}.
+    const error = plainObject(body.error);
+    if (trimmed(error.message)) throw new Error(error.message);
+    taskId = trimmed(body.taskId);
+    if (!taskId) throw new Error(trimmed(body.message) || "missing task id");
   } else if (req.vendor === "speech" && req.api === "async") {
     const base = plainObject(body.base_resp);
     if (base.status_code) throw new Error(trimmed(base.status_msg) || "speech synthesis failed");
@@ -1352,6 +1392,7 @@ export function extractUsage(ctx) {
   if (req.vendor === "kling") return klingUsage(ctx, req);
   if (req.vendor === "vidu") return viduUsage(req.endpoint, upstreamModel(ctx), body);
   if (req.vendor === "pixverse") return pixverseUsage(body, req.endpoint);
+  if (req.vendor === "omni") return req.estimate || omniUsageFacts(omniDuration(req.request || {}), omniResolution(req.request || {}));
   if (req.vendor === "happyhorse") return happyHorseUsage(body);
   if (req.vendor === "minimax" && req.api === "v1") return req.facts || hailuoUsage(upstreamModel(ctx), body);
   if (req.vendor === "minimax") return h3Usage(upstreamModel(ctx), body);
@@ -1379,11 +1420,13 @@ export function buildQueryRequest(ctx) {
     url = ctx.baseUrl + "/v2/task/" + id;
     return { url: url, method: "GET", headers: Object.assign({ "Content-Type": "application/json", Accept: "application/json" }, bceHeaders("GET", url, parts[1], parts[2])) };
   }
-  if (state.vendor === "kling" && state.api === "path") url = asyncBase(ctx) + "/async/kling/tasks?task_ids=" + id;
+  if (state.detail) url = ctx.baseUrl + "/v3/tasks/" + id;
+  else if (state.vendor === "kling" && state.api === "path") url = asyncBase(ctx) + "/async/kling/tasks?task_ids=" + id;
   else if (state.vendor === "kling") url = ctx.baseUrl + "/v3/aigc/kl/videos/" + state.endpoint + "/" + id;
   else if (state.vendor === "vidu") url = ctx.baseUrl + "/v3/aigc/vd/ent/v2/tasks/" + id + "/creations";
-  // Baidu's PixVerse interface has no query of its own.
-  else if (state.vendor === "pixverse" || state.detail) url = ctx.baseUrl + "/v3/tasks/" + id;
+  // Baidu's PixVerse interface has no query of its own, and Gemini Omni's
+  // async form answers to the same generic task detail.
+  else if (state.vendor === "pixverse" || state.vendor === "omni") url = ctx.baseUrl + "/v3/tasks/" + id;
   else if (state.vendor === "happyhorse") url = ctx.baseUrl + "/v3/aigc/bailian/api/v1/tasks/" + id;
   else if (state.vendor === "minimax" && state.api === "v1") url = ctx.baseUrl + "/v3/aigc/minimax/v1/query/video_generation?task_id=" + id;
   else if (state.vendor === "minimax") url = ctx.baseUrl + "/v3/aigc/minimax/v2/query/video_generation/" + id;
@@ -1425,6 +1468,14 @@ export function parseTaskResult(ctx, body) {
     return result;
   }
   if (state.vendor === "pixverse") return taskDetailResult(body);
+  if (state.vendor === "omni") {
+    const result = taskDetailResult(body);
+    if (result.status === "FAILURE" && result.reason === "task failed") {
+      // The task detail keeps the reason in the generate task's info.
+      result.reason = trimmed(plainObject(body.videoGenerateTaskInfo).errMsg) || result.reason;
+    }
+    return result;
+  }
   if (state.vendor === "happyhorse") {
     const output = plainObject(body.output);
     if (output.task_status === "PENDING") return { status: "QUEUED" };
@@ -1492,6 +1543,17 @@ export function extractUsageOnComplete(ctx, _result, body) {
     const credits = Number(body.credits);
     return Number.isFinite(credits) && credits >= 0 ? { credits: credits } : null;
   }
+  if (state.vendor === "omni") {
+    // The task detail reports no usage: the finished video's length settles
+    // the video tokens at the tier its pixels render, the input and text
+    // output tokens keep the submit estimate, which is zero.
+    const video = omniTaskVideo(body);
+    const seconds = reportedSeconds(video.durationInSecond);
+    if (!seconds) return null;
+    const longer = Math.max(Number(video.widthInPixel) || 0, Number(video.heightInPixel) || 0);
+    const resolution = longer >= 3840 ? "4k" : longer >= 1920 ? "1080p" : "720p";
+    return { video_tokens: Math.round(seconds * OMNI_VIDEO_TOKENS_PER_SECOND[resolution]) };
+  }
   if (state.vendor === "happyhorse") {
     const output = plainObject(body.output);
     const usage = plainObject(body.usage);
@@ -1540,9 +1602,24 @@ export function extractUsageOnComplete(ctx, _result, body) {
 
 // ------------------------------ video artifacts -----------------------------
 
+// The video metadata a finished omni task reports, from the first media the
+// task produced.
+function omniTaskVideo(body) {
+  const found = { media: null };
+  (function walk(value, depth) {
+    if (found.media || !value || typeof value !== "object" || depth > 8) return;
+    if (Array.isArray(value.mediaBasicInfos) && value.mediaBasicInfos.length) {
+      found.media = plainObject(value.mediaBasicInfos[0]);
+      return;
+    }
+    for (const key of Object.keys(value)) walk(value[key], depth + 1);
+  })(body, 0);
+  return plainObject(plainObject(found.media).sourceMetadata).video;
+}
+
 // The video of a finished task, from the vendor's last reply.
 function taskVideoURL(state, data) {
-  if (state.detail || state.vendor === "pixverse") return taskDetailVideoURL(data, 0);
+  if (state.detail || state.vendor === "pixverse" || state.vendor === "omni") return taskDetailVideoURL(data, 0);
   if (state.vendor === "kling" && state.api === "path") {
     const videos = klingPathVideos(klingPathEntry(data));
     return videos.length ? trimmed(videos[0].url) : "";
@@ -1609,6 +1686,7 @@ function videoVendor(model) {
   if (Object.prototype.hasOwnProperty.call(PIXVERSE_MODELS, model)) return "pixverse";
   if (HAPPYHORSE_MODELS.includes(model)) return "happyhorse";
   if (model === H3_MODEL || model === H3_MAX_MODEL || HAILUO_MODELS.includes(model)) return "minimax";
+  if (model === OMNI_MODEL) return "omni";
   return "";
 }
 
@@ -1828,6 +1906,63 @@ function h3ProtocolContent(name, req) {
   return checkH3Content(name, content);
 }
 
+// ------------------------------- Gemini Omni -------------------------------
+// Vertex AI's plugin reads this shared model's duration and resolution where
+// it builds its request; the same checks, in its words, shape the reservation
+// here, for a body Baidu's interface takes neither of them from.
+
+function omniDuration(req) {
+  const n = req.duration === undefined || req.duration === null || req.duration === "" ? OMNI_DEFAULT_SECONDS : Number(req.duration);
+  if (!Number.isInteger(n) || n < OMNI_MIN_SECONDS || n > OMNI_MAX_SECONDS) throw new Error("seconds must be an integer from " + OMNI_MIN_SECONDS + " to " + OMNI_MAX_SECONDS);
+  return n;
+}
+
+function omniResolution(req) {
+  const metadata = req.metadata || {};
+  const value = String(req.resolution || metadata.resolution || "").toLowerCase();
+  if (!value) return sizeTier(req.size);
+  if (!OMNI_VIDEO_TOKENS_PER_SECOND[value]) throw new Error("resolution must be one of " + Object.keys(OMNI_VIDEO_TOKENS_PER_SECOND).join(", "));
+  return value;
+}
+
+function sizeTier(size) {
+  const parts = String(size || "").toLowerCase().split("x");
+  const longer = parts.length === 2 ? Math.max(Number(parts[0]), Number(parts[1])) : NaN;
+  return longer >= 3840 ? "4k" : longer >= 1920 ? "1080p" : "720p";
+}
+
+// An input image as Vertex's plugin reads one: an uploaded file placeholder,
+// a data URL or bare base64, always jpeg or png. Baidu's interface also takes
+// image URLs, which Vertex's does not, so a URL keeps a client's channels
+// indistinguishable by being refused here too.
+function omniImage(ctx, image) {
+  let mime = "";
+  let data = image;
+  if (plainObject(image) && image.__fileRef) {
+    mime = String(image.mimeType || "").toLowerCase();
+    if (mime !== "image/jpeg" && mime !== "image/png") {
+      for (const file of ctx.files || []) {
+        if (file.ref === image.__fileRef || file.field === "input_reference") {
+          mime = String(file.mimeType || "").toLowerCase();
+          break;
+        }
+      }
+    }
+  } else {
+    const text = String(image);
+    if (/^https?:\/\//i.test(text)) throw new Error("input image must be image/jpeg or image/png");
+    const comma = text.indexOf(",");
+    data = text;
+    if (text.startsWith("data:")) {
+      mime = text.slice(5, comma).split(";")[0].toLowerCase();
+      data = text.slice(comma + 1);
+    } else if (text.startsWith("iVBORw0KGgo")) mime = "image/png";
+    else if (text.startsWith("/9j/")) mime = "image/jpeg";
+  }
+  if (mime !== "image/jpeg" && mime !== "image/png") throw new Error("input image must be image/jpeg or image/png");
+  return { mime: mime, data: data };
+}
+
 // Each vendor's reading of the protocol: decode normalizes the client's
 // request and names the action, request builds the vendor request from it for
 // the model the channel sends.
@@ -2039,6 +2174,42 @@ const VIDEO_PROTOCOL = {
     },
   },
 
+  // Gemini Omni, as the vertex-ai plugin: the prompt and the reference image
+  // in the Interactions input, whose images are jpeg or png base64. The
+  // duration and resolution Vertex checks shape the reservation only, for a
+  // body Baidu's interface takes neither from.
+  omni: {
+    decode: function (ctx) {
+      const read = uploadableVideoRequest(ctx);
+      const req = read.req;
+      const seconds = req.seconds === undefined ? req.duration : req.seconds;
+      if (seconds !== undefined) req.duration = Number(seconds);
+      if (read.uploaded) req.images = [{ __fileRef: "request_file:input_reference", encoding: "base64", maxBytes: 20971520 }];
+      else if (trimmed(req.input_reference || req.image) && (!Array.isArray(req.images) || req.images.length === 0)) req.images = [trimmed(req.input_reference || req.image)];
+      else if (!Array.isArray(req.images)) req.images = [];
+      return { request: req, action: read.uploaded || req.images.length ? "image_to_video" : "text_to_video" };
+    },
+    request: function (ctx, decoded) {
+      const req = decoded.request;
+      const input = [];
+      for (const image of req.images || []) {
+        const frame = omniImage(ctx, image);
+        input.push({ type: "image", mime_type: frame.mime, data: frame.data });
+      }
+      if (trimmed(req.prompt)) input.push({ type: "text", text: req.prompt });
+      if (!input.length) throw new Error("prompt is required");
+      const seconds = omniDuration(req);
+      const resolution = omniResolution(req);
+      return {
+        vendor: "omni",
+        model: decoded.model,
+        vendorBody: { input: input, background: true, response_format: { type: "video", delivery: "uri" } },
+        estimate: omniUsageFacts(seconds, resolution),
+        action: input.some((item) => item.type === "image") ? "image_to_video" : "text_to_video",
+      };
+    },
+  },
+
   // HappyHorse, after the alibaba plugin: the prompt and the reference images
   // in input, the duration, the resolution and, for text-to-video, the ratio
   // of the size in parameters, and DashScope's own input and parameters in
@@ -2122,7 +2293,7 @@ export const protocols = {
       else if (data.base_resp && data.base_resp.status_code !== 0) output.error = { message: data.base_resp.status_msg, code: String(data.base_resp.status_code) };
       else if (data.output && data.code) output.error = { code: data.code, message: data.message || "" };
       else if (result.code) output.error = { code: result.code, message: result.message || "" };
-      else if (data.taskId && trimmed(data.status).toUpperCase() === "FAILED") output.error = { message: taskDetailResult(data).reason, code: "" };
+      else if (data.taskId && trimmed(data.status).toUpperCase() === "FAILED") output.error = { message: trimmed(plainObject(data.videoGenerateTaskInfo).errMsg) || taskDetailResult(data).reason, code: "" };
       return output;
     },
   },

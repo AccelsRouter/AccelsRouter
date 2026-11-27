@@ -211,7 +211,7 @@ func parseUpstreamBillRows(next func() ([]string, error)) ([]UpstreamBillEntry, 
 		}
 		line++
 		found := map[string][]int{}
-		costRank := len(upstreamBillCostPrefixes)
+		costColumns := make([][]int, len(upstreamBillCostPrefixes))
 		for j, cell := range row {
 			name := strings.ToLower(strings.TrimSpace(cell))
 			aggregated = aggregated || name == "time_bucket"
@@ -221,12 +221,14 @@ func parseUpstreamBillRows(next func() ([]string, error)) ([]UpstreamBillEntry, 
 				}
 				continue
 			}
-			// An earlier column only loses to a preferred prefix.
-			if rank := upstreamBillCostRank(name); rank < costRank {
-				found["cost"], costRank = []int{j}, rank
+			if rank := upstreamBillCostRank(name); rank < len(costColumns) {
+				costColumns[rank] = append(costColumns[rank], j)
 			}
 		}
 		if len(found["time"]) > 0 && len(found["model"]) > 0 {
+			for _, columns := range costColumns {
+				found["cost"] = append(found["cost"], columns...)
+			}
 			cols = found
 		}
 	}
@@ -246,6 +248,13 @@ func parseUpstreamBillRows(next func() ([]string, error)) ([]UpstreamBillEntry, 
 			v, err := strconv.ParseFloat(s, 64)
 			if err != nil {
 				return 0, err
+			}
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				return 0, fmt.Errorf("non-finite value %q", s)
+			}
+			// Cost columns are alternatives, including an explicit zero charge.
+			if field == "cost" {
+				return v, nil
 			}
 			sum += v
 		}

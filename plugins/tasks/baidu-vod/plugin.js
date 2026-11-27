@@ -75,7 +75,19 @@ const GEMINI_MODELS = [
   "gemini-4-argon",
   "gemini-4-hydrogen",
   "gemini-nano-banana-2.1",
-  "gemini-omni-flash-preview",
+  // gemini-omni-flash-preview is a video model on Baidu's Interactions
+  // interface, which the video task plugin serves; a chat or Gemini-format
+  // route cannot answer it.
+];
+// Baidu serves Seedream on the OpenAI images interface of the Guangzhou base
+// URL, under the Ark model names without their date suffixes, which keeps
+// them distinct from the doubao plugin's.
+const SEEDREAM_MODELS = [
+  "doubao-seedream-4-0",
+  "doubao-seedream-4-5",
+  "doubao-seedream-5-0-lite",
+  "doubao-seedream-5-0-pro",
+  "doubao-seedream-5-5",
 ];
 
 // Routes pick a family by the prefix of the model name the client sent, so a
@@ -87,6 +99,8 @@ const GEMINI_MODELS = [
 const CLAUDE = "re:^claude-";
 const GEMINI = "re:^gemini-";
 const GPT = "re:^gpt-";
+const GPT_IMAGE = "re:^gpt-image-";
+const SEEDREAM_IMAGE = "re:^doubao-seedream-";
 const DUAL_FORMAT = "re:^(glm-|deepseek-|kimi-|qwen)";
 
 // The old system serves the Gemini format under another path prefix than the
@@ -99,13 +113,13 @@ export const meta = {
   name: { en: "Baidu model service", zh: "百度模型服务" },
   icon: "BaiduCloud.Color",
   description: {
-    en: "GPT, Claude, Gemini, GLM, DeepSeek, Kimi and Qwen models through Baidu's model service, in the OpenAI, Claude Messages and Gemini formats",
-    zh: "通过百度模型服务调用 GPT、Claude、Gemini、GLM、DeepSeek、Kimi 和 Qwen 模型，支持 OpenAI、Claude Messages 和 Gemini 格式",
+    en: "GPT, Claude, Gemini, GLM, DeepSeek, Kimi and Qwen models through Baidu's model service, in the OpenAI, Claude Messages and Gemini formats, and GPT Image and Seedream images",
+    zh: "通过百度模型服务调用 GPT、Claude、Gemini、GLM、DeepSeek、Kimi 和 Qwen 模型，支持 OpenAI、Claude Messages 和 Gemini 格式，并提供 GPT Image 与 Seedream 生图",
   },
-  version: "1.0.0",
+  version: "1.1.0",
   author: { name: "AccelsRouter" },
   baseUrl: "https://eos-sg.aigc.exp.bcevod.com",
-  models: [...GPT_MODELS, ...DUAL_FORMAT_MODELS, ...CLAUDE_MODELS, ...GEMINI_MODELS],
+  models: [...GPT_MODELS, ...DUAL_FORMAT_MODELS, ...CLAUDE_MODELS, ...GEMINI_MODELS, ...SEEDREAM_MODELS],
   channelConfig: {
     type: "object",
     properties: {
@@ -175,8 +189,8 @@ export const meta = {
       models: [GPT, DUAL_FORMAT],
     },
 
-    { incoming_path: "/v1/images/generations", upstream_path: "/v1/images/generations" },
-    { incoming_path: "/v1/images/edits", upstream_path: "/v1/images/edits" },
+    { incoming_path: "/v1/images/generations", upstream_path: "/v1/images/generations", models: [GPT_IMAGE, SEEDREAM_IMAGE] },
+    { incoming_path: "/v1/images/edits", upstream_path: "/v1/images/edits", models: [GPT_IMAGE] },
   ],
 };
 

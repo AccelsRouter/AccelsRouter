@@ -266,7 +266,7 @@ func TestBaiduUsageExportComparesTheAccountsChannels(t *testing.T) {
 	for name, content := range map[string]string{
 		"customer_token_1.csv": "accountId,taskId,requestId,billingParadigm,providerCode,originalAmount,discount,discountedAmount,vendorName,modelName,modelFamily,username,startTime,endTime,totalInputTokens,totalOutputTokens,inputTextTokens,inputTextOriginalAmount,inputTextCachedTokens,inputImageCachedTokens,outputTextTokens\n" +
 			"a1,t1,r1,token,multi,0.50,0.8,0.40,Anthropic,claude-opus-5,claude,key-1,2026-11-20T14:10:00,2026-11-20T14:10:09,1000,200,900,0.3,100,20,200\n" +
-			"a1,t2,r2,token,multi,0.25,0.8,0.20,Google,gemini-3-flash,gemini,key-1,2026-11-20T14:40:00,2026-11-20T14:40:02,400,50,400,0.1,0,0,50\n",
+			"a1,t2,r2,token,multi,0.25,0.8,,Google,gemini-3-flash,gemini,key-1,2026-11-20T14:40:00,2026-11-20T14:40:02,400,50,400,0.1,0,0,50\n",
 		"customer_media_unit_1.csv": "accountId,taskid,requestId,billingParadigm,providerCode,OriginalAmount,discount,discountedAmount,vendorName,modelName,modelFamily,username,startTime,endTime,interfaceType,taskType,offPeak,resolution,durationSeconds,audioIncluded,outputCount\n" +
 			"a1,t3,r3,media_unit,video,1.00,0.8,0.80,Kuaishou,kling-v3,kling,key-1,2026-11-20T15:05:00,2026-11-20T15:06:00,async,video,false,1080p,5,false,1\n",
 		"__MACOSX/._customer_token_1.csv": "not a bill",
@@ -285,9 +285,14 @@ func TestBaiduUsageExportComparesTheAccountsChannels(t *testing.T) {
 	// sum over the kinds of content.
 	assert.Equal(t, []UpstreamBillEntry{
 		{Wall: at(14, 10), Model: "claude-opus-5", PromptTokens: 1000, CompletionTokens: 200, CacheReadTokens: 120, Cost: 0.4, Requests: 1},
-		{Wall: at(14, 40), Model: "gemini-3-flash", PromptTokens: 400, CompletionTokens: 50, Cost: 0.2, Requests: 1},
+		{Wall: at(14, 40), Model: "gemini-3-flash", PromptTokens: 400, CompletionTokens: 50, Cost: 0.25, Requests: 1},
 		{Wall: at(15, 5), Model: "kling-v3", Cost: 0.8, Requests: 1, UsageUnit: UsageUnitSecond, UsageAmount: 5},
 	}, entries)
+
+	zero, err := ParseUpstreamBill("discount.csv", strings.NewReader("startTime,modelName,originalAmount,discountedAmount\n2026-11-20T14:10:00,gemini-3-flash,0.25,0\n"))
+	require.NoError(t, err)
+	require.Len(t, zero, 1)
+	assert.Zero(t, zero[0].Cost)
 
 	_, err = ParseUpstreamBill("hourly.csv", strings.NewReader("time_bucket,request_count,input_token_total,output_token_total,total_cost\n2026112014,2,1400,250,0.6\n"))
 	assert.ErrorIs(t, err, ErrUpstreamBillAggregated)
@@ -329,5 +334,5 @@ func TestBaiduUsageExportComparesTheAccountsChannels(t *testing.T) {
 	assert.Equal(t, UpstreamBillSide{Requests: 1, Tokens: 450, PromptTokens: 400, CompletionTokens: 50, Quota: 50}, rows["gemini-3-flash"].Ours)
 	assert.Equal(t, UpstreamBillSide{Requests: 1, Cost: 0.8, Rows: 1, UsageUnit: UsageUnitSecond, UsageAmount: 5}, rows["kling-v3"].Bill)
 	assert.Equal(t, int64(2), rep.Ours.Requests)
-	assert.InDelta(t, 1.4, rep.Bill.Cost, 1e-9)
+	assert.InDelta(t, 1.45, rep.Bill.Cost, 1e-9)
 }

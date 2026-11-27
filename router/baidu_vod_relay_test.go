@@ -49,10 +49,24 @@ func TestBaiduModelServicePluginRoutesEachFamily(t *testing.T) {
 		geminiModel = "/v1beta/models/gemini-2.5-flash"
 		// The old system's path prefix of the Gemini format.
 		geminiPrefix = "/v3/chat/gc"
-		models       = "gpt-5.5,gpt-image-1,claude-opus-4-6,gemini-2.5-flash"
+		models       = "gpt-5.5,gpt-image-1,claude-opus-4-6,gemini-2.5-flash,gemini-2.5-flash-image,doubao-seedream-4-5"
 	)
 	_, found := jsplugin.DefaultRegistry.Get("baidu-vod")
 	require.True(t, found, "the built-in plugin is not served")
+
+	// These two models need administrator prices on a fresh installation.
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(option, value string) error {
+		if option == "billing_setting.billing_mode" || option == "billing_setting.billing_expr" {
+			saved[option] = value
+		}
+		return nil
+	}))
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"gemini-2.5-flash-image":"tiered_expr","doubao-seedream-4-5":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"gemini-2.5-flash-image":"tier(\"test\", p + c)","doubao-seedream-4-5":"tier(\"test\", fixed(0.01))"}`,
+	}))
 
 	harness := newRelayHarness(t)
 	chat := func(model, extra string) string {
@@ -104,6 +118,17 @@ func TestBaiduModelServicePluginRoutesEachFamily(t *testing.T) {
 		"gemini stream at the Gemini format address": {
 			path: geminiModel + ":streamGenerateContent?alt=sse", body: geminiBody, reply: geminiSSE, geminiAddress: true,
 			wantPath: geminiPrefix + geminiModel + ":streamGenerateContent", wantQuery: "alt=sse",
+		},
+		"gemini image on native route": {
+			path:     "/v1beta/models/gemini-2.5-flash-image:generateContent",
+			body:     `{"contents":[{"role":"user","parts":[{"text":"a cat"}]}],"generationConfig":{"responseModalities":["IMAGE"]}}`,
+			reply:    `{"candidates":[{"content":{"role":"model","parts":[{"inlineData":{"mimeType":"image/png","data":"AAEC"}}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15}}`,
+			wantPath: "/v1beta/models/gemini-2.5-flash-image:generateContent",
+		},
+		"seedream generation on OpenAI Images": {
+			path: "/v1/images/generations", body: `{"model":"doubao-seedream-4-5","prompt":"a cat"}`,
+			reply:    `{"created":1730000000,"data":[{"url":"https://cdn.example/image.png"}]}`,
+			wantPath: "/v1/images/generations",
 		},
 		"gpt-image without response_format": {
 			path: "/v1/images/generations", body: `{"model":"gpt-image-1","prompt":"a cat","response_format":"b64_json"}`,
@@ -170,6 +195,17 @@ func TestBaiduModelServicePluginRoutesEachFamily(t *testing.T) {
 		assert.Equal(t, http.StatusServiceUnavailable, outcome.status, outcome.body)
 		assert.Empty(t, harness.upstream.captured())
 	})
+
+	t.Run("Gemini image is not sent to OpenAI Images", func(t *testing.T) {
+		channel := harness.pluginChannel("baidu-vod", key)
+		channel.Models = "gemini-2.5-flash-image"
+		harness.install(t, channel)
+		harness.upstream.reset()
+		outcome := harness.post(t, "/v1/images/generations", `{"model":"gemini-2.5-flash-image","prompt":"a cat"}`)
+		assert.Equal(t, http.StatusServiceUnavailable, outcome.status, outcome.body)
+		assert.Empty(t, harness.upstream.captured())
+	})
+
 }
 
 // Fork: the built-in vod-baidu-task plugin serves Baidu's asynchronous video
@@ -199,9 +235,10 @@ func TestBaiduTaskPluginLeavesSharedModelsToTheirPlugins(t *testing.T) {
 			assert.Equal(t, ownerSchema[field].Enum, declared.Enum, name+" "+field)
 		}
 	}
-	assert.Equal(t, []string{"hailuo", "kling", "vidu"}, slices.Sorted(maps.Keys(shared)))
+	assert.Equal(t, []string{"hailuo", "kling", "vertex-ai", "vidu"}, slices.Sorted(maps.Keys(shared)))
 	assert.ElementsMatch(t, []string{"kling-4.0", "kling-v2-5-turbo", "kling-v2-6", "kling-v3"}, shared["kling"])
 	assert.ElementsMatch(t, []string{"MiniMax-H3", "MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast", "MiniMax-Hailuo-02"}, shared["hailuo"])
+	assert.ElementsMatch(t, []string{"gemini-omni-flash-preview"}, shared["vertex-ai"])
 	assert.Len(t, shared["vidu"], 13)
 
 	// A path both declare reaches the vendor's plugin first.
@@ -261,6 +298,29 @@ func TestBaiduTaskPluginLeavesSharedModelsToTheirPlugins(t *testing.T) {
 // drives the task, and the usage reserved at submission is settled on what the
 // vendor reports or returned when the task fails.
 func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
+	t.Run("kling uses Baidu task detail for a Baidu task ID", func(t *testing.T) {
+		plugin, ok := jsplugin.DefaultRegistry.Get("vod-baidu-task")
+		require.True(t, ok)
+		submitted, err := plugin.Engine.Call(t.Context(), "parseSubmitResponse", map[string]any{
+			"requestBody": map[string]any{"vendor": "kling", "model": "kling-v3", "endpoint": "text2video"},
+		}, map[string]any{"body": map[string]any{"taskId": "tsk-k3"}})
+		require.NoError(t, err)
+		raw, err := common.Marshal(submitted)
+		require.NoError(t, err)
+		var result struct {
+			TaskID string         `json:"taskId"`
+			State  map[string]any `json:"state"`
+		}
+		require.NoError(t, common.Unmarshal(raw, &result))
+		query, err := plugin.Engine.Call(t.Context(), "buildQueryRequest", map[string]any{
+			"state": result.State, "taskId": result.TaskID, "apiKey": "fake-key", "baseUrl": "https://vod.bj.baidubce.com",
+		})
+		require.NoError(t, err)
+		raw, err = common.Marshal(query)
+		require.NoError(t, err)
+		assert.Equal(t, "https://vod.bj.baidubce.com/v3/tasks/tsk-k3", gjson.GetBytes(raw, "url").String())
+	})
+
 	const key = "sk-baidu-test"
 	harness := newRelayHarness(t)
 	engine := gin.New()
@@ -287,6 +347,9 @@ func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
 		expression string
 		// path and body are the client's request, in the vendor's format.
 		path, body string
+		// sent is the body Baidu receives, when the gateway's OpenAI video
+		// protocol builds it from the client's request.
+		sent string
 		// submitPath and queryPath are where Baidu serves the vendor.
 		submitPath, queryPath string
 		submitHeader          [2]string
@@ -442,6 +505,22 @@ func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
 			reserved: 0.3, settled: 0.3,
 			statusPath: "/openapi/v2/video/result/", wantStatus: `"url":"https://cdn.example/fusion.mp4"`,
 		},
+		{
+			name: "gemini omni", model: "gemini-omni-flash-preview",
+			expression: `tier("base", u("video_tokens") * 0.0001)`,
+			path:       "/v1/videos", body: `{"model":"gemini-omni-flash-preview","prompt":"a cat","seconds":8,"size":"1280x720"}`,
+			sent:       `{"model":"gemini-omni-flash-preview","input":[{"type":"text","text":"a cat"}],"background":true,"response_format":{"type":"video","delivery":"uri"}}`,
+			submitPath: "/v3/chat/gc/v1beta/interactions", queryPath: "/v3/tasks/tsk-o1",
+			created: `{"taskId":"tsk-o1"}`,
+			running: `{"taskId":"tsk-o1","status":"RUNNING"}`,
+			done:    `{"taskId":"tsk-o1","status":"SUCCESS","videoGenerateTaskInfo":{"videoGenerateTaskOutput":{"mediaBasicInfos":[{"mediaId":"mda-4","source":{"sourceUrl":"https://cdn.example/omni.mp4"},"sourceMetadata":{"video":{"widthInPixel":1280,"heightInPixel":720,"durationInSecond":5.1}}}]}}}`,
+			failed:  `{"taskId":"tsk-o1","status":"FAILED","videoGenerateTaskInfo":{"errMsg":"blocked"}}`,
+			// 8 s at 720p, 5792 tokens a second, are reserved; the 5.1 s video settles.
+			reserved: 4.6336, settled: 2.9539,
+			// The OpenAI video status answers without the upstream's address;
+			// the video itself is served on /v1/videos/{id}/content.
+			statusPath: "/v1/videos/", wantStatus: `"status":"completed"`,
+		},
 	}
 
 	const speechModel, voiceDesignModel, seedanceModel = "speech-2.8-hd", "minimax-voice-design", "doubao-seedance-2-0-260128"
@@ -535,7 +614,11 @@ func TestBaiduTaskPluginSubmitsPollsAndBills(t *testing.T) {
 			if tc.submitHeader[0] != "" {
 				assert.Equal(t, tc.submitHeader[1], requests[0].Header.Get(tc.submitHeader[0]))
 			}
-			assert.JSONEq(t, gjson.Get(tc.body, "@this").Raw, requests[0].Body, "the vendor's body goes as the client sent it")
+			if tc.sent != "" {
+				assert.JSONEq(t, tc.sent, requests[0].Body, "the protocol request is sent as Baidu's interface takes it")
+			} else {
+				assert.JSONEq(t, gjson.Get(tc.body, "@this").Raw, requests[0].Body, "the vendor's body goes as the client sent it")
+			}
 			task := lastTask(t)
 			assert.Equal(t, constant.TaskPlatform("vod-baidu-task"), task.Platform)
 			assert.Contains(t, body, task.TaskID)
@@ -1337,6 +1420,20 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 			created: `{"task_id":"tsk-m1"}`, facts: `{"seconds":5,"resolution":"480P"}`, reserved: 0.5,
 		},
 		{name: "minimax h3 max resolution of h3", body: `{"model":"MiniMax-H3-MAX","prompt":"a cat","size":"2K"}`, message: "MiniMax-H3-MAX resolution must be 480P or 768P"},
+		{
+			name: "gemini omni from a size", body: `{"model":"gemini-omni-flash-preview","prompt":"a cat","seconds":10,"size":"3840x2160"}`,
+			path: "/v3/chat/gc/v1beta/interactions", sent: `{"model":"gemini-omni-flash-preview","input":[{"type":"text","text":"a cat"}],"background":true,"response_format":{"type":"video","delivery":"uri"}}`,
+			created: `{"taskId":"tsk-o1"}`, facts: `{"input_tokens":0,"output_tokens":0,"video_tokens":173760}`, reserved: 1.7376,
+		},
+		{
+			name: "gemini omni with an image", body: `{"model":"gemini-omni-flash-preview","prompt":"a cat","image":"data:image/png;base64,iVBORw0KGgo="}`,
+			path: "/v3/chat/gc/v1beta/interactions", sent: `{"model":"gemini-omni-flash-preview","input":[{"type":"image","mime_type":"image/png","data":"iVBORw0KGgo="},{"type":"text","text":"a cat"}],"background":true,"response_format":{"type":"video","delivery":"uri"}}`,
+			created: `{"taskId":"tsk-o1"}`, facts: `{"input_tokens":0,"output_tokens":0,"video_tokens":46336}`, reserved: 0.46336,
+		},
+		{name: "gemini omni past the longest", body: `{"model":"gemini-omni-flash-preview","prompt":"a cat","seconds":16}`, message: "seconds must be an integer from 3 to 15"},
+		{name: "gemini omni resolution outside the tiers", body: `{"model":"gemini-omni-flash-preview","prompt":"a cat","resolution":"8k"}`, message: "resolution must be one of 360p, 720p, 1080p, 4k"},
+		{name: "gemini omni image by address", body: `{"model":"gemini-omni-flash-preview","prompt":"a cat","image":"` + image + `"}`, message: "input image must be image/jpeg or image/png"},
+		{name: "gemini omni without a prompt", body: `{"model":"gemini-omni-flash-preview","seconds":5}`, message: "prompt is required"},
 	}
 
 	modes, expressions := map[string]string{}, map[string]string{}
@@ -1347,11 +1444,15 @@ func TestBaiduTaskPluginServesOpenAIVideoAsTheVendorPluginsDo(t *testing.T) {
 	}
 	for _, tc := range own {
 		name := gjson.Get(tc.body, "model").String()
-		usage := "seconds"
+		usage, price := "seconds", "0.1"
 		if name == "viduq4" {
 			usage = "duration"
+		} else if name == "gemini-omni-flash-preview" {
+			// Video tokens run to six figures, so a price of 0.1 would
+			// overflow the quota.
+			usage, price = "video_tokens", "0.00001"
 		}
-		modes[name], expressions[name] = "tiered_expr", `tier("base", u("`+usage+`") * 0.1)`
+		modes[name], expressions[name] = "tiered_expr", `tier("base", u("`+usage+`") * `+price+`)`
 		models = append(models, name)
 	}
 	saved := map[string]string{}
